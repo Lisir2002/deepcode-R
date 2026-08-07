@@ -20,14 +20,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # versionCode 由 build.gradle.kts 的 gitCommitCount() 取 git rev-list --count HEAD，
           # 浅克隆（默认 depth=1）会得到 1，必须拉完整历史，否则 Release APK 版本号错乱。
           fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -35,9 +35,26 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools: 'latest'
-          platform: 'android-36'
-          build-tools: '36.0.0'
+          # android-actions/setup-android@v3 只接受 cmdline-tools-version + packages 两个参数：
+          #   cmdline-tools-version 对应 cmdline-tools zip 版本号（见 action.yml 默认 14742923 = 20.0）
+          #   packages 用 sdkmanager 语法传，多包空格分隔；platforms + build-tools 是构建必须
+          cmdline-tools-version: '14742923'
+          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0'
+
+      # CI 跑 Ubuntu runner：自动生成 debug keystore 供 signingConfigs.release/androidDebug 回退使用。
+      # 如果有正式 keystore（secrets.AICODE_KEYSTORE_BASE64），下面的步骤会覆盖本步骤生成的；
+      # 如果没有，则 release 会自动回退到本步骤生成的 debug keystore，保证 assembleRelease 不崩。
+      - name: Generate debug keystore (CI fallback signing)
+        run: |
+          mkdir -p ~/.android
+          if [[ ! -f ~/.android/debug.keystore ]]; then
+            keytool -genkey -v -keystore ~/.android/debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            echo "debug keystore created at ~/.android/debug.keystore"
+          else
+            echo "debug keystore already exists, skip creation"
+          fi
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
