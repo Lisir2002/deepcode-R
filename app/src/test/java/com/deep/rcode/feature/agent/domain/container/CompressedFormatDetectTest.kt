@@ -6,6 +6,8 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPOutputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.tukaani.xz.LZMA2Options
 import org.tukaani.xz.XZOutputStream
 
@@ -96,7 +98,7 @@ class CompressedFormatDetectTest {
             ContainerInstaller.CompressedFormat.GZIP,
             ContainerInstaller.CompressedFormat.AUTO -> GZIPOutputStream(baos).use { it.write(emptyTar) }
             ContainerInstaller.CompressedFormat.XZ -> {
-                XZOutputStream(baos, LZMA2Options().apply { preset = 6 }).use { it.write(emptyTar) }
+                XZOutputStream(baos, LZMA2Options(6)).use { it.write(emptyTar) }
             }
         }
         return baos.toByteArray()
@@ -122,12 +124,12 @@ class CompressedFormatDetectTest {
         val processed = intArrayOf(0)
         val installerDummyExtract = runCatching {
             val decompressor = java.util.zip.GZIPInputStream(input)
-            val tar = org.apache.commons.compress.archivers.tar.TarArchiveInputStream(decompressor)
+            val tar = TarArchiveInputStream(decompressor)
             tar.use {
-                var e = tar.nextTarArchiveEntry
+                var e = tar.nextEntry as? TarArchiveEntry
                 while (e != null) {
                     processed[0]++
-                    e = tar.nextTarArchiveEntry
+                    e = tar.nextEntry as? TarArchiveEntry
                 }
             }
         }
@@ -141,12 +143,12 @@ class CompressedFormatDetectTest {
         val processed = intArrayOf(0)
         val installerDummyExtract = runCatching {
             val decompressor = org.apache.commons.compress.compressors.xz.XZCompressorInputStream(input)
-            val tar = org.apache.commons.compress.archivers.tar.TarArchiveInputStream(decompressor)
+            val tar = TarArchiveInputStream(decompressor)
             tar.use {
-                var e = tar.nextTarArchiveEntry
+                var e = tar.nextEntry as? TarArchiveEntry
                 while (e != null) {
                     processed[0]++
-                    e = tar.nextTarArchiveEntry
+                    e = tar.nextEntry as? TarArchiveEntry
                 }
             }
         }
