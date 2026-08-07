@@ -41,6 +41,8 @@ import com.aicode.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.aicode.feature.workspace.data.local.entity.RemoteMountEntity
 import com.aicode.feature.workspace.data.repository.WorkspaceRepository
 import com.aicode.feature.workspace.domain.model.RemoteProtocol
+import com.aicode.core.security.CredentialEncryptor
+import com.aicode.core.util.FileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,7 +81,8 @@ class BackupManagerImpl @Inject constructor(
     private val visionModelSettingsRepository: VisionModelSettingsRepository,
     private val compactionModelSettingsRepository: CompactionModelSettingsRepository,
     private val syncSettingsRepository: SyncSettingsRepository,
-    private val workspaceRepository: WorkspaceRepository
+    private val workspaceRepository: WorkspaceRepository,
+    private val encryptor: CredentialEncryptor
 ) : BackupManager {
 
     private val json = Json {
@@ -458,16 +461,50 @@ class BackupManagerImpl @Inject constructor(
 
     // ── Entity ↔ DTO 转换 ──────────────────────────────────────
 
-    private fun AIProviderEntity.toDto() = ProviderDto(
-        id, name, type, apiKey, baseUrl, defaultModel, isActive, models, selectedModel, isEnabled, useFullUrl, useResponseApi
-    )
+    private fun AIProviderEntity.toDto(): ProviderDto {
+        // 优先从 encryptedApiKey 解密获取明文，用于备份导出
+        val resolvedKey = if (encryptedApiKey.isNotEmpty()) {
+            try { encryptor.decrypt(encryptedApiKey) } catch (e: Exception) { apiKey }
+        } else { apiKey }
+        return ProviderDto(
+            id, name, type, resolvedKey, baseUrl, defaultModel, isActive, models, selectedModel, isEnabled, useFullUrl, useResponseApi
+        )
+    }
 
     private fun ProviderDto.toEntity() = AIProviderEntity(
-        id, name, type, apiKey, baseUrl, defaultModel, isActive, models, selectedModel, isEnabled, useFullUrl, useResponseApi
+        id = id,
+        name = name,
+        type = type,
+        apiKey = apiKey,
+        encryptedApiKey = if (apiKey.isNotEmpty()) encryptor.encrypt(apiKey) else "",
+        baseUrl = baseUrl,
+        defaultModel = defaultModel,
+        isActive = isActive,
+        models = models,
+        selectedModel = selectedModel,
+        isEnabled = isEnabled,
+        useFullUrl = useFullUrl,
+        useResponseApi = useResponseApi
     )
 
-    private fun GitCredentialEntity.toDto() = GitCredentialDto(id, host, username, token, label, isDefault, createdAt, updatedAt)
-    private fun GitCredentialDto.toEntity() = GitCredentialEntity(id, host, username, token, label, isDefault, createdAt, updatedAt)
+    private fun GitCredentialEntity.toDto(): GitCredentialDto {
+        // 优先从 encryptedToken 解密获取明文，用于备份导出
+        val resolvedToken = if (encryptedToken.isNotEmpty()) {
+            try { encryptor.decrypt(encryptedToken) } catch (e: Exception) { token }
+        } else { token }
+        return GitCredentialDto(id, host, username, resolvedToken, label, isDefault, createdAt, updatedAt)
+    }
+    private fun GitCredentialDto.toEntity() = GitCredentialEntity(
+        id = id,
+        host = host,
+        username = username,
+        token = token,
+        encryptedToken = if (token.isNotEmpty()) encryptor.encrypt(token) else "",
+        label = label,
+        isDefault = isDefault,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
 
     private fun RemoteConnectionEntity.toDto() = RemoteConnectionDto(
         id, name, protocol.name, host, port, username, authType, authData, passphrase

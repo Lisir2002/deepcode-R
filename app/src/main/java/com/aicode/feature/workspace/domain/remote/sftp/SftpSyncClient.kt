@@ -7,17 +7,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.sftp.SFTPClient
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import java.io.File
 
-class SftpSyncClient : RemoteSyncClient {
+class SftpSyncClient(
+    private val hostKeyVerifier: HostKeyVerifier? = null
+) : RemoteSyncClient {
 
     private var sshClient: SSHClient? = null
     private var sftpClient: SFTPClient? = null
 
     override suspend fun connect(host: String, port: Int, username: String, auth: RemoteAuth) = withContext(Dispatchers.IO) {
         sshClient = SSHClient().apply {
-            addHostKeyVerifier(PromiscuousVerifier()) // 简化：暂时信任所有主机密钥
+            addHostKeyVerifier(hostKeyVerifier ?: net.schmizz.sshj.transport.verification.PromiscuousVerifier())
             connect(host, port)
             
             when (auth) {

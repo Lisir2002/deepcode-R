@@ -6,6 +6,7 @@ import com.aicode.feature.workspace.data.local.entity.RemoteMountEntity
 import com.aicode.feature.workspace.domain.model.RemoteConnection
 import com.aicode.feature.workspace.domain.model.RemoteMount
 import com.aicode.feature.workspace.domain.model.RemoteProtocol
+import com.aicode.core.security.HostKeyManager
 import com.aicode.feature.workspace.domain.remote.RemoteAuth
 import com.aicode.feature.workspace.domain.remote.SyncEngine
 import com.aicode.feature.workspace.domain.remote.ftp.FtpSyncClient
@@ -25,7 +26,8 @@ import javax.inject.Singleton
 @Singleton
 class RemoteRepository @Inject constructor(
     private val dao: RemoteConnectionDao,
-    private val syncSettings: com.aicode.feature.settings.data.repository.SyncSettingsRepository
+    private val syncSettings: com.aicode.feature.settings.data.repository.SyncSettingsRepository,
+    private val hostKeyManager: HostKeyManager
 ) {
     private val activeEngines = ConcurrentHashMap<String, SyncEngine>()
     private val activeEngineIds = MutableStateFlow<Set<String>>(emptySet())
@@ -118,7 +120,7 @@ class RemoteRepository @Inject constructor(
             val mount = mountEntity.toDomainModel(conn)
 
             val client = when (conn.protocol) {
-                RemoteProtocol.SFTP -> SftpSyncClient()
+                RemoteProtocol.SFTP -> SftpSyncClient(hostKeyManager.createVerifier())
                 RemoteProtocol.FTP -> FtpSyncClient()
                 RemoteProtocol.LOCAL -> LocalSyncClient()
             }
@@ -188,7 +190,7 @@ class RemoteRepository @Inject constructor(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val client = when (protocol) {
-                RemoteProtocol.SFTP -> SftpSyncClient()
+                RemoteProtocol.SFTP -> SftpSyncClient(hostKeyManager.createVerifier())
                 RemoteProtocol.FTP -> FtpSyncClient()
                 RemoteProtocol.LOCAL -> LocalSyncClient()
             }
@@ -206,7 +208,7 @@ class RemoteRepository @Inject constructor(
             val conn = connEntity.toDomainModel()
             
             val client = when (conn.protocol) {
-                RemoteProtocol.SFTP -> SftpSyncClient()
+                RemoteProtocol.SFTP -> SftpSyncClient(hostKeyManager.createVerifier())
                 RemoteProtocol.FTP -> FtpSyncClient()
                 RemoteProtocol.LOCAL -> LocalSyncClient()
             }

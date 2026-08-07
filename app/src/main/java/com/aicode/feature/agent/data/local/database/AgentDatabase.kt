@@ -34,6 +34,6 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun checkpointDao(): CheckpointDao
 
     companion object {
-        const val SCHEMA_VERSION = 30
+        const val SCHEMA_VERSION = 31
     }
 }

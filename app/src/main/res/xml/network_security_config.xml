@@ -2,8 +2,12 @@
 <network-security-config>
     <!--
         AI provider Base URLs are user-configurable and may point at plain-HTTP
-        endpoints (self-hosted proxies, LAN servers). Permit cleartext so those
-        endpoints work. Note: HTTP traffic, including the API key, is unencrypted.
+        endpoints (self-hosted proxies, LAN servers). Therefore cleartext traffic
+        is permitted globally.
+
+        Security note: API keys sent over HTTP are transmitted in plaintext and
+        can be intercepted by anyone on the same network. Users should use HTTPS
+        endpoints whenever possible, especially when connecting over the internet.
     -->
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

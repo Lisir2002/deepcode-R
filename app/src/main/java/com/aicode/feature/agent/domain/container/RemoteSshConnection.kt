@@ -1,5 +1,6 @@
 package com.aicode.feature.agent.domain.container
 
+import com.aicode.core.security.HostKeyManager
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.workspace.domain.remote.RemoteAuth
 import kotlinx.coroutines.CoroutineScope
@@ -18,7 +19,6 @@ import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.sftp.SFTPClient
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.transport.DisconnectListener
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -33,7 +33,9 @@ private const val TAG = "RemoteSshConnection"
  * 重新建立。所有操作串行化（[mutex]），避免并发导致 sshj 状态错乱。
  */
 @Singleton
-class RemoteSshConnection @Inject constructor() {
+class RemoteSshConnection @Inject constructor(
+    private val hostKeyManager: HostKeyManager
+) {
 
     @Volatile
     private var sshClient: SSHClient? = null
@@ -69,7 +71,7 @@ class RemoteSshConnection @Inject constructor() {
         try {
             withContext(Dispatchers.IO) {
                 val client = SSHClient().apply {
-                    addHostKeyVerifier(PromiscuousVerifier())
+                    addHostKeyVerifier(hostKeyManager.createVerifier())
                     connect(config.host, config.port)
                     when (val auth = config.auth) {
                         is RemoteAuth.Password -> authPassword(config.username, auth.password)

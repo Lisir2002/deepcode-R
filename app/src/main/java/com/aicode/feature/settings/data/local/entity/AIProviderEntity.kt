@@ -8,8 +8,10 @@ data class AIProviderEntity(
     @PrimaryKey val id: String,
     val name: String,
     val type: String,
-    /** 明文 Room，与 git token 同口径；后续统一加密时一并处理。 */
+    /** 明文 Room，已由 [encryptedApiKey] 替代。保留字段用于迁移过渡。 */
     val apiKey: String,
+    /** Android Keystore 加密后的 API Key（AES-256-GCM）。优先使用此字段。 */
+    val encryptedApiKey: String = "",
     val baseUrl: String,
     val defaultModel: String,
     val isActive: Boolean,

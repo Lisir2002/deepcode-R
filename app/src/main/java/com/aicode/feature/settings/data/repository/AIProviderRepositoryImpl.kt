@@ -1,5 +1,6 @@
 package com.aicode.feature.settings.data.repository
 
+import com.aicode.core.security.CredentialEncryptor
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.settings.data.local.dao.AIProviderDao
 import com.aicode.feature.settings.data.local.entity.AIProviderEntity
@@ -14,7 +15,8 @@ import javax.inject.Singleton
 
 @Singleton
 class AIProviderRepositoryImpl @Inject constructor(
-    private val aiProviderDao: AIProviderDao
+    private val aiProviderDao: AIProviderDao,
+    private val encryptor: CredentialEncryptor
 ) : AIProviderRepository {
 
     private companion object {
@@ -83,13 +85,28 @@ class AIProviderRepositoryImpl @Inject constructor(
         aiProviderDao.activateProvider(first.id)
     }
 
+    /**
+     * 优先从 [encryptedApiKey] 解密获取 apiKey，回退到明文 [apiKey] 字段。
+     */
+    private fun AIProviderEntity.resolveApiKey(): String {
+        if (encryptedApiKey.isNotEmpty()) {
+            return try {
+                encryptor.decrypt(encryptedApiKey)
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "解密 apiKey 失败，回退到明文: ${e.message}")
+                apiKey
+            }
+        }
+        return apiKey
+    }
+
     private fun AIProviderEntity.toDomainModel(): AIProviderConfig {
         val modelList = models.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         return AIProviderConfig(
             id = id,
             name = name,
             type = try { ProviderType.valueOf(type) } catch (e: Exception) { ProviderType.OPENAI },
-            apiKey = apiKey,
+            apiKey = resolveApiKey(),
             baseUrl = baseUrl,
             defaultModel = defaultModel,
             isActive = isActive,
@@ -101,12 +118,22 @@ class AIProviderRepositoryImpl @Inject constructor(
         )
     }
 
+    /**
+     * 加密 apiKey 存储到 [encryptedApiKey]，同时清空明文 [apiKey] 字段完成迁移。
+     */
     private fun AIProviderConfig.toEntity(): AIProviderEntity {
+        val encrypted = try {
+            encryptor.encrypt(apiKey)
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "加密 apiKey 失败，使用明文存储: ${e.message}")
+            ""
+        }
         return AIProviderEntity(
             id = id,
             name = name,
             type = type.name,
-            apiKey = apiKey,
+            apiKey = if (encrypted.isNotEmpty()) "" else apiKey, // 加密成功后清空明文
+            encryptedApiKey = encrypted,
             baseUrl = baseUrl,
             useFullUrl = useFullUrl,
             defaultModel = defaultModel,
