@@ -32,6 +32,26 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # CI 跑 Ubuntu runner：自动生成 debug keystore 供 signingConfigs.release/androidDebug 回退使用。
+      # 必须放在 Set up JDK 之后（keytool 是 JDK bin 下的工具，JAVA_HOME 未注入前调不到）。
+      # 如果有正式 keystore（secrets.AICODE_KEYSTORE_BASE64），下面的步骤会覆盖本步骤生成的；
+      # 如果没有，则 release 会自动回退到本步骤生成的 debug keystore，保证 assembleRelease 不崩。
+      - name: Generate debug keystore (CI fallback signing)
+        run: |
+          set -e
+          echo "JAVA_HOME=$JAVA_HOME"
+          "$JAVA_HOME/bin/java" -version
+          mkdir -p ~/.android
+          if [[ ! -f ~/.android/debug.keystore ]]; then
+            "$JAVA_HOME/bin/keytool" -genkey -v -keystore ~/.android/debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            echo "debug keystore created at ~/.android/debug.keystore"
+            ls -lh ~/.android/debug.keystore
+          else
+            echo "debug keystore already exists, skip creation"
+          fi
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -41,26 +61,23 @@ jobs:
           cmdline-tools-version: '14742923'
           packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0'
 
-      # CI 跑 Ubuntu runner：自动生成 debug keystore 供 signingConfigs.release/androidDebug 回退使用。
-      # 如果有正式 keystore（secrets.AICODE_KEYSTORE_BASE64），下面的步骤会覆盖本步骤生成的；
-      # 如果没有，则 release 会自动回退到本步骤生成的 debug keystore，保证 assembleRelease 不崩。
-      - name: Generate debug keystore (CI fallback signing)
-        run: |
-          mkdir -p ~/.android
-          if [[ ! -f ~/.android/debug.keystore ]]; then
-            keytool -genkey -v -keystore ~/.android/debug.keystore \
-              -storepass android -alias androiddebugkey -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-            echo "debug keystore created at ~/.android/debug.keystore"
-          else
-            echo "debug keystore already exists, skip creation"
-          fi
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           # 复用 Gradle 构建缓存，加速后续构建。
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Grant execute permission for gradlew + env sanity
+        run: |
+          set -e
+          chmod +x ./gradlew
+          echo "--- build env sanity ---"
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la gradle.properties gradle/wrapper/gradle-wrapper.properties
+          echo "--- gradle properties (without sensitive values) ---"
+          grep -vE '^(systemProp\.)' gradle.properties || true
 
       # 打印当前 Tag，Tag 驱动直接生成 versionName。
       # 仅打 tag 触发时校验；workflow_dispatch（手动，无 tag）跳过。
@@ -120,19 +137,17 @@ jobs:
           EOF
           echo "app/keystore.properties generated"
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
-
       # 发版质量门禁：跑 release 变体单元测试（用户策略 = 所有测试/验证都用发行版），
       # 与用户实际安装的 release classpath 一致，不再被 debug 专用代码路径掩盖。
       # （纯 JVM 单测不依赖真机 ABI，与 arm64-only 的打包策略无冲突。）
+      # --warning-mode=all + --stacktrace：失败时完整输出弃用告警与异常栈，避免在 CI 再猜。
       - name: Run unit tests (release)
-        run: ./gradlew :app:testReleaseUnitTest
+        run: ./gradlew --warning-mode=all :app:testReleaseUnitTest --stacktrace
 
       # 构建真机单架构 release APK（arm64-v8a only，见 build.gradle.kts abiFilters 与 sourceSets）
-      # --stacktrace：构建失败时输出完整调用栈，便于在 CI 定位 OOM/内存类根因。
+      # --warning-mode=all + --stacktrace：失败时完整输出，便于在 CI 一眼定位 R8/打包/OOM 根因
       - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew --warning-mode=all assembleRelease --stacktrace
 
       # 重命名 APK 为「品牌-arm64-版本」格式（真机单架构，显式带 ABI 标签）：
       #   rdeepcode-arm64-v1.0.0-rc1.apk

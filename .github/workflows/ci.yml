@@ -50,6 +50,25 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # CI 跑 Ubuntu runner：自动生成 debug keystore 供 signingConfigs.release/androidDebug 回退使用。
+      # 必须放在 Set up JDK 之后（keytool 是 JDK bin 下的工具，JAVA_HOME 未注入前调不到）。
+      # 若 ~/.android/debug.keystore 缺失，AGP 会报 Keystore file not found，本步骤零配置兜底。
+      - name: Generate debug keystore (CI fallback signing)
+        run: |
+          set -e
+          echo "JAVA_HOME=$JAVA_HOME"
+          "$JAVA_HOME/bin/java" -version
+          mkdir -p ~/.android
+          if [[ ! -f ~/.android/debug.keystore ]]; then
+            "$JAVA_HOME/bin/keytool" -genkey -v -keystore ~/.android/debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            echo "debug keystore created at ~/.android/debug.keystore"
+            ls -lh ~/.android/debug.keystore
+          else
+            echo "debug keystore already exists, skip creation"
+          fi
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -59,20 +78,6 @@ jobs:
           cmdline-tools-version: '14742923'
           packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0'
 
-      # CI 跑 Ubuntu runner：自动生成 debug keystore 供 signingConfigs.release/androidDebug 回退使用。
-      # 若 .android 目录缺失会让 AGP 报 Keystore file not found，本步骤零配置兜底。
-      - name: Generate debug keystore (CI fallback signing)
-        run: |
-          mkdir -p ~/.android
-          if [[ ! -f ~/.android/debug.keystore ]]; then
-            keytool -genkey -v -keystore ~/.android/debug.keystore \
-              -storepass android -alias androiddebugkey -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-            echo "debug keystore created at ~/.android/debug.keystore"
-          else
-            echo "debug keystore already exists, skip creation"
-          fi
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -80,16 +85,28 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
+        run: |
+          set -e
+          chmod +x ./gradlew
+          # 构建前先打印环境：避免 gradle.properties 里有硬编码路径导致 "Java home does not exist"
+          echo "--- build env sanity ---"
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la gradle.properties gradle/wrapper/gradle-wrapper.properties
+          echo "--- gradle properties (without sensitive values) ---"
+          grep -vE '^(systemProp\.)' gradle.properties || true
 
       # 构建收敛为单一 release 变体：真机 arm64-v8a 单架构（已开 R8 fullMode + shrinkResources
       # + useLegacyPackaging=false），验证"用户真正会下载安装的发布包"能否完整编出来。
-      # 签名配置缺失时输出 app-release-unsigned.apk（仍可用于冒烟和结构检查），
-      # 有 keystore 的正式发布走 android-release.yml。
+      # 签名配置缺失时也会用 debug keystore 兜底（见 Generate debug keystore 步骤），
+      # 因为 signingConfigs.release 永远绑定了 signingConfig，不会产出 unsigned 包。
+      # --warning-mode=all 把所有弃用告警打到日志，便于提前发现 R8/AGP 升级时的破坏性变更；
+      # --stacktrace 失败时打印完整异常栈，便于在 CI 一眼定位根因。
       - name: Build release (smoke)
-        run: ./gradlew :app:assembleRelease --stacktrace
+        run: ./gradlew --warning-mode=all :app:assembleRelease --stacktrace
 
       # 单元测试（app/src/test 下的 Kotlin 单测），在 release 变体 classpath 下执行：
       # 与用户拿到的最终发布包运行时一致，避免 debug-only 代码掩盖问题。
       - name: Run unit tests (release)
-        run: ./gradlew :app:testReleaseUnitTest
+        run: ./gradlew --warning-mode=all :app:testReleaseUnitTest --stacktrace
