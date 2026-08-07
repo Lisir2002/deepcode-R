@@ -25,8 +25,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 工具授权规则的持久化。全局规则存 app 私有目录 (`filesDir/aicode/permissions.json`)，
- * 项目级规则存工作区目录 (`.aicode/permissions.json`)，方便团队通过 git 共享。
+ * 工具授权规则的持久化。全局规则存 app 私有目录 (`filesDir/rdeepcode/permissions.json`)，
+ * 项目级规则存工作区目录 (`.rdeepcode/permissions.json`)，方便团队通过 git 共享。
  *
  * 文件格式为紧凑的 `Tool(pattern)` 风格，示例：
  * ```json

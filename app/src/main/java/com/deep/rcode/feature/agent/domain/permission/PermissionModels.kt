@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * 工具授权规则的作用域。scope 不存在规则对象里，而是由「存在哪个文件」隐含：
- * 项目文件（`.aicode/permissions.json`）或全局文件。管理界面「提升为全局」= 从项目文件删、往全局文件加。
+ * 项目文件（`.rdeepcode/permissions.json`）或全局文件。管理界面「提升为全局」= 从项目文件删、往全局文件加。
  */
 enum class PermissionScope { PROJECT, GLOBAL }
 

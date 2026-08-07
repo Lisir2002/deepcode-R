@@ -18,7 +18,7 @@ import java.util.LinkedList
  * SAF DocumentsProvider，把 app 私有 `filesDir` 暴露为**单一根**到系统「文件」app 及其它 app 的
  * SAF 选择器，满足「对外可见」。根下只放出两个子目录：
  * - `projects`：工作区（各项目）；
- * - `aicode`：AI 配置目录（skills/ 与 mcp.json，容器内即 `/root/.rdeepcode`）。
+ * - `rdeepcode`：AI 配置目录（skills/ 与 mcp.json，容器内即 `/root/.rdeepcode`）。
  *
  * 其余内部目录（rootfs、容器二进制、数据库、DataStore 等）刻意不在根下列出，避免对外泄露/误删。
  *

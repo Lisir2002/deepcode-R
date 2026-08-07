@@ -113,8 +113,8 @@ class AIEditorApp : Application() {
         appScope.launch {
             ContainerInstaller.extractDocs(this@AIEditorApp)
         }
-        // 启动即把内置提示词全量释放到 ~/.aicode/prompts/（覆盖式，随 App 升级更新）；
-        // 用户自定义覆盖放在 ~/.aicode/prompts.custom/，同名即覆盖，不被升级覆盖。
+        // 启动即把内置提示词全量释放到 ~/.rdeepcode/prompts/（覆盖式，随 App 升级更新）；
+        // 用户自定义覆盖放在 ~/.rdeepcode/prompts.custom/，同名即覆盖，不被升级覆盖。
         appScope.launch {
             ContainerInstaller.extractPrompts(this@AIEditorApp)
         }
@@ -151,7 +151,7 @@ class AIEditorApp : Application() {
                                 remoteWorkspacePath = settings.remoteWorkspacePath
                             )
                         )
-                        // 连接成功后同步内置文档到远程 ~/.aicode/docs/，供 AI 查阅。
+                        // 连接成功后同步内置文档到远程 ~/.rdeepcode/docs/，供 AI 查阅。
                         syncDocsToRemote()
                     }.onFailure { FileLogger.e(TAG, "启动时 SSH 连接失败，将在首次命令时重试", it) }
                 }
@@ -186,8 +186,8 @@ class AIEditorApp : Application() {
     }
 
     /**
-     * 读取 assets/docs 下所有内置文档，通过 SSH exec 同步到远程 ~/.aicode/docs/。
-     * 远程模式下 AI 查阅 ~/.aicode/docs/ 的设置说明文档时，需要这些文件存在于远程服务器。
+     * 读取 assets/docs 下所有内置文档，通过 SSH exec 同步到远程 ~/.rdeepcode/docs/。
+     * 远程模式下 AI 查阅 ~/.rdeepcode/docs/ 的设置说明文档时，需要这些文件存在于远程服务器。
      * 连接成功与重连成功后调用，保证远程文档随 App 升级更新。失败仅记日志，不阻断流程。
      */
     private suspend fun syncDocsToRemote() {

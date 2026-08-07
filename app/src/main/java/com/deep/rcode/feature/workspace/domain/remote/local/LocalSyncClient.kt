@@ -110,7 +110,7 @@ class LocalSyncClient : RemoteSyncClient {
     }
 
     private fun verifyWritable(dir: File) {
-        val probe = File(dir, ".aicode_write_test")
+        val probe = File(dir, ".rdeepcode_write_test")
         runCatching {
             probe.writeText("ok")
             probe.delete()

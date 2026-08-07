@@ -76,10 +76,13 @@ android {
 
     signingConfigs {
         create("androidDebug") {
-            storeFile = file("/root/Android/Sdk/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            val debugKeystore = file("/root/Android/Sdk/debug.keystore")
+            if (debugKeystore.exists()) {
+                storeFile = debugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
         create("release") {
             if (keystorePropertiesFile.exists()) {

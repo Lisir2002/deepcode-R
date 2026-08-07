@@ -33,6 +33,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools: 'latest'
+          platform: 'android-36'
+          build-tools: '36.0.0'
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -77,11 +84,11 @@ jobs:
       - name: Restore release keystore
         env:
           # keystore 文件以 base64 存入 Secret，避免二进制文件被破坏。
-          # 还原到 app/aicode.jks，与 build.gradle.kts 期望的位置一致。
+          # 还原到 app/rdeepcode.jks，与 build.gradle.kts 期望的位置一致。
           KEYSTORE_BASE64: ${{ secrets.AICODE_KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > app/aicode.jks
-          echo "keystore restored ($(stat -c%s app/aicode.jks) bytes)"
+          echo "$KEYSTORE_BASE64" | base64 -d > app/rdeepcode.jks
+          echo "keystore restored ($(stat -c%s app/rdeepcode.jks) bytes)"
 
       - name: Generate keystore.properties
         env:
@@ -90,7 +97,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.AICODE_KEY_PASSWORD }}
         run: |
           cat > app/keystore.properties <<EOF
-          storeFile=aicode.jks
+          storeFile=rdeepcode.jks
           storePassword=$KEYSTORE_PASSWORD
           keyAlias=$KEY_ALIAS
           keyPassword=$KEY_PASSWORD
@@ -110,10 +117,10 @@ jobs:
       - name: Build all flavor Release APKs
         run: ./gradlew assembleRelease --stacktrace
 
-      # 给三个 APK 重命名为「包名-架构-版本」格式，架构用真实 ABI 名便于用户识别：
-      #   aicode-arm64-v1.0.0-rc1.apk      (armsolo)
-      #   aicode-x86_64-v1.0.0-rc1.apk     (x86solo)
-      #   aicode-universal-v1.0.0-rc1.apk  (universal，含两套镜像)
+      # 给三个 APK 重命名为「品牌-架构-版本」格式，架构用真实 ABI 名便于用户识别：
+      #   rdeepcode-arm64-v1.0.0-rc1.apk      (armsolo)
+      #   rdeepcode-x86_64-v1.0.0-rc1.apk     (x86solo)
+      #   rdeepcode-universal-v1.0.0-rc1.apk  (universal，含两套镜像)
       - name: Rename APKs by flavor
         run: |
           mkdir -p dist
@@ -122,7 +129,7 @@ jobs:
           for f in universal armsolo x86solo; do
             src="app/build/outputs/apk/$f/release/app-$f-release.apk"
             if [[ -f "$src" ]]; then
-              out="dist/aicode-${abi[$f]}-${ver}.apk"
+              out="dist/rdeepcode-${abi[$f]}-${ver}.apk"
               cp "$src" "$out"
               echo "packaged $out"
             else
@@ -190,11 +197,10 @@ jobs:
           name: Release ${{ steps.release.outputs.tag }}
           body: ${{ steps.changelog.outputs.body }}
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
-          # 产物名约定 aicode-<abi>-<版本>.apk（见 Rename 步骤），故 glob 把 ABI 段放 aicode- 紧后、版本段用 * 兜底。
-          # 不要写成 aicode-*-<abi>.apk——那会把 abi 误放末段，与 aicode-<abi>-<ver> 永远匹配不上（rc3 翻车原因）。
+          # 产物名约定 rdeepcode-<abi>-<版本>.apk（见 Rename 步骤），故 glob 把 ABI 段放 rdeepcode- 紧后、版本段用 * 兜底。
           files: |
-            dist/aicode-universal-*.apk
-            dist/aicode-arm64-*.apk
-            dist/aicode-x86_64-*.apk
+            dist/rdeepcode-universal-*.apk
+            dist/rdeepcode-arm64-*.apk
+            dist/rdeepcode-x86_64-*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -9,7 +9,7 @@ import java.io.File
 class ProjectMemorySource(private val projectRoot: String) : MemorySource {
 
     private val memoryRoot: File by lazy {
-        File(projectRoot, ".aicode/memory")
+        File(projectRoot, ".rdeepcode/memory")
     }
 
     override fun listMemories(): List<Memory> {
