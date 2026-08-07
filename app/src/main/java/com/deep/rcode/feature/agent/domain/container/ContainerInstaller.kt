@@ -19,7 +19,9 @@ import javax.inject.Singleton
 /**
  * 负责把打进 assets 的 Alpine rootfs 与 PRoot 二进制安装到 App 私有目录。
  *
- * 自动根据设备架构（ARM / x86）加载对应资源。targetSdk 锁定 28，数据目录文件才可执行（见 build.gradle.kts）。
+ * 当前发布构建为 arm64-v8a 真机单架构：ASSET_DIR 固定指向 container/arm（aarch64 版本），
+ * assets/container/x86 不再被打进 APK（sourceSets 已移除）。targetSdk 锁定 28，
+ * 数据目录文件才可执行（见 build.gradle.kts）。
  */
 @Singleton
 class ContainerInstaller @Inject constructor(
@@ -119,21 +121,10 @@ class ContainerInstaller @Inject constructor(
         private const val INSTALL_VERSION = "alpine-3.21.3-v6"
     }
 
-    /** assets 内的架构特定目录 */
-    val ASSET_DIR: String
-        get() {
-            // 优先按设备 ABI 选对应镜像目录。
-            // 但 release 包按 flavor 拆分后，单架构包只含一套镜像（armsolo→arm、x86solo→x86）：
-            // 若该套不在 assets 里（例如 armsolo 包被装到只报 x86 的设备），下面会 fallback
-            // 到实际存在的那套，避免 open() 直接崩溃——proot 能否真正运行由设备 ABI 决定，
-            // 但至少 asset 查找层不会挂。
-            val preferX86 = android.os.Build.SUPPORTED_ABIS.any { it.contains("x86") }
-            val first = if (preferX86) "container/x86" else "container/arm"
-            val fallback = if (preferX86) "container/arm" else "container/x86"
-            return if (assetExists(first)) first else fallback
-        }
+    /** assets 内的架构特定目录（固定 container/arm，真机单架构 arm64-v8a 发布） */
+    val ASSET_DIR: String = "container/arm"
 
-    /** 轻量探测某 asset 路径是否被打进当前 APK（用于 [ASSET_DIR] 的 fallback 判断） */
+    /** 轻量探测某 asset 路径是否被打进当前 APK（对外保留以备扩展使用） */
     private fun assetExists(path: String): Boolean =
         context.assets.list(path.substringBeforeLast('/'))?.any { it == path.substringAfterLast('/') } == true
 

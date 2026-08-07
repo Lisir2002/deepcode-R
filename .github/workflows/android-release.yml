@@ -1,7 +1,8 @@
 name: Android Release
 
-# 打 Tag（如 v1.0.0）时触发：构建单一签名 Release APK（arm64-v8a + x86_64 双架构合一）
-#   - 真机与 x86_64 模拟器共用同一 APK 安装，不再拆 flavor，简化分发、降低用户选型成本。
+# 打 Tag（如 v1.0.0）时触发：构建真机单架构 Release APK（arm64-v8a only）
+#   - 发布产物显式带 arm64 标签，避免用户误装到 x86_64 模拟器（安装阶段即失败，不会运行期崩溃）。
+#   - x86_64 模拟器如需开发使用，本地临时切回 abiFilters=[arm64-v8a,x86_64] 或 sourceSets 挂 _x86Assets 即可。
 # 创建 GitHub Release 并把 APK 作为资产发布。
 on:
   push:
@@ -110,25 +111,25 @@ jobs:
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest
 
-      # 构建单一 release APK（arm64-v8a + x86_64 双架构 + 两套容器镜像合一）
+      # 构建真机单架构 release APK（arm64-v8a only，见 build.gradle.kts abiFilters 与 sourceSets）
       # --stacktrace：构建失败时输出完整调用栈，便于在 CI 定位 OOM/内存类根因。
       - name: Build Release APK
         run: ./gradlew assembleRelease --stacktrace
 
-      # 重命名 APK 为「品牌-版本」格式（单构建产物不再区分架构后缀）：
-      #   rdeepcode-v1.0.0-rc1.apk
+      # 重命名 APK 为「品牌-arm64-版本」格式（真机单架构，显式带 ABI 标签）：
+      #   rdeepcode-arm64-v1.0.0-rc1.apk
       - name: Rename APK
         run: |
           mkdir -p dist
           ver="${GITHUB_REF_NAME:-manual}"   # tag 如 v1.0.0-rc1；手动触发时为 manual-N
           src="app/build/outputs/apk/release/app-release.apk"
           if [[ -f "$src" ]]; then
-            out="dist/rdeepcode-${ver}.apk"
+            out="dist/rdeepcode-arm64-${ver}.apk"
             cp "$src" "$out"
             echo "packaged $out"
             ls -lh "$out"
           else
-            echo "::error::missing $src — assembleRelease 产出未找到，请检查 Gradle 配置是否已移除 flavor。"
+            echo "::error::missing $src — assembleRelease 产出未找到，请检查 build.gradle.kts 已移除 flavor 且 abiFilters=arm64-v8a。"
             exit 1
           fi
 
@@ -191,8 +192,8 @@ jobs:
           name: Release ${{ steps.release.outputs.tag }}
           body: ${{ steps.changelog.outputs.body }}
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
-          # 产物名约定 rdeepcode-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
+          # 产物名约定 rdeepcode-arm64-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
           files: |
-            dist/rdeepcode-*.apk
+            dist/rdeepcode-arm64-*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

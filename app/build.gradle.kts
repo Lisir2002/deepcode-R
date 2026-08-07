@@ -131,18 +131,21 @@ android {
             useSupportLibrary = true
         }
 
-        // 收敛为单构建产物：同时打包 arm64-v8a 与 x86_64 两套 ABI，
-        // 真机与 x86_64 模拟器用同一 APK 安装即可运行，不再拆 flavor。
-        // ContainerInstaller.ASSET_DIR 运行时按设备 SUPPORTED_ABIS 从两套容器镜像里选一套解压。
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        // 真机单构建产物：只打包 arm64-v8a（当前 Android 真机唯一主流 ABI）。
+        // x86_64 模拟器不做正式支持：若需模拟器开发可自行切回 [arm64-v8a, x86_64] 或
+        // 在 local 构建临时恢复；APK 文件名与 release 产物会显式带 arm64 标签，
+        // 避免用户误装到 x86 模拟器（安装阶段就因缺少 x86_64 对应 so 失败，不会运行期崩）。
+        // ContainerInstaller.ASSET_DIR 固定指向 assets/container/arm 目录，
+        // 安装到 app 私有目录后，proot/rootfs 全按 aarch64 执行。
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
-    // 容器镜像直接挂到 main sourceSet：单构建产物始终携带 arm + x86 两套 Alpine rootfs/proot。
-    // 镜像物理仍只各存一份在 _armAssets/_x86Assets 共享目录下，避免仓库重复。
+    // 真机单架构：sourceSets.main.assets 只挂 _armAssets。
+    // _x86Assets 目录仍保留在仓库中（方便未来恢复模拟器支持时一行切回），
+    // 但不会被打进 APK，release 包体积净省 ~3.0 MB 容器资产。
     sourceSets {
         getByName("main") {
             assets.srcDir("src/_armAssets")
-            assets.srcDir("src/_x86Assets")
         }
     }
 
