@@ -75,13 +75,36 @@ android {
     buildToolsVersion = "36.0.0"
 
     signingConfigs {
+        // 注意：debug 变体优先使用 Android Gradle Plugin 内置的默认 debug keystore
+        // （位于 $HOME/.android/debug.keystore，AGP 会自动生成），保证 CI/本地无额外配置即可构建。
+        // 仅当存在自定义 local debug keystore（/root/Android/Sdk/debug.keystore）时才覆盖使用，
+        // 方便多机器共用同一套 debug 签名（例如共享 Android 模拟器沙箱）。
         create("androidDebug") {
-            val debugKeystore = file("/root/Android/Sdk/debug.keystore")
-            if (debugKeystore.exists()) {
-                storeFile = debugKeystore
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
+            val customDebugKeystore = file("/root/Android/Sdk/debug.keystore")
+            val defaultDebugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            when {
+                customDebugKeystore.exists() -> {
+                    storeFile = customDebugKeystore
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+                defaultDebugKeystore.exists() -> {
+                    storeFile = defaultDebugKeystore
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+                else -> {
+                    // 两者都不存在时，使用占位配置：
+                    // signingConfig 不能为 null，必须提供 storeFile；
+                    // 这里指向一个不存在的文件，但我们在 buildTypes.debug 里会检测到此情况，
+                    // 不使用该 signingConfig，让 AGP 回退到自动生成默认 debug keystore 的行为。
+                    storeFile = defaultDebugKeystore
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
             }
         }
         create("release") {
@@ -152,12 +175,25 @@ android {
         // release 已解压的容器 rootfs 与工作区项目在 debug 下不可见（需重新解压/clone），属预期隔离行为。
         debug {
             applicationIdSuffix = ".debug"
-            signingConfig = signingConfigs.getByName("androidDebug")
+            // 仅当自定义/默认 debug keystore 文件真实存在时，才显式绑定 signingConfig；
+            // 否则不设置 signingConfig，让 Android Gradle Plugin 自动生成并使用默认 debug keystore
+            // （位于 $HOME/.android/debug.keystore，不存在时 AGP 会自动创建），保证 CI 环境零配置可用。
+            val androidDebugConfig = signingConfigs.getByName("androidDebug")
+            val keystoreFile = androidDebugConfig.storeFile
+            if (keystoreFile != null && keystoreFile.exists()) {
+                signingConfig = androidDebugConfig
+            }
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            // release 同理：仅当 release keystore 已正确配置（文件存在）时才绑定 signingConfig；
+            // 否则不设置，避免 CI 上因缺少签名配置而阻塞 debug 构建（release 构建失败属预期行为）。
+            val releaseConfig = signingConfigs.getByName("release")
+            val releaseKeystoreFile = releaseConfig.storeFile
+            if (releaseKeystoreFile != null && releaseKeystoreFile.exists()) {
+                signingConfig = releaseConfig
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
