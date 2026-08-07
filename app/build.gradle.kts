@@ -75,45 +75,55 @@ android {
     buildToolsVersion = "36.0.0"
 
     signingConfigs {
-        // 注意：debug 变体优先使用 Android Gradle Plugin 内置的默认 debug keystore
-        // （位于 $HOME/.android/debug.keystore，AGP 会自动生成），保证 CI/本地无额外配置即可构建。
-        // 仅当存在自定义 local debug keystore（/root/Android/Sdk/debug.keystore）时才覆盖使用，
-        // 方便多机器共用同一套 debug 签名（例如共享 Android 模拟器沙箱）。
-        create("androidDebug") {
-            val customDebugKeystore = file("/root/Android/Sdk/debug.keystore")
-            val defaultDebugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
-            when {
-                customDebugKeystore.exists() -> {
-                    storeFile = customDebugKeystore
-                    storePassword = "android"
-                    keyAlias = "androiddebugkey"
-                    keyPassword = "android"
-                }
-                defaultDebugKeystore.exists() -> {
-                    storeFile = defaultDebugKeystore
-                    storePassword = "android"
-                    keyAlias = "androiddebugkey"
-                    keyPassword = "android"
-                }
-                else -> {
-                    // 两者都不存在时，使用占位配置：
-                    // signingConfig 不能为 null，必须提供 storeFile；
-                    // 这里指向一个不存在的文件，但我们在 buildTypes.debug 里会检测到此情况，
-                    // 不使用该 signingConfig，让 AGP 回退到自动生成默认 debug keystore 的行为。
-                    storeFile = defaultDebugKeystore
-                    storePassword = "android"
-                    keyAlias = "androiddebugkey"
-                    keyPassword = "android"
-                }
-            }
+        // 统一签名策略：release / debug 都"必然有一个 signingConfig"，
+        // 避免 CI 门禁跑 `:app:assembleRelease` 时因"release 没绑定 signingConfig"而被
+        // AGP 在 packageRelease 阶段直接判失败（用户策略 = "所有测试/验证都用发行版"，
+        // release 必须总能生成 APK，哪怕回退到默认 debug keystore 签名）。
+        //
+        // 规则：
+        //   1. 优先：仓库根 keystore.properties（release 正式签名，本地/发版 CI secrets 生成）；
+        //   2. 其次：自定义本地 debug keystore（/root/Android/Sdk/debug.keystore）；
+        //   3. 最后：用户 home 默认 debug keystore（$HOME/.android/debug.keystore，
+        //      AGP 会自动创建，CI/本地无配置时 99% 场景都会命中）。
+        //
+        // 同时强制 enableV1Signing=true + enableV2Signing=true：
+        //   - v2/v3 是 Android 7+ 默认（快、抗篡改）；
+        //   - v1 (JAR 签名) 给 jarsigner/某些老工具与 ROM 保留可识别的 META-INF/*.RSA，
+        //     让"发出来是一个已签 APK"这件事对任何检查方式都成立。
+        val customDebugKeystore = file("/root/Android/Sdk/debug.keystore")
+        val defaultDebugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+        val fallbackDebugKeystore = when {
+            customDebugKeystore.exists() -> customDebugKeystore
+            defaultDebugKeystore.exists() -> defaultDebugKeystore
+            else -> defaultDebugKeystore  // 两者都不存在：指向默认路径，AGP 会自动创建
         }
+
+        create("androidDebug") {
+            storeFile = fallbackDebugKeystore
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            enableV1Signing = true
+            enableV2Signing = true
+        }
+
         create("release") {
             if (keystorePropertiesFile.exists()) {
                 storeFile = file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
+            } else {
+                // 没有正式 release 签名时，回退到 debug keystore 签名 release buildType：
+                //   - 保证 assembleRelease 在 CI/本地零配置下也能输出 APK；
+                //   - 这不是"上架签名"，只是让 R8+资源收缩后的最终发行版形态能被构建/安装/测试。
+                storeFile = fallbackDebugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
             }
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 
@@ -156,14 +166,9 @@ android {
         // release 已解压的容器 rootfs 与工作区项目在 debug 下不可见（需重新解压/clone），属预期隔离行为。
         debug {
             applicationIdSuffix = ".debug"
-            // 仅当自定义/默认 debug keystore 文件真实存在时，才显式绑定 signingConfig；
-            // 否则不设置 signingConfig，让 Android Gradle Plugin 自动生成并使用默认 debug keystore
-            // （位于 $HOME/.android/debug.keystore，不存在时 AGP 会自动创建），保证 CI 环境零配置可用。
-            val androidDebugConfig = signingConfigs.getByName("androidDebug")
-            val keystoreFile = androidDebugConfig.storeFile
-            if (keystoreFile != null && keystoreFile.exists()) {
-                signingConfig = androidDebugConfig
-            }
+            // signingConfigs.androidDebug 已经在顶层保证永远有值（优先 custom → 默认 debug keystore，
+            // 都不存在则指向默认路径让 AGP 自动建），这里直接绑定即可，不用再做 exists 判断。
+            signingConfig = signingConfigs.getByName("androidDebug")
 
             // 统一让 debug APK 也做 DEX ZIP DEFLATE 压缩：
             //   开发期分发 debug 给他人时体积稳定在 ~35 MB，而非 AGP 默认 STORE 导致的 90 MB 膨胀。
@@ -177,13 +182,13 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // release 同理：仅当 release keystore 已正确配置（文件存在）时才绑定 signingConfig；
-            // 否则不设置，避免 CI 上因缺少签名配置而阻塞 debug 构建（release 构建失败属预期行为）。
-            val releaseConfig = signingConfigs.getByName("release")
-            val releaseKeystoreFile = releaseConfig.storeFile
-            if (releaseKeystoreFile != null && releaseKeystoreFile.exists()) {
-                signingConfig = releaseConfig
-            }
+
+            // signingConfigs.release 顶层已经保证永远有值：
+            //   - 有 keystore.properties → 正式 release 签名；
+            //   - 没有 → 回退到 debug keystore（零配置 CI 仍能签出可安装的 release APK）。
+            // 因此这里直接绑定，不再做 exists 判断，保证 assembleRelease 永远产出 APK。
+            signingConfig = signingConfigs.getByName("release")
+
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
             // release 构建的体积/性能深度优化：

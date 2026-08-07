@@ -106,10 +106,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # 发版质量门禁：跑单元测试，失败即中止，避免发出回归包。
-      # 只跑 debug 变体：单测逻辑与构建类型无关，跑全量变体是重复编译。
-      - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest
+      # 发版质量门禁：跑 release 变体单元测试（用户策略 = 所有测试/验证都用发行版），
+      # 与用户实际安装的 release classpath 一致，不再被 debug 专用代码路径掩盖。
+      # （纯 JVM 单测不依赖真机 ABI，与 arm64-only 的打包策略无冲突。）
+      - name: Run unit tests (release)
+        run: ./gradlew :app:testReleaseUnitTest
 
       # 构建真机单架构 release APK（arm64-v8a only，见 build.gradle.kts abiFilters 与 sourceSets）
       # --stacktrace：构建失败时输出完整调用栈，便于在 CI 定位 OOM/内存类根因。
