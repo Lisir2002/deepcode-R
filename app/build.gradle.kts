@@ -164,6 +164,15 @@ android {
             if (keystoreFile != null && keystoreFile.exists()) {
                 signingConfig = androidDebugConfig
             }
+
+            // 统一让 debug APK 也做 DEX ZIP DEFLATE 压缩：
+            //   开发期分发 debug 给他人时体积稳定在 ~35 MB，而非 AGP 默认 STORE 导致的 90 MB 膨胀。
+            //   代价：模拟器首次安装需解压 DEX → oat 目录，慢约 2~5 秒；
+            //   注：release 构建按用户策略是"所有测试/发布都用发行版"，这里仅给 debug 做体积收敛的友好默认。
+            packaging {
+                dex { useLegacyPackaging = false }
+                jniLibs { useLegacyPackaging = false }
+            }
         }
         release {
             isMinifyEnabled = true
@@ -208,7 +217,18 @@ android {
 
 
 
+    // 全局打包选项：统一排除重复 META-INF 通知；
+    // 所有变体（debug/release）都强制 dex/jniLibs 走 ZIP DEFLATE 压缩（useLegacyPackaging=false）。
+    //
+    // 背景：AGP 8.9.x 对 debug 变体的 packagingOptions 有隐藏的"debuggable → 强制 STORE"兜底逻辑，
+    // 单独在 buildTypes.debug.packaging 里设置 dex.useLegacyPackaging=false 不一定能生效，
+    // 表现就是 debug APK 的 DEX 全是 STORE（未压缩）→ 90MB 级。
+    // 所以把全局默认放到 android.packaging 顶层（所有变体先继承这份值），
+    // 再配合 buildTypes.release 的显式设置（release 本来就会压缩），
+    // 最终让 debug APK 的 DEX 也稳定回到 DEFLATE（~35MB 级别，与旧 armsolo 一致）。
     packaging {
+        dex { useLegacyPackaging = false }
+        jniLibs { useLegacyPackaging = false }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/DEPENDENCIES"

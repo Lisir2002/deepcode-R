@@ -1,8 +1,13 @@
 name: CI
 
-# push 到 main 或 PR 时触发：构建 universal debug（单 flavor 冒烟）+ 跑单元测试。
-# 目的是合入前的兜底门禁，避免编译错误/回归推迟到打 tag 发版当天才暴露。
-# 打 v* tag 的发版构建走 android-release.yml，不在这里。
+# push 到 main 或 PR 时触发：构建 release（签名不存在则 unsigned）+ 跑 release 变体单元测试。
+# 用户策略：所有测试/验证都用发行版（release），不打 debug，也不发 debug。
+# 所以 CI 门禁统一跑 release 链路：
+#   :app:assembleRelease        — R8 fullMode + 资源收缩 + DEX/SO ZIP 压缩都走一遍，
+#                                 真正验证"即将发出的包"能不能构出来（14MB 级最终产物）。
+#   :app:testReleaseUnitTest    — 纯 JVM 单测在 release classpath 下跑，
+#                                 与将来用户安装的 release 运行时一致（debug 专用代码路径不再被掩盖）。
+# 打 v* tag 的正式发版构建走 android-release.yml（额外有 keystore 还原 + Release 页上传），不在这里。
 on:
   push:
     branches: [ main ]
@@ -61,12 +66,14 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # 构建收敛为单一变体：只用 debug（已含 arm64 + x86 两套 ABI 与容器镜像），
-      # 真机与模拟器共用同一套产物，不再拆 flavor → 省 2/3 构建时间。
-      - name: Build debug (smoke)
-        run: ./gradlew :app:assembleDebug --stacktrace
+      # 构建收敛为单一 release 变体：真机 arm64-v8a 单架构（已开 R8 fullMode + shrinkResources
+      # + useLegacyPackaging=false），验证"用户真正会下载安装的发布包"能否完整编出来。
+      # 签名配置缺失时输出 app-release-unsigned.apk（仍可用于冒烟和结构检查），
+      # 有 keystore 的正式发布走 android-release.yml。
+      - name: Build release (smoke)
+        run: ./gradlew :app:assembleRelease --stacktrace
 
-      # 单元测试（app/src/test 下的 Kotlin 单测）。
-      # 只跑 debug 变体：单测逻辑与构建类型无关，跑全量变体是重复编译，无额外覆盖。
-      - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest
+      # 单元测试（app/src/test 下的 Kotlin 单测），在 release 变体 classpath 下执行：
+      # 与用户拿到的最终发布包运行时一致，避免 debug-only 代码掩盖问题。
+      - name: Run unit tests (release)
+        run: ./gradlew :app:testReleaseUnitTest
