@@ -1,6 +1,6 @@
-# AiCode 项目完整总结文档
+# R-DeepCode 项目完整总结文档
 
-> **项目名称**: AiCode  
+> **项目名称**: R-DeepCode  
 > **仓库地址**: https://github.com/jieapi/aicode  
 > **许可证**: GPL-3.0  
 > **编程语言**: Kotlin + Java  
@@ -15,7 +15,7 @@
 
 ## 一、项目概述
 
-AiCode 是一款**在 Android 手机上运行的 AI 编程助手**，将大语言模型（LLM）与本地 Linux 开发环境深度集成。它内置 Alpine Linux 容器（通过 PRoot 实现）和终端模拟器，让 AI Agent 能直接读写文件、执行 Shell 命令、运行构建工具。同时支持远程 SSH 服务器作为执行后端，把手机变成远程项目的移动工作站。
+R-DeepCode 是一款**在 Android 手机上运行的 AI 编程助手**，将大语言模型（LLM）与本地 Linux 开发环境深度集成。它内置 Alpine Linux 容器（通过 PRoot 实现）和终端模拟器，让 AI Agent 能直接读写文件、执行 Shell 命令、运行构建工具。同时支持远程 SSH 服务器作为执行后端，把手机变成远程项目的移动工作站。
 
 核心灵感来源于 [OpenCode](https://github.com/anomalyco/opencode)（终端 AI 编码工具），终端组件基于 [Termux](https://github.com/termux/termux-app) 开源项目。
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 供 sendFile 文件卡片点击打开（ACTION_VIEW + FileProvider 授权 URI）使用。
-     files-path 覆盖 filesDir/projects（workspace 根）与 filesDir/aicode（~/.aicode）；
+     files-path 覆盖 filesDir/projects（workspace 根）与 filesDir/rcode（~/.rcode）；
      cache-path 覆盖远程模式 SFTP 下载的临时缓存。 -->
 <paths>
     <files-path name="files" path="." />

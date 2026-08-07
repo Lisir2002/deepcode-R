@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">AiCode</h1>
+  <h1 align="center">R-DeepCode</h1>
   <p align="center">
     AI-powered coding assistant for Android · Built-in Linux terminal · AI Agent · MCP · Git integration
     <br />
@@ -20,8 +20,8 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/screenshots/home.png" alt="AiCode home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/terminal.png" alt="AiCode terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/home.png" alt="R-DeepCode home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/terminal.png" alt="R-DeepCode terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
     </tr>
     <tr>
       <td align="center">Home · AI Chat</td>
@@ -34,7 +34,7 @@
 
 ## Overview
 
-AiCode is an AI-powered coding assistant that runs natively on Android. It integrates large language models with a local Linux development environment. The built-in Alpine Linux container and terminal emulator let the AI directly read/write files, execute shell commands, and run build tools. It also supports remote SSH servers as the execution backend, turning your phone into a mobile workstation for remote projects.
+R-DeepCode is an AI-powered coding assistant that runs natively on Android. It integrates large language models with a local Linux development environment. The built-in Alpine Linux container and terminal emulator let the AI directly read/write files, execute shell commands, and run build tools. It also supports remote SSH servers as the execution backend, turning your phone into a mobile workstation for remote projects.
 
 ## Features
 

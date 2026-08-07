@@ -1,14 +1,9 @@
 pluginManagement {
     repositories {
-        // 本地 Maven 代理优先：解决 Gradle Apache HC 客户端出口阻断导致的 ConnectTimeout 问题
-        // 代理通过 curl（沙箱 socket 放行对象）中转拉取 Google/MavenCentral/Plugins/JitPack/Aliyun
-        maven { url = uri("http://127.0.0.1:19099/google") }
-        maven { url = uri("http://127.0.0.1:19099/central") }
-        maven { url = uri("http://127.0.0.1:19099/plugins") }
-        maven { url = uri("http://127.0.0.1:19099/aliyun") }
         google()
         mavenCentral()
         gradlePluginPortal()
+        maven { url = uri("https://jitpack.io") }
     }
     resolutionStrategy {
         eachPlugin {
@@ -39,13 +34,9 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        maven { url = uri("http://127.0.0.1:19099/google") }
-        maven { url = uri("http://127.0.0.1:19099/central") }
-        maven { url = uri("http://127.0.0.1:19099/plugins") }
-        maven { url = uri("http://127.0.0.1:19099/aliyun") }
-        maven { url = uri("http://127.0.0.1:19099/jitpack") }
         google()
         mavenCentral()
+        maven { url = uri("https://jitpack.io") }
     }
 }
 rootProject.name = "app"
@@ -53,4 +44,3 @@ rootProject.name = "app"
 include(":app")
 include(":terminal-emulator")
 include(":terminal-view")
-

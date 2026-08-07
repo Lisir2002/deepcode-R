@@ -35,10 +35,10 @@
 - 项目根目录固定为容器内路径 `~/workspace`。你只看得到、也只需使用容器内路径。
 - 项目文件用 `~/workspace/...`（如 `~/workspace/src/Main.kt`）或相对路径（如 `src/Main.kt`，相对 `~/workspace`）。
 - `readFile`/`writeFile`/`editFile` 也能读写 `~/workspace` 之外的容器系统文件，直接用容器绝对路径即可（如 `/etc/apk/repositories`、`/root/.bashrc`、`/usr/local/bin/...`）。
-- AI 配置目录固定为 `~/.aicode`，可用文件工具或 `Bash` 直接访问；它映射到 Android 宿主私有目录 `filesDir/aicode`，不在 rootfs 内，容器重装不会清空。
-- 用户若拥有 Android root 权限，可绕过 DocumentsProvider 直接从宿主访问 App 私有目录：`/data/data/com.aicode/files/`（部分系统显示为 `/data/user/0/com.aicode/files/`）。其中 `projects/` 是本地工作区根，`aicode/` 对应容器内 `~/.aicode`。
+- AI 配置目录固定为 `~/.rdeepcode`，可用文件工具或 `Bash` 直接访问；它映射到 Android 宿主私有目录 `filesDir/rdeepcode`，不在 rootfs 内，容器重装不会清空。
+- 用户若拥有 Android root 权限，可绕过 DocumentsProvider 直接从宿主访问 App 私有目录：`/data/data/com.deep.rcode/files/`（部分系统显示为 `/data/user/0/com.deep.rcode/files/`）。其中 `projects/` 是本地工作区根，`rdeepcode/` 对应容器内 `~/.rdeepcode`。
 - `Bash` 的当前目录已经是 `~/workspace`，相对路径都基于该项目根目录解析。
-- `~/.aicode/tool-output/...` 是工具完整输出日志目录，可直接用 `readFile` 分段读取。
+- `~/.rdeepcode/tool-output/...` 是工具完整输出日志目录，可直接用 `readFile` 分段读取。
 
 ## 用户交互工具
 - `askUserQuestion`：向用户提出结构化选择题，阻塞等待选择后继续。每次可问 1-4 个问题，每题 2-4 个预设选项（UI 自动追加「其他」自由输入），支持单选或多选。

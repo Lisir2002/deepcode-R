@@ -70,11 +70,17 @@ fun gitCommitCount(): Int = try {
 }
 
 android {
-    namespace = "com.aicode"
+    namespace = "com.deep.rcode"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
 
     signingConfigs {
+        create("androidDebug") {
+            storeFile = file("/root/Android/Sdk/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         create("release") {
             if (keystorePropertiesFile.exists()) {
                 storeFile = file(keystoreProperties["storeFile"] as String)
@@ -86,7 +92,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.aicode"
+        applicationId = "com.deep.rcode"
         minSdk = 26
         // 锁定 targetSdk 28：Android 10+（API 29+）的 W^X/SELinux 策略禁止执行 App 可写
         // 数据目录里的文件，PRoot 二进制将无法运行（同 Termux 的取舍）。代价：不能上 Google Play。
@@ -137,12 +143,13 @@ android {
     }
 
     buildTypes {
-        // debug 加包名后缀 .debug → applicationId 变 com.aicode.debug，与 release（com.aicode）
+        // debug 加包名后缀 .debug → applicationId 变 com.deep.rcode.debug，与 release（com.deep.rcode）
         // 可同机共存、互不覆盖。IDE 跑 debug 不再因签名不同卸载已装的正式版。
-        // 注意：因 applicationId 不同，debug 变体私有目录为 /data/data/com.aicode.debug/，
+        // 注意：因 applicationId 不同，debug 变体私有目录为 /data/data/com.deep.rcode.debug/，
         // release 已解压的容器 rootfs 与工作区项目在 debug 下不可见（需重新解压/clone），属预期隔离行为。
         debug {
             applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("androidDebug")
         }
         release {
             isMinifyEnabled = true

@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">AiCode</h1>
+  <h1 align="center">R-DeepCode</h1>
   <p align="center">
     Android 端 AI 编程工具 · 内置 Linux 终端 · AI Agent · MCP 协议 · Git 集成
     <br />
@@ -20,8 +20,8 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/screenshots/home.png" alt="AiCode 主页 - AI 对话界面，支持代码生成与 Markdown 渲染" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/terminal.png" alt="AiCode 终端 - 内置 Alpine Linux 容器，完整命令行环境" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/home.png" alt="R-DeepCode 主页 - AI 对话界面，支持代码生成与 Markdown 渲染" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/terminal.png" alt="R-DeepCode 终端 - 内置 Alpine Linux 容器，完整命令行环境" width="270"/></td>
     </tr>
     <tr>
       <td align="center">主页 · AI 对话</td>
@@ -34,7 +34,7 @@
 
 ## 简介
 
-AiCode 是一款在 Android 手机上运行的 AI 编程工具，将大语言模型与本地 Linux 开发环境深度集成。它内置 Alpine Linux 容器和终端模拟器，让 AI 能直接读写文件、执行 Shell 命令、运行构建工具；同时支持远程 SSH 服务器作为执行后端，把手机变成远程项目的移动工作站。
+R-DeepCode 是一款在 Android 手机上运行的 AI 编程工具，将大语言模型与本地 Linux 开发环境深度集成。它内置 Alpine Linux 容器和终端模拟器，让 AI 能直接读写文件、执行 Shell 命令、运行构建工具；同时支持远程 SSH 服务器作为执行后端，把手机变成远程项目的移动工作站。
 
 ## 功能特性
 
