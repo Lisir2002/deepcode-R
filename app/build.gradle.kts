@@ -130,42 +130,20 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // 收敛为单构建产物：同时打包 arm64-v8a 与 x86_64 两套 ABI，
+        // 真机与 x86_64 模拟器用同一 APK 安装即可运行，不再拆 flavor。
+        // ContainerInstaller.ASSET_DIR 运行时按设备 SUPPORTED_ABIS 从两套容器镜像里选一套解压。
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
-    // 按容器镜像拆包：universal 同时含 arm + x86 两套 Alpine rootfs/proot（兼容所有设备但体积大），
-    // armsolo 仅含 arm（对应 arm64-v8a），x86solo 仅含 x86（对应 x86_64）
-    // ——单架构包体积约为通用包的一半。assets/container/... 由各 flavor 的 sourceSet 提供，
-    // ContainerInstaller.ASSET_DIR 在 universal 下按设备 ABI 选其一，在 solo 包里只剩一套故一定命中。
-    //
-    // 注意：defaultConfig 不再固定 abiFilters，改由各 flavor 维度决定；universal 默认含全部
-    // 依赖的 ABI（arm64-v8a + x86_64），单架构包各自收敛到单一 ABI，避免错架构设备加载错误的镜像。
-    flavorDimensions += "container"
-    productFlavors {
-        create("universal") {
-            dimension = "container"
-            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
-        }
-        create("armsolo") {
-            dimension = "container"
-            ndk { abiFilters += "arm64-v8a" }
-        }
-        create("x86solo") {
-            dimension = "container"
-            ndk { abiFilters += "x86_64" }
-        }
-    }
-
-    // 容器镜像按 flavor 共享 sourceSet：
-    //   _armAssets 仅物理一份 arm 镜像，由 universal + armsolo 共享
-    //   _x86Assets 仅物理一份 x86 镜像，由 universal + x86solo 共享
-    // 这样单架构包天然只含一套镜像（AGP 资源并集合并：未被引用的目录不参与），
-    // universal 含两套；镜像二进制在仓库里也只各一份，无重复。
-    // 放弃 ignoreAssetsPattern=dir:x86：实测对 container/x86 整树无效（rc1 已证实）。
+    // 容器镜像直接挂到 main sourceSet：单构建产物始终携带 arm + x86 两套 Alpine rootfs/proot。
+    // 镜像物理仍只各存一份在 _armAssets/_x86Assets 共享目录下，避免仓库重复。
     sourceSets {
-        getByName("universal") { assets.srcDir("src/_armAssets") }
-        getByName("universal") { assets.srcDir("src/_x86Assets") }
-        getByName("armsolo") { assets.srcDir("src/_armAssets") }
-        getByName("x86solo") { assets.srcDir("src/_x86Assets") }
+        getByName("main") {
+            assets.srcDir("src/_armAssets")
+            assets.srcDir("src/_x86Assets")
+        }
     }
 
     buildTypes {
@@ -195,6 +173,20 @@ android {
                 signingConfig = releaseConfig
             }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+            // release 构建的体积/性能深度优化：
+            //   debugSymbolLevel=none  —— 不向 APK / AAB 注入 native 调试符号表，省 ~1MB+。
+            //   isPseudoLocalesEnabled=false —— 关闭伪本地化资源，省少量体积。
+            ndk { debugSymbolLevel = "none" }
+            isPseudoLocalesEnabled = false
+
+            // 利用 R8 / D8 的 advancedMode 与 useLegacyPackaging=false：
+            //   useLegacyPackaging=false 让 APK 内的 .dex / .so 保持压缩状态被直接加载
+            //   （需要 APK Signature Scheme v2，AGP 默认开启），省掉安装期解压副本占用的空间。
+            packaging {
+                jniLibs { useLegacyPackaging = false }
+                dex { useLegacyPackaging = false }
+            }
         }
     }
 
@@ -241,7 +233,7 @@ android {
     }
 }
 
-// 彻底禁用 lintVital<Flavor>Release 任务（三 flavor 各一个），
+// 彻底禁用 lintVital 任务（现为 debug/release 各一个），
 // 使其不进入 assembleRelease 的任务图——比 lint.checkReleaseBuilds=false 更省构建开销与内存。
 // 仅在 release 任务图执行前禁用，避免影响开发期 debug lint。
 gradle.projectsEvaluated {

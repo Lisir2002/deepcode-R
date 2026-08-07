@@ -61,13 +61,12 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # 单 flavor 冒烟：只构 universal debug（CLAUDE.md 规范：AI 改完编译型代码默认跑这个），
-      # 不构全量三 flavor，省三倍 Kotlin 编译。
-      - name: Build universal debug (smoke)
-        run: ./gradlew :app:assembleUniversalDebug --stacktrace
+      # 构建收敛为单一变体：只用 debug（已含 arm64 + x86 两套 ABI 与容器镜像），
+      # 真机与模拟器共用同一套产物，不再拆 flavor → 省 2/3 构建时间。
+      - name: Build debug (smoke)
+        run: ./gradlew :app:assembleDebug --stacktrace
 
       # 单元测试（app/src/test 下的 Kotlin 单测）。
-      # 只跑 universal debug 变体：单测逻辑与 flavor 无关（flavor 仅影响 abiFilters/assets），
-      # 跑全 flavor 6 变体是重复编译，无额外覆盖。
+      # 只跑 debug 变体：单测逻辑与构建类型无关，跑全量变体是重复编译，无额外覆盖。
       - name: Run unit tests
-        run: ./gradlew :app:testUniversalDebugUnitTest
+        run: ./gradlew :app:testDebugUnitTest

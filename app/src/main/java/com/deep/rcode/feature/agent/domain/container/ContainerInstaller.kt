@@ -266,14 +266,15 @@ class ContainerInstaller @Inject constructor(
         installProot()
         when (val src = profile.rootfsSource) {
             is RootfsSource.Asset -> context.assets.open("${ASSET_DIR}/${src.path}").use {
-                extractRootfsTo(dest, it, CompressedFormat.GZIP, onProgress)
+                // Asset 自定义镜像：不写死格式，按 magic 嗅探，兼容 gzip/xz 两种打包方式。
+                extractRootfsTo(dest, it, CompressedFormat.AUTO, onProgress)
             }
             is RootfsSource.LocalFile -> {
                 val uri = android.net.Uri.parse(src.uri)
-                val format = if (src.uri.endsWith(".xz") || src.uri.endsWith(".txz"))
-                    CompressedFormat.XZ else CompressedFormat.GZIP
+                // 扩展名只作参考（用户可能把文件改名），真实格式以 magic 嗅探为准，
+                // 避免用户把 .tar.gz 重命名为 .xz（或反之）导致解压失败。
                 context.contentResolver.openInputStream(uri)?.use {
-                    extractRootfsTo(dest, it, format, onProgress)
+                    extractRootfsTo(dest, it, CompressedFormat.AUTO, onProgress)
                 } ?: FileLogger.w(TAG, "打开导入的 rootfs uri 失败: ${src.uri}")
             }
             is RootfsSource.RemoteSsh -> { /* 无本地 rootfs，上面已提前 return */ }
@@ -333,30 +334,80 @@ class ContainerInstaller @Inject constructor(
         }
     }
 
-    /** 解压 alpine-minirootfs.tar.gz，正确处理目录/文件/符号链接/硬链接与权限位 */
+    /** 解压 alpine-minirootfs，自动按流头部 magic 识别 gzip/xz 格式 */
     private fun extractRootfs(onProgress: (ContainerInitState) -> Unit) {
         context.assets.open(ASSET_ROOTFS).use { rawIn ->
-            extractRootfsTo(rootfsDir, rawIn, CompressedFormat.GZIP, onProgress)
+            // 不预传 format，改由 extractRootfsTo 内部 peek magic 字节嗅探，
+            // 兼容旧版本（存量 gzip 镜像）与新版本（xz 更高压缩比）的 APK。
+            extractRootfsTo(rootfsDir, rawIn, null, onProgress)
         }
     }
 
-    /** 镜像压缩格式：内置 Alpine 用 gzip，用户导入的可能是 gzip 或 xz。 */
-    enum class CompressedFormat { GZIP, XZ }
+    /** 镜像压缩格式；[CompressedFormat.AUTO] 委托给 magic 嗅探（[detectFormat]）。 */
+    enum class CompressedFormat { GZIP, XZ, AUTO }
+
+    /**
+     * 读取流首字节按 magic 嗅探压缩格式（支持 mark/reset 的流最佳，不消费数据）。
+     * gzip  magic = 1F 8B
+     * xz    magic = FD 37 7A 58 5A 00 ("\u00fd7zXZ\u0000")
+     * 未命中时默认 [GZIP]，与项目早期 Alpine 镜像的默认压缩格式保持兼容。
+     */
+    private fun detectFormat(input: java.io.InputStream): CompressedFormat {
+        val header = ByteArray(6)
+        input.mark(header.size)
+        var read = 0
+        while (read < header.size) {
+            val n = input.read(header, read, header.size - read)
+            if (n < 0) break
+            read += n
+        }
+        input.reset()
+        return when {
+            read >= 6 &&
+                header[0] == 0xFD.toByte() &&
+                header[1] == 0x37.toByte() &&
+                header[2] == 0x7A.toByte() &&
+                header[3] == 0x58.toByte() &&
+                header[4] == 0x5A.toByte() &&
+                header[5] == 0x00.toByte() -> CompressedFormat.XZ
+            read >= 2 &&
+                header[0] == 0x1F.toByte() &&
+                header[1] == 0x8B.toByte() -> CompressedFormat.GZIP
+            else -> CompressedFormat.GZIP
+        }
+    }
 
     /**
      * 把 tar.gz / tar.xz 流解压到 [destDir]，正确处理目录/文件/符号链接/硬链接与权限位。
      * 内置 Alpine（[extractRootfs] 传 assets 流）与用户自定义镜像（[installRootfsIfNeed] 传 content uri 流）共用。
+     *
+     * [format] = null / [CompressedFormat.AUTO] 时按流首字节 magic 嗅探；
+     * 若调用方已明确知道格式（例如从扩展名解析），可显式传入以跳过嗅探。
      */
     fun extractRootfsTo(
         destDir: File,
         input: java.io.InputStream,
-        format: CompressedFormat = CompressedFormat.GZIP,
+        format: CompressedFormat? = CompressedFormat.AUTO,
         onProgress: (ContainerInitState) -> Unit = {}
     ) {
+        // 为不支持 mark 的原始流（如 assets/ 直出 AssetInputStream、部分 contentResolver 流）
+        // 包一层 BufferedInputStream 保证 markSupported，peek 6 字节后可正确 reset 回去。
+        val buffered = if (input.markSupported()) input else java.io.BufferedInputStream(input).apply {
+            // BufferedInputStream 默认 buffer >= 8KB，已足以覆盖 magic 嗅探，但显式指定 marklimit 更稳妥。
+            mark(64)
+        }
+        val resolved = when {
+            format == null || format == CompressedFormat.AUTO -> detectFormat(buffered)
+            else -> format
+        }
+        FileLogger.i(
+            TAG,
+            "extractRootfsTo: resolved format=$resolved (requested format=$format, dest=${destDir.absolutePath})"
+        )
         var processed = 0
-        val decompressed = when (format) {
-            CompressedFormat.GZIP -> GZIPInputStream(input)
-            CompressedFormat.XZ -> XZCompressorInputStream(input)
+        val decompressed = when (resolved) {
+            CompressedFormat.GZIP, CompressedFormat.AUTO -> GZIPInputStream(buffered)
+            CompressedFormat.XZ -> XZCompressorInputStream(buffered)
         }
         decompressed.use { decompIn ->
             TarArchiveInputStream(decompIn).use { tarIn ->

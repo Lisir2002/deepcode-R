@@ -1,10 +1,8 @@
 name: Android Release
 
-# 打 Tag（如 v1.0.0）时触发：构建三个签名 Release APK
-#   - universal : arm64-v8a + x86_64，含 arm + x86 两套容器镜像（通用，体积最大）
-#   - armsolo    : 仅 arm64-v8a，仅含 arm 镜像（真机首选，体积约为 universal 的一半）
-#   - x86solo    : 仅 x86_64，仅含 x86 镜像（x86 模拟器/Chromebook，体积约为 universal 的一半）
-# 创建 GitHub Release 并把三个 APK 作为资产发布。
+# 打 Tag（如 v1.0.0）时触发：构建单一签名 Release APK（arm64-v8a + x86_64 双架构合一）
+#   - 真机与 x86_64 模拟器共用同一 APK 安装，不再拆 flavor，简化分发、降低用户选型成本。
+# 创建 GitHub Release 并把 APK 作为资产发布。
 on:
   push:
     tags:
@@ -108,35 +106,31 @@ jobs:
         run: chmod +x ./gradlew
 
       # 发版质量门禁：跑单元测试，失败即中止，避免发出回归包。
-      # 只跑 universal debug 变体：单测逻辑与 flavor 无关，跑全 flavor 6 变体是重复编译。
+      # 只跑 debug 变体：单测逻辑与构建类型无关，跑全量变体是重复编译。
       - name: Run unit tests
-        run: ./gradlew :app:testUniversalDebugUnitTest
+        run: ./gradlew :app:testDebugUnitTest
 
-      # 一次性构建全部 flavor 的 release APK（universal/armsolo/x86solo）
+      # 构建单一 release APK（arm64-v8a + x86_64 双架构 + 两套容器镜像合一）
       # --stacktrace：构建失败时输出完整调用栈，便于在 CI 定位 OOM/内存类根因。
-      - name: Build all flavor Release APKs
+      - name: Build Release APK
         run: ./gradlew assembleRelease --stacktrace
 
-      # 给三个 APK 重命名为「品牌-架构-版本」格式，架构用真实 ABI 名便于用户识别：
-      #   rdeepcode-arm64-v1.0.0-rc1.apk      (armsolo)
-      #   rdeepcode-x86_64-v1.0.0-rc1.apk     (x86solo)
-      #   rdeepcode-universal-v1.0.0-rc1.apk  (universal，含两套镜像)
-      - name: Rename APKs by flavor
+      # 重命名 APK 为「品牌-版本」格式（单构建产物不再区分架构后缀）：
+      #   rdeepcode-v1.0.0-rc1.apk
+      - name: Rename APK
         run: |
           mkdir -p dist
           ver="${GITHUB_REF_NAME:-manual}"   # tag 如 v1.0.0-rc1；手动触发时为 manual-N
-          declare -A abi=( [armsolo]=arm64 [x86solo]=x86_64 [universal]=universal )
-          for f in universal armsolo x86solo; do
-            src="app/build/outputs/apk/$f/release/app-$f-release.apk"
-            if [[ -f "$src" ]]; then
-              out="dist/rdeepcode-${abi[$f]}-${ver}.apk"
-              cp "$src" "$out"
-              echo "packaged $out"
-            else
-              echo "::warning::missing $src"
-            fi
-          done
-          ls -lh dist/
+          src="app/build/outputs/apk/release/app-release.apk"
+          if [[ -f "$src" ]]; then
+            out="dist/rdeepcode-${ver}.apk"
+            cp "$src" "$out"
+            echo "packaged $out"
+            ls -lh "$out"
+          else
+            echo "::error::missing $src — assembleRelease 产出未找到，请检查 Gradle 配置是否已移除 flavor。"
+            exit 1
+          fi
 
       - name: Determine release name
         id: release
@@ -197,10 +191,8 @@ jobs:
           name: Release ${{ steps.release.outputs.tag }}
           body: ${{ steps.changelog.outputs.body }}
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
-          # 产物名约定 rdeepcode-<abi>-<版本>.apk（见 Rename 步骤），故 glob 把 ABI 段放 rdeepcode- 紧后、版本段用 * 兜底。
+          # 产物名约定 rdeepcode-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
           files: |
-            dist/rdeepcode-universal-*.apk
-            dist/rdeepcode-arm64-*.apk
-            dist/rdeepcode-x86_64-*.apk
+            dist/rdeepcode-*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
