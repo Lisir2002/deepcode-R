@@ -105,8 +105,27 @@
     <string name="log_no_filter">No filter</string>
     <string name="log_no_match">No logs match the current filter</string>
     <string name="log_reading">Reading logs...</string>
-    <string name="log_show_last_lines">Showing last %1$s/%2$s lines</string>
-    <string name="log_show_lines">Showing %1$s lines</string>
+    <string name="log_show_last_lines">Showing last %1$s/%2$s entries</string>
+    <string name="log_show_lines">Showing %1$s entries</string>
+    <!-- New: merged log viewer -->
+    <string name="log_record_level">Record Level</string>
+    <string name="log_record_level_desc">Controls whether new logs are written to disk (persistent; cannot be recovered once discarded).</string>
+    <string name="log_display_filter">Display Filter</string>
+    <string name="log_display_filter_desc">Filters the current view only; does not modify log files on disk.</string>
+    <string name="log_search_hint">Search tag / message / stacktrace…</string>
+    <string name="log_clear_search">Clear search</string>
+    <string name="log_level_filter">Level</string>
+    <string name="log_category_filter">Category</string>
+    <string name="log_clear">Clear</string>
+    <string name="log_count_total">%1$s total</string>
+    <string name="log_count_shown">Showing %1$s/%2$s</string>
+    <string name="log_level_tightened">Record level tightened to %1$s. Historical low-level logs are still kept — sync the display filter to hide them.</string>
+    <string name="log_level_loosened">Record level loosened to %1$s; newly produced low-level logs will be appended automatically.</string>
+    <string name="log_sync_display_filter">Sync display filter</string>
+    <string name="log_category_app">App</string>
+    <string name="log_no_entries">No logs yet</string>
+    <string name="log_error_title">Read failed</string>
+    <string name="log_files">Log files</string>
 
     <!-- ? -->
     <string name="sync_unknown_connection">Unknown connection</string>

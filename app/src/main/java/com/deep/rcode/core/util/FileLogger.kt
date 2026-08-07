@@ -2,13 +2,80 @@ package com.deep.rcode.core.util
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
 
-import java.util.Date
-import java.util.Locale
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executors
+
+/**
+ * 结构化日志条目。写入/读取/过滤共用同一数据模型。
+ *
+ * @property timestamp 发生时间（Instant）
+ * @property level     日志等级
+ * @property tag       日志标签（通常是类名/模块名）
+ * @property message   日志消息（不含堆栈）。MCP 相关的消息惯例以「[服务器名]」开头。
+ * @property throwableStack 异常堆栈字符串（可空）
+ */
+data class LogEntry(
+    val timestamp: Instant,
+    val level: LogLevel,
+    val tag: String,
+    val message: String,
+    val throwableStack: String? = null
+) {
+    /**
+     * 派生分类：从 [message] 前缀尝试识别「[MCP 服务器名]」，否则用 [tag] 的简洁版。
+     * 例如：
+     * - tag=McpManager, message="[my-server] 连接成功" → category = "my-server"
+     * - tag=SettingsViewModel, message="..." → category = "SettingsViewModel"（即显示为 "App" 组：在 UI 里统一归类）
+     */
+    val category: String get() = messagePrefixServerName() ?: tag
+
+    private fun messagePrefixServerName(): String? {
+        if (message.length < 3 || message[0] != '[') return null
+        val end = message.indexOf(']', startIndex = 1)
+        if (end <= 1) return null
+        // 中间必须非空且不含换行，避免匹配到 message 中间随机的 [xxx]
+        val inner = message.substring(1, end)
+        if (inner.isBlank() || inner.contains('\n')) return null
+        return inner
+    }
+
+    companion object {
+        /** 日志行前缀的时间戳 + 等级 + tag 格式（与 write() 保持严格一致）。 */
+        private val LINE_HEADER_REGEX = Regex(
+            """^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+(VERBOSE|DEBUG|INFO|WARN|ERROR)\s+\[([^\]]+)\]\s*(.*)$"""
+        )
+        private val HEADER_TIMESTAMP_FORMAT: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault())
+
+        /**
+         * 从日志文件的一行解析出 LogEntry。解析失败返回 null（多行堆栈或空行由调用方处理）。
+         */
+        fun parseLine(line: String): LogEntry? {
+            val match = LINE_HEADER_REGEX.matchEntire(line) ?: return null
+            val (tsStr, levelStr, tag, message) = match.destructured
+            val instant = runCatching {
+                LocalDateTime.parse(tsStr, HEADER_TIMESTAMP_FORMAT).atZone(ZoneId.systemDefault()).toInstant()
+            }.getOrNull() ?: Instant.now()
+            val level = runCatching { LogLevel.valueOf(levelStr) }.getOrNull() ?: LogLevel.INFO
+            return LogEntry(
+                timestamp = instant,
+                level = level,
+                tag = tag,
+                message = message
+            )
+        }
+    }
+}
 
 /**
  * 日志等级，由低到高。[NONE] 用作阈值时关闭一切输出（没有任何等级 ≥ NONE）。
@@ -39,6 +106,9 @@ object FileLogger {
     private const val MAX_AGE_DAYS = 7
     private const val MAX_FILE_BYTES = 5 * 1024 * 1024 // 单个日志文件上限 5MB（VERBOSE 下增长较快）
 
+    /** 实时日志流 replay 容量：进入查看界面可立即看到最近一批日志。 */
+    private const val REPLAY_ENTRIES = 500
+
     private val ioExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "file-logger").apply { isDaemon = true }
     }
@@ -52,6 +122,16 @@ object FileLogger {
     @Volatile
     var minLevel: LogLevel = LogLevel.VERBOSE
         private set
+
+    /**
+     * 实时结构化日志流（只读）。写入成功即 emit，replay 最近 [REPLAY_ENTRIES] 条，
+     * 供查看界面订阅实现"进入即显示 + 新日志滚动追加"。
+     */
+    val entryFlow: SharedFlow<LogEntry> get() = _entryFlow.asSharedFlow()
+    private val _entryFlow = MutableSharedFlow<LogEntry>(
+        replay = REPLAY_ENTRIES,
+        extraBufferCapacity = 2000
+    )
 
     /** 设置最低记录等级（线程安全）。由设置项/启动同步调用。 */
     fun setMinLevel(level: LogLevel) {
@@ -77,32 +157,48 @@ object FileLogger {
 
     fun v(tag: String, message: String) {
         if (!shouldLog(LogLevel.VERBOSE)) return
+        val entry = LogEntry(Instant.now(), LogLevel.VERBOSE, tag, message)
         Log.v(tag, message)
-        write("VERBOSE", tag, message, null)
+        emitEntry(entry)
+        write(entry, null)
     }
 
     fun d(tag: String, message: String) {
         if (!shouldLog(LogLevel.DEBUG)) return
+        val entry = LogEntry(Instant.now(), LogLevel.DEBUG, tag, message)
         Log.d(tag, message)
-        write("DEBUG", tag, message, null)
+        emitEntry(entry)
+        write(entry, null)
     }
 
     fun i(tag: String, message: String) {
         if (!shouldLog(LogLevel.INFO)) return
+        val entry = LogEntry(Instant.now(), LogLevel.INFO, tag, message)
         Log.i(tag, message)
-        write("INFO", tag, message, null)
+        emitEntry(entry)
+        write(entry, null)
     }
 
     fun w(tag: String, message: String, throwable: Throwable? = null) {
         if (!shouldLog(LogLevel.WARN)) return
+        val stack = throwable?.let { stackTraceToString(it) }
+        val entry = LogEntry(Instant.now(), LogLevel.WARN, tag, message, stack)
         Log.w(tag, message, throwable)
-        write("WARN", tag, message, throwable)
+        emitEntry(entry)
+        write(entry, throwable)
     }
 
     fun e(tag: String, message: String, throwable: Throwable? = null) {
         if (!shouldLog(LogLevel.ERROR)) return
+        val stack = throwable?.let { stackTraceToString(it) }
+        val entry = LogEntry(Instant.now(), LogLevel.ERROR, tag, message, stack)
         Log.e(tag, message, throwable)
-        write("ERROR", tag, message, throwable)
+        emitEntry(entry)
+        write(entry, throwable)
+    }
+
+    private fun emitEntry(entry: LogEntry) {
+        runCatching { _entryFlow.tryEmit(entry) }
     }
 
     /** 返回当前所有日志文件，按文件名（即日期）排序，供"查看日志"等界面使用。 */
@@ -113,14 +209,45 @@ object FileLogger {
             ?: emptyList()
     }
 
-    private fun write(level: String, tag: String, message: String, throwable: Throwable?) {
+    /**
+     * 读取指定日志文件并解析为结构化 [LogEntry] 列表（按时间升序，最旧在前）。
+     * 连续的非头部行自动合并为上一条日志的 [LogEntry.throwableStack]。
+     */
+    fun parseLogFile(file: File): List<LogEntry> {
+        val lines = runCatching { file.readLines(Charsets.UTF_8) }.getOrElse { return emptyList() }
+        val result = ArrayList<LogEntry>(lines.size)
+        var current: LogEntry? = null
+        val stackBuf = StringBuilder()
+        fun flushCurrent() {
+            val c = current ?: return
+            result += if (stackBuf.isNotEmpty()) {
+                c.copy(throwableStack = stackBuf.toString().trimEnd())
+            } else c
+            current = null
+            stackBuf.clear()
+        }
+        for (line in lines) {
+            if (line.isBlank()) continue
+            val parsed = LogEntry.parseLine(line)
+            if (parsed != null) {
+                flushCurrent()
+                current = parsed
+            } else if (current != null) {
+                if (stackBuf.isNotEmpty()) stackBuf.append('\n')
+                stackBuf.append(line)
+            }
+        }
+        flushCurrent()
+        return result
+    }
+
+    private fun write(entry: LogEntry, throwable: Throwable?) {
         val dir = logDir ?: return // 未初始化则只走 logcat，不落盘
-        val now = java.time.Instant.now()
         val line = buildString {
-            append(timestampFormat.format(now))
-            append(" ").append(level)
-            append(" [").append(tag).append("] ")
-            append(message)
+            append(timestampFormat.format(entry.timestamp))
+            append(" ").append(entry.level.name)
+            append(" [").append(entry.tag).append("] ")
+            append(entry.message)
             if (throwable != null) {
                 append("\n").append(stackTraceToString(throwable))
             }
@@ -128,7 +255,7 @@ object FileLogger {
         }
         ioExecutor.execute {
             runCatching {
-                val file = File(dir, "log-${fileNameFormat.format(now)}.txt")
+                val file = File(dir, "log-${fileNameFormat.format(entry.timestamp)}.txt")
                 if (file.length() > MAX_FILE_BYTES) {
                     // 超过上限则截断重开，避免单文件无限增长
                     file.writeText("--- 日志文件超过 ${MAX_FILE_BYTES / 1024 / 1024}MB 已重置 ---\n")
