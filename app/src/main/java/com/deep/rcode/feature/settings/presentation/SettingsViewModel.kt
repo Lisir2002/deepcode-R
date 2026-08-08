@@ -3,7 +3,6 @@ package com.deep.rcode.feature.settings.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.deep.rcode.core.util.FileLogger
-import com.deep.rcode.core.util.LogEntry
 import com.deep.rcode.core.util.LogLevel
 import com.deep.rcode.feature.agent.domain.container.ConnectionState
 import com.deep.rcode.feature.agent.domain.container.ContainerInstaller
@@ -38,7 +37,6 @@ import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.domain.model.ProviderType
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -59,75 +57,16 @@ sealed class FetchState {
     data class Error(val message: String) : FetchState()
 }
 
-/**
- * 写入等级切换提示类型。
- * - [Tightened] 等级调严（例如 VERBOSE → WARN）：历史还在，建议同步显示过滤。
- * - [Loosened]  等级调松（例如 ERROR → DEBUG）：刷新视图后会看到新产生的低等级日志。
- */
-sealed class LogLevelHint {
-    data class Tightened(val newLevel: LogLevel) : LogLevelHint()
-    data class Loosened(val newLevel: LogLevel) : LogLevelHint()
-}
-
-/**
- * 日志查看结构化状态。UI 基于此渲染 LazyColumn + 三维过滤器。
- *
- * @property entries            全部条目（解析文件 + 实时流追加），按时间升序
- * @property searchQuery        关键字搜索
- * @property selectedLevels     等级过滤：空 = 全选
- * @property selectedCategories 分类过滤（App / MCP 服务器名）：空 = 全选
- * @property categories         当前数据源中出现过的所有分类（供 UI Chip 列出）
- * @property filteredEntries    过滤后条目（UI 列表直接用，派生字段）
- * @property levelCounts        按等级统计条数（用于 Chip 右上角徽标）
- */
 data class LogViewerUiState(
     val files: List<String> = emptyList(),
     val selectedFileName: String? = null,
-    val entries: List<LogEntry> = emptyList(),
-    val searchQuery: String = "",
-    val selectedLevels: Set<LogLevel> = emptySet(),
-    val selectedCategories: Set<String> = emptySet(),
-    val categories: List<String> = emptyList(),
+    val filterServerName: String? = null,
+    val content: String = "",
+    val totalLines: Int = 0,
+    val shownLines: Int = 0,
     val loading: Boolean = false,
-    val error: String? = null,
-    val levelHint: LogLevelHint? = null
-) {
-    /** 过滤后条目——每次访问即时计算，避免 by lazy 在 data class 新实例间被 Compose 快照系统误缓存。 */
-    val filteredEntries: List<LogEntry>
-        get() {
-            var list = entries
-            if (searchQuery.isNotBlank()) {
-                val q = searchQuery.trim()
-                list = list.filter { e ->
-                    e.message.contains(q, ignoreCase = true) ||
-                        e.tag.contains(q, ignoreCase = true) ||
-                        e.throwableStack?.contains(q, ignoreCase = true) == true
-                }
-            }
-            if (selectedLevels.isNotEmpty()) {
-                val ordinalMax = selectedLevels.maxOf { it.ordinal }
-                val ordinalMin = selectedLevels.minOf { it.ordinal }
-                // 判断是否连续（覆盖区间 [min, max]），若是走 ordinal 范围匹配更直观
-                val continuous = (ordinalMax - ordinalMin + 1) == selectedLevels.size
-                list = if (continuous) {
-                    list.filter { it.level.ordinal in ordinalMin..ordinalMax }
-                } else {
-                    list.filter { it.level in selectedLevels }
-                }
-            }
-            if (selectedCategories.isNotEmpty()) {
-                list = list.filter { it.category in selectedCategories }
-            }
-            return list
-        }
-
-    /** 按等级统计条数——每次访问即时计算。 */
-    val levelCounts: Map<LogLevel, Int>
-        get() = entries.groupingBy { it.level }.eachCount()
-
-    val totalCount: Int get() = entries.size
-    val shownCount: Int get() = filteredEntries.size
-}
+    val error: String? = null
+)
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -150,6 +89,9 @@ class SettingsViewModel @Inject constructor(
     private val remoteSshConnection: RemoteSshConnection,
     private val remoteRepository: RemoteRepository
 ) : ViewModel() {
+    private companion object {
+        const val MAX_LOG_LINES = 1200
+    }
 
     private val _providers = MutableStateFlow<List<AIProviderConfig>>(emptyList())
     val providers: StateFlow<List<AIProviderConfig>> = _providers.asStateFlow()
@@ -176,11 +118,6 @@ class SettingsViewModel @Inject constructor(
 
     private val _logViewerState = MutableStateFlow(LogViewerUiState())
     val logViewerState: StateFlow<LogViewerUiState> = _logViewerState.asStateFlow()
-
-    /** 实时日志流订阅 Job：只有在日志查看界面才需要订阅。 */
-    private var liveEntryJob: Job? = null
-    /** 记录上一次写入等级，用于判断调严/调松联动。 */
-    private var lastRecordLevel: LogLevel? = null
 
     private val _keepaliveEnabled = MutableStateFlow(false)
     val keepaliveEnabled: StateFlow<Boolean> = _keepaliveEnabled.asStateFlow()
@@ -290,7 +227,6 @@ class SettingsViewModel @Inject constructor(
             launch {
                 logSettingsRepository.levelFlow.collectLatest {
                     _logLevel.value = it
-                    if (lastRecordLevel == null) lastRecordLevel = it
                 }
             }
 
@@ -396,159 +332,71 @@ class SettingsViewModel @Inject constructor(
 
     fun setLogLevel(level: LogLevel) {
         viewModelScope.launch {
-            val old = lastRecordLevel
-            lastRecordLevel = level
             logSettingsRepository.setLevel(level)
-            // 联动提示
-            if (old != null && old != level) {
-                val hint = if (level.ordinal > old.ordinal) {
-                    LogLevelHint.Tightened(level)
-                } else {
-                    LogLevelHint.Loosened(level)
-                }
-                _logViewerState.update { it.copy(levelHint = hint) }
-                // 调松后自动刷新一次，把实时流里可能新增的低等级日志合并
-                if (hint is LogLevelHint.Loosened) {
-                    refreshLogs()
-                }
-            }
         }
     }
 
-    /** 清除联动提示（UI 在 Snackbar 显示完毕后调用）。 */
-    fun consumeLevelHint() {
-        _logViewerState.update { it.copy(levelHint = null) }
-    }
-
-    fun setSearchQuery(query: String) {
-        _logViewerState.update { it.copy(searchQuery = query) }
-    }
-
-    fun toggleLevelFilter(level: LogLevel) {
-        _logViewerState.update { s ->
-            val next = s.selectedLevels.toMutableSet()
-            if (!next.remove(level)) next.add(level)
-            s.copy(selectedLevels = next)
-        }
-    }
-
-    fun clearLevelFilter() {
-        _logViewerState.update { it.copy(selectedLevels = emptySet()) }
-    }
-
-    /** 一键把显示等级过滤同步为当前写入等级及以上。 */
-    fun syncDisplayFilterToRecordLevel() {
-        val min = _logLevel.value
-        val set = LogLevel.values().filter { it.ordinal >= min.ordinal && it != LogLevel.NONE }.toSet()
-        _logViewerState.update { it.copy(selectedLevels = set) }
-    }
-
-    fun toggleCategoryFilter(category: String) {
-        _logViewerState.update { s ->
-            val next = s.selectedCategories.toMutableSet()
-            if (!next.remove(category)) next.add(category)
-            s.copy(selectedCategories = next)
-        }
-    }
-
-    fun clearCategoryFilter() {
-        _logViewerState.update { it.copy(selectedCategories = emptySet()) }
-    }
-
-    fun refreshLogs() {
-        loadLogs(preferredFileName = _logViewerState.value.selectedFileName)
-    }
-
-    /**
-     * 从 MCP 编辑页跳转进入时使用：刷新后自动选中对应分类。
-     * 对应老版本的 refreshLogs(filterServerName = x)。
-     */
-    fun refreshLogsWithCategory(category: String) {
-        viewModelScope.launch {
-            loadLogs(preferredFileName = _logViewerState.value.selectedFileName)
-            // 加载完成后再切筛选（防止被 loadLogs 的 copy 覆盖）
-            _logViewerState.update { s ->
-                s.copy(
-                    selectedCategories = setOf(category),
-                    selectedLevels = emptySet(),
-                    searchQuery = ""
-                )
-            }
-        }
+    fun refreshLogs(filterServerName: String? = _logViewerState.value.filterServerName) {
+        loadLogs(
+            filterServerName = filterServerName?.takeIf { it.isNotBlank() },
+            preferredFileName = _logViewerState.value.selectedFileName
+        )
     }
 
     fun selectLogFile(fileName: String) {
-        loadLogs(preferredFileName = fileName)
+        loadLogs(
+            filterServerName = _logViewerState.value.filterServerName,
+            preferredFileName = fileName
+        )
     }
 
-    private fun loadLogs(preferredFileName: String?) {
+    private fun loadLogs(filterServerName: String?, preferredFileName: String?) {
         viewModelScope.launch {
             _logViewerState.update {
-                it.copy(loading = true, error = null)
+                it.copy(
+                    loading = true,
+                    filterServerName = filterServerName,
+                    error = null
+                )
             }
             val state = withContext(Dispatchers.IO) {
                 runCatching {
                     val files = FileLogger.listLogFiles()
                     val selected = files.firstOrNull { it.name == preferredFileName } ?: files.lastOrNull()
-                    // 即使无日志文件，也合并 replay 缓存中的条目，确保实时日志可见
-                    val fromFlow = FileLogger.entryFlow.replayCache
-                    val entries = if (selected != null) FileLogger.parseLogFile(selected) else emptyList()
-                    val merged = mergeEntries(entries, fromFlow)
-                    val categories = merged.asSequence()
-                        .map { it.category }
-                        .distinct()
-                        .sorted()
-                        .toList()
-                    _logViewerState.value.copy(
+                    if (selected == null) {
+                        return@runCatching LogViewerUiState(
+                            filterServerName = filterServerName,
+                            error = "还没有日志文件"
+                        )
+                    }
+
+                    val rawLines = selected.readLines(Charsets.UTF_8)
+                    val filteredLines = if (filterServerName.isNullOrBlank()) {
+                        rawLines
+                    } else {
+                        rawLines.filter { line ->
+                            line.contains("[$filterServerName]") ||
+                                line.contains(filterServerName, ignoreCase = true)
+                        }
+                    }
+                    val visibleLines = filteredLines.takeLast(MAX_LOG_LINES)
+
+                    LogViewerUiState(
                         files = files.map { it.name },
-                        selectedFileName = selected?.name,
-                        entries = merged,
-                        categories = categories,
-                        loading = false,
-                        error = null
+                        selectedFileName = selected.name,
+                        filterServerName = filterServerName,
+                        content = visibleLines.joinToString("\n"),
+                        totalLines = filteredLines.size,
+                        shownLines = visibleLines.size
                     )
                 }.getOrElse { e ->
-                    _logViewerState.value.copy(
-                        loading = false,
+                    LogViewerUiState(
+                        filterServerName = filterServerName,
                         error = "读取日志失败: ${e.message}"
                     )
                 }
             }
             _logViewerState.value = state
-            // 加载后启动实时流订阅（幂等：已有则取消重订）
-            startLiveEntrySubscription()
-        }
-    }
-
-    /** 合并两个按时间升序的列表，基于 timestamp+level+tag+message 去重。 */
-    private fun mergeEntries(a: List<LogEntry>, b: List<LogEntry>): List<LogEntry> {
-        if (a.isEmpty()) return b
-        if (b.isEmpty()) return a
-        val set = LinkedHashSet<LogEntry>(a.size + b.size)
-        set.addAll(a)
-        set.addAll(b)
-        return set.sortedBy { it.timestamp }
-    }
-
-    /** 订阅 FileLogger.entryFlow，新条目追加到 entries。 */
-    private fun startLiveEntrySubscription() {
-        liveEntryJob?.cancel()
-        liveEntryJob = viewModelScope.launch {
-            var lastSeen: LogEntry? = _logViewerState.value.entries.lastOrNull()
-            FileLogger.entryFlow.collect { entry ->
-                // 跳过重复：实时流 replay 已经在 loadLogs 时合并过
-                if (lastSeen != null && entry.timestamp <= lastSeen!!.timestamp) return@collect
-                _logViewerState.update { s ->
-                    val newEntries = s.entries + entry
-                    val newCategories = if (s.categories.contains(entry.category)) {
-                        s.categories
-                    } else {
-                        (s.categories + entry.category).sorted()
-                    }
-                    s.copy(entries = newEntries, categories = newCategories)
-                }
-                lastSeen = entry
-            }
         }
     }
 
