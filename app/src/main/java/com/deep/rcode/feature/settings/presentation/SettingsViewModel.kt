@@ -27,6 +27,8 @@ import com.deep.rcode.feature.settings.data.repository.ExecutionModeHolder
 import com.deep.rcode.feature.settings.data.repository.ExecutionModeRepository
 import com.deep.rcode.feature.settings.data.repository.KeepaliveSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.LanguageSettingsRepository
+import com.deep.rcode.core.util.LogLineParser
+import com.deep.rcode.feature.settings.data.repository.LogFilterSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.LogSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.ThemeSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.VisionModelSettingsRepository
@@ -65,7 +67,17 @@ data class LogViewerUiState(
     val totalLines: Int = 0,
     val shownLines: Int = 0,
     val loading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+
+    // 筛选模块新增字段
+    val filterPanelExpanded: Boolean = false,
+    val selectedDates: Set<String> = emptySet(),
+    val selectedLevels: Set<LogLevel> = emptySet(),
+    val selectedTags: Set<String> = emptySet(),
+    val allAvailableTags: List<String> = emptyList(),
+    val dateRangeMode: Boolean = false,
+    val dateRangeStart: String? = null,
+    val dateRangeEnd: String? = null
 )
 
 @HiltViewModel
@@ -74,6 +86,7 @@ class SettingsViewModel @Inject constructor(
     private val modelApiService: ModelApiService,
     private val modelMetadataService: ModelMetadataService,
     private val logSettingsRepository: LogSettingsRepository,
+    private val logFilterSettingsRepository: LogFilterSettingsRepository,
     private val themeSettingsRepository: ThemeSettingsRepository,
     private val keepaliveSettingsRepository: KeepaliveSettingsRepository,
     private val languageSettingsRepository: LanguageSettingsRepository,
@@ -230,6 +243,20 @@ class SettingsViewModel @Inject constructor(
                 }
             }
 
+            // 恢复持久化的日志筛选偏好
+            launch {
+                val levels = logFilterSettingsRepository.readSelectedLevels()
+                val tags = logFilterSettingsRepository.readSelectedTags()
+                val rangeMode = logFilterSettingsRepository.readDateRangeMode()
+                _logViewerState.update {
+                    it.copy(
+                        selectedLevels = levels,
+                        selectedTags = tags,
+                        dateRangeMode = rangeMode
+                    )
+                }
+            }
+
             launch {
                 keepaliveSettingsRepository.enabledFlow.collectLatest {
                     _keepaliveEnabled.value = it
@@ -350,8 +377,94 @@ class SettingsViewModel @Inject constructor(
         )
     }
 
+    // ── 筛选控制方法 ──
+
+    fun toggleFilterPanel() {
+        _logViewerState.update { it.copy(filterPanelExpanded = !it.filterPanelExpanded) }
+    }
+
+    fun setSelectedDates(dates: Set<String>) {
+        _logViewerState.update { it.copy(selectedDates = dates) }
+        loadLogs(
+            filterServerName = _logViewerState.value.filterServerName,
+            preferredFileName = _logViewerState.value.selectedFileName
+        )
+    }
+
+    fun setDateRangeMode(rangeMode: Boolean) {
+        _logViewerState.update { it.copy(dateRangeMode = rangeMode) }
+        viewModelScope.launch { logFilterSettingsRepository.saveDateRangeMode(rangeMode) }
+    }
+
+    fun setDateRange(start: String?, end: String?) {
+        _logViewerState.update { it.copy(dateRangeStart = start, dateRangeEnd = end) }
+        loadLogs(
+            filterServerName = _logViewerState.value.filterServerName,
+            preferredFileName = _logViewerState.value.selectedFileName
+        )
+    }
+
+    fun toggleLevel(level: LogLevel) {
+        _logViewerState.update { current ->
+            val newLevels = if (level in current.selectedLevels) {
+                current.selectedLevels - level
+            } else {
+                current.selectedLevels + level
+            }
+            current.copy(selectedLevels = newLevels)
+        }
+        viewModelScope.launch {
+            logFilterSettingsRepository.saveSelectedLevels(_logViewerState.value.selectedLevels)
+        }
+        loadLogs(
+            filterServerName = _logViewerState.value.filterServerName,
+            preferredFileName = _logViewerState.value.selectedFileName
+        )
+    }
+
+    fun toggleTag(tag: String) {
+        _logViewerState.update { current ->
+            val newTags = if (tag in current.selectedTags) {
+                current.selectedTags - tag
+            } else {
+                current.selectedTags + tag
+            }
+            current.copy(selectedTags = newTags)
+        }
+        viewModelScope.launch {
+            logFilterSettingsRepository.saveSelectedTags(_logViewerState.value.selectedTags)
+        }
+        loadLogs(
+            filterServerName = _logViewerState.value.filterServerName,
+            preferredFileName = _logViewerState.value.selectedFileName
+        )
+    }
+
+    fun resetFilters() {
+        _logViewerState.update {
+            it.copy(
+                selectedDates = emptySet(),
+                selectedLevels = emptySet(),
+                selectedTags = emptySet(),
+                dateRangeStart = null,
+                dateRangeEnd = null
+            )
+        }
+        viewModelScope.launch {
+            logFilterSettingsRepository.saveSelectedLevels(emptySet())
+            logFilterSettingsRepository.saveSelectedTags(emptySet())
+        }
+        loadLogs(
+            filterServerName = _logViewerState.value.filterServerName,
+            preferredFileName = _logViewerState.value.selectedFileName
+        )
+    }
+
+    // ── 核心加载逻辑 ──
+
     private fun loadLogs(filterServerName: String?, preferredFileName: String?) {
         viewModelScope.launch {
+            val snapshot = _logViewerState.value
             _logViewerState.update {
                 it.copy(
                     loading = true,
@@ -361,33 +474,51 @@ class SettingsViewModel @Inject constructor(
             }
             val state = withContext(Dispatchers.IO) {
                 runCatching {
-                    val files = FileLogger.listLogFiles()
-                    val selected = files.firstOrNull { it.name == preferredFileName } ?: files.lastOrNull()
-                    if (selected == null) {
+                    val allFiles = FileLogger.listLogFiles()
+                    if (allFiles.isEmpty()) {
                         return@runCatching LogViewerUiState(
                             filterServerName = filterServerName,
                             error = "还没有日志文件"
                         )
                     }
 
-                    val rawLines = selected.readLines(Charsets.UTF_8)
-                    val filteredLines = if (filterServerName.isNullOrBlank()) {
-                        rawLines
-                    } else {
-                        rawLines.filter { line ->
-                            line.contains("[$filterServerName]") ||
-                                line.contains(filterServerName, ignoreCase = true)
-                        }
+                    // 1. 按日期筛选文件列表
+                    val matchedFiles = filterFilesByDate(allFiles, snapshot)
+
+                    // 2. 读取所有匹配文件的行
+                    val allLines = matchedFiles.flatMap { it.readLines(Charsets.UTF_8) }
+
+                    // 3. 提取所有可用 Tag（过滤前，保留完整视野）
+                    val allTags = LogLineParser.extractTags(allLines)
+
+                    // 4. 多维度过滤
+                    val filteredLines = allLines.filter { line ->
+                        matchesFilters(line, filterServerName, snapshot)
                     }
+
+                    // 5. 尾部截断
                     val visibleLines = filteredLines.takeLast(MAX_LOG_LINES)
 
+                    // 6. 确定选中文件名（UI 展示用）
+                    val selectedName = preferredFileName
+                        ?: allFiles.firstOrNull { it.name == preferredFileName }?.name
+                        ?: matchedFiles.lastOrNull()?.name
+                        ?: allFiles.lastOrNull()?.name
+
                     LogViewerUiState(
-                        files = files.map { it.name },
-                        selectedFileName = selected.name,
+                        files = allFiles.map { it.name },
+                        selectedFileName = selectedName,
                         filterServerName = filterServerName,
                         content = visibleLines.joinToString("\n"),
                         totalLines = filteredLines.size,
-                        shownLines = visibleLines.size
+                        shownLines = visibleLines.size,
+                        selectedDates = snapshot.selectedDates,
+                        selectedLevels = snapshot.selectedLevels,
+                        selectedTags = snapshot.selectedTags,
+                        allAvailableTags = allTags,
+                        dateRangeMode = snapshot.dateRangeMode,
+                        dateRangeStart = snapshot.dateRangeStart,
+                        dateRangeEnd = snapshot.dateRangeEnd
                     )
                 }.getOrElse { e ->
                     LogViewerUiState(
@@ -398,6 +529,72 @@ class SettingsViewModel @Inject constructor(
             }
             _logViewerState.value = state
         }
+    }
+
+    /** 按日期筛选条件匹配文件列表。 */
+    private fun filterFilesByDate(
+        allFiles: List<java.io.File>,
+        snapshot: LogViewerUiState
+    ): List<java.io.File> {
+        val dates = snapshot.selectedDates
+        if (dates.isNotEmpty()) {
+            // 列表模式：按选中日期精确匹配
+            return allFiles.filter { f ->
+                val fileDate = f.name.removePrefix("log-").removeSuffix(".txt")
+                fileDate in dates
+            }
+        }
+        val rangeStart = snapshot.dateRangeStart
+        val rangeEnd = snapshot.dateRangeEnd
+        if (rangeStart != null || rangeEnd != null) {
+            // 范围模式：按日期范围筛选
+            return allFiles.filter { f ->
+                val fileDate = f.name.removePrefix("log-").removeSuffix(".txt")
+                val inRange = (rangeStart == null || fileDate >= rangeStart) &&
+                    (rangeEnd == null || fileDate <= rangeEnd)
+                inRange
+            }
+        }
+        // 无日期筛选：返回所有文件
+        return allFiles
+    }
+
+    /** 判断单行是否通过所有筛选条件。 */
+    private fun matchesFilters(
+        line: String,
+        filterServerName: String?,
+        snapshot: LogViewerUiState
+    ): Boolean {
+        val parsed = LogLineParser.parse(line)
+        if (parsed == null) {
+            // 附属行（堆栈等）始终保留
+            return true
+        }
+
+        // filterServerName 过滤（MCP 对话框跳转）
+        if (!filterServerName.isNullOrBlank()) {
+            if (!parsed.raw.contains("[$filterServerName]", ignoreCase = true) &&
+                !parsed.raw.contains(filterServerName, ignoreCase = true)
+            ) {
+                return false
+            }
+        }
+
+        // 等级过滤
+        if (snapshot.selectedLevels.isNotEmpty()) {
+            if (parsed.level == null || parsed.level !in snapshot.selectedLevels) {
+                return false
+            }
+        }
+
+        // Tag 来源过滤
+        if (snapshot.selectedTags.isNotEmpty()) {
+            if (parsed.tag !in snapshot.selectedTags) {
+                return false
+            }
+        }
+
+        return true
     }
 
     // 仅持久化标志位——启停 Service 由 AIEditorApp 监听 enabledFlow 统一完成。

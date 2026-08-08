@@ -108,6 +108,19 @@
     <string name="log_reading">正在读取日志...</string>
     <string name="log_show_last_lines">显示最后 %1$s/%2$s 行</string>
     <string name="log_show_lines">显示 %1$s 行</string>
+    <string name="log_filter_title">筛选</string>
+    <string name="log_filter_reset">重置</string>
+    <string name="log_filter_date">日期</string>
+    <string name="log_filter_date_list">列表</string>
+    <string name="log_filter_date_range">范围</string>
+    <string name="log_filter_no_dates">没有可用的日期</string>
+    <string name="log_filter_level">等级</string>
+    <string name="log_filter_tag">来源</string>
+    <string name="log_filter_more_tags">还有 %1$d 个…</string>
+    <string name="log_filter_no_tags">没有可用的来源标签</string>
+    <string name="log_filter_date_from">从</string>
+    <string name="log_filter_date_select">选择</string>
+    <string name="log_filter_date_to">至</string>
 
     <!-- ? -->
     <string name="sync_unknown_connection">未知连接</string>

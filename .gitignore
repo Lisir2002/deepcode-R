@@ -28,3 +28,6 @@ keystore.properties
 /*.log
 /test
 .local-maven-cache/
+
+# Design docs
+design/

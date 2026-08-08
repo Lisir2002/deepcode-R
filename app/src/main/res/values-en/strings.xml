@@ -108,6 +108,19 @@
     <string name="log_reading">Reading logs...</string>
     <string name="log_show_last_lines">Showing last %1$s/%2$s lines</string>
     <string name="log_show_lines">Showing %1$s lines</string>
+    <string name="log_filter_title">Filter</string>
+    <string name="log_filter_reset">Reset</string>
+    <string name="log_filter_date">Date</string>
+    <string name="log_filter_date_list">List</string>
+    <string name="log_filter_date_range">Range</string>
+    <string name="log_filter_no_dates">No dates available</string>
+    <string name="log_filter_level">Level</string>
+    <string name="log_filter_tag">Tag</string>
+    <string name="log_filter_more_tags">%1$d more…</string>
+    <string name="log_filter_no_tags">No tags available</string>
+    <string name="log_filter_date_from">From</string>
+    <string name="log_filter_date_select">Select</string>
+    <string name="log_filter_date_to">To</string>
 
     <!-- ? -->
     <string name="sync_unknown_connection">Unknown connection</string>

@@ -308,7 +308,14 @@ fun SettingsScreen(
                     onSelectLogLevel = { viewModel.setLogLevel(it) },
                     logViewerState = logViewerState,
                     onSelectFile = { viewModel.selectLogFile(it) },
-                    onRefresh = { viewModel.refreshLogs() }
+                    onRefresh = { viewModel.refreshLogs() },
+                    onToggleFilterPanel = { viewModel.toggleFilterPanel() },
+                    onSetSelectedDates = { viewModel.setSelectedDates(it) },
+                    onSetDateRangeMode = { viewModel.setDateRangeMode(it) },
+                    onSetDateRange = { start, end -> viewModel.setDateRange(start, end) },
+                    onToggleLevel = { viewModel.toggleLevel(it) },
+                    onToggleTag = { viewModel.toggleTag(it) },
+                    onResetFilters = { viewModel.resetFilters() }
                 )
                 SettingsSection.Permissions -> PermissionsSection(
                     projectName = currentProjectName,
