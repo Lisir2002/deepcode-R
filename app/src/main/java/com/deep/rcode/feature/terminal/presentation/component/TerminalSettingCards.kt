@@ -1,6 +1,7 @@
 package com.deep.rcode.feature.terminal.presentation.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -158,14 +159,16 @@ internal fun SharedContainerEnvCard(
         else -> SemanticColors.Warning
     }
 
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = TerminalCardsSpec.BorderAlpha)
     Card(
         modifier = Modifier
             .padding(horizontal = Spacing.md)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .border(1.dp, borderColor, RoundedCornerShape(Radius.md)),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = SemanticColors.ContainerAlphaSoft)
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = TerminalCardsSpec.BgSoftAlpha)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
+        elevation = CardDefaults.cardElevation(defaultElevation = TerminalCardsSpec.Elevation),
         shape = RoundedCornerShape(Radius.md)  // 10.dp
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
@@ -236,16 +239,19 @@ internal fun SharedAiRecommendationStrip(
     containerReady: Boolean,
     onInstallAll: () -> Unit
 ) {
+    val accent =
+        if (allInstalled) MaterialTheme.colorScheme.tertiaryContainer
+        else MaterialTheme.colorScheme.secondaryContainer
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = TerminalCardsSpec.BorderAlpha)
     Card(
         modifier = Modifier
             .padding(horizontal = Spacing.md)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .border(1.dp, borderColor, RoundedCornerShape(Radius.md)),
         colors = CardDefaults.cardColors(
-            containerColor =
-                if (allInstalled) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = SemanticColors.ContainerAlphaStrong)
-                else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = SemanticColors.ContainerAlphaStrong)
+            containerColor = accent.copy(alpha = TerminalCardsSpec.BgStrongAlpha)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
+        elevation = CardDefaults.cardElevation(defaultElevation = TerminalCardsSpec.Elevation),
         shape = RoundedCornerShape(Radius.md)
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
@@ -316,12 +322,14 @@ internal fun SharedBundleCard(
             Status("已安装", SemanticColors.Success, false)
     }
 
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = TerminalCardsSpec.BorderAlpha)
     Card(
         modifier = Modifier
             .padding(horizontal = Spacing.md)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .border(1.dp, borderColor, RoundedCornerShape(Radius.md)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
+        elevation = CardDefaults.cardElevation(defaultElevation = TerminalCardsSpec.Elevation),
         shape = RoundedCornerShape(Radius.md)
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {

@@ -52,6 +52,28 @@ object TerminalLayout {
 }
 
 /**
+ * 终端设置页面所有 Card 的共享规格（根绝 elevation+半透明合成黑边）。
+ *  与首屏 TerminalFirstRunBanner 统一设计语言：
+ *   ① elevation = z0（不要 elevation overlay，它是黑边根因）
+ *   ② 用 1dp 软描边（outlineVariant×0.35 或 主题 accent 色×0.35）代替阴影提供边界
+ *   ③ 容器背景 alpha 降到 0.16~0.22（避免色压头 + 降低合成 artifact）
+ */
+@Immutable
+object TerminalCardsSpec {
+    /** 统一 0 elevation：所有共享卡一律不要阴影层 */
+    val Elevation = com.deep.rcode.core.theme.Elevation.z0
+
+    /** 背景软 alpha：普通容器卡片（本地环境、自定义包列表等），对应 SemanticColors.ContainerAlphaSoft 重写降值 */
+    const val BgSoftAlpha = 0.16f
+
+    /** 背景略强 alpha：AI 推荐组合条等需要略强调的卡片，对应 ContainerAlphaStrong 重写降值 */
+    const val BgStrongAlpha = 0.22f
+
+    /** 1dp 软描边透明度：默认 outlineVariant * 0.35 */
+    const val BorderAlpha = 0.35f
+}
+
+/**
  * 终端首屏 Banner 规格：
  *  容器未初始化  accent = Warning
  *  Python 缺失    accent = Info (Secondary)

@@ -1,6 +1,7 @@
 package com.deep.rcode.feature.terminal.presentation.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -144,136 +145,163 @@ fun TerminalCustomPackagesScreen(
             )
 
             AppSectionHeader(text = "自定义包名安装")
-            Card(
-                modifier = Modifier.padding(horizontal = Spacing.md),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
-                shape = RoundedCornerShape(Radius.md)
-            ) {
-                Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-                    ) {
-                        OutlinedTextField(
-                            value = customInstallInput,
-                            onValueChange = { customInstallInput = it },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                            placeholder = { Text("包名空格分隔，如 htop neofetch openssh") }
-                        )
-                        PrimaryButton(
-                            onClick = {
-                                viewModel.installCustom(customInstallInput)
-                                customInstallInput = ""
-                            },
-                            enabled = containerInstalled && customInstallInput.isNotBlank() && customInstallState == null,
-                            icon = FeatherIcons.Plus,
-                            text = "安装"
-                        )
-                    }
-                    if (customInstallState is BundleInstallState.Installing) {
-                        SharedLinearProgress()
-                        Text(
-                            text = "正在安装：${customInstallState.line?.take(40) ?: "准备中…"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = SemanticColors.InProgress,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    } else if (customInstallState is BundleInstallState.Failed) {
-                        Text(
-                            text = "安装失败：${customInstallState.reason}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = SemanticColors.Error
-                        )
-                    }
-                    if (!containerInstalled) {
-                        Text(
-                            text = "容器未初始化，暂不可安装自定义包",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            CustomInstallCard(
+                customInstallInput = customInstallInput,
+                onInputChange = { customInstallInput = it },
+                onInstallClick = {
+                    viewModel.installCustom(customInstallInput)
+                    customInstallInput = ""
+                },
+                containerReady = containerInstalled,
+                installIdle = customInstallState == null,
+                customInstallState = customInstallState
+            )
 
             AppSectionHeader(text = "已安装自定义包")
-            Card(
-                modifier = Modifier
-                    .padding(horizontal = Spacing.md)
-                    .fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = SemanticColors.ContainerAlphaSoft)),
-                elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
-                shape = RoundedCornerShape(Radius.md)
-            ) {
-                Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            FeatherIcons.Grid,
-                            null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(Spacing.sm))
-                        Text(
-                            text = if (customPkgs.isEmpty()) "暂无自定义包" else "共 ${customPkgs.size} 个",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        NeutralTextButton(
-                            onClick = viewModel::refreshCustom,
-                            icon = FeatherIcons.RefreshCw,
-                            text = "刷新"
-                        )
-                    }
-                    when {
-                        !containerInstalled -> {
+            run {
+                val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = TerminalCardsSpec.BorderAlpha)
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = Spacing.md)
+                        .fillMaxWidth()
+                        .border(1.dp, borderColor, RoundedCornerShape(Radius.md)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = TerminalCardsSpec.BgSoftAlpha)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = TerminalCardsSpec.Elevation),
+                    shape = RoundedCornerShape(Radius.md)
+                ) {
+                    Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                FeatherIcons.Grid,
+                                null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(Spacing.sm))
                             Text(
-                                "容器未初始化，无法查询自定义包",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = if (customPkgs.isEmpty()) "暂无自定义包" else "共 ${customPkgs.size} 个",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            NeutralTextButton(
+                                onClick = viewModel::refreshCustom,
+                                icon = FeatherIcons.RefreshCw,
+                                text = "刷新"
                             )
                         }
-                        customPkgs.isEmpty() -> {
-                            Text(
-                                "可以从上面的快捷包一键安装，或自己输入 apk 包名。常用：htop / neofetch / tmux / fzf / rsync / lf / openssh",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        else -> {
-                            Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                                customPkgs.forEach { pkg ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(DotSize.Chip)
-                                                .background(SemanticColors.Success, shape = RoundedCornerShape(50))
-                                        )
-                                        Spacer(modifier = Modifier.width(Spacing.sm))
-                                        Text(
-                                            text = pkg,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontFamily = FontFamily.Monospace,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        DangerTextButton(
-                                            onClick = { viewModel.uninstallCustom(pkg) },
-                                            enabled = customInstallState == null,
-                                            icon = FeatherIcons.Trash2,
-                                            text = "卸载"
-                                        )
+                        when {
+                            !containerInstalled -> {
+                                Text(
+                                    "容器未初始化，无法查询自定义包",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            customPkgs.isEmpty() -> {
+                                Text(
+                                    "可以从上面的快捷包一键安装，或自己输入 apk 包名。常用：htop / neofetch / tmux / fzf / rsync / lf / openssh",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            else -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                                    customPkgs.forEach { pkg ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(DotSize.Chip)
+                                                    .background(SemanticColors.Success, shape = RoundedCornerShape(50))
+                                            )
+                                            Spacer(modifier = Modifier.width(Spacing.sm))
+                                            Text(
+                                                text = pkg,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontFamily = FontFamily.Monospace,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            DangerTextButton(
+                                                onClick = { viewModel.uninstallCustom(pkg) },
+                                                enabled = customInstallState == null,
+                                                icon = FeatherIcons.Trash2,
+                                                text = "卸载"
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomInstallCard(
+    customInstallInput: String,
+    onInputChange: (String) -> Unit,
+    onInstallClick: () -> Unit,
+    containerReady: Boolean,
+    installIdle: Boolean,
+    customInstallState: BundleInstallState?
+) {
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = TerminalCardsSpec.BorderAlpha)
+    Card(
+        modifier = Modifier
+            .padding(horizontal = Spacing.md)
+            .fillMaxWidth()
+            .border(1.dp, borderColor, RoundedCornerShape(Radius.md)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = TerminalCardsSpec.Elevation),
+        shape = RoundedCornerShape(Radius.md)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                OutlinedTextField(
+                    value = customInstallInput,
+                    onValueChange = onInputChange,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    placeholder = { Text("包名空格分隔，如 htop neofetch openssh") }
+                )
+                PrimaryButton(
+                    onClick = onInstallClick,
+                    enabled = containerReady && customInstallInput.isNotBlank() && installIdle,
+                    icon = FeatherIcons.Plus,
+                    text = "安装"
+                )
+            }
+            if (customInstallState is BundleInstallState.Installing) {
+                SharedLinearProgress()
+                Text(
+                    text = "正在安装：${customInstallState.line?.take(40) ?: "准备中…"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SemanticColors.InProgress,
+                    fontFamily = FontFamily.Monospace
+                )
+            } else if (customInstallState is BundleInstallState.Failed) {
+                Text(
+                    text = "安装失败：${customInstallState.reason}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SemanticColors.Error
+                )
+            }
+            if (!containerReady) {
+                Text(
+                    text = "容器未初始化，暂不可安装自定义包",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -299,12 +327,14 @@ private fun QuickPacksChipRow(
         )
     }
     val processing = customInstallState is BundleInstallState.Installing || customInstallState is BundleInstallState.Uninstalling
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = TerminalCardsSpec.BorderAlpha)
     Card(
         modifier = Modifier
             .padding(horizontal = Spacing.md)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .border(1.dp, borderColor, RoundedCornerShape(Radius.md)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
+        elevation = CardDefaults.cardElevation(defaultElevation = TerminalCardsSpec.Elevation),
         shape = RoundedCornerShape(Radius.md)
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
