@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -29,9 +30,8 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,12 +58,13 @@ object Elevation {
 }
 
 // ──────────────────────────────────────────────
-// 统一紧凑型 TopAppBar：
-//   - 内部内容高度 40dp（标题+图标垂直居中），windowInsets 自动叠加状态栏
-//   - 不强制外部 height()，避免 Material3 TopAppBar 自动 status bar inset 被压缩
-//   - 统一背景色 surface，与 Scaffold 一致
+// 统一紧凑型 AppTopAppBar：
+//   - 与 ChatHeader 代码结构完全一致，保证高度、图标比例 100% 对齐
+//   - 背景色 surface + statusBarsPadding()
+//   - 内容行固定 height(44dp)
+//   - 导航/action 图标按钮 size(40dp)，图标 size(20dp)
+//   - 不再依赖 Material3 TopAppBar（其默认 minHeight 64dp 无法紧凑化）
 // ──────────────────────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppTopAppBar(
     title: String,
@@ -72,18 +73,18 @@ fun AppTopAppBar(
     navigationContentDescription: String? = null,
     actions: @Composable () -> Unit = {}
 ) {
-    // 核心：不强制 Modifier.height()，让 Material3 TopAppBar 自行处理 windowInsets
-    // 通过 TopAppBarDefaults.contentPaddingFor 约束内容垂直间距，实现 40dp 内容区
-    TopAppBar(
-        title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1
-            )
-        },
-        navigationIcon = {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             if (onNavigateBack != null && navigationIcon != null) {
                 IconButton(
                     onClick = onNavigateBack,
@@ -96,14 +97,21 @@ fun AppTopAppBar(
                         modifier = Modifier.size(20.dp)
                     )
                 }
+            } else {
+                Spacer(Modifier.width(Spacing.md))
             }
-        },
-        actions = { actions() },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onBackground
-        )
-    )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
+            )
+            actions()
+            Spacer(Modifier.width(Spacing.sm))
+        }
+    }
 }
 
 // ──────────────────────────────────────────────

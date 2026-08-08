@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -172,6 +173,7 @@ fun SettingsScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             AppTopAppBar(
                 title = stringResource(section.titleRes),
@@ -190,27 +192,27 @@ fun SettingsScreen(
                 when (section) {
                     SettingsSection.Providers -> IconButton(
                         onClick = { editingProvider = null; section = SettingsSection.ProviderEditor },
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.settings_add_provider), modifier = Modifier.size(20.dp))
                     }
                     SettingsSection.Mcp -> {
-                        IconButton(onClick = { viewModel.reloadMcp() }, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { viewModel.reloadMcp() }, modifier = Modifier.size(40.dp)) {
                             if (mcpReloading) {
                                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                             } else {
                                 Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_reconnect), modifier = Modifier.size(20.dp))
                             }
                         }
-                        IconButton(onClick = { editingMcp = null; showMcpDialog = true }, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { editingMcp = null; showMcpDialog = true }, modifier = Modifier.size(40.dp)) {
                             Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.settings_add_mcp_server), modifier = Modifier.size(20.dp))
                         }
                     }
-                    SettingsSection.Container -> IconButton(onClick = { showContainerAddSheet = true }, modifier = Modifier.size(36.dp)) {
+                    SettingsSection.Container -> IconButton(onClick = { showContainerAddSheet = true }, modifier = Modifier.size(40.dp)) {
                         Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.container_add_image), modifier = Modifier.size(20.dp))
                     }
                     SettingsSection.Logs -> {
-                        IconButton(onClick = { viewModel.refreshLogs() }, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { viewModel.refreshLogs() }, modifier = Modifier.size(40.dp)) {
                             Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_refresh_logs), modifier = Modifier.size(20.dp))
                         }
                     }

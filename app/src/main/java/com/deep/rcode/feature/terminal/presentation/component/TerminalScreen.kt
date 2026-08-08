@@ -83,7 +83,7 @@ fun TerminalScreen(
                 navigationIcon = FeatherIcons.ArrowLeft,
                 navigationContentDescription = stringResource(R.string.common_back)
             ) {
-                IconButton(onClick = { viewModel.reconnectActive() }, modifier = Modifier.size(36.dp)) {
+                IconButton(onClick = { viewModel.reconnectActive() }, modifier = Modifier.size(40.dp)) {
                     Icon(
                         FeatherIcons.RefreshCw,
                         contentDescription = stringResource(R.string.terminal_reconnect_tab),

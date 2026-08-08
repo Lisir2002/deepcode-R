@@ -72,11 +72,11 @@ import compose.icons.feathericons.X
 import com.deep.rcode.core.util.LogLineParser
 import com.deep.rcode.core.util.ParsedLogLine
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -124,10 +124,9 @@ internal fun LogsSection(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(Spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(Spacing.md)
     ) {
-        TabRow(selectedTabIndex = selectedTab) {
+        // 顶栏与 PrimaryTabRow 背景色同为 surface，视觉贴合为一体
+        PrimaryTabRow(selectedTabIndex = selectedTab) {
             tabs.forEachIndexed { index, title ->
                 Tab(
                     selected = selectedTab == index,
@@ -139,24 +138,31 @@ internal fun LogsSection(
                 )
             }
         }
-
-        when (selectedTab) {
-            0 -> LogLevelCard(current = currentLogLevel, onSelect = onSelectLogLevel)
-            1 -> LogViewerContent(
-                state = logViewerState,
-                onSelectFile = onSelectFile,
-                onToggleFilterPanel = onToggleFilterPanel,
-                onCloseFilterPanel = onCloseFilterPanel,
-                onSetSelectedDates = onSetSelectedDates,
-                onSetDateRangeMode = onSetDateRangeMode,
-                onSetDateRange = onSetDateRange,
-                onToggleLevel = onToggleLevel,
-                onToggleTag = onToggleTag,
-                onResetFilters = onResetFilters,
-                onSearchQuery = onSearchQuery,
-                onToggleLiveTail = onToggleLiveTail,
-                onDismissNewLogs = onDismissNewLogs
-            )
+        // 内容区：水平两侧 padding(lg)，上方 padding(md) 与 TabRow 分隔
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = Spacing.lg)
+                .padding(top = Spacing.md, bottom = Spacing.lg)
+        ) {
+            when (selectedTab) {
+                0 -> LogLevelCard(current = currentLogLevel, onSelect = onSelectLogLevel)
+                1 -> LogViewerContent(
+                    state = logViewerState,
+                    onSelectFile = onSelectFile,
+                    onToggleFilterPanel = onToggleFilterPanel,
+                    onCloseFilterPanel = onCloseFilterPanel,
+                    onSetSelectedDates = onSetSelectedDates,
+                    onSetDateRangeMode = onSetDateRangeMode,
+                    onSetDateRange = onSetDateRange,
+                    onToggleLevel = onToggleLevel,
+                    onToggleTag = onToggleTag,
+                    onResetFilters = onResetFilters,
+                    onSearchQuery = onSearchQuery,
+                    onToggleLiveTail = onToggleLiveTail,
+                    onDismissNewLogs = onDismissNewLogs
+                )
+            }
         }
     }
 }
