@@ -19,13 +19,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Button
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -33,7 +32,6 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,7 +41,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -61,7 +58,6 @@ import com.deep.rcode.feature.terminal.presentation.TerminalSettingsViewModel
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Grid
-import compose.icons.feathericons.HardDrive
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Trash2
@@ -69,8 +65,8 @@ import kotlinx.coroutines.launch
 
 /**
  * 自定义 APK 包子页面。
- *  - 顶部容器状态卡
- *  - 一键常用快捷包（htop / neofetch / openssh / rsync / fzf / tmux / lf / zsh）
+ *  - 顶部容器状态卡（INIT_ONLY 模式，有自定义包安装态显示）
+ *  - 常用快捷包 FlowRow（htop / neofetch / openssh / rsync / fzf / tmux / lf / zsh）
  *  - 自定义包名输入 + 批量安装
  *  - 已安装自定义包列表（刷新/卸载）
  */
@@ -82,14 +78,17 @@ fun TerminalCustomPackagesScreen(
 ) {
     val containerInit by viewModel.containerInit.collectAsStateWithLifecycle()
     val containerInstalled by viewModel.containerInstalled.collectAsStateWithLifecycle()
+    val storageUsedMb by viewModel.storageUsedMb.collectAsStateWithLifecycle()
     val customPkgs by viewModel.customPackages.collectAsStateWithLifecycle()
     val errorToast by viewModel.errorToast.collectAsStateWithLifecycle()
 
     // 自定义包安装/卸载状态由全局 containerInit 的 bundleId==null 推导
     //   bundleId != null → 官方 Bundle 操作；bundleId == null → 自定义包操作
     val customInstallState: BundleInstallState? = when (val p = containerInit) {
-        is ContainerInitState.BundleInstalling -> if (p.bundleId == null) BundleInstallState.Installing(line = p.line) else null
-        is ContainerInitState.BundleUninstalling -> if (p.bundleId == null) BundleInstallState.Uninstalling else null
+        is ContainerInitState.BundleInstalling ->
+            if (p.bundleId == null) BundleInstallState.Installing(line = p.line) else null
+        is ContainerInitState.BundleUninstalling ->
+            if (p.bundleId == null) BundleInstallState.Uninstalling else null
         else -> null
     }
 
@@ -125,9 +124,11 @@ fun TerminalCustomPackagesScreen(
                 .padding(vertical = Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(Spacing.lg)
         ) {
-            CustomContainerSummaryCard(
+            SharedContainerEnvCard(
                 containerInstalled = containerInstalled,
                 initProgress = containerInit,
+                storageUsedMb = storageUsedMb,
+                mode = ContainerCardMode.INIT_ONLY,
                 customInstallState = customInstallState,
                 onInit = viewModel::ensureContainerInstalled
             )
@@ -147,7 +148,7 @@ fun TerminalCustomPackagesScreen(
                 modifier = Modifier.padding(horizontal = Spacing.md),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(Radius.md)
             ) {
                 Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                     Row(
@@ -163,36 +164,29 @@ fun TerminalCustomPackagesScreen(
                             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                             placeholder = { Text("包名空格分隔，如 htop neofetch openssh") }
                         )
-                        Button(
+                        PrimaryButton(
                             onClick = {
                                 viewModel.installCustom(customInstallInput)
                                 customInstallInput = ""
                             },
-                            enabled = containerInstalled && customInstallInput.isNotBlank() && customInstallState == null
-                        ) {
-                            Icon(FeatherIcons.Plus, null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("安装")
-                        }
+                            enabled = containerInstalled && customInstallInput.isNotBlank() && customInstallState == null,
+                            icon = FeatherIcons.Plus,
+                            text = "安装"
+                        )
                     }
                     if (customInstallState is BundleInstallState.Installing) {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp),
-                            color = MaterialTheme.colorScheme.secondary
-                        )
+                        SharedLinearProgress()
                         Text(
                             text = "正在安装：${customInstallState.line?.take(40) ?: "准备中…"}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary,
+                            color = SemanticColors.InProgress,
                             fontFamily = FontFamily.Monospace
                         )
                     } else if (customInstallState is BundleInstallState.Failed) {
                         Text(
-                            text = "安装失败：${(customInstallState as BundleInstallState.Failed).reason}",
+                            text = "安装失败：${customInstallState.reason}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFFE57373)
+                            color = SemanticColors.Error
                         )
                     }
                     if (!containerInstalled) {
@@ -210,9 +204,9 @@ fun TerminalCustomPackagesScreen(
                 modifier = Modifier
                     .padding(horizontal = Spacing.md)
                     .fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = SemanticColors.ContainerAlphaSoft)),
                 elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(Radius.md)
             ) {
                 Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -228,11 +222,11 @@ fun TerminalCustomPackagesScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f)
                         )
-                        TextButton(onClick = viewModel::refreshCustom) {
-                            Icon(FeatherIcons.RefreshCw, null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("刷新", fontSize = 12.sp)
-                        }
+                        NeutralTextButton(
+                            onClick = viewModel::refreshCustom,
+                            icon = FeatherIcons.RefreshCw,
+                            text = "刷新"
+                        )
                     }
                     when {
                         !containerInstalled -> {
@@ -258,8 +252,8 @@ fun TerminalCustomPackagesScreen(
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(8.dp)
-                                                .background(Color(0xFF81C784), shape = RoundedCornerShape(50))
+                                                .size(DotSize.Chip)
+                                                .background(SemanticColors.Success, shape = RoundedCornerShape(50))
                                         )
                                         Spacer(modifier = Modifier.width(Spacing.sm))
                                         Text(
@@ -268,88 +262,17 @@ fun TerminalCustomPackagesScreen(
                                             fontFamily = FontFamily.Monospace,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        TextButton(
+                                        DangerTextButton(
                                             onClick = { viewModel.uninstallCustom(pkg) },
-                                            enabled = customInstallState == null
-                                        ) {
-                                            Icon(FeatherIcons.Trash2, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("卸载", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                                        }
+                                            enabled = customInstallState == null,
+                                            icon = FeatherIcons.Trash2,
+                                            text = "卸载"
+                                        )
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CustomContainerSummaryCard(
-    containerInstalled: Boolean,
-    initProgress: ContainerInitState,
-    customInstallState: BundleInstallState?,
-    onInit: () -> Unit
-) {
-    val statusText = when (initProgress) {
-        is ContainerInitState.Idle -> "未初始化"
-        is ContainerInitState.ExtractingRootfs -> "正在解压 rootfs…"
-        ContainerInitState.DeployingProot -> "正在部署 proot…"
-        is ContainerInitState.Ready -> {
-            if (customInstallState is BundleInstallState.Installing) "已就绪（正在安装自定义包…）"
-            else if (customInstallState is BundleInstallState.Uninstalling) "已就绪（正在卸载自定义包…）"
-            else "已就绪"
-        }
-        is ContainerInitState.BundleInstalling -> "已就绪（正在安装功能包…）"
-        is ContainerInitState.BundleUninstalling -> "已就绪（正在卸载功能包…）"
-        is ContainerInitState.Failed -> "失败：${initProgress.reason.take(20)}…"
-    }
-    val dotColor: Color = when {
-        !containerInstalled -> Color(0xFFE57373)
-        initProgress is ContainerInitState.Failed -> Color(0xFFE57373)
-        containerInstalled -> Color(0xFF81C784)
-        else -> Color(0xFFFFB74D)
-    }
-    Card(
-        modifier = Modifier
-            .padding(horizontal = Spacing.md)
-            .fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
-        shape = RoundedCornerShape(10.dp)
-    ) {
-        Column(modifier = Modifier.padding(Spacing.md)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    FeatherIcons.HardDrive,
-                    null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.width(Spacing.sm))
-                Text(text = "容器状态", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.weight(1f))
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .background(dotColor, shape = RoundedCornerShape(50))
-                )
-                Spacer(modifier = Modifier.width(Spacing.sm))
-                Text(
-                    text = statusText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (!containerInstalled) {
-                Spacer(modifier = Modifier.height(Spacing.sm))
-                Button(onClick = onInit) {
-                    Icon(FeatherIcons.Plus, null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("初始化容器")
                 }
             }
         }
@@ -382,7 +305,7 @@ private fun QuickPacksChipRow(
             .fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1),
-        shape = RoundedCornerShape(10.dp)
+        shape = RoundedCornerShape(Radius.md)
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
             Text(
@@ -391,25 +314,34 @@ private fun QuickPacksChipRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(Spacing.sm))
-            androidx.compose.foundation.layout.FlowRow(
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
                 quickPacks.forEach { (label, pkgs) ->
                     val already = pkgs.all { it in installed }
-                    androidx.compose.material3.AssistChip(
+                    AssistChip(
                         onClick = { onInstall(pkgs) },
                         enabled = containerReady && !processing && !already,
                         leadingIcon = {
-                            if (already) {
-                                Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
-                            } else if (processing) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(FeatherIcons.Plus, null, modifier = Modifier.size(16.dp))
+                            when {
+                                already -> Icon(
+                                    Icons.Default.Check,
+                                    null,
+                                    modifier = Modifier.size(ButtonSpec.ChipIndicatorSize)
+                                )
+                                processing -> CircularProgressIndicator(
+                                    modifier = Modifier.size(ButtonSpec.ChipIndicatorSize),
+                                    strokeWidth = 2.dp
+                                )
+                                else -> Icon(
+                                    FeatherIcons.Plus,
+                                    null,
+                                    modifier = Modifier.size(ButtonSpec.ChipIndicatorSize)
+                                )
                             }
                         },
-                        label = { Text(label, fontSize = 12.sp) }
+                        label = { Text(label, fontSize = ButtonSpec.TextFontSize) }
                     )
                 }
             }
