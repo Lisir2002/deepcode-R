@@ -245,12 +245,11 @@ fun TerminalScreen(
                         TerminalFirstRunBanner(
                             banner = b,
                             onGoSettings = onNavigateToSettings,
-                            onInstallPython = {
-                                // 「立即装 Python」先跳到终端设置页，用户可一键装组合或单个 Python
-                                onNavigateToSettings()
-                            },
+                            onInstallRecommended = { viewModel.installAiRecommended() },
+                            onInitContainer = { viewModel.prepare() },
                             onDismiss = viewModel::dismissFirstRunBanner
                         )
+                        Spacer(modifier = Modifier.height(TerminalLayout.sectionSpacingV))
                     }
 
                     TabBar(
@@ -262,6 +261,7 @@ fun TerminalScreen(
                         onNew = { viewModel.newTab() },
                         onTabLongPress = { tab -> showTabLongPressMenu = tab }
                     )
+                    Spacer(modifier = Modifier.height(TerminalLayout.sectionSpacingV))
 
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         val active = tabs.firstOrNull { it.id == activeTabId }
@@ -410,29 +410,34 @@ private fun performClearScreen(tabs: List<TerminalTab>, activeId: String?, vm: T
 
 // ================================================================
 // Banner：容器未初始化 / Python 未装 首屏提示
+//  统一使用 TerminalLayout / SemanticColors / Shared* 按钮组件规格
 // ================================================================
 @Composable
 private fun TerminalFirstRunBanner(
     banner: TerminalViewModel.BannerType,
     onGoSettings: () -> Unit,
-    onInstallPython: () -> Unit,
+    onInstallRecommended: () -> Unit,
+    onInitContainer: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val (title, desc, accentColor, showInstallBtn) = when (banner) {
-        TerminalViewModel.BannerType.ContainerNotInstalled ->
-            listOf(
-                "本地容器还未初始化",
-                "容器未就绪时仅可使用手机原生 shell（命令较少）。\n点下方「初始化环境」解锁 Alpine Linux + PRoot 以及 Python / Node / Git 等 6 大功能包。",
-                Color(0xFFFF8A65),
-                false
-            )
-        TerminalViewModel.BannerType.PythonMissing ->
-            listOf(
-                "AI 代码运行需要 Python",
-                "AI 的「Run Code / Search / git diff」依赖 Python 运行时。建议先一键安装 AI 推荐组合。",
-                Color(0xFF42A5F5),
-                true
-            )
+    val accentColor: Color = when (banner) {
+        TerminalViewModel.BannerType.ContainerNotInstalled -> TerminalBannerSpec.ContainerAccent
+        TerminalViewModel.BannerType.PythonMissing -> TerminalBannerSpec.pythonAccent(MaterialTheme.colorScheme.secondary)
+    }
+    val title: String
+    val desc: String
+    val showDismiss: Boolean
+    when (banner) {
+        TerminalViewModel.BannerType.ContainerNotInstalled -> {
+            title = "本地容器还未初始化"
+            desc = "容器未就绪时仅可使用手机原生 shell（命令较少）。\n点下方「初始化环境」解锁 Alpine Linux + PRoot 以及 Python / Node / Git 等 6 大功能包。"
+            showDismiss = false
+        }
+        TerminalViewModel.BannerType.PythonMissing -> {
+            title = "AI 代码运行需要 Python"
+            desc = "AI 的「Run Code / Search / git diff」依赖 Python 运行时。建议先一键安装 AI 推荐组合。"
+            showDismiss = true
+        }
     }
 
     Card(
@@ -440,53 +445,77 @@ private fun TerminalFirstRunBanner(
             .padding(horizontal = Spacing.md, vertical = Spacing.sm)
             .fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = (accentColor as Color).copy(alpha = 0.12f)
+            containerColor = accentColor.copy(alpha = SemanticColors.ContainerAlphaSoft)
         ),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(Radius.md),
         elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1)
     ) {
-        Column(modifier = Modifier.padding(Spacing.md)) {
+        Column(modifier = Modifier.padding(TerminalLayout.bannerInnerPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier
-                    .size(10.dp)
-                    .background(accentColor as Color, shape = RoundedCornerShape(50)))
+                Box(
+                    modifier = Modifier
+                        .size(TerminalLayout.accentDotSize)
+                        .background(accentColor, shape = RoundedCornerShape(50))
+                )
                 Spacer(modifier = Modifier.width(Spacing.sm))
                 Text(
-                    text = title as String,
+                    text = title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.weight(1f))
-                // 暂不提醒（仅 PythonMissing 显示；容器未初始化强制提示直到安装好）
-                if (banner == TerminalViewModel.BannerType.PythonMissing) {
-                    TextButton(onClick = onDismiss, modifier = Modifier.height(32.dp)) {
-                        Text("暂不提醒", fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (showDismiss) {
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.height(ButtonSpec.Height)
+                    ) {
+                        Text(
+                            "暂不提醒",
+                            fontSize = ButtonSpec.TextFontSize,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
             Spacer(modifier = Modifier.height(Spacing.xs))
             Text(
-                text = desc as String,
+                text = desc,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(Spacing.sm))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                Button(onClick = onGoSettings, modifier = Modifier.height(36.dp)) {
-                    Icon(FeatherIcons.Settings, null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(if (showInstallBtn as Boolean) "去终端设置" else "初始化环境", fontSize = 13.sp)
-                }
-                if (showInstallBtn as Boolean) {
-                    OutlinedButton(onClick = onInstallPython, modifier = Modifier.height(36.dp)) {
-                        Icon(FeatherIcons.Cpu, null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("立即装 Python", fontSize = 13.sp)
+                when (banner) {
+                    TerminalViewModel.BannerType.ContainerNotInstalled -> {
+                        // 主按钮：初始化容器
+                        PrimaryButton(
+                            onClick = onInitContainer,
+                            icon = FeatherIcons.Plus,
+                            text = "初始化环境"
+                        )
+                        // 次按钮：跳设置
+                        SecondaryButton(
+                            onClick = onGoSettings,
+                            icon = FeatherIcons.Settings,
+                            text = "去终端设置"
+                        )
+                    }
+                    TerminalViewModel.BannerType.PythonMissing -> {
+                        // 主按钮：立即装 AI 推荐组合（以前居然是跳转，现在直接装）
+                        PrimaryButton(
+                            onClick = onInstallRecommended,
+                            icon = FeatherIcons.Cpu,
+                            text = "立即装 Python"
+                        )
+                        // 次按钮：跳设置（想看其他包的时候走这里）
+                        SecondaryButton(
+                            onClick = onGoSettings,
+                            icon = FeatherIcons.Settings,
+                            text = "去终端设置"
+                        )
                     }
                 }
             }
-            // 容器未初始化时的原生 shell 说明
             if (banner == TerminalViewModel.BannerType.ContainerNotInstalled) {
                 Spacer(modifier = Modifier.height(Spacing.sm))
                 Text(

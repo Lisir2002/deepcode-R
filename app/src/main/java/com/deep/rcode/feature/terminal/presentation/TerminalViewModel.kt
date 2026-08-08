@@ -7,8 +7,9 @@ import com.deep.rcode.feature.agent.domain.container.ContainerInitState
 import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
 import com.deep.rcode.feature.settings.data.repository.ExecutionMode
 import com.deep.rcode.feature.settings.data.repository.ExecutionModeHolder
-import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
 import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundles
 import com.deep.rcode.feature.terminal.data.repository.TerminalBundleRepository
 import com.deep.rcode.feature.terminal.data.repository.TerminalFontSizes
 import com.deep.rcode.feature.terminal.data.repository.TerminalSettingsRepository
@@ -16,6 +17,7 @@ import com.deep.rcode.feature.terminal.domain.RemoteTerminalSessionManager
 import com.deep.rcode.feature.terminal.domain.TerminalSessionManager
 import com.deep.rcode.feature.terminal.presentation.component.TerminalKeyModifiers
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -133,6 +135,19 @@ class TerminalViewModel @Inject constructor(
     /** 用户 Banner 上「暂不提醒」。 */
     fun dismissFirstRunBanner() {
         viewModelScope.launch { settingsRepo.saveFirstRunBannerDismissed(true) }
+    }
+
+    /**
+     * 从终端页一键「立即装 AI 推荐组合」（Python + rg + Git + Bash + Net）。
+     * 容器未初始化时先 ensureInstalled。完成后 currentBanner 自动变为 null。
+     */
+    fun installAiRecommended() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                if (!containerInstalled.value) containerEngine.ensureInstalled()
+                containerEngine.installBundlesOrdered(TerminalBundles.AI_RECOMMENDED_IDS)
+            }.onFailure { _errorToast.value = (it.message ?: "安装 AI 推荐组合失败") }
+        }
     }
 
     /** 用户错误提示流（Toast/Snackbar 消费）。 */

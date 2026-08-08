@@ -3,7 +3,13 @@ package com.deep.rcode.feature.terminal.presentation.component
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.deep.rcode.feature.terminal.data.repository.TerminalSettingsRepository
+import com.deep.rcode.feature.terminal.data.repository.TerminalTheme
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 /**
  * 把 Compose Color 转成 Android 标准 0xAARRGGBB Int（TerminalView 调色板格式）。
@@ -17,94 +23,104 @@ private fun Color.toArgbInt(): Int {
 }
 
 /**
- * 终端 16 色调色板 + 外层容器背景。
- *
- * 两种预设：
- *  - 暗色主题：深色背景（仿 Dracula-ish 色），与 Termux 16 色标准配合
- *  - 浅色主题：柔和米白背景，前景高对比，避免浅色主题下整个终端一大块突兀的纯黑
+ * 终端 16 色调色板 + 外层容器背景 + defaultFg/defaultBg/cursor。
+ *  直接吃 TerminalViewTheme，这样颜色定义只有一份（TerminalUISpec.kt），一改全改。
+ *  再也不会出现"米白背景 + Dracula 前景"的反色 bug。
  */
 @Immutable
 data class TerminalPalette(
     val containerBg: Color,
-    val foreground: Color,
+    val defaultForeground: Color,
+    val defaultBackground: Color,
     val cursorColor: Color,
     val selectionBg: Color,
-    // ANSI 16 色（index 0..15），传给 TerminalView 的 mColors 映射
+    /** ANSI 16 色：index 0..15 严格对应 Termux mColors 结构 */
     val ansi: List<Color>
 ) {
-    /** 把调色板编码成 Termux TerminalView 需要的 int[16]。 */
-    fun toAnsiIntArray(): IntArray = IntArray(16) { i ->
-        ansi[i].toArgbInt()
+    fun toAnsiIntArray(): IntArray = IntArray(16) { i -> ansi[i].toArgbInt() }
+
+    val defaultForegroundInt: Int get() = defaultForeground.toArgbInt()
+    val defaultBackgroundInt: Int get() = defaultBackground.toArgbInt()
+    val cursorInt: Int get() = cursorColor.toArgbInt()
+}
+
+private fun buildAnsi(
+    black: Color, red: Color, green: Color, yellow: Color,
+    blue: Color, magenta: Color, cyan: Color, white: Color,
+    brightBlack: Color, brightRed: Color, brightGreen: Color, brightYellow: Color,
+    brightBlue: Color, brightMagenta: Color, brightCyan: Color, brightWhite: Color
+): List<Color> = listOf(
+    black, red, green, yellow, blue, magenta, cyan, white,
+    brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite
+)
+
+val DraculaTerminalPalette: TerminalPalette = run {
+    val d = TerminalViewTheme.Dracula
+    TerminalPalette(
+        containerBg = d.background,
+        defaultForeground = d.foreground,
+        defaultBackground = d.background,
+        cursorColor = d.cursor,
+        selectionBg = d.selection,
+        ansi = buildAnsi(
+            d.black, d.red, d.green, d.yellow, d.blue, d.magenta, d.cyan, d.white,
+            d.brightBlack, d.brightRed, d.brightGreen, d.brightYellow, d.brightBlue, d.brightMagenta, d.brightCyan, d.brightWhite
+        )
+    )
+}
+
+val SolarizedTerminalPalette: TerminalPalette = run {
+    val l = TerminalViewTheme.SolarizedLight
+    TerminalPalette(
+        containerBg = l.background,
+        defaultForeground = l.foreground,
+        defaultBackground = l.background,
+        cursorColor = l.cursor,
+        selectionBg = l.selection,
+        ansi = buildAnsi(
+            l.black, l.red, l.green, l.yellow, l.blue, l.magenta, l.cyan, l.white,
+            l.brightBlack, l.brightRed, l.brightGreen, l.brightYellow, l.brightBlue, l.brightMagenta, l.brightCyan, l.brightWhite
+        )
+    )
+}
+
+/**
+ * 选主题：
+ *  - 用户 TerminalTheme.DRACULA_DARK → 强制 Dracula
+ *  - 用户 TerminalTheme.SOLARIZED_LIGHT → 强制 SolarizedLight
+ *  - 用户 TerminalTheme.SYSTEM → 跟随系统 isSystemInDarkTheme
+ */
+@Composable
+fun rememberTerminalPalette(
+    settingsRepo: TerminalSettingsRepository = hiltRepo()
+): TerminalPalette {
+    val theme: TerminalTheme by settingsRepo.themeFlow.collectAsStateWithLifecycle(initialValue = TerminalTheme.SYSTEM)
+    return when (theme) {
+        TerminalTheme.DRACULA_DARK -> DraculaTerminalPalette
+        TerminalTheme.SOLARIZED_LIGHT -> SolarizedTerminalPalette
+        TerminalTheme.SYSTEM -> if (isSystemInDarkTheme()) DraculaTerminalPalette else SolarizedTerminalPalette
     }
 }
 
-private val AnsiDark = listOf(
-    // 0-7 普通（略暗）
-    Color(0xFF21222C), // Black
-    Color(0xFFFF5555), // Red
-    Color(0xFF50FA7B), // Green
-    Color(0xFFF1FA8C), // Yellow
-    Color(0xFFBD93F9), // Blue
-    Color(0xFFFF79C6), // Magenta
-    Color(0xFF8BE9FD), // Cyan
-    Color(0xFFF8F8F2), // White
-    // 8-15 高亮（更亮）
-    Color(0xFF6272A4), // Bright Black
-    Color(0xFFFF6E6E), // Bright Red
-    Color(0xFF69FF94), // Bright Green
-    Color(0xFFFFF59E), // Bright Yellow
-    Color(0xFFD6ACFF), // Bright Blue
-    Color(0xFFFF92DF), // Bright Magenta
-    Color(0xFFA4FFFF), // Bright Cyan
-    Color(0xFFFFFFFF)  // Bright White
-)
-
-private val AnsiLight = listOf(
-    // 浅色终端适配：整体偏饱和的深色，保证在米白背景上可读
-    Color(0xFF1F2937), // Black
-    Color(0xFFDC2626), // Red
-    Color(0xFF16A34A), // Green
-    Color(0xFFCA8A04), // Yellow
-    Color(0xFF2563EB), // Blue
-    Color(0xFFDB2777), // Magenta
-    Color(0xFF0891B2), // Cyan
-    Color(0xFF4B5563), // White (dim foreground)
-    // 高亮
-    Color(0xFF6B7280), // Bright Black
-    Color(0xFFB91C1C), // Bright Red
-    Color(0xFF15803D), // Bright Green
-    Color(0xFFA16207), // Bright Yellow
-    Color(0xFF1D4ED8), // Bright Blue
-    Color(0xFFBE185D), // Bright Magenta
-    Color(0xFF0E7490), // Bright Cyan
-    Color(0xFF111827)  // Bright White (high-contrast foreground)
-)
-
-val DarkTerminalPalette = TerminalPalette(
-    containerBg = Color(0xFF14141A),
-    foreground = Color(0xFFF8F8F2),
-    cursorColor = Color(0xFFF8F8F2),
-    selectionBg = Color(0xFF44475A),
-    ansi = AnsiDark
-)
-
-val LightTerminalPalette = TerminalPalette(
-    containerBg = Color(0xFFF7F5F1),  // 米白，不纯白，减少眩光
-    foreground = Color(0xFF1F2937),
-    cursorColor = Color(0xFF2563EB),
-    selectionBg = Color(0xFFBFDBFE),
-    ansi = AnsiLight
-)
-
+/** 通过 Hilt EntryPoint 从 @ApplicationContext 拿 TerminalSettingsRepository（避免每处都要 VM 传参）。 */
 @Composable
-fun rememberTerminalPalette(): TerminalPalette {
-    // 与 Material3 主题同步：深色用 Dracula-ish，浅色用米白高对比
-    return if (isSystemInDarkTheme()) DarkTerminalPalette else LightTerminalPalette
+private fun hiltRepo(): TerminalSettingsRepository {
+    val ctx = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val entryPoint = EntryPointAccessors.fromApplication(
+        ctx,
+        TerminalPaletteEntryPoint::class.java
+    )
+    return entryPoint.terminalSettingsRepository()
 }
 
-/** 供 ViewModel 直接查询（非 Compose 线程下）：读取 Theme 中 isSystemInDarkTheme 用 MaterialTheme.colorScheme.surface 的明度判断。 */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface TerminalPaletteEntryPoint {
+    fun terminalSettingsRepository(): TerminalSettingsRepository
+}
+
+/** 辅助：Compose Color 明度判断（避免未来又出现 light theme 上用浅前景）。 */
 fun isDarkSurface(bgColor: Color): Boolean {
-    // Luma 判断
     val luma = 0.299 * (bgColor.red * 255) +
             0.587 * (bgColor.green * 255) +
             0.114 * (bgColor.blue * 255)

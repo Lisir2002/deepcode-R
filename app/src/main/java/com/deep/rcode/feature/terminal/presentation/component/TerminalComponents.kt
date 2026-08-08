@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -124,9 +125,9 @@ fun TabBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp)  // TabChip 40dp + 上下 6dp padding = 52dp
+                .height(TerminalLayout.tabHeight + Spacing.sm)  // 内容 + 上下间距
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.sm, vertical = 6.dp),
+                .padding(horizontal = Spacing.sm, vertical = Spacing.xs + 2.dp),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -140,10 +141,10 @@ fun TabBar(
                     onLongPress = { onTabLongPress(tab) }
                 )
             }
-            // 新建按钮：与 TabChip 一致的触摸区域与视觉
+            // 新建按钮：尺寸统一 TerminalLayout.newTabButtonSize；图标严格居中
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(TerminalLayout.newTabButtonSize)
                     .clip(RoundedCornerShape(Radius.md))
                     .background(MaterialTheme.colorScheme.surface)
                     .border(
@@ -158,7 +159,9 @@ fun TabBar(
                     FeatherIcons.Plus,
                     contentDescription = stringResource(R.string.common_new_tab),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier
+                        .size(20.dp)
+                        .align(Alignment.Center)
                 )
             }
         }
@@ -182,14 +185,13 @@ private fun TabChip(
     val dot = when {
         !running -> MaterialTheme.colorScheme.outline
         tab.isBackground -> MaterialTheme.colorScheme.tertiary
-        else -> Color(0xFF22C55E)
+        else -> SemanticColors.Success
     }
     val closeTint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
 
     Box(
         modifier = Modifier
-            .height(40.dp)
-            .wrapContentHeight(Alignment.CenterVertically)
+            .height(TerminalLayout.tabHeight)
             .clip(RoundedCornerShape(Radius.md))
             .background(bg)
             .border(1.dp, borderColor, RoundedCornerShape(Radius.md))
@@ -197,11 +199,12 @@ private fun TabChip(
                 onClick = onClick,
                 onLongClick = onLongPress
             )
-            .padding(horizontal = Spacing.md),
+            .padding(horizontal = TerminalLayout.tabHorizontalPadding),
+        contentAlignment = Alignment.Center
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.CenterHorizontally)
+            horizontalArrangement = Arrangement.spacedBy(TerminalLayout.tabItemSpacingH, Alignment.CenterHorizontally)
         ) {
             BadgedBox(
                 badge = {
@@ -214,10 +217,10 @@ private fun TabChip(
                     }
                 }
             ) {
-                // 状态点：8dp
+                // 状态点：DotSize.Chip = 8dp，严格居中
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(DotSize.Chip)
                         .clip(CircleShape)
                         .background(dot)
                 )
@@ -235,6 +238,7 @@ private fun TabChip(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .width(100.dp)
+                    .wrapContentWidth(Alignment.Start)
                     .align(Alignment.CenterVertically)
             )
             Box(
@@ -293,12 +297,10 @@ fun TerminalSurface(
             val px = (fontSizeSp * d).toInt()
             view.setTextSize(px)
             appliedPx = px
-            // 主题调色板：Termux 内部颜色数组
-            runCatching {
-                val colorField = com.termux.view.TerminalView::class.java.getDeclaredField("mColors")
-                colorField.isAccessible = true
-                colorField.set(view, palette.toAnsiIntArray())
-            }
+            // 主题调色板：Termux 内部颜色数组 + 强制设置 Emulator 的 fg/bg/cursor，
+            // 彻底修复"米白背景 + Dracula 白色前景"的反色 bug
+            applyTerminalPalette(palette, view)
+
             view.setTerminalViewClient(
                 AppTerminalViewClient(
                     context = ctx,
@@ -315,6 +317,8 @@ fun TerminalSurface(
             view.isFocusableInTouchMode = true
             tab.view = view
             view.attachSession(tab.session)
+            // 每次 attach 后再应用一次颜色：session/emulator 会把默认前景带过来
+            applyTerminalPalette(palette, view)
             view.onScreenUpdated()
             view.requestFocus()
             // 挂载后主动弹起软键盘
@@ -333,6 +337,9 @@ fun TerminalSurface(
                 appliedPx = px
                 view.onScreenUpdated()
             }
+            // 主题变更时（用户改 TerminalTheme）需要立刻重新应用（palette 作为 key）
+            applyTerminalPalette(palette, view)
+            view.onScreenUpdated()
         },
         onRelease = { view ->
             if (tab.view === view) tab.view = null
@@ -340,8 +347,54 @@ fun TerminalSurface(
     )
 }
 
+/**
+ * 一次性把 TerminalPalette 应用到 Termux TerminalView：
+ *  1) view.setBackgroundColor：外层 View 背景（和 Modifier.background 对应，避免合成时透出系统色）
+ *  2) mColors[16]：Termux 内部 16 色调色板
+ *  3) Emulator.defaultFgColor / defaultBgColor / cursorForeColor：这是终端"提示符/正文默认字色"，
+ *     之前**完全没设置**，就会在米白 containerBg 上仍使用 Termux 默认白前景 = 反色 bug 的根因。
+ *  所有操作都 runCatching：即使反射失败也不崩，只是退回默认色。
+ */
+private fun applyTerminalPalette(palette: TerminalPalette, view: com.termux.view.TerminalView) {
+    runCatching {
+        // 1) View 级背景
+        view.setBackgroundColor(palette.defaultBackgroundInt)
+        // 2) mColors[16]
+        val mColorsField = com.termux.view.TerminalView::class.java
+            .getDeclaredField("mColors").apply { isAccessible = true }
+        mColorsField.set(view, palette.toAnsiIntArray())
+        // 3) Emulator
+        val emField = com.termux.view.TerminalView::class.java
+            .getDeclaredField("mEmulator").apply { isAccessible = true }
+        val emulator = emField.get(view) ?: return@runCatching
+        val emulatorClass = emulator.javaClass
+        runCatching {
+            emulatorClass.getMethod("setDefaultFgColor", Int::class.javaPrimitiveType as Class<*>)
+                .invoke(emulator, palette.defaultForegroundInt)
+        }
+        runCatching {
+            emulatorClass.getMethod("setDefaultBgColor", Int::class.javaPrimitiveType as Class<*>)
+                .invoke(emulator, palette.defaultBackgroundInt)
+        }
+        runCatching {
+            emulatorClass.getMethod("setCursorForeColor", Int::class.javaPrimitiveType as Class<*>)
+                .invoke(emulator, palette.cursorInt)
+        }
+        // 兼容：如果 Termux 内部没有上述公开 setter，直接暴力反射字段
+        fun setIfExists(cl: Class<*>, name: String, value: Int) = runCatching {
+            val f = cl.getDeclaredField(name).apply { isAccessible = true }
+            f.setInt(emulator, value)
+        }
+        setIfExists(emulatorClass, "mDefaultFgColor", palette.defaultForegroundInt)
+        setIfExists(emulatorClass, "mDefaultBgColor", palette.defaultBackgroundInt)
+        setIfExists(emulatorClass, "mCursorForeColor", palette.cursorInt)
+    }
+}
+
 // ──────────────────────────────────────────────────────────
 // 扩展按键行：简洁档/完整档切换
+//   简洁档：两行，不再水平滚动导致 → 方向键被截断
+//   完整档：保留 horizontalScroll，适合在小屏滚动
 // ──────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -350,72 +403,122 @@ fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean) {
         color = MaterialTheme.colorScheme.surface,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-            ) {
-                CtrlChipWithTooltip(viewModel)
-                KeyChip("Esc") { viewModel.write("\u001B") }
-                KeyChip("Tab") { viewModel.write("\t") }
-                KeyChip("←") { viewModel.write("\u001B[D") }
-                KeyChip("↑") { viewModel.write("\u001B[A") }
-                KeyChip("↓") { viewModel.write("\u001B[B") }
-                KeyChip("→") { viewModel.write("\u001B[C") }
-                KeyChip("C-c") { viewModel.writeBytes(0x03) }
-                KeyChip("C-d") { viewModel.writeBytes(0x04) }
-                if (full) {
+        Column(
+            modifier = Modifier.padding(
+                horizontal = Spacing.md,
+                vertical = TerminalLayout.keyRowPaddingV
+            ),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+        ) {
+            if (full) {
+                // 完整档：所有键一条水平滚动带，右侧"简洁"切换
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CtrlChipWithTooltip(viewModel)
                     AltChipWithTooltip(viewModel)
+                    KeyChip("Esc") { viewModel.write("\u001B") }
+                    KeyChip("Tab") { viewModel.write("\t") }
+                    KeyChip("←") { viewModel.write("\u001B[D") }
+                    KeyChip("↑") { viewModel.write("\u001B[A") }
+                    KeyChip("↓") { viewModel.write("\u001B[B") }
+                    KeyChip("→") { viewModel.write("\u001B[C") }
                     KeyChip("Home") { viewModel.write("\u001B[H") }
                     KeyChip("End") { viewModel.write("\u001B[F") }
                     KeyChip("PgUp") { viewModel.write("\u001B[5~") }
                     KeyChip("PgDn") { viewModel.write("\u001B[6~") }
                     KeyChip("Ins") { viewModel.write("\u001B[2~") }
                     KeyChip("Del") { viewModel.write("\u007F") }
+                    KeyChip("C-c") { viewModel.writeBytes(0x03) }
+                    KeyChip("C-d") { viewModel.writeBytes(0x04) }
                     KeyChip("C-z") { viewModel.writeBytes(0x1A) }
                     KeyChip("C-l") { viewModel.writeBytes(0x0C) }
                     KeyChip("~") { viewModel.write("~") }
+                    KeyChip("/") { viewModel.write("/") }
+                    KeyChip("-") { viewModel.write("-") }
+                    CompactFullSwitcher(
+                        full = full,
+                        onClick = viewModel::toggleFullExtraKeys
+                    )
                 }
-                KeyChip("/") { viewModel.write("/") }
-                KeyChip("-") { viewModel.write("-") }
-                // 末尾切换简洁/完整档按钮
-                Box(
-                    modifier = Modifier
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(Radius.md))
-                        .border(
-                            1.dp,
-                            if (full) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                            RoundedCornerShape(Radius.md)
-                        )
-                        .background(
-                            if (full) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                        )
-                        .combinedClickable(onClick = { viewModel.toggleFullExtraKeys() })
-                        .padding(horizontal = Spacing.sm),
-                    contentAlignment = Alignment.Center
+            } else {
+                // 简洁档 = 两行，每一行都有可视边界，避免把 → 方向键截掉一半
+                // 第一行：Ctrl Esc Tab / -
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Icon(
-                            FeatherIcons.Grid,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = if (full) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = if (full) "完整" else "简洁",
-                            fontSize = 12.sp,
-                            color = if (full) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                    CtrlChipWithTooltip(viewModel)
+                    KeyChip("Esc") { viewModel.write("\u001B") }
+                    KeyChip("Tab") { viewModel.write("\t") }
+                    KeyChip("/") { viewModel.write("/") }
+                    KeyChip("-") { viewModel.write("-") }
+                    KeyChip("C-c") { viewModel.writeBytes(0x03) }
+                    KeyChip("C-d") { viewModel.writeBytes(0x04) }
+                    Spacer(modifier = Modifier.weight(1f))
+                    CompactFullSwitcher(
+                        full = false,
+                        onClick = viewModel::toggleFullExtraKeys
+                    )
+                }
+                // 第二行：← ↑ ↓ → 4 方向键 + C-l / C-z
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    KeyChip("←") { viewModel.write("\u001B[D") }
+                    KeyChip("↑") { viewModel.write("\u001B[A") }
+                    KeyChip("↓") { viewModel.write("\u001B[B") }
+                    KeyChip("→") { viewModel.write("\u001B[C") }
+                    KeyChip("C-z") { viewModel.writeBytes(0x1A) }
+                    KeyChip("C-l") { viewModel.writeBytes(0x0C) }
                 }
             }
+        }
+    }
+}
+
+/** "简洁 ↔ 完整" 切换按钮，单独提出来避免写重复 */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .height(TerminalLayout.keyHeight)
+            .clip(RoundedCornerShape(TerminalLayout.keyRadius))
+            .border(
+                1.dp,
+                if (full) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                RoundedCornerShape(TerminalLayout.keyRadius)
+            )
+            .background(
+                if (full) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+            )
+            .combinedClickable(onClick = onClick)
+            .padding(horizontal = Spacing.sm),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Icon(
+                FeatherIcons.Grid,
+                contentDescription = null,
+                modifier = Modifier.size(ButtonSpec.ChipIndicatorSize),
+                tint = if (full) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = if (full) "完整" else "简洁",
+                fontSize = 12.sp,
+                color = if (full) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -470,13 +573,13 @@ private fun KeyChip(label: String, active: Boolean = false, onClick: () -> Unit)
     val fg = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     Box(
         modifier = Modifier
-            .height(40.dp)
-            .then(if (label.length <= 1) Modifier.width(44.dp) else Modifier)
-            .clip(RoundedCornerShape(Radius.md))
+            .height(TerminalLayout.keyHeight)
+            .then(if (label.length <= 1) Modifier.width(TerminalLayout.keyShortWidth) else Modifier)
+            .clip(RoundedCornerShape(TerminalLayout.keyRadius))
             .background(bg)
-            .border(1.dp, borderColor, RoundedCornerShape(Radius.md))
+            .border(1.dp, borderColor, RoundedCornerShape(TerminalLayout.keyRadius))
             .combinedClickable(onClick = onClick)
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = Spacing.sm),
         contentAlignment = Alignment.Center
     ) {
         Text(
