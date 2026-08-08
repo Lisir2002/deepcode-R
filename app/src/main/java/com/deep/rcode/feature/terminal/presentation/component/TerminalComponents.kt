@@ -395,6 +395,8 @@ private fun applyTerminalPalette(palette: TerminalPalette, view: com.termux.view
 // 扩展按键行：简洁档/完整档切换
 //   简洁档：两行，不再水平滚动导致 → 方向键被截断
 //   完整档：保留 horizontalScroll，适合在小屏滚动
+//  —— 关键架构修复：切换按钮固定宽度 + 放在滚动区外面，
+//     避免窄屏上左侧 chip 过多把切换按钮挤出可视区（clip）。
 // ──────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -411,62 +413,75 @@ fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean) {
             verticalArrangement = Arrangement.spacedBy(Spacing.xs)
         ) {
             if (full) {
-                // 完整档：所有键一条水平滚动带，右侧"简洁"切换
+                // ── 完整档：Row1 = [滚动键区(weight 1f)] + [切换按钮(固定宽度)] ──
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CtrlChipWithTooltip(viewModel)
-                    AltChipWithTooltip(viewModel)
-                    KeyChip("Esc") { viewModel.write("\u001B") }
-                    KeyChip("Tab") { viewModel.write("\t") }
-                    KeyChip("←") { viewModel.write("\u001B[D") }
-                    KeyChip("↑") { viewModel.write("\u001B[A") }
-                    KeyChip("↓") { viewModel.write("\u001B[B") }
-                    KeyChip("→") { viewModel.write("\u001B[C") }
-                    KeyChip("Home") { viewModel.write("\u001B[H") }
-                    KeyChip("End") { viewModel.write("\u001B[F") }
-                    KeyChip("PgUp") { viewModel.write("\u001B[5~") }
-                    KeyChip("PgDn") { viewModel.write("\u001B[6~") }
-                    KeyChip("Ins") { viewModel.write("\u001B[2~") }
-                    KeyChip("Del") { viewModel.write("\u007F") }
-                    KeyChip("C-c") { viewModel.writeBytes(0x03) }
-                    KeyChip("C-d") { viewModel.writeBytes(0x04) }
-                    KeyChip("C-z") { viewModel.writeBytes(0x1A) }
-                    KeyChip("C-l") { viewModel.writeBytes(0x0C) }
-                    KeyChip("~") { viewModel.write("~") }
-                    KeyChip("/") { viewModel.write("/") }
-                    KeyChip("-") { viewModel.write("-") }
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)   // ← 键区占满剩余宽度，不会挤压右侧切换按钮
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CtrlChipWithTooltip(viewModel)
+                        AltChipWithTooltip(viewModel)
+                        KeyChip("Esc") { viewModel.write("\u001B") }
+                        KeyChip("Tab") { viewModel.write("\t") }
+                        KeyChip("←") { viewModel.write("\u001B[D") }
+                        KeyChip("↑") { viewModel.write("\u001B[A") }
+                        KeyChip("↓") { viewModel.write("\u001B[B") }
+                        KeyChip("→") { viewModel.write("\u001B[C") }
+                        KeyChip("Home") { viewModel.write("\u001B[H") }
+                        KeyChip("End") { viewModel.write("\u001B[F") }
+                        KeyChip("PgUp") { viewModel.write("\u001B[5~") }
+                        KeyChip("PgDn") { viewModel.write("\u001B[6~") }
+                        KeyChip("Ins") { viewModel.write("\u001B[2~") }
+                        KeyChip("Del") { viewModel.write("\u007F") }
+                        KeyChip("C-c") { viewModel.writeBytes(0x03) }
+                        KeyChip("C-d") { viewModel.writeBytes(0x04) }
+                        KeyChip("C-z") { viewModel.writeBytes(0x1A) }
+                        KeyChip("C-l") { viewModel.writeBytes(0x0C) }
+                        KeyChip("~") { viewModel.write("~") }
+                        KeyChip("/") { viewModel.write("/") }
+                        KeyChip("-") { viewModel.write("-") }
+                    }
+                    // 切换按钮：固定宽度 72dp，始终可见，不被滚动
                     CompactFullSwitcher(
                         full = full,
                         onClick = viewModel::toggleFullExtraKeys
                     )
                 }
             } else {
-                // 简洁档 = 两行，每一行都有可视边界，避免把 → 方向键截掉一半
-                // 第一行：Ctrl Esc Tab / -
+                // ── 简洁档 = 两行 ──
+                // Row1：[Ctrl Esc Tab / - C-c C-d](weight 1f) + [切换按钮(固定 72dp)]
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CtrlChipWithTooltip(viewModel)
-                    KeyChip("Esc") { viewModel.write("\u001B") }
-                    KeyChip("Tab") { viewModel.write("\t") }
-                    KeyChip("/") { viewModel.write("/") }
-                    KeyChip("-") { viewModel.write("-") }
-                    KeyChip("C-c") { viewModel.writeBytes(0x03) }
-                    KeyChip("C-d") { viewModel.writeBytes(0x04) }
-                    Spacer(modifier = Modifier.weight(1f))
+                    Row(
+                        modifier = Modifier.weight(1f),  // ← 键区占满剩余宽度
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CtrlChipWithTooltip(viewModel)
+                        KeyChip("Esc") { viewModel.write("\u001B") }
+                        KeyChip("Tab") { viewModel.write("\t") }
+                        KeyChip("/") { viewModel.write("/") }
+                        KeyChip("-") { viewModel.write("-") }
+                        KeyChip("C-c") { viewModel.writeBytes(0x03) }
+                        KeyChip("C-d") { viewModel.writeBytes(0x04) }
+                    }
+                    // 切换按钮：固定宽度，不参与 weight 分配 → 窄屏始终完整可见
                     CompactFullSwitcher(
                         full = false,
                         onClick = viewModel::toggleFullExtraKeys
                     )
                 }
-                // 第二行：← ↑ ↓ → 4 方向键 + C-l / C-z
+                // Row2：← ↑ ↓ → 4 方向键 + C-l / C-z（纯键，无切换按钮，自然填满）
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -484,13 +499,17 @@ fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean) {
     }
 }
 
-/** "简洁 ↔ 完整" 切换按钮，单独提出来避免写重复 */
+/** "简洁 ↔ 完整" 切换按钮，单独提出来避免写重复。
+ *  固定宽度：保证无论 Row1 左侧塞多少 key chip，此按钮绝不被挤压/裁剪。
+ *  宽度 = 图标 16 + 间距 2 + 文本("简洁"/"完整")约 48sp → 留出 72.dp 安全宽度。
+ */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .height(TerminalLayout.keyHeight)
+            .width(TerminalLayout.switcherWidth)   // ← 固定宽度：强制不参与 Row 的 weight 挤压
             .clip(RoundedCornerShape(TerminalLayout.keyRadius))
             .border(
                 1.dp,

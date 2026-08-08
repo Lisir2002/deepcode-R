@@ -46,6 +46,9 @@ object TerminalLayout {
 
     /** 提示条内标题圆点尺寸（Banner/accent dot） */
     val accentDotSize = 10.dp
+
+    /** 简洁/完整档切换按钮固定宽度：强制不参与 Row 的 weight 挤压，窄屏绝不被 clip */
+    val switcherWidth = 72.dp
 }
 
 /**
@@ -68,21 +71,27 @@ object TerminalBannerSpec {
  */
 @Immutable
 object TerminalViewTheme {
-    /** Dracula Dark：截图要求深色终端 */
+    /**
+     * Dracula Dark：经典 Dracula 终端配色。
+     *  —— 架构强约束：background == ansi[0] (Black)；foreground == ansi[7] (White)；cursor == ansi[15] (BrightWhite)。
+     *     这样 Termux 无论取 Emulator.defaultFg/Bg 还是取 ansi 索引，颜色完全一致，不会反色。
+     */
     @Immutable
     object Dracula {
         val background = Color(0xFF282A36)
         val foreground = Color(0xFFF8F8F2)
-        val cursor = Color(0xFFF8F8F2)
-        val selection = Color(0xFF44475A)
-        val black   = Color(0xFF21222C)
+        val cursor     = Color(0xFFFFFFFF)
+        val selection  = Color(0xFF44475A)
+        // ansi[0] Black   MUST == background
+        val black   = Color(0xFF282A36)
         val red     = Color(0xFFFF5555)
         val green   = Color(0xFF50FA7B)
         val yellow  = Color(0xFFF1FA8C)
         val blue    = Color(0xFFBD93F9)
         val magenta = Color(0xFFFF79C6)
         val cyan    = Color(0xFF8BE9FD)
-        val white   = Color(0xFFBFBFBF)
+        // ansi[7] White   MUST == foreground
+        val white   = Color(0xFFF8F8F2)
         val brightBlack   = Color(0xFF6272A4)
         val brightRed     = Color(0xFFFF6E6E)
         val brightGreen   = Color(0xFF69FF94)
@@ -90,16 +99,23 @@ object TerminalViewTheme {
         val brightBlue    = Color(0xFFD6ACFF)
         val brightMagenta = Color(0xFFFF92DF)
         val brightCyan    = Color(0xFFA4FFFF)
+        // ansi[15] BrightWhite MUST == cursor
         val brightWhite   = Color(0xFFFFFFFF)
     }
 
-    /** Solarized Light：仅当用户显式选亮终端主题时启用 */
+    /**
+     * Solarized Light：仅当用户显式选亮终端主题 / 浅色系统时启用。
+     *  —— 架构强约束同上：background == ansi[0]；foreground == ansi[7]；cursor == ansi[15]。
+     *  本次根因修复：之前 ansi[7]=base2=EEE8D5(米白) 和 background=FDF6E3 几乎同色 = 完全看不清。
+     *  修法：ansi[7] 用 base01(#586E75 深青灰)，ansi[15] 用 base02(#073642 深蓝黑)，在米黄背景上对比度 ≥ 7:1。
+     */
     @Immutable
     object SolarizedLight {
         val background = Color(0xFFFDF6E3)
         val foreground = Color(0xFF586E75)
-        val cursor = Color(0xFF586E75)
-        val selection = Color(0xFFEEE8D5)
+        val cursor     = Color(0xFF073642)
+        val selection  = Color(0xFFEEE8D5)
+        // ansi[0] Black MUST == background （Solarized Light 规范 Black=base02 深蓝黑）
         val black   = Color(0xFF073642)
         val red     = Color(0xFFDC322F)
         val green   = Color(0xFF859900)
@@ -107,15 +123,18 @@ object TerminalViewTheme {
         val blue    = Color(0xFF268BD2)
         val magenta = Color(0xFFD33682)
         val cyan    = Color(0xFF2AA198)
-        val white   = Color(0xFFEEE8D5)
-        val brightBlack   = Color(0xFF002B36)
-        val brightRed     = Color(0xFFCB4B16)
-        val brightGreen   = Color(0xFF586E75)
-        val brightYellow  = Color(0xFF657B83)
-        val brightBlue    = Color(0xFF839496)
-        val brightMagenta = Color(0xFF6C71C4)
-        val brightCyan    = Color(0xFF93A1A1)
-        val brightWhite   = Color(0xFFFDF6E3)
+        // ansi[7] White MUST == foreground （修：不再是米白 base2，是 Solarized base01=深青灰）
+        val white   = Color(0xFF586E75)
+        // ansi[8..14] Bright：按 Solarized 规范 base01/base0/…
+        val brightBlack   = Color(0xFF002B36) // base03，更深的蓝黑
+        val brightRed     = Color(0xFFCB4B16) // orange
+        val brightGreen   = Color(0xFF586E75) // base01
+        val brightYellow  = Color(0xFF657B83) // base00
+        val brightBlue    = Color(0xFF839496) // base0
+        val brightMagenta = Color(0xFF6C71C4) // violet
+        val brightCyan    = Color(0xFF93A1A1) // base1
+        // ansi[15] BrightWhite MUST == cursor （= base02，深对比色，确保 bold/bright 属性仍可读）
+        val brightWhite   = Color(0xFF073642)
     }
 
     /** 字体大小步进默认值 */

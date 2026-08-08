@@ -6,9 +6,11 @@ import android.content.Context
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -440,24 +442,32 @@ private fun TerminalFirstRunBanner(
         }
     }
 
+    // Banner 规范：
+    //  ① 不要 elevation overlay（它是"外围一圈黑边"的根因）→ elevation=z0
+    //  ② 用 1dp 软描边（同 accent 0.35 alpha）代替阴影制造边界感
+    //  ③ 容器背景 alpha 从 0.28 降到 0.16，避免太重的颜色压头
+    val bannerBorderColor = accentColor.copy(alpha = 0.35f)
     Card(
         modifier = Modifier
             .padding(horizontal = Spacing.md, vertical = Spacing.sm)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .border(1.dp, bannerBorderColor, RoundedCornerShape(Radius.md)),
         colors = CardDefaults.cardColors(
-            containerColor = accentColor.copy(alpha = SemanticColors.ContainerAlphaSoft)
+            containerColor = accentColor.copy(alpha = 0.16f)
         ),
         shape = RoundedCornerShape(Radius.md),
-        elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1)
+        elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z0)
     ) {
         Column(modifier = Modifier.padding(TerminalLayout.bannerInnerPadding)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
                 Box(
                     modifier = Modifier
                         .size(TerminalLayout.accentDotSize)
                         .background(accentColor, shape = RoundedCornerShape(50))
                 )
-                Spacer(modifier = Modifier.width(Spacing.sm))
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
@@ -465,9 +475,13 @@ private fun TerminalFirstRunBanner(
                     modifier = Modifier.weight(1f)
                 )
                 if (showDismiss) {
+                    // 显式 align 居中 + 统一 ButtonSpec.Height + contentPadding 固定，避免被 Row/父容器压掉高度
                     TextButton(
                         onClick = onDismiss,
-                        modifier = Modifier.height(ButtonSpec.Height)
+                        modifier = Modifier
+                            .height(ButtonSpec.Height)
+                            .align(Alignment.CenterVertically),
+                        contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 4.dp)
                     ) {
                         Text(
                             "暂不提醒",
