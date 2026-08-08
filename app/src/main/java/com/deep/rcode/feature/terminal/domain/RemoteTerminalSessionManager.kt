@@ -6,6 +6,7 @@ import com.deep.rcode.feature.settings.data.repository.ExecutionMode
 import com.deep.rcode.feature.settings.data.repository.ExecutionModeHolder
 import com.deep.rcode.feature.workspace.data.repository.WorkspaceRepository
 import com.termux.terminal.TerminalSession
+import com.deep.rcode.feature.terminal.presentation.component.TextInputTracker
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import kotlinx.coroutines.Dispatchers
@@ -252,8 +253,24 @@ class RemoteTerminalSessionManager @Inject constructor(
 
     /** 远程模式的 [TerminalSessionClient] 实现，回调与本地一致。 */
     private inner class AppRemoteSessionClient : TerminalSessionClient {
+
+        private var lastCursorRow = -1
+        private var lastCursorCol = -1
+
         override fun onTextChanged(changedSession: TerminalSession) {
-            _tabs.value.firstOrNull { it.session === changedSession }?.view?.onScreenUpdated()
+            val tab = _tabs.value.firstOrNull { it.session === changedSession }
+            val view = tab?.view
+            val tracker = tab?.let(TextInputTracker::forTab)
+            val emu = view?.mEmulator
+            if (emu != null && tracker != null) {
+                val newRow = emu.cursorRow
+                val newCol = emu.cursorCol
+                val changed = (newRow != lastCursorRow) || (newCol != lastCursorCol)
+                tracker.syncCursor(newRow, newCol, changed)
+                lastCursorRow = newRow
+                lastCursorCol = newCol
+            }
+            view?.onScreenUpdated()
         }
 
         override fun onTitleChanged(changedSession: TerminalSession) {}

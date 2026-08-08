@@ -226,11 +226,11 @@ fun TerminalSettingsScreen(
                 )
                 _MenuRow(
                     icon = FeatherIcons.Moon,
-                    title = "终端主题",
+                    title = "终端内容配色",
                     subtitle = when (theme) {
-                        TerminalTheme.SYSTEM -> "跟随系统"
-                        TerminalTheme.DRACULA_DARK -> "Dracula 暗色"
-                        TerminalTheme.SOLARIZED_LIGHT -> "Solarized 亮色"
+                        TerminalTheme.SYSTEM -> "跟随系统（暗/亮自动切换）"
+                        TerminalTheme.PURE_BLACK -> "黑底白字（对比最强）"
+                        TerminalTheme.PURE_WHITE -> "白底黑字（对比最强）"
                     },
                     onClick = { showThemePicker = true },
                     showDivider = true
@@ -631,14 +631,14 @@ private fun ThemePickerDialog(
     onConfirm: (TerminalTheme) -> Unit
 ) {
     val options = listOf(
-        TerminalTheme.SYSTEM to "跟随系统",
-        TerminalTheme.DRACULA_DARK to "Dracula 暗色（推荐）",
-        TerminalTheme.SOLARIZED_LIGHT to "Solarized 亮色"
+        TerminalTheme.SYSTEM to "跟随系统（暗/亮自动切换）",
+        TerminalTheme.PURE_BLACK to "黑底白字 · 对比最强",
+        TerminalTheme.PURE_WHITE to "白底黑字 · 对比最强"
     )
     var selected by remember { mutableStateOf(current) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("终端主题") },
+        title = { Text("终端内容配色") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 options.forEach { (v, label) ->

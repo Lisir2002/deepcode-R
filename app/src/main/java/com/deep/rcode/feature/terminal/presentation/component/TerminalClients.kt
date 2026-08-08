@@ -42,17 +42,36 @@ class TerminalKeyModifiers {
 /**
  * [TerminalSessionClient]：会话产生输出/标题/结束等事件时回调。
  * 主要职责是把屏幕刷新转交给 [TerminalView]，并接驳系统剪贴板。
+ *
+ *  同时：每次 onTextChanged（会话写入字符到终端后）时通知 [TextInputTracker]
+ *   刷新光标行/列，保证 prompt 长度和当前行判定精确。
  */
 class AppTerminalSessionClient(
     private val context: Context,
     private val viewProvider: () -> TerminalView?,
-    private val onFinished: (TerminalSession) -> Unit
+    private val onFinished: (TerminalSession) -> Unit,
+    private val inputTrackerProvider: () -> TextInputTracker? = { null }
 ) : TerminalSessionClient {
 
     private companion object { const val TAG = "TerminalSession" }
 
+    // 上次光标位置（用于检测是否有实际字符写入）
+    private var lastCursorRow = -1
+    private var lastCursorCol = -1
+
     override fun onTextChanged(changedSession: TerminalSession) {
-        viewProvider()?.onScreenUpdated()
+        val v = viewProvider()
+        val emu = v?.mEmulator
+        val tracker = inputTrackerProvider()
+        if (emu != null && tracker != null) {
+            val newRow = emu.cursorRow
+            val newCol = emu.cursorCol
+            val changed = (newRow != lastCursorRow) || (newCol != lastCursorCol)
+            tracker.syncCursor(newRow = newRow, newCol = newCol, lastDisplayedChange = changed)
+            lastCursorRow = newRow
+            lastCursorCol = newCol
+        }
+        v?.onScreenUpdated()
     }
 
     override fun onTitleChanged(changedSession: TerminalSession) { /* 暂不展示标题 */ }
@@ -95,11 +114,15 @@ class AppTerminalSessionClient(
 /**
  * [TerminalViewClient]：视图层的输入/手势/缩放回调。
  * 用合理默认值实现，并把 Ctrl/Alt 等虚拟修饰键交给 [TerminalKeyModifiers]。
+ *
+ *  额外：把每个用户输入字节同时写入 [TextInputTracker]，实现「剪切功能」的
+ *   B 方案（字符级高精度追踪：仅用户输入区可剪切，系统输出区不可剪切）。
  */
 class AppTerminalViewClient(
     private val context: Context,
     private val viewProvider: () -> TerminalView?,
-    private val modifiers: TerminalKeyModifiers
+    private val modifiers: TerminalKeyModifiers,
+    private val inputTrackerProvider: () -> TextInputTracker? = { null }
 ) : TerminalViewClient {
 
     private companion object { const val TAG = "TerminalView" }
@@ -146,6 +169,21 @@ class AppTerminalViewClient(
     override fun readFnKey(): Boolean = modifiers.fn
 
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean {
+        // 把 codepoint → UTF-8 字节后转交给 TextInputTracker 做精确列/字节追踪
+        inputTrackerProvider()?.let { tracker ->
+            val view = viewProvider()
+            val emu = view?.mEmulator
+            val r = emu?.cursorRow ?: -1
+            val c = emu?.cursorCol ?: -1
+            val bytes = if (codePoint <= 0x7F) {
+                byteArrayOf(codePoint.toByte())
+            } else try {
+                String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8)
+            } catch (_: Throwable) {
+                byteArrayOf()
+            }
+            if (bytes.isNotEmpty()) tracker.onUserBytes(bytes, r, c)
+        }
         // 字符已发出，复位一次性修饰键
         modifiers.consume()
         return false

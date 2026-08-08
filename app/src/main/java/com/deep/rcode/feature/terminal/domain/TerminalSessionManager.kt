@@ -5,6 +5,7 @@ import android.content.Intent
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
 import com.deep.rcode.feature.terminal.presentation.component.AppTerminalSessionClient
+import com.deep.rcode.feature.terminal.presentation.component.TextInputTracker
 import com.deep.rcode.feature.workspace.data.repository.WorkspaceRepository
 import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
@@ -335,6 +336,11 @@ class TerminalSessionManager @Inject constructor(
                         )
                     }
                 }
+            },
+            inputTrackerProvider = {
+                val tab = _tabs.value.firstOrNull { it.session === session }
+                    ?: return@AppTerminalSessionClient null
+                TextInputTracker.forTab(tab)
             }
         )
         val envArray = arrayOf(
@@ -343,7 +349,7 @@ class TerminalSessionManager @Inject constructor(
             "PATH=/system/bin:/system/xbin:/vendor/bin",
             "SHELL=/system/bin/sh",
             "TERM=xterm-256color",
-            "PS1=\\u@\\h:\\w\\$ "
+            "PS1=> \\u@\\h:\\w\\$ "
         )
         session = TerminalSession(
             "/system/bin/sh",
@@ -448,6 +454,11 @@ class TerminalSessionManager @Inject constructor(
                         )
                     }
                 }
+            },
+            inputTrackerProvider = {
+                val tab = _tabs.value.firstOrNull { it.session === session }
+                    ?: return@AppTerminalSessionClient null
+                TextInputTracker.forTab(tab)
             }
         )
         session = TerminalSession(

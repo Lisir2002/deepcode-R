@@ -15,11 +15,12 @@ import javax.inject.Singleton
 
 private val Context.terminalDataStore by preferencesDataStore(name = "terminal_prefs")
 
-/** 终端主题：跟随系统 / Dracula Dark / Solarized Light。UI 单选。 */
+/** 终端内容区配色：仅两套 + 跟随系统。外壳 UI（TabBar/Banner/ExtraKeys）独立走 Material 主题。 */
 enum class TerminalTheme(@Suppress("unused") val stableKey: String) {
     SYSTEM("system"),
-    DRACULA_DARK("dracula_dark"),
-    SOLARIZED_LIGHT("solarized_light"),
+    PURE_BLACK("pure_black"),        // 黑底白字，对比绝对
+    PURE_WHITE("pure_white"),        // 白底黑字，对比绝对
+    // 向后兼容读取：旧值 Dracula/Solarized 自动映射到跟随系统（避免 valueOf 抛异常）
 }
 
 /** SSH 心跳间隔枚举。 */
@@ -78,11 +79,19 @@ class TerminalSettingsRepository @Inject constructor(
         it[FONT_SIZE_SP_KEY] ?: 12
     }
 
-    /** 终端主题：跟随系统 / Dracula / Solarized Light。默认跟随系统。 */
+    /** 终端内容区配色：跟随系统 / 黑底白字 / 白底黑字。默认跟随系统。
+     *  对历史旧值 DRACULA_DARK / SOLARIZED_LIGHT 做兼容映射，避免 valueOf 抛异常。 */
     val themeFlow: Flow<TerminalTheme> = context.terminalDataStore.data.map {
         val raw = it[THEME_KEY]
         if (raw.isNullOrBlank()) TerminalTheme.SYSTEM
-        else TerminalTheme.valueOf(raw)
+        else runCatching { TerminalTheme.valueOf(raw) }
+            .getOrElse {
+                when (raw) {
+                    "DRACULA_DARK" -> TerminalTheme.PURE_BLACK   // 历史暗色值 → 黑底
+                    "SOLARIZED_LIGHT" -> TerminalTheme.PURE_WHITE  // 历史亮色值 → 白底
+                    else -> TerminalTheme.SYSTEM
+                }
+            }
     }
 
     /** 是否显示 Tab 栏（纯键盘流可关掉）。默认 true。 */

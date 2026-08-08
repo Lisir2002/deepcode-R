@@ -31,3 +31,10 @@ keystore.properties
 
 # Design docs
 design/
+
+# Release APKs
+release/*.apk
+
+# Local dev tool config
+mise.toml
+.tool-versions

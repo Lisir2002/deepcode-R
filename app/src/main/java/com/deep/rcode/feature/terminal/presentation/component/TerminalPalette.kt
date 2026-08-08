@@ -22,17 +22,11 @@ private fun Color.toArgbInt(): Int {
 }
 
 /**
- * 终端 16 色调色板 + 外层容器背景 + fg/bg/cursor + 256 色扩展。
+ * 终端内容区颜色桥：仅 fg/bg/cursor + 256 色扩展。
+ * 按你的决策：终端内容区只有两套配色（纯黑底白字 / 纯白底黑字），
+ * ANSI 16 色与 256 色一律按"相对亮度阈值"压成 fg 或 bg 二值（极简二值模式）。
  *
- *  TerminalPalette 是应用层到 Termux 底层 TerminalView 的"颜色桥"：
- *  - 应用层: TerminalViewTheme 定义两套完整配色（Dracula / SolarizedLight）
- *  - 桥接: rememberTerminalPalette() 把主题色打包成 TerminalPalette
- *  - 底层: applyTerminalPalette() 把 TerminalPalette 写入 view.mEmulator.mColors.mCurrentColors[0..258]
- *  - 不再用反射，全部走 public 字段链
- *
- *  @param full256 可选 256 色扩展数组（index 16-255，共 240 个 int），
- *                 提供后 `applyTerminalPalette` 会一并写入。
- *                 不提供则只写入前 16 色 ANSI + fg/bg/cursor（256 色用 Termux 默认值）。
+ *  @param full256 240 个 ARGB int（index 16-255），此处全部二值化。
  */
 @Immutable
 data class TerminalPalette(
@@ -40,9 +34,8 @@ data class TerminalPalette(
     val defaultForeground: Color,
     val defaultBackground: Color,
     val cursorColor: Color,
-    /** ANSI 16 色：index 0..15 严格对应 Termux mColors 结构 */
+    /** ANSI 16 色：这里已按 0..255 全部二值化 (bg/fg) */
     val ansi: List<Color>,
-    /** 256 色调色板扩展 (index 16-255)，null 时不写入 256 色 */
     val full256: IntArray? = null
 ) {
     fun toAnsiIntArray(): IntArray = IntArray(16) { i -> ansi[i].toArgbInt() }
@@ -73,100 +66,88 @@ data class TerminalPalette(
     }
 }
 
-private fun buildAnsi(
-    black: Color, red: Color, green: Color, yellow: Color,
-    blue: Color, magenta: Color, cyan: Color, white: Color,
-    brightBlack: Color, brightRed: Color, brightGreen: Color, brightYellow: Color,
-    brightBlue: Color, brightMagenta: Color, brightCyan: Color, brightWhite: Color
-): List<Color> = listOf(
-    black, red, green, yellow, blue, magenta, cyan, white,
-    brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite
-)
+// 计算标准相对亮度 Y (sRGB linear)，阈值 0.179 以下视为"深色"
+private fun relativeLuminance(r: Float, g: Float, b: Float): Float {
+    fun f(c: Float) = if (c <= 0.04045f) c / 12.92f else Math.pow((c + 0.055) / 1.055, 2.4).toFloat()
+    return 0.2126f * f(r) + 0.7152f * f(g) + 0.0722f * f(b)
+}
 
-// ──────────────────────────────────────────────────────────
-// 256 色 cube 生成器：基于给定"6 色阶"生成 216 色 cube (index 16-231)
-//   标准 xterm 6 色阶: 0x00, 0x5f, 0x87, 0xaf, 0xd7, 0xff
-//   每个主题可自定义色阶来匹配主题调性
-// ──────────────────────────────────────────────────────────
+/** 二值化：任一 ARGB int → 根据亮度映射为 fgInt 或 bgInt（纯二值，无中间态）。 */
+private fun quantizeArgb(argb: Int, fgInt: Int, bgInt: Int): Int {
+    val r = ((argb shr 16) and 0xFF) / 255f
+    val g = ((argb shr 8) and 0xFF) / 255f
+    val b = (argb and 0xFF) / 255f
+    return if (relativeLuminance(r, g, b) >= 0.5f) fgInt else bgInt
+}
 
-/** 基于 6 级色阶生成 216 色 cube（index 16-231 的 6×6×6 RGB 立方体）。 */
-private fun buildColorCube(steps: IntArray = intArrayOf(0x00, 0x5f, 0x87, 0xaf, 0xd7, 0xff)): IntArray {
-    val cube = IntArray(216)
+/** 生成二值化 256 色（Tango 原始 256 → 全部压成 fg/bg 二值）。 */
+private fun buildBinary256(fgInt: Int, bgInt: Int): IntArray {
+    // 先生成 xterm 标准 256 色原始值 (6 色阶 cube + 24 级灰阶)
+    val cubeSteps = intArrayOf(0x00, 0x5f, 0x87, 0xaf, 0xd7, 0xff)
+    val rawCube = IntArray(216)
     var i = 0
-    for (r in steps) for (g in steps) for (b in steps) {
-        cube[i++] = (0xFF000000L or (r.toLong() shl 16) or (g.toLong() shl 8) or b.toLong()).toInt()
+    for (r in cubeSteps) for (g in cubeSteps) for (b in cubeSteps) {
+        rawCube[i++] = (0xFF000000L or (r.toLong() shl 16) or (g.toLong() shl 8) or b.toLong()).toInt()
     }
-    return cube
-}
-
-/** 基于 24 级灰阶生成灰阶渐变（index 232-255）。 */
-private fun buildGreyRamp(): IntArray {
-    val ramp = IntArray(24)
-    for (i in 0 until 24) {
-        val v = 8 + i * 10  // 0x08, 0x12, 0x1c, ... 0xee
-        ramp[i] = (0xFF000000L or (v.toLong() shl 16) or (v.toLong() shl 8) or v.toLong()).toInt()
+    val rawGrey = IntArray(24)
+    for (g in 0 until 24) {
+        val v = 8 + g * 10
+        rawGrey[g] = (0xFF000000L or (v.toLong() shl 16) or (v.toLong() shl 8) or v.toLong()).toInt()
     }
-    return ramp
-}
-
-/** 扩展 256 色数组 (index 16-255)：cube 216 + grey 24。 */
-private fun buildFull256(cube: IntArray, grey: IntArray): IntArray {
-    val full = IntArray(240)  // 256 - 16 = 240
-    System.arraycopy(cube, 0, full, 0, 216)
-    System.arraycopy(grey, 0, full, 216, 24)
+    val full = IntArray(240)
+    System.arraycopy(rawCube, 0, full, 0, 216)
+    System.arraycopy(rawGrey, 0, full, 216, 24)
+    // 统一二值化
+    for (k in full.indices) full[k] = quantizeArgb(full[k], fgInt, bgInt)
     return full
 }
 
-// ── Dracula 256 色扩展 ──
-// Dracula 色阶精度：背景紫灰 #282A36 → 前景亮白 #F8F8F2 → 中间结合 Dracula 色相
-private val DraculaCubeSteps = intArrayOf(0x1E, 0x44, 0x62, 0x8A, 0xBD, 0xF8)
-private val DraculaCube = buildColorCube(DraculaCubeSteps)
-private val DraculaGrey = buildGreyRamp()
-private val Dracula256 = buildFull256(DraculaCube, DraculaGrey)
-
-// ── SolarizedLight 256 色扩展 ──
-// Solarized 色阶精度：基于 Solarized 的 base03→base3 色调
-// 暖色阶偏米黄系，冷色阶偏青蓝系
-private val SolarizedCubeSteps = intArrayOf(0x00, 0x2B, 0x58, 0x83, 0xB5, 0xEE)
-private val SolarizedCube = buildColorCube(SolarizedCubeSteps)
-private val SolarizedGrey = buildGreyRamp()
-private val Solarized256 = buildFull256(SolarizedCube, SolarizedGrey)
-
-val DraculaTerminalPalette: TerminalPalette = run {
-    val d = TerminalViewTheme.Dracula
-    TerminalPalette(
-        containerBg = d.background,
-        defaultForeground = d.foreground,
-        defaultBackground = d.background,
-        cursorColor = d.cursor,
-        ansi = buildAnsi(
-            d.black, d.red, d.green, d.yellow, d.blue, d.magenta, d.cyan, d.white,
-            d.brightBlack, d.brightRed, d.brightGreen, d.brightYellow, d.brightBlue, d.brightMagenta, d.brightCyan, d.brightWhite
-        ),
-        full256 = Dracula256
+private fun buildBinaryAnsi(fg: Color, bg: Color): List<Color> {
+    // ANSI 0-7：黑=BG 其余=FG；ANSI 8-15 bright：全部=FG（简化为二值，不保留中间色）
+    return listOf(
+        bg, fg, fg, fg, fg, fg, fg, fg,
+        fg, fg, fg, fg, fg, fg, fg, fg
     )
 }
 
-val SolarizedTerminalPalette: TerminalPalette = run {
-    val l = TerminalViewTheme.SolarizedLight
-    TerminalPalette(
-        containerBg = l.background,
-        defaultForeground = l.foreground,
-        defaultBackground = l.background,
-        cursorColor = l.cursor,
-        ansi = buildAnsi(
-            l.black, l.red, l.green, l.yellow, l.blue, l.magenta, l.cyan, l.white,
-            l.brightBlack, l.brightRed, l.brightGreen, l.brightYellow, l.brightBlue, l.brightMagenta, l.brightCyan, l.brightWhite
-        ),
-        full256 = Solarized256
-    )
-}
+// ─── 黑底白字（PURE_BLACK） ───────────────────────────────────
+private val BlackColor = Color(0xFF000000)
+private val WhiteColor = Color(0xFFFFFFFF)
+private val BlackInt = BlackColor.toArgbInt()
+private val WhiteInt = WhiteColor.toArgbInt()
+
+private val PureBlackBinary256 = buildBinary256(fgInt = WhiteInt, bgInt = BlackInt)
+private val PureBlackAnsi = buildBinaryAnsi(fg = WhiteColor, bg = BlackColor)
+
+val PureBlackPalette: TerminalPalette = TerminalPalette(
+    containerBg = BlackColor,
+    defaultForeground = WhiteColor,
+    defaultBackground = BlackColor,
+    cursorColor = WhiteColor,
+    ansi = PureBlackAnsi,
+    full256 = PureBlackBinary256
+)
+
+// ─── 白底黑字（PURE_WHITE） ───────────────────────────────────
+private val PureWhiteBinary256 = buildBinary256(fgInt = BlackInt, bgInt = WhiteInt)
+private val PureWhiteAnsi = buildBinaryAnsi(fg = BlackColor, bg = WhiteColor)
+
+val PureWhitePalette: TerminalPalette = TerminalPalette(
+    containerBg = WhiteColor,
+    defaultForeground = BlackColor,
+    defaultBackground = WhiteColor,
+    cursorColor = BlackColor,
+    ansi = PureWhiteAnsi,
+    full256 = PureWhiteBinary256
+)
 
 /**
  * 选主题：
- *  - 用户 TerminalTheme.DRACULA_DARK → 强制 Dracula
- *  - 用户 TerminalTheme.SOLARIZED_LIGHT → 强制 SolarizedLight
- *  - 用户 TerminalTheme.SYSTEM → 跟随系统 isSystemInDarkTheme
+ *  - PURE_BLACK → 强制黑底白字
+ *  - PURE_WHITE → 强制白底黑字
+ *  - SYSTEM     → 跟随系统暗/亮
+ *  旧 DataStore 值 DRACULA_DARK / SOLARIZED_LIGHT 已在 settingsRepo.themeFlow 阶段
+ *  自动映射为 PURE_BLACK / PURE_WHITE，此处不再出现。
  */
 @Composable
 fun rememberTerminalPalette(
@@ -174,13 +155,13 @@ fun rememberTerminalPalette(
 ): TerminalPalette {
     val theme: TerminalTheme by settingsRepo.themeFlow.collectAsStateWithLifecycle(initialValue = TerminalTheme.SYSTEM)
     return when (theme) {
-        TerminalTheme.DRACULA_DARK -> DraculaTerminalPalette
-        TerminalTheme.SOLARIZED_LIGHT -> SolarizedTerminalPalette
-        TerminalTheme.SYSTEM -> if (isSystemInDarkTheme()) DraculaTerminalPalette else SolarizedTerminalPalette
+        TerminalTheme.PURE_BLACK -> PureBlackPalette
+        TerminalTheme.PURE_WHITE -> PureWhitePalette
+        TerminalTheme.SYSTEM -> if (isSystemInDarkTheme()) PureBlackPalette else PureWhitePalette
     }
 }
 
-/** 通过 Hilt EntryPoint 从 @ApplicationContext 拿 TerminalSettingsRepository（避免每处都要 VM 传参）。 */
+/** 通过 Hilt EntryPoint 从 @ApplicationContext 拿 TerminalSettingsRepository。 */
 @Composable
 private fun hiltRepo(): TerminalSettingsRepository {
     val ctx = androidx.compose.ui.platform.LocalContext.current.applicationContext
@@ -195,12 +176,4 @@ private fun hiltRepo(): TerminalSettingsRepository {
 @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
 interface TerminalPaletteEntryPoint {
     fun terminalSettingsRepository(): TerminalSettingsRepository
-}
-
-/** 辅助：Compose Color 明度判断（避免未来又出现 light theme 上用浅前景）。 */
-fun isDarkSurface(bgColor: Color): Boolean {
-    val luma = 0.299 * (bgColor.red * 255) +
-            0.587 * (bgColor.green * 255) +
-            0.114 * (bgColor.blue * 255)
-    return luma < 160
 }

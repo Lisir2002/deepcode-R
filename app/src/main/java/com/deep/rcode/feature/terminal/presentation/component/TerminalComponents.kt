@@ -1,6 +1,11 @@
 package com.deep.rcode.feature.terminal.presentation.component
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.view.MotionEvent
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -17,6 +22,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,6 +58,7 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -87,6 +94,7 @@ import compose.icons.feathericons.ArrowDown
 import compose.icons.feathericons.ArrowUp
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Edit3
+import compose.icons.feathericons.ExternalLink
 import compose.icons.feathericons.Grid
 import compose.icons.feathericons.Info
 import compose.icons.feathericons.Plus
@@ -94,12 +102,14 @@ import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.RotateCcw
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Share2
+import compose.icons.feathericons.Scissors
 import compose.icons.feathericons.Terminal
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.Type
 import compose.icons.feathericons.X
 import kotlinx.coroutines.delay
 import kotlin.math.max
+import kotlin.math.min
 
 // ──────────────────────────────────────────────────────────
 // 标签菜单栏
@@ -113,7 +123,7 @@ sealed interface TerminalMenuAnchor {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TabBar(
-    skin: TerminalSkin,
+    skin: TerminalSkinSnapshot,
     tabs: List<TerminalTab>,
     activeTabId: String?,
     hasNewOutputMap: Map<String, Boolean>,
@@ -180,7 +190,7 @@ fun TabBar(
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun TabChip(
-    skin: TerminalSkin,
+    skin: TerminalSkinSnapshot,
     tab: TerminalTab,
     selected: Boolean,
     hasNewOutput: Boolean,
@@ -335,8 +345,7 @@ private fun summarizeCommand(cmd: String): String {
 fun TerminalSurface(
     tab: TerminalTab,
     viewModel: TerminalViewModel,
-    fontSizeSp: Int,
-    onLongPress: (Offset) -> Unit
+    fontSizeSp: Int
 ) {
     val palette = rememberTerminalPalette()
     val context = LocalContext.current
@@ -353,31 +362,132 @@ fun TerminalSurface(
             val px = (fontSizeSp * d).toInt()
             view.setTextSize(px)
             appliedPx = px
-            // 主题调色板：Termux 内部颜色数组 + 强制设置 Emulator 的 fg/bg/cursor，
-            // 彻底修复"米白背景 + Dracula 白色前景"的反色 bug
             applyTerminalPalette(palette, view)
 
+            val inputTracker = TextInputTracker.forTab(tab)
             view.setTerminalViewClient(
                 AppTerminalViewClient(
                     context = ctx,
                     viewProvider = { view },
-                    modifiers = viewModel.modifiers
+                    modifiers = viewModel.modifiers,
+                    inputTrackerProvider = { inputTracker }
                 ).also { client ->
                     client.setScaleListener { s -> viewModel.stepFontSize(s) }
                     client.setLongPressListener { xPx, yPx ->
-                        onLongPress(Offset(xPx, yPx))
+                        // 计算当前选中区 / 未选中则把长按点所在的行/列当做起点终点
+                        val emu = view.mEmulator
+                        val screen = emu?.screen
+                        val cols = emu?.mColumns ?: 0
+                        val rows = emu?.mRows ?: 0
+                        // Termux 保存选择区的字段是私有，改用 Termux API：如果 isSelectingText()，
+                        // 就用 screen.getSelectedText(0, topRow, cols, topRow+rows) 取全文，
+                        // 再用 startTextSelectionMode 触发拖动手柄。
+                        val selecting = view.isSelectingText
+                        var startCol = 0
+                        var startRow = 0
+                        var endCol = cols
+                        var endRow = rows
+                        var selectedText = ""
+                        if (selecting && screen != null) {
+                            val topRow = view.topRow
+                            val full = screen.getSelectedText(0, topRow, cols, topRow + rows)
+                            // Termux 不暴露选区坐标。简化为：用户已经拖出选区时，把"可视全选"视作选中。
+                            selectedText = full.takeIf { it.isNotBlank() } ?: ""
+                            startCol = 0; startRow = 0; endCol = cols; endRow = rows
+                        } else {
+                            // 未选中：把当前长按位置当作「零宽选区」
+                            startCol = view.getCursorX(xPx).coerceIn(0, (cols - 1).coerceAtLeast(0))
+                            endCol = startCol
+                            startRow = view.getCursorY(yPx).coerceIn(0, (rows - 1).coerceAtLeast(0))
+                            endRow = startRow
+                        }
+
+                        val span = TextInputTracker.SelectionSpan(
+                            startRow = startRow, startCol = startCol,
+                            endRow = endRow, endCol = endCol,
+                            selectedText = selectedText
+                        )
+                        val cutEligible = inputTracker.cutEligibleBytes(span, cols)
+
+                        // URL 检测：优先选中文字匹配；否则扫全屏最后 20 行把光标周围最近的 URL 拿出来
+                        val urlRegex = Regex("""https?://[^\s"'<>)]+|www\.[^\s"'<>)]+""")
+                        val srcText = selectedText.ifBlank {
+                            runCatching {
+                                screen?.getSelectedText(
+                                    0,
+                                    (emu!!.cursorRow - 19).coerceAtLeast(-(screen.activeRows - rows)),
+                                    cols,
+                                    (emu.cursorRow + 1).coerceAtMost(rows - 1)
+                                )
+                            }.getOrNull().orEmpty()
+                        }
+                        val rawUrl = urlRegex.find(srcText)?.value
+                        val detectedUrl = rawUrl?.let { if (it.startsWith("www.")) "http://$it" else it }
+
+                        val state = TerminalViewModel.FloatingMenuState(
+                            tabId = tab.id,
+                            anchorXPx = xPx,
+                            anchorYPx = yPx,
+                            hasSelection = selectedText.isNotBlank() || selecting,
+                            selectionText = selectedText,
+                            selectionStartCol = startCol,
+                            selectionStartRow = startRow,
+                            selectionEndCol = endCol,
+                            selectionEndRow = endRow,
+                            cutEligibleBytes = cutEligible,
+                            detectedUrl = detectedUrl
+                        )
+                        viewModel.showFloatingMenu(state)
                     }
                 }
             )
+            // 把 ViewModel 的「开始选择 / 停止选择 / 剪切 / 粘贴」绑定到具体 tab 的 view
+            viewModel.onRequestStartSelection = startSel@{ id ->
+                if (id != tab.id) return@startSel
+                val emu = view.mEmulator ?: return@startSel
+                val c = emu.mColumns.coerceAtLeast(1)
+                val r = emu.mRows.coerceAtLeast(1)
+                // 用 View 中心附近的坐标产生模拟 down 事件，让 Termux 选择手柄出现在屏幕中间
+                val centerX = view.width / 2f
+                val centerY = view.height / 2f
+                val ev = MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, centerX, centerY, 0)
+                view.startTextSelectionMode(ev)
+                ev.recycle()
+            }
+            viewModel.onPerformCopy = { text ->
+                if (text.isNotBlank()) copyTextToClipboard(ctx, text)
+            }
+            viewModel.onOpenUrl = { url ->
+                runCatching {
+                    val fixed = if (url.startsWith("www.")) "http://$url" else url
+                    val i = Intent(Intent.ACTION_VIEW, Uri.parse(fixed)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(i)
+                }
+            }
+            viewModel.onRequestStopSelection = { id -> if (id == tab.id) view.stopTextSelectionMode() }
+            viewModel.onPerformCut = doCut@{ id, bytesBack, selText ->
+                if (id != tab.id) return@doCut
+                // 1) 先复制
+                if (selText.isNotBlank()) copyTextToClipboard(ctx, selText)
+                // 2) 再退格 bytesBack 个字节（从输入末尾回退）
+                if (bytesBack > 0) {
+                    val delBytes = ByteArray(bytesBack) { 0x7f } // DEL
+                    tab.session.write(delBytes, 0, delBytes.size)
+                }
+            }
+            viewModel.onPerformPaste = doPaste@{ id ->
+                if (id != tab.id) return@doPaste
+                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                val text = cm?.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
+                if (text.isNotBlank()) view.mEmulator?.paste(text)
+            }
             view.isFocusable = true
             view.isFocusableInTouchMode = true
             tab.view = view
             view.attachSession(tab.session)
-            // 每次 attach 后再应用一次颜色：session/emulator 会把默认前景带过来
             applyTerminalPalette(palette, view)
             view.onScreenUpdated()
             view.requestFocus()
-            // 挂载后主动弹起软键盘
             view.post {
                 view.requestFocus()
                 val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -393,14 +503,123 @@ fun TerminalSurface(
                 appliedPx = px
                 view.onScreenUpdated()
             }
-            // 主题变更时（用户改 TerminalTheme）需要立刻重新应用（palette 作为 key）
             applyTerminalPalette(palette, view)
             view.onScreenUpdated()
         },
         onRelease = { view ->
             if (tab.view === view) tab.view = null
+            TextInputTracker.onTabClosed(tab.id)
         }
     )
+}
+
+private fun copyTextToClipboard(ctx: Context, text: String) {
+    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    cm?.setPrimaryClip(ClipData.newPlainText("terminal", text))
+}
+
+// ──────────────────────────────────────────────────────────
+// 长按浮动菜单卡片：复制 / 粘贴 / 剪切 / 选择 / 浏览器打开
+// ──────────────────────────────────────────────────────────
+
+@Composable
+fun BoxScope.TerminalFloatingCard(
+    state: TerminalViewModel.FloatingMenuState,
+    viewModel: TerminalViewModel
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val menuWidthPx = with(density) { 300.dp.roundToPx() }
+    val menuHeightPx = with(density) { 56.dp.roundToPx() } // 近似单项高度，实际由 Row 决定
+    val screenWidthPx = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val screenHeightPx = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp
+    val screenW = with(density) { screenWidthPx.dp.roundToPx() }
+    val screenH = with(density) { screenHeightPx.dp.roundToPx() }
+    // 测量后再修正，但 Compose 不能拿到自身测量尺寸；用近似值：3 项 ~ 200dp，5 项 ~ 320dp
+    val estW = with(density) { 320.dp.toPx() }
+    val estH = with(density) { 56.dp.toPx() }
+    val cardXPx = min(max(state.anchorXPx - estW / 2f, 12f), screenW - estW - 12f)
+    val cardYPx = if (state.anchorYPx - estH - 18f > 12f) state.anchorYPx - estH - 18f
+    else state.anchorYPx + 18f
+
+    Surface(
+        modifier = Modifier
+            .align(Alignment.TopStart)
+            .offset { IntOffset(cardXPx.toInt(), cardYPx.toInt()) }
+            .wrapContentWidth()
+            .wrapContentHeight(),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(12.dp),
+        tonalElevation = Elevation.z3,
+        shadowElevation = Elevation.z2
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FloatingItem(
+                label = stringResource(R.string.chat_copy),
+                icon = { Icon(FeatherIcons.Copy, null) },
+                enabled = state.hasSelection && state.selectionText.isNotBlank(),
+                onClick = { viewModel.performCopy(state.selectionText) }
+            )
+            FloatingItem(
+                label = "粘贴",
+                icon = { Icon(FeatherIcons.Edit3, null) },
+                enabled = true,
+                onClick = { viewModel.performPaste(state.tabId) }
+            )
+            FloatingItem(
+                label = "剪切",
+                icon = { Icon(FeatherIcons.Scissors, null) },
+                enabled = state.cutEligibleBytes > 0 && state.selectionText.isNotBlank(),
+                onClick = { viewModel.performCut(state.tabId, state.cutEligibleBytes, state.selectionText) }
+            )
+            FloatingItem(
+                label = "选择",
+                icon = { Icon(FeatherIcons.Grid, null) },
+                enabled = true,
+                onClick = { viewModel.startSelection(state.tabId) }
+            )
+            FloatingItem(
+                label = "浏览器打开",
+                icon = { Icon(FeatherIcons.ExternalLink, null) },
+                enabled = state.detectedUrl != null,
+                onClick = { state.detectedUrl?.let(viewModel::openUrl) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun RowScope.FloatingItem(
+    label: String,
+    icon: @Composable () -> Unit,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val alpha = if (enabled) 1f else 0.35f
+    Column(
+        modifier = Modifier
+            .weight(1f, fill = false)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha)
+        ) {
+            Box(modifier = Modifier.size(22.dp)) { icon() }
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
+        )
+    }
 }
 
 /**
@@ -495,7 +714,7 @@ private enum class KeyGroup { A, B, C, D }
 // ──────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean, skin: TerminalSkin) {
+fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean, skin: TerminalSkinSnapshot) {
     Surface(
         color = skin.surface,
         modifier = Modifier.fillMaxWidth()
@@ -594,7 +813,7 @@ fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean, skin: TerminalSkin
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit, skin: TerminalSkin) {
+private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit, skin: TerminalSkinSnapshot) {
     Box(
         modifier = Modifier
             .height(TerminalLayout.keyHeight)
@@ -633,7 +852,7 @@ private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit, skin: Termin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CtrlChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkin) {
+private fun CtrlChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkinSnapshot) {
     val state = rememberTooltipState(isPersistent = false)
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -656,7 +875,7 @@ private fun CtrlChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AltChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkin) {
+private fun AltChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkinSnapshot) {
     val state = rememberTooltipState(isPersistent = false)
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -679,7 +898,7 @@ private fun AltChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkin)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun KeyChip(label: String, skin: TerminalSkin, group: KeyGroup = KeyGroup.A, active: Boolean = false, onClick: () -> Unit) {
+private fun KeyChip(label: String, skin: TerminalSkinSnapshot, group: KeyGroup = KeyGroup.A, active: Boolean = false, onClick: () -> Unit) {
     val bg = when {
         active -> skin.ctrlActiveBg
         group == KeyGroup.D -> skin.keyGroupDBg
@@ -819,7 +1038,7 @@ fun TerminalOperationsMenu(
 @Composable
 fun TabLongPressDialog(
     tab: TerminalTab,
-    skin: TerminalSkin,
+    skin: TerminalSkinSnapshot,
     onDismiss: () -> Unit,
     onRename: () -> Unit,
     onClose: () -> Unit,
