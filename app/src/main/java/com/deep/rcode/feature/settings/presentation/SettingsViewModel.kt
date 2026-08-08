@@ -92,36 +92,38 @@ data class LogViewerUiState(
     val error: String? = null,
     val levelHint: LogLevelHint? = null
 ) {
-    val filteredEntries: List<LogEntry> by lazy(LazyThreadSafetyMode.NONE) {
-        var list = entries
-        if (searchQuery.isNotBlank()) {
-            val q = searchQuery.trim()
-            list = list.filter { e ->
-                e.message.contains(q, ignoreCase = true) ||
-                    e.tag.contains(q, ignoreCase = true) ||
-                    e.throwableStack?.contains(q, ignoreCase = true) == true
+    /** 过滤后条目——每次访问即时计算，避免 by lazy 在 data class 新实例间被 Compose 快照系统误缓存。 */
+    val filteredEntries: List<LogEntry>
+        get() {
+            var list = entries
+            if (searchQuery.isNotBlank()) {
+                val q = searchQuery.trim()
+                list = list.filter { e ->
+                    e.message.contains(q, ignoreCase = true) ||
+                        e.tag.contains(q, ignoreCase = true) ||
+                        e.throwableStack?.contains(q, ignoreCase = true) == true
+                }
             }
-        }
-        if (selectedLevels.isNotEmpty()) {
-            val ordinalMax = selectedLevels.maxOf { it.ordinal }
-            val ordinalMin = selectedLevels.minOf { it.ordinal }
-            // 判断是否连续（覆盖区间 [min, max]），若是走 ordinal 范围匹配更直观
-            val continuous = (ordinalMax - ordinalMin + 1) == selectedLevels.size
-            list = if (continuous) {
-                list.filter { it.level.ordinal in ordinalMin..ordinalMax }
-            } else {
-                list.filter { it.level in selectedLevels }
+            if (selectedLevels.isNotEmpty()) {
+                val ordinalMax = selectedLevels.maxOf { it.ordinal }
+                val ordinalMin = selectedLevels.minOf { it.ordinal }
+                // 判断是否连续（覆盖区间 [min, max]），若是走 ordinal 范围匹配更直观
+                val continuous = (ordinalMax - ordinalMin + 1) == selectedLevels.size
+                list = if (continuous) {
+                    list.filter { it.level.ordinal in ordinalMin..ordinalMax }
+                } else {
+                    list.filter { it.level in selectedLevels }
+                }
             }
+            if (selectedCategories.isNotEmpty()) {
+                list = list.filter { it.category in selectedCategories }
+            }
+            return list
         }
-        if (selectedCategories.isNotEmpty()) {
-            list = list.filter { it.category in selectedCategories }
-        }
-        list
-    }
 
-    val levelCounts: Map<LogLevel, Int> by lazy(LazyThreadSafetyMode.NONE) {
-        entries.groupingBy { it.level }.eachCount()
-    }
+    /** 按等级统计条数——每次访问即时计算。 */
+    val levelCounts: Map<LogLevel, Int>
+        get() = entries.groupingBy { it.level }.eachCount()
 
     val totalCount: Int get() = entries.size
     val shownCount: Int get() = filteredEntries.size

@@ -35,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -64,6 +65,8 @@ import com.deep.rcode.feature.settings.presentation.LogViewerUiState
 import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Edit2
+import compose.icons.feathericons.FileText
+import compose.icons.feathericons.RefreshCw
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -111,7 +114,8 @@ internal fun SystemLogsSection(
     onToggleCategory: (String) -> Unit,
     onClearCategoryFilter: () -> Unit,
     onSyncDisplayFilter: () -> Unit,
-    onConsumeHint: () -> Unit
+    onConsumeHint: () -> Unit,
+    onRefresh: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -162,8 +166,8 @@ internal fun SystemLogsSection(
             when {
                 state.loading -> LoadingBody()
                 state.error != null -> ErrorBody(state.error)
-                state.entries.isEmpty() -> EmptyHint(stringResource(R.string.log_no_entries))
-                state.filteredEntries.isEmpty() -> EmptyHint(stringResource(R.string.log_no_match))
+                state.entries.isEmpty() -> NoEntriesHint(onRefresh)
+                state.filteredEntries.isEmpty() -> NoMatchHint(onClearLevelFilter, onClearCategoryFilter)
                 else -> LogEntryList(entries = state.filteredEntries)
             }
         }
@@ -697,6 +701,88 @@ private fun ErrorBody(message: String) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
+        }
+    }
+}
+
+/** 无日志空态：图标 + 标题 + 操作建议。 */
+@Composable
+private fun NoEntriesHint(onRefresh: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(Spacing.xl),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            Icon(
+                imageVector = FeatherIcons.FileText,
+                contentDescription = null,
+                modifier = Modifier.size(56.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
+            Text(
+                text = stringResource(R.string.log_no_entries),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(R.string.log_no_entries_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.size(Spacing.xs))
+            OutlinedButton(onClick = onRefresh) {
+                Icon(FeatherIcons.RefreshCw, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.size(4.dp))
+                Text(stringResource(R.string.settings_refresh_logs))
+            }
+        }
+    }
+}
+
+/** 筛选无匹配空态：图标 + 标题 + 清除筛选操作按钮。 */
+@Composable
+private fun NoMatchHint(onClearLevelFilter: () -> Unit, onClearCategoryFilter: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(Spacing.xl),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(56.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
+            Text(
+                text = stringResource(R.string.log_no_match),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(R.string.log_no_match_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.size(Spacing.xs))
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedButton(onClick = { onClearLevelFilter(); onClearCategoryFilter() }) {
+                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.size(4.dp))
+                    Text(stringResource(R.string.log_clear_all_filters))
+                }
+            }
         }
     }
 }

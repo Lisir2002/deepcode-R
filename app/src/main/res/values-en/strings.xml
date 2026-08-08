@@ -124,8 +124,11 @@
     <string name="log_sync_display_filter">Sync display filter</string>
     <string name="log_category_app">App</string>
     <string name="log_no_entries">No logs yet</string>
+    <string name="log_no_entries_hint">Use the app to generate some logs, or tap the refresh button in the top bar.</string>
     <string name="log_error_title">Read failed</string>
     <string name="log_files">Log files</string>
+    <string name="log_no_match_hint">Try relaxing filters, or clear all filters and retry.</string>
+    <string name="log_clear_all_filters">Clear all filters</string>
 
     <!-- ? -->
     <string name="sync_unknown_connection">Unknown connection</string>

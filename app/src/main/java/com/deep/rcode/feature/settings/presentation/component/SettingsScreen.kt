@@ -314,7 +314,8 @@ fun SettingsScreen(
                     onToggleCategory = { viewModel.toggleCategoryFilter(it) },
                     onClearCategoryFilter = { viewModel.clearCategoryFilter() },
                     onSyncDisplayFilter = { viewModel.syncDisplayFilterToRecordLevel() },
-                    onConsumeHint = { viewModel.consumeLevelHint() }
+                    onConsumeHint = { viewModel.consumeLevelHint() },
+                    onRefresh = { viewModel.refreshLogs() }
                 )
                 SettingsSection.Permissions -> PermissionsSection(
                     projectName = currentProjectName,

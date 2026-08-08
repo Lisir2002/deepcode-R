@@ -124,8 +124,11 @@
     <string name="log_sync_display_filter">同步显示过滤</string>
     <string name="log_category_app">App</string>
     <string name="log_no_entries">还没有任何日志</string>
+    <string name="log_no_entries_hint">去主页操作一下让应用产生日志，或点击右上角刷新按钮。</string>
     <string name="log_error_title">读取失败</string>
     <string name="log_files">日志文件</string>
+    <string name="log_no_match_hint">请尝试放宽筛选条件，或清除所有筛选后重试。</string>
+    <string name="log_clear_all_filters">清除全部筛选</string>
 
     <!-- ? -->
     <string name="sync_unknown_connection">未知连接</string>
