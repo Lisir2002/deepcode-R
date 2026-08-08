@@ -653,44 +653,30 @@ class SettingsViewModel @Inject constructor(
         return result
     }
 
-    /** 从单个文件尾部向前扫描，读取最后 n 行。 */
+    /** 从单个文件尾部读取最后 n 行（UTF-8 安全）。 */
     private fun readFileTail(file: java.io.File, n: Int): List<String> {
         if (!file.exists() || file.length() == 0L) return emptyList()
-        try {
+        return try {
             val raf = java.io.RandomAccessFile(file, "r")
             try {
                 val fileLength = raf.length()
-                // 从尾部向前扫描，收集 n 行
-                val lines = mutableListOf<String>()
-                var pos = fileLength - 1
-                var remaining = n
-                val buf = StringBuilder()
-
-                while (pos >= 0 && remaining > 0) {
-                    raf.seek(pos)
-                    val byte = raf.readByte().toInt() and 0xFF
-                    if (byte == '\n'.code) {
-                        if (buf.isNotEmpty()) {
-                            lines.add(0, buf.reverse().toString())
-                            buf.clear()
-                            remaining--
-                        }
-                    } else if (byte != '\r'.code) {
-                        buf.append(byte.toChar())
-                    }
-                    pos--
-                }
-                // 处理文件开头剩余部分
-                if (buf.isNotEmpty() && remaining > 0) {
-                    lines.add(0, buf.reverse().toString())
-                }
-                return lines
+                // 估算读取字节数：每行按 200 字节估算，至少 8KB
+                val bytesToRead = minOf(fileLength, (n * 200L).coerceAtLeast(8192L))
+                val startPos = fileLength - bytesToRead
+                raf.seek(startPos)
+                val bytes = ByteArray(bytesToRead.toInt())
+                raf.readFully(bytes)
+                // 整块 UTF-8 解码（开头可能截断在多字节字符中间，但 String 解码器会正确处理）
+                String(bytes, Charsets.UTF_8)
+                    .lines()
+                    .takeLast(n)
+                    .map { it.trimEnd('\r') }
             } finally {
                 raf.close()
             }
         } catch (e: Exception) {
             // 降级：使用 readLines
-            return file.readLines(Charsets.UTF_8).takeLast(n)
+            file.readLines(Charsets.UTF_8).takeLast(n)
         }
     }
 
