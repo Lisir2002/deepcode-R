@@ -12,8 +12,9 @@
     <string name="settings_compaction_model">Compaction Model</string>
     <string name="settings_mcp">MCP Servers</string>
     <string name="settings_container">Container Image</string>
-    <string name="settings_log">Log Level</string>
+    <string name="settings_logs">Logs</string>
     <string name="settings_log_viewer">Log Viewer</string>
+    <string name="settings_log">Log Level</string>
     <string name="settings_permissions">Tool Permissions</string>
     <string name="settings_remote_servers">Remote Workspace</string>
     <string name="settings_backup">Backup &amp; Restore</string>

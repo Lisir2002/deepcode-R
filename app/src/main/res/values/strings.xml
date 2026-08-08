@@ -12,8 +12,9 @@
     <string name="settings_compaction_model">压缩模型</string>
     <string name="settings_mcp">MCP 服务器</string>
     <string name="settings_container">容器镜像</string>
-    <string name="settings_log">日志等级</string>
+    <string name="settings_logs">日志</string>
     <string name="settings_log_viewer">日志查看</string>
+    <string name="settings_log">日志等级</string>
     <string name="settings_permissions">工具授权</string>
     <string name="settings_remote_servers">远程工作区</string>
     <string name="settings_backup">备份与还原</string>

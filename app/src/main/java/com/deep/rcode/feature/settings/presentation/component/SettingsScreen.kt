@@ -82,8 +82,7 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     DefaultModels(R.string.settings_default_models),
     Mcp(R.string.settings_mcp),
     Container(R.string.settings_container),
-    Log(R.string.settings_log),
-    LogViewer(R.string.settings_log_viewer),
+    Logs(R.string.settings_logs),
     Permissions(R.string.settings_permissions),
     RemoteServers(R.string.settings_remote_servers),
     Backup(R.string.settings_backup),
@@ -139,7 +138,7 @@ fun SettingsScreen(
     BackHandler(enabled = section != SettingsSection.Menu) {
         when (section) {
             SettingsSection.ProviderEditor -> section = SettingsSection.Providers
-            SettingsSection.LogViewer -> section = logReturnSection
+            SettingsSection.Logs -> section = logReturnSection
             else -> section = SettingsSection.Menu
         }
     }
@@ -181,7 +180,7 @@ fun SettingsScreen(
                     IconButton(onClick = {
                         if (section == SettingsSection.Menu) {
                             onNavigateBack()
-                        } else if (section == SettingsSection.LogViewer) {
+                        } else if (section == SettingsSection.Logs) {
                             section = logReturnSection
                         } else {
                             section = SettingsSection.Menu
@@ -216,7 +215,7 @@ fun SettingsScreen(
                         SettingsSection.Container -> IconButton(onClick = { showContainerAddSheet = true }) {
                             Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.container_add_image))
                         }
-                        SettingsSection.LogViewer -> {
+                        SettingsSection.Logs -> {
                             IconButton(onClick = { viewModel.refreshLogs() }) {
                                 Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_refresh_logs))
                             }
@@ -252,7 +251,7 @@ fun SettingsScreen(
                     currentLanguageDisplayName = currentLanguageDisplayName,
                     onOpenLanguageSheet = { showLanguageSheet = true },
                     onOpen = {
-                        if (it == SettingsSection.LogViewer) {
+                        if (it == SettingsSection.Logs) {
                             logReturnSection = SettingsSection.Menu
                             viewModel.refreshLogs(filterServerName = null)
                         }
@@ -304,13 +303,12 @@ fun SettingsScreen(
                     onResetBuiltin = { viewModel.resetBuiltinContainer() },
                     remoteConnections = remoteConnections
                 )
-                SettingsSection.Log -> LogSection(
-                    current = logLevel,
-                    onSelect = { viewModel.setLogLevel(it) }
-                )
-                SettingsSection.LogViewer -> LogViewerSection(
-                    state = logViewerState,
-                    onSelectFile = { viewModel.selectLogFile(it) }
+                SettingsSection.Logs -> LogsSection(
+                    currentLogLevel = logLevel,
+                    onSelectLogLevel = { viewModel.setLogLevel(it) },
+                    logViewerState = logViewerState,
+                    onSelectFile = { viewModel.selectLogFile(it) },
+                    onRefresh = { viewModel.refreshLogs() }
                 )
                 SettingsSection.Permissions -> PermissionsSection(
                     projectName = currentProjectName,
@@ -342,7 +340,7 @@ fun SettingsScreen(
                     showMcpDialog = false
                     logReturnSection = SettingsSection.Mcp
                     viewModel.refreshLogs(filterServerName = existing.name)
-                    section = SettingsSection.LogViewer
+                    section = SettingsSection.Logs
                 }
             },
             onDismiss = { showMcpDialog = false },
@@ -465,15 +463,9 @@ internal fun SettingsMenu(
         )
         MenuRow(
             icon = FeatherIcons.FileText,
-            title = stringResource(SettingsSection.Log.titleRes),
+            title = stringResource(SettingsSection.Logs.titleRes),
             subtitle = stringResource(R.string.settings_log_current, logLevel.name),
-            onClick = { onOpen(SettingsSection.Log) }
-        )
-        MenuRow(
-            icon = FeatherIcons.FileText,
-            title = stringResource(SettingsSection.LogViewer.titleRes),
-            subtitle = stringResource(R.string.settings_log_viewer_subtitle),
-            onClick = { onOpen(SettingsSection.LogViewer) }
+            onClick = { onOpen(SettingsSection.Logs) }
         )
 
         // ── 外观与语言 ──
