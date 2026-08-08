@@ -29,8 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import com.deep.rcode.core.theme.AppTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -107,36 +106,27 @@ fun GitScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(if (showCredentials) stringResource(R.string.git_credentials_and_identity) else "Git") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                ),
-                navigationIcon = {
-                    IconButton(onClick = {
-                        // 凭据列表态回 Git 页，否则退出 Git 页。编辑/新增态由 [CredentialEditorScreen] 自身 BackHandler 处理，不走此顶栏。
-                        if (showCredentials) showCredentials = false else onNavigateBack()
-                    }) {
-                        Icon(FeatherIcons.ArrowLeft, contentDescription = stringResource(R.string.common_back))
-                    }
+            AppTopAppBar(
+                title = if (showCredentials) stringResource(R.string.git_credentials_and_identity) else "Git",
+                onNavigateBack = {
+                    if (showCredentials) showCredentials = false else onNavigateBack()
                 },
-                actions = {
-                    if (!showCredentials) {
-                        IconButton(onClick = { showCredentials = true }) {
-                            Icon(FeatherIcons.Key, contentDescription = stringResource(R.string.git_credentials_and_identity))
-                        }
-                        IconButton(onClick = { viewModel.refresh() }, enabled = !state.busy) {
-                            Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.git_refresh))
-                        }
-                    } else {
-                        // showCredentials 列表态：显示添加凭据。编辑/新增态已 return，渲染顶栏时不会落到此分支。
-                        IconButton(onClick = { isAddingCredential = true }) {
-                            Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.credential_add))
-                        }
+                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationContentDescription = stringResource(R.string.common_back)
+            ) {
+                if (!showCredentials) {
+                    IconButton(onClick = { showCredentials = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(FeatherIcons.Key, contentDescription = stringResource(R.string.git_credentials_and_identity), modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = { viewModel.refresh() }, enabled = !state.busy, modifier = Modifier.size(36.dp)) {
+                        Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.git_refresh), modifier = Modifier.size(20.dp))
+                    }
+                } else {
+                    IconButton(onClick = { isAddingCredential = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.credential_add), modifier = Modifier.size(20.dp))
                     }
                 }
-            )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->

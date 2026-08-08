@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,9 +32,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import com.deep.rcode.core.theme.AppTopAppBar
+import com.deep.rcode.core.theme.AppSectionHeader
+import com.deep.rcode.core.theme.AppSectionGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -170,60 +173,50 @@ fun SettingsScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(section.titleRes)) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                ),
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (section == SettingsSection.Menu) {
-                            onNavigateBack()
-                        } else if (section == SettingsSection.Logs) {
-                            section = logReturnSection
-                        } else {
-                            section = SettingsSection.Menu
-                        }
-                    }) {
-                        Icon(FeatherIcons.ArrowLeft, contentDescription = stringResource(R.string.common_back))
+            AppTopAppBar(
+                title = stringResource(section.titleRes),
+                onNavigateBack = {
+                    if (section == SettingsSection.Menu) {
+                        onNavigateBack()
+                    } else if (section == SettingsSection.Logs) {
+                        section = logReturnSection
+                    } else {
+                        section = SettingsSection.Menu
                     }
                 },
-                actions = {
-                    when (section) {
-                        SettingsSection.Providers -> IconButton(onClick = {
-                            editingProvider = null
-                            section = SettingsSection.ProviderEditor
-                        }) {
-                            Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.settings_add_provider))
-                        }
-                        SettingsSection.Mcp -> {
-                            IconButton(onClick = { viewModel.reloadMcp() }) {
-                                if (mcpReloading) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_reconnect))
-                                }
-                            }
-                            IconButton(onClick = {
-                                editingMcp = null
-                                showMcpDialog = true
-                            }) {
-                                Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.settings_add_mcp_server))
-                            }
-                        }
-                        SettingsSection.Container -> IconButton(onClick = { showContainerAddSheet = true }) {
-                            Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.container_add_image))
-                        }
-                        SettingsSection.Logs -> {
-                            IconButton(onClick = { viewModel.refreshLogs() }) {
-                                Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_refresh_logs))
-                            }
-                        }
-                        else -> {}
+                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationContentDescription = stringResource(R.string.common_back)
+            ) {
+                when (section) {
+                    SettingsSection.Providers -> IconButton(
+                        onClick = { editingProvider = null; section = SettingsSection.ProviderEditor },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.settings_add_provider), modifier = Modifier.size(20.dp))
                     }
+                    SettingsSection.Mcp -> {
+                        IconButton(onClick = { viewModel.reloadMcp() }, modifier = Modifier.size(36.dp)) {
+                            if (mcpReloading) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_reconnect), modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        IconButton(onClick = { editingMcp = null; showMcpDialog = true }, modifier = Modifier.size(36.dp)) {
+                            Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.settings_add_mcp_server), modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    SettingsSection.Container -> IconButton(onClick = { showContainerAddSheet = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.container_add_image), modifier = Modifier.size(20.dp))
+                    }
+                    SettingsSection.Logs -> {
+                        IconButton(onClick = { viewModel.refreshLogs() }, modifier = Modifier.size(36.dp)) {
+                            Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_refresh_logs), modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    else -> {}
                 }
-            )
+            }
         }
     ) { padding ->
         Box(
@@ -411,110 +404,134 @@ internal fun SettingsMenu(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(Spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+            .padding(vertical = Spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(Spacing.lg)
     ) {
         // ── AI 配置 ──
-        SectionHeader(text = stringResource(R.string.settings_category_ai))
-        MenuRow(
-            icon = FeatherIcons.Cloud,
-            title = stringResource(SettingsSection.Providers.titleRes),
-            subtitle = if (providerCount == 0) {
-                stringResource(R.string.settings_providers_empty)
-            } else {
-                stringResource(R.string.settings_providers_count, providerCount) +
-                    (activeProviderName?.let { stringResource(R.string.settings_providers_active, it) } ?: "")
-            },
-            onClick = { onOpen(SettingsSection.Providers) }
-        )
-        MenuRow(
-            icon = FeatherIcons.Cpu,
-            title = stringResource(SettingsSection.DefaultModels.titleRes),
-            subtitle = run {
-                val parts = mutableListOf<String>()
-                if (!visionProviderName.isNullOrBlank() && visionModel.isNotBlank()) {
-                    parts.add(stringResource(R.string.settings_vision_model) + ": " + (visionProviderName?.let { "$it · $visionModel" } ?: visionModel))
-                }
-                if (!compactionProviderName.isNullOrBlank() && compactionModel.isNotBlank()) {
-                    parts.add(stringResource(R.string.settings_compaction_model) + ": " + (compactionProviderName?.let { "$it · $compactionModel" } ?: compactionModel))
-                }
-                if (parts.isEmpty()) stringResource(R.string.settings_default_models_subtitle) else parts.joinToString("\n")
-            },
-            onClick = { onOpen(SettingsSection.DefaultModels) }
-        )
-        MenuRow(
-            icon = FeatherIcons.Box,
-            title = stringResource(SettingsSection.Mcp.titleRes),
-            subtitle = if (mcpCount == 0) stringResource(R.string.settings_mcp_empty) else stringResource(R.string.settings_mcp_count_connected, mcpCount, mcpConnected),
-            onClick = { onOpen(SettingsSection.Mcp) }
-        )
+        AppSectionHeader(text = stringResource(R.string.settings_category_ai))
+        AppSectionGroup {
+            GroupMenuRow(
+                icon = FeatherIcons.Cloud,
+                title = stringResource(SettingsSection.Providers.titleRes),
+                subtitle = if (providerCount == 0) {
+                    stringResource(R.string.settings_providers_empty)
+                } else {
+                    stringResource(R.string.settings_providers_count, providerCount) +
+                        (activeProviderName?.let { stringResource(R.string.settings_providers_active, it) } ?: "")
+                },
+                onClick = { onOpen(SettingsSection.Providers) },
+                showDivider = true
+            )
+            GroupMenuRow(
+                icon = FeatherIcons.Cpu,
+                title = stringResource(SettingsSection.DefaultModels.titleRes),
+                subtitle = run {
+                    val parts = mutableListOf<String>()
+                    if (!visionProviderName.isNullOrBlank() && visionModel.isNotBlank()) {
+                        parts.add(stringResource(R.string.settings_vision_model) + ": " + (visionProviderName?.let { "$it · $visionModel" } ?: visionModel))
+                    }
+                    if (!compactionProviderName.isNullOrBlank() && compactionModel.isNotBlank()) {
+                        parts.add(stringResource(R.string.settings_compaction_model) + ": " + (compactionProviderName?.let { "$it · $compactionModel" } ?: compactionModel))
+                    }
+                    if (parts.isEmpty()) stringResource(R.string.settings_default_models_subtitle) else parts.joinToString("\n")
+                },
+                onClick = { onOpen(SettingsSection.DefaultModels) },
+                showDivider = true
+            )
+            GroupMenuRow(
+                icon = FeatherIcons.Box,
+                title = stringResource(SettingsSection.Mcp.titleRes),
+                subtitle = if (mcpCount == 0) stringResource(R.string.settings_mcp_empty) else stringResource(R.string.settings_mcp_count_connected, mcpCount, mcpConnected),
+                onClick = { onOpen(SettingsSection.Mcp) },
+                showDivider = false
+            )
+        }
 
         // ── 运行环境 ──
-        SectionHeader(text = stringResource(R.string.settings_category_environment))
-        MenuRow(
-            icon = FeatherIcons.HardDrive,
-            title = stringResource(SettingsSection.Container.titleRes),
-            subtitle = stringResource(R.string.settings_container_current, activeContainerProfileName ?: stringResource(R.string.settings_container_builtin_alpine)),
-            onClick = { onOpen(SettingsSection.Container) }
-        )
-        MenuRow(
-            icon = FeatherIcons.Server,
-            title = stringResource(SettingsSection.RemoteServers.titleRes),
-            subtitle = stringResource(R.string.settings_remote_subtitle),
-            onClick = { onOpen(SettingsSection.RemoteServers) }
-        )
+        AppSectionHeader(text = stringResource(R.string.settings_category_environment))
+        AppSectionGroup {
+            GroupMenuRow(
+                icon = FeatherIcons.HardDrive,
+                title = stringResource(SettingsSection.Container.titleRes),
+                subtitle = stringResource(R.string.settings_container_current, activeContainerProfileName ?: stringResource(R.string.settings_container_builtin_alpine)),
+                onClick = { onOpen(SettingsSection.Container) },
+                showDivider = true
+            )
+            GroupMenuRow(
+                icon = FeatherIcons.Server,
+                title = stringResource(SettingsSection.RemoteServers.titleRes),
+                subtitle = stringResource(R.string.settings_remote_subtitle),
+                onClick = { onOpen(SettingsSection.RemoteServers) },
+                showDivider = false
+            )
+        }
 
         // ── 工具与权限 ──
-        SectionHeader(text = stringResource(R.string.settings_category_tools))
-        MenuRow(
-            icon = FeatherIcons.Lock,
-            title = stringResource(SettingsSection.Permissions.titleRes),
-            subtitle = if (permissionRuleCount == 0) stringResource(R.string.settings_permissions_empty) else stringResource(R.string.settings_permissions_count, permissionRuleCount),
-            onClick = { onOpen(SettingsSection.Permissions) }
-        )
-        MenuRow(
-            icon = FeatherIcons.FileText,
-            title = stringResource(SettingsSection.Logs.titleRes),
-            subtitle = stringResource(R.string.settings_log_current, logLevel.name),
-            onClick = { onOpen(SettingsSection.Logs) }
-        )
+        AppSectionHeader(text = stringResource(R.string.settings_category_tools))
+        AppSectionGroup {
+            GroupMenuRow(
+                icon = FeatherIcons.Lock,
+                title = stringResource(SettingsSection.Permissions.titleRes),
+                subtitle = if (permissionRuleCount == 0) stringResource(R.string.settings_permissions_empty) else stringResource(R.string.settings_permissions_count, permissionRuleCount),
+                onClick = { onOpen(SettingsSection.Permissions) },
+                showDivider = true
+            )
+            GroupMenuRow(
+                icon = FeatherIcons.FileText,
+                title = stringResource(SettingsSection.Logs.titleRes),
+                subtitle = stringResource(R.string.settings_log_current, logLevel.name),
+                onClick = { onOpen(SettingsSection.Logs) },
+                showDivider = false
+            )
+        }
 
         // ── 外观与语言 ──
-        SectionHeader(text = stringResource(R.string.settings_category_appearance))
-        MenuRow(
-            icon = FeatherIcons.Moon,
-            title = stringResource(R.string.settings_theme_title),
-            subtitle = stringResource(themeMode.labelRes),
-            onClick = onOpenThemeSheet
-        )
-        MenuRow(
-            icon = FeatherIcons.Globe,
-            title = stringResource(R.string.settings_language),
-            subtitle = currentLanguageDisplayName,
-            onClick = onOpenLanguageSheet
-        )
+        AppSectionHeader(text = stringResource(R.string.settings_category_appearance))
+        AppSectionGroup {
+            GroupMenuRow(
+                icon = FeatherIcons.Moon,
+                title = stringResource(R.string.settings_theme_title),
+                subtitle = stringResource(themeMode.labelRes),
+                onClick = onOpenThemeSheet,
+                showDivider = true
+            )
+            GroupMenuRow(
+                icon = FeatherIcons.Globe,
+                title = stringResource(R.string.settings_language),
+                subtitle = currentLanguageDisplayName,
+                onClick = onOpenLanguageSheet,
+                showDivider = false
+            )
+        }
 
         // ── 其他 ──
-        SectionHeader(text = stringResource(R.string.settings_category_other))
-        SwitchRow(
-            icon = FeatherIcons.RefreshCw,
-            title = stringResource(R.string.settings_keepalive_title),
-            subtitle = stringResource(R.string.settings_keepalive_subtitle),
-            checked = keepaliveEnabled,
-            onCheckedChange = onToggleKeepalive
-        )
-        MenuRow(
-            icon = FeatherIcons.Save,
-            title = stringResource(SettingsSection.Backup.titleRes),
-            subtitle = stringResource(R.string.settings_backup_subtitle),
-            onClick = { onOpen(SettingsSection.Backup) }
-        )
-        MenuRow(
-            icon = FeatherIcons.Info,
-            title = stringResource(SettingsSection.About.titleRes),
-            subtitle = stringResource(R.string.settings_about_subtitle),
-            onClick = { onOpen(SettingsSection.About) }
-        )
+        AppSectionHeader(text = stringResource(R.string.settings_category_other))
+        AppSectionGroup {
+            GroupSwitchRow(
+                icon = FeatherIcons.RefreshCw,
+                title = stringResource(R.string.settings_keepalive_title),
+                subtitle = stringResource(R.string.settings_keepalive_subtitle),
+                checked = keepaliveEnabled,
+                onCheckedChange = onToggleKeepalive
+            )
+            GroupMenuRow(
+                icon = FeatherIcons.Save,
+                title = stringResource(SettingsSection.Backup.titleRes),
+                subtitle = stringResource(R.string.settings_backup_subtitle),
+                onClick = { onOpen(SettingsSection.Backup) },
+                showDivider = true
+            )
+            GroupMenuRow(
+                icon = FeatherIcons.Info,
+                title = stringResource(SettingsSection.About.titleRes),
+                subtitle = stringResource(R.string.settings_about_subtitle),
+                onClick = { onOpen(SettingsSection.About) },
+                showDivider = false
+            )
+        }
+
+        // 底部留白
+        Spacer(Modifier.height(Spacing.md))
     }
 }
 
@@ -566,16 +583,104 @@ internal fun SwitchRow(
     }
 }
 
-/** 分组小标题。 */
+/** 分组内菜单行：无边框、无 Card，带可选底部分割线。 */
 @Composable
-internal fun SectionHeader(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.xs)
-    )
+internal fun GroupMenuRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    showDivider: Boolean = true
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onClick() }
+                .padding(Spacing.lg),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(Spacing.md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = FeatherIcons.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(start = 56.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+        }
+    }
+}
+
+/** 分组内开关行：无边框、无 Card，带 Switch。 */
+@Composable
+internal fun GroupSwitchRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.lg),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(Spacing.md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        }
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+    }
 }
 
 /** 二级菜单入口行：图标 + 标题 + 摘要 + 右箭头。 */

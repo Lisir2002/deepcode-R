@@ -19,11 +19,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,8 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import com.deep.rcode.core.theme.AppTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -83,26 +77,19 @@ fun TerminalScreen(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.terminal_title)) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                ),
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(FeatherIcons.ArrowLeft, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { viewModel.reconnectActive() }) {
-                        Icon(
-                            FeatherIcons.RefreshCw,
-                            contentDescription = stringResource(R.string.terminal_reconnect_tab),
-                            tint = androidx.compose.ui.graphics.Color(0xFF424242))
-                    }
+            AppTopAppBar(
+                title = stringResource(R.string.terminal_title),
+                onNavigateBack = onNavigateBack,
+                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationContentDescription = stringResource(R.string.common_back)
+            ) {
+                IconButton(onClick = { viewModel.reconnectActive() }, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        FeatherIcons.RefreshCw,
+                        contentDescription = stringResource(R.string.terminal_reconnect_tab),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            )
+            }
         }
     ) { padding ->
         Column(

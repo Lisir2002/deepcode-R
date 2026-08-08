@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.deep.rcode.core.theme.Elevation
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.domain.tool.question.PendingUserQuestion
@@ -90,6 +91,7 @@ fun AskUserQuestionPanel(
             .padding(horizontal = Spacing.lg, vertical = Spacing.xs),
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(Radius.md),
+        shadowElevation = Elevation.z2,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(

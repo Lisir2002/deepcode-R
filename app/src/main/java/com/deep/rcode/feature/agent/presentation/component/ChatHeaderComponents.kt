@@ -40,6 +40,14 @@ import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Star
 import compose.icons.feathericons.Terminal
 
+/**
+ * 紧凑型聊天顶部栏（48dp，与 AppTopAppBar 一致）。
+ *
+ * 设计要点：
+ * - 高度固定 48dp，无额外 statusBarsPadding（由 Scaffold 或 edge-to-edge 统一处理）
+ * - 图标按钮 32dp，图标 18dp，比默认更紧凑
+ * - 标题 + 模型名占一行，垂直居中
+ */
 @Composable
 internal fun ChatHeader(
     sessionTitle: String,
@@ -55,74 +63,90 @@ internal fun ChatHeader(
     connectionState: com.deep.rcode.feature.agent.domain.container.ConnectionState? = null
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-        ) {
+        Column {
+            // 主行：48dp 高度
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+                    .height(48.dp)
+                    .padding(horizontal = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onOpenDrawer) {
+                IconButton(
+                    onClick = onOpenDrawer,
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         FeatherIcons.Menu,
                         contentDescription = stringResource(R.string.chat_open_sidebar),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp))
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = sessionTitle,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onBackground,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         if (!modelName.isNullOrBlank()) {
-                            ModelLogoIcon(modelName = modelName, size = 14.dp)
+                            ModelLogoIcon(modelName = modelName, size = 10.dp)
                         }
                         Text(
                             text = modelName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_no_model_selected),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
-                IconButton(onClick = onNewChat) {
+                IconButton(
+                    onClick = onNewChat,
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         FeatherIcons.Plus,
                         contentDescription = stringResource(R.string.chat_new_session),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = onNavigateToGit) {
+                IconButton(
+                    onClick = onNavigateToGit,
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         FeatherIcons.GitBranch,
                         contentDescription = stringResource(R.string.chat_open_git),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = onNavigateToTerminal) {
+                IconButton(
+                    onClick = onNavigateToTerminal,
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         FeatherIcons.Terminal,
                         contentDescription = stringResource(R.string.chat_open_terminal),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp))
                 }
             }
-            // 远程模式：左边 SSH 连接状态，右边 token 累计统计
+
+            // 远程模式连接状态行
             if (connectionState != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                        .padding(horizontal = Spacing.md, vertical = 1.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {

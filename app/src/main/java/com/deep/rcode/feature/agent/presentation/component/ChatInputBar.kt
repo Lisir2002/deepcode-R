@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.deep.rcode.R
 import com.deep.rcode.core.theme.Brand
+import com.deep.rcode.core.theme.Elevation
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.core.ui.rememberImeBottomInset
@@ -411,6 +412,8 @@ internal fun ToolPermissionPanel(
             .padding(horizontal = Spacing.lg, vertical = Spacing.xs),
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(Radius.md),
+        tonalElevation = Elevation.z2,
+        shadowElevation = Elevation.z2,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
@@ -564,6 +567,7 @@ fun ChangePreviewPanel(
             .padding(horizontal = Spacing.lg, vertical = Spacing.xs),
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(Radius.md),
+        shadowElevation = Elevation.z2,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
@@ -651,6 +655,7 @@ internal fun PlanApprovalPanel(
             .padding(horizontal = Spacing.lg, vertical = Spacing.xs),
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(Radius.md),
+        shadowElevation = Elevation.z2,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {

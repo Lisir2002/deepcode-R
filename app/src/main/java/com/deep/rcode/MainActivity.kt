@@ -12,8 +12,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import com.deep.rcode.core.theme.pageEnterTransition
+import com.deep.rcode.core.theme.pageExitTransition
+import com.deep.rcode.core.theme.pagePopEnterTransition
+import com.deep.rcode.core.theme.pagePopExitTransition
+import com.deep.rcode.core.theme.terminalEnterTransition
+import com.deep.rcode.core.theme.terminalExitTransition
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
@@ -329,10 +333,30 @@ fun AppNavigation() {
         NavHost(
             navController = navController,
             startDestination = "chat",
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
-            popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None }
+            enterTransition = {
+                when (targetState.destination.route) {
+                    "terminal" -> terminalEnterTransition
+                    else -> pageEnterTransition
+                }
+            },
+            exitTransition = {
+                when (initialState.destination.route) {
+                    "terminal" -> terminalExitTransition
+                    else -> pageExitTransition
+                }
+            },
+            popEnterTransition = {
+                when (targetState.destination.route) {
+                    "terminal" -> terminalEnterTransition
+                    else -> pagePopEnterTransition
+                }
+            },
+            popExitTransition = {
+                when (initialState.destination.route) {
+                    "terminal" -> terminalExitTransition
+                    else -> pagePopExitTransition
+                }
+            }
         ) {
             composable("chat") {
                 AIChatPanel(
