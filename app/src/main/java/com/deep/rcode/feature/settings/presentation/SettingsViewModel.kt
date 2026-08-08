@@ -490,19 +490,9 @@ class SettingsViewModel @Inject constructor(
                 runCatching {
                     val files = FileLogger.listLogFiles()
                     val selected = files.firstOrNull { it.name == preferredFileName } ?: files.lastOrNull()
-                    if (selected == null) {
-                        return@runCatching _logViewerState.value.copy(
-                            files = files.map { it.name },
-                            selectedFileName = null,
-                            entries = emptyList(),
-                            categories = emptyList(),
-                            loading = false,
-                            error = null
-                        )
-                    }
-                    val entries = FileLogger.parseLogFile(selected)
-                    // 合并实时 replay 里的条目（比文件末尾更新），按时间去重 + 排序
+                    // 即使无日志文件，也合并 replay 缓存中的条目，确保实时日志可见
                     val fromFlow = FileLogger.entryFlow.replayCache
+                    val entries = if (selected != null) FileLogger.parseLogFile(selected) else emptyList()
                     val merged = mergeEntries(entries, fromFlow)
                     val categories = merged.asSequence()
                         .map { it.category }
@@ -511,7 +501,7 @@ class SettingsViewModel @Inject constructor(
                         .toList()
                     _logViewerState.value.copy(
                         files = files.map { it.name },
-                        selectedFileName = selected.name,
+                        selectedFileName = selected?.name,
                         entries = merged,
                         categories = categories,
                         loading = false,
@@ -545,9 +535,9 @@ class SettingsViewModel @Inject constructor(
         liveEntryJob?.cancel()
         liveEntryJob = viewModelScope.launch {
             var lastSeen: LogEntry? = _logViewerState.value.entries.lastOrNull()
-            FileLogger.entryFlow.collectLatest { entry ->
+            FileLogger.entryFlow.collect { entry ->
                 // 跳过重复：实时流 replay 已经在 loadLogs 时合并过
-                if (lastSeen != null && entry.timestamp <= lastSeen!!.timestamp) return@collectLatest
+                if (lastSeen != null && entry.timestamp <= lastSeen!!.timestamp) return@collect
                 _logViewerState.update { s ->
                     val newEntries = s.entries + entry
                     val newCategories = if (s.categories.contains(entry.category)) {
