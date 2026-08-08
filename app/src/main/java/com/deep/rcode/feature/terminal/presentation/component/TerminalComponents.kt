@@ -9,6 +9,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -76,6 +78,7 @@ import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.domain.container.ContainerInitState
 import com.deep.rcode.feature.terminal.data.repository.TerminalFontSizes
 import com.deep.rcode.feature.terminal.domain.RunState
+import com.deep.rcode.feature.terminal.domain.TabColorMarker
 import com.deep.rcode.feature.terminal.domain.TerminalTab
 import com.deep.rcode.feature.terminal.presentation.TerminalViewModel
 import com.termux.view.TerminalView
@@ -119,6 +122,10 @@ fun TabBar(
     onNew: () -> Unit,
     onTabLongPress: (TerminalTab) -> Unit
 ) {
+    val sortedTabs = remember(tabs) {
+        tabs.sortedByDescending { it.isPinned }
+    }
+
     Surface(
         color = skin.surface,
         modifier = Modifier.fillMaxWidth()
@@ -132,7 +139,7 @@ fun TabBar(
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            tabs.forEach { tab ->
+            sortedTabs.forEach { tab ->
                 TabChip(
                     skin = skin,
                     tab = tab,
@@ -190,7 +197,6 @@ private fun TabChip(
         tab.isBackground -> skin.semanticWarning
         else -> skin.semanticSuccess
     }
-    val closeTint = if (selected) skin.onPrimaryContainer else skin.onSurfaceVariant
 
     Box(
         modifier = Modifier
@@ -202,13 +208,36 @@ private fun TabChip(
                 onClick = onClick,
                 onLongClick = onLongPress
             )
-            .padding(horizontal = TerminalLayout.tabHorizontalPadding),
-        contentAlignment = Alignment.Center
     ) {
+        // 颜色标记条（左侧 3dp 竖条）
+        if (tab.colorMarker != TabColorMarker.NONE) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .align(Alignment.CenterStart)
+                    .clip(RoundedCornerShape(topStart = Radius.md, bottomStart = Radius.md))
+                    .background(tab.colorMarker.color)
+            )
+        }
+
+        // 主内容行
         Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = TerminalLayout.tabHorizontalPadding),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(TerminalLayout.tabItemSpacingH, Alignment.CenterHorizontally)
+            horizontalArrangement = Arrangement.spacedBy(TerminalLayout.tabItemSpacingH)
         ) {
+            // Pin 图标（固定标签）
+            if (tab.isPinned) {
+                Text(
+                    text = "\uD83D\uDCCC",
+                    fontSize = 12.sp
+                )
+            }
+
+            // 状态点
             BadgedBox(
                 badge = {
                     if (hasNewOutput && !selected) {
@@ -220,7 +249,6 @@ private fun TabChip(
                     }
                 }
             ) {
-                // 状态点：DotSize.Chip = 8dp，严格居中
                 Box(
                     modifier = Modifier
                         .size(DotSize.Chip)
@@ -228,7 +256,8 @@ private fun TabChip(
                         .background(dot)
                 )
             }
-            // 优先用 command 摘要（后台标签更可读），其次 title
+
+            // 标题
             val title = tab.command?.takeIf { tab.isBackground && tab.title.startsWith("term-") }
                 ?.let { summarizeCommand(it) }
                 ?: tab.title
@@ -239,25 +268,49 @@ private fun TabChip(
                 fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .width(100.dp)
-                    .wrapContentWidth(Alignment.Start)
-                    .align(Alignment.CenterVertically)
+                modifier = Modifier.wrapContentWidth(Alignment.Start)
             )
-            Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .combinedClickable(onClick = onClose),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    FeatherIcons.X,
-                    contentDescription = stringResource(R.string.terminal_close_tab),
-                    tint = closeTint,
-                    modifier = Modifier.size(16.dp)
+
+            // 退出码（已结束标签）
+            if (tab.runState is RunState.Finished) {
+                val exitCode = (tab.runState as RunState.Finished).exitCode
+                Text(
+                    text = "exit $exitCode",
+                    color = skin.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
                 )
             }
+
+            // 关闭按钮（固定标签无关闭按钮）
+            if (!tab.isPinned) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .combinedClickable(onClick = onClose),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        FeatherIcons.X,
+                        contentDescription = stringResource(R.string.terminal_close_tab),
+                        tint = if (selected) skin.onPrimaryContainer else skin.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+
+        // 底部激活指示条
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(skin.primaryFg)
+                    .clip(RoundedCornerShape(bottomStart = Radius.md, bottomEnd = Radius.md))
+            )
         }
     }
 }
@@ -761,24 +814,86 @@ fun TerminalOperationsMenu(
 }
 
 // ──────────────────────────────────────────────────────────
-// Tab 长按：菜单级对话框（重命名/关闭/关闭其他）
+// Tab 长按：菜单级对话框（重命名/关闭/关闭其他/固定/颜色标记）
 // ──────────────────────────────────────────────────────────
 @Composable
 fun TabLongPressDialog(
     tab: TerminalTab,
+    skin: TerminalSkin,
     onDismiss: () -> Unit,
     onRename: () -> Unit,
     onClose: () -> Unit,
-    onCloseOthers: () -> Unit
+    onCloseOthers: () -> Unit,
+    onTogglePin: () -> Unit,
+    onSetColorMarker: (TabColorMarker) -> Unit
 ) {
+    val runtimeSeconds = (System.currentTimeMillis() - tab.sessionStartTime) / 1000
+    val runtimeText = when {
+        runtimeSeconds < 60 -> "${runtimeSeconds}秒"
+        runtimeSeconds < 3600 -> "${runtimeSeconds / 60}分${runtimeSeconds % 60}秒"
+        else -> "${runtimeSeconds / 3600}时${(runtimeSeconds % 3600) / 60}分"
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("标签「${tab.title}」") },
+        title = {
+            Text("标签「${tab.title}」${if (tab.isPinned) "📌" else ""}")
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                Text("状态：${if (tab.runState is RunState.Running) "运行中" else "已结束（exit=${(tab.runState as? RunState.Finished)?.exitCode}）"}")
+                // 信息区
+                Text("运行时长：$runtimeText", fontSize = 13.sp)
+                Text(
+                    "状态：${if (tab.runState is RunState.Running) "运行中" else "已结束（exit=${(tab.runState as? RunState.Finished)?.exitCode}）"}",
+                    fontSize = 13.sp
+                )
+                Text("子进程数：${tab.childProcessCount}", fontSize = 13.sp)
                 if (tab.isBackground) {
                     Text("后台命令：${tab.command ?: "(无)"}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                }
+
+                HorizontalDivider()
+
+                // Pin/Unpin 按钮
+                TextButton(
+                    onClick = onTogglePin,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (tab.isPinned) "取消固定" else "固定标签")
+                }
+
+                HorizontalDivider()
+
+                // 颜色标记选择
+                Text("颜色标记：", fontSize = 13.sp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TabColorMarker.selectable.forEach { marker ->
+                        val isSelected = tab.colorMarker == marker
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clip(CircleShape)
+                                .background(marker.color)
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.border(2.dp, Color.White, CircleShape)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .clickable { onSetColorMarker(marker) }
+                        )
+                    }
+                    // 清除颜色标记
+                    TextButton(
+                        onClick = { onSetColorMarker(TabColorMarker.NONE) },
+                        enabled = tab.colorMarker != TabColorMarker.NONE
+                    ) {
+                        Text("清除", fontSize = 12.sp)
+                    }
                 }
             }
         },
@@ -796,11 +911,62 @@ fun TabLongPressDialog(
                     Spacer(Modifier.size(Spacing.xs))
                     Text("重命名")
                 }
+                Spacer(Modifier.size(Spacing.sm))
                 TextButton(onClick = onCloseOthers) {
                     Icon(FeatherIcons.Trash2, null, Modifier.size(16.dp))
                     Spacer(Modifier.size(Spacing.xs))
                     Text("关闭其他")
                 }
+            }
+        }
+    )
+}
+
+// ──────────────────────────────────────────────────────────
+// 确认操作对话框
+// ──────────────────────────────────────────────────────────
+@Composable
+fun ConfirmActionDialog(
+    action: TerminalViewModel.ConfirmAction,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val (title, text, isDestructive) = when (action) {
+        is TerminalViewModel.ConfirmAction.CloseTab -> {
+            Triple("关闭标签「${action.title}」", "该标签有进程正在运行，确定要关闭吗？", true)
+        }
+        is TerminalViewModel.ConfirmAction.CloseOtherTabs -> {
+            Triple("关闭其他标签", "确定要关闭除当前标签外的所有标签吗？", true)
+        }
+        is TerminalViewModel.ConfirmAction.RestartContainer -> {
+            Triple("重启容器", "重启容器将终止所有运行中的进程并关闭所有标签，确定继续吗？", true)
+        }
+        is TerminalViewModel.ConfirmAction.ReconnectAll -> {
+            Triple("重连全部标签", "确定要重连所有标签吗？", false)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = if (isDestructive) {
+                    androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                } else {
+                    androidx.compose.material3.ButtonDefaults.textButtonColors()
+                }
+            ) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
             }
         }
     )

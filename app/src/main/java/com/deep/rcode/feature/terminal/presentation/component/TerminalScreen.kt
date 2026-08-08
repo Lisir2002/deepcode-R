@@ -74,6 +74,7 @@ import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.domain.container.ContainerInitState
 import com.deep.rcode.feature.terminal.data.repository.TerminalFontSizes
 import com.deep.rcode.feature.terminal.domain.RunState
+import com.deep.rcode.feature.terminal.domain.TabColorMarker
 import com.deep.rcode.feature.terminal.domain.TerminalTab
 import com.deep.rcode.feature.terminal.presentation.TerminalViewModel
 import com.termux.view.TerminalView
@@ -142,6 +143,7 @@ fun TerminalScreen(
     var showSearchOverlay by remember { mutableStateOf(false) }
     var ctrlHintVisible by remember { mutableStateOf(true) }
     val ctrlHintShown by viewModel.ctrlHintShown.collectAsStateWithLifecycle()
+    val confirmAction by viewModel.confirmAction.collectAsStateWithLifecycle()
 
     // 终端颜色：当前主题调色板 + 壳 UI 皮肤适配器（Tab/Banner/Keys 全部从这里取色）
     val palette = rememberTerminalPalette()
@@ -171,8 +173,8 @@ fun TerminalScreen(
                         expanded = showReconnectMenu,
                         onDismiss = { showReconnectMenu = false },
                         onReconnectActive = { showReconnectMenu = false; viewModel.reconnectActive() },
-                        onReconnectAll = { showReconnectMenu = false; viewModel.reconnectAll() },
-                        onRestartContainer = { showReconnectMenu = false; viewModel.restartContainer() }
+                        onReconnectAll = { showReconnectMenu = false; viewModel.requestReconnectAll() },
+                        onRestartContainer = { showReconnectMenu = false; viewModel.requestRestartContainer() }
                     )
                 }
                 // 终端设置（齿轮 → 跳转终端设置页）
@@ -245,69 +247,83 @@ fun TerminalScreen(
                 is TerminalViewModel.PrepareState.Ready -> {
                     @Suppress("UNUSED_EXPRESSION") revision
 
-                    // 首屏 Banner：容器未装 / Python 未装
-                    val banner by viewModel.currentBanner.collectAsStateWithLifecycle()
-                    banner?.let { b ->
-                        TerminalFirstRunBanner(
-                            banner = b,
+                    // 用终端 palette.containerBg 作为 Ready 区块统一底色，
+                    // 避免 TabBar ↔ TerminalSurface 之间出现「白条」（Scaffold 底色透出）。
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .background(palette.containerBg)
+                    ) {
+                        // 首屏 Banner：容器未装 / Python 未装（Banner 在终端背景上，但用卡片形式浮起，仍保留 sectionSpacingV）
+                        val banner by viewModel.currentBanner.collectAsStateWithLifecycle()
+                        banner?.let { b ->
+                            TerminalFirstRunBanner(
+                                banner = b,
+                                skin = skin,
+                                onGoSettings = onNavigateToSettings,
+                                onInstallRecommended = { viewModel.installAiRecommended() },
+                                onInitContainer = { viewModel.prepare() },
+                                onDismiss = viewModel::dismissFirstRunBanner
+                            )
+                        }
+
+                        TabBar(
                             skin = skin,
-                            onGoSettings = onNavigateToSettings,
-                            onInstallRecommended = { viewModel.installAiRecommended() },
-                            onInitContainer = { viewModel.prepare() },
-                            onDismiss = viewModel::dismissFirstRunBanner
+                            tabs = tabs,
+                            activeTabId = activeTabId,
+                            hasNewOutputMap = hasNewOutputMap,
+                            onSelect = viewModel::activate,
+                            onClose = viewModel::closeTab,
+                            onNew = { viewModel.newTab() },
+                            onTabLongPress = { tab -> showTabLongPressMenu = tab }
                         )
-                        Spacer(modifier = Modifier.height(TerminalLayout.sectionSpacingV))
-                    }
+                        // TabBar 与终端内容区之间：仅 1dp 细分隔线，不再留 8dp 空白（消除白条）
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(TerminalLayout.tabTerminalDivider)
+                                .background(skin.dividingLine)
+                        )
 
-                    TabBar(
-                        skin = skin,
-                        tabs = tabs,
-                        activeTabId = activeTabId,
-                        hasNewOutputMap = hasNewOutputMap,
-                        onSelect = viewModel::activate,
-                        onClose = viewModel::closeTab,
-                        onNew = { viewModel.newTab() },
-                        onTabLongPress = { tab -> showTabLongPressMenu = tab }
-                    )
-                    Spacer(modifier = Modifier.height(TerminalLayout.sectionSpacingV))
-
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        val active = tabs.firstOrNull { it.id == activeTabId }
-                        if (active == null) {
-                            AppEmptyState(
-                                title = stringResource(R.string.terminal_no_open_tabs),
-                                actionLabel = stringResource(R.string.common_new_tab),
-                                onAction = { viewModel.newTab() }
-                            )
-                        } else {
-                            androidx.compose.runtime.key(active.id) {
-                                TerminalSurface(
-                                    tab = active,
-                                    viewModel = viewModel,
-                                    fontSizeSp = fontSizeSp,
-                                    onLongPress = { pos -> showTerminalMenu = TerminalMenuAnchor.Terminal(pos) }
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            val active = tabs.firstOrNull { it.id == activeTabId }
+                            if (active == null) {
+                                AppEmptyState(
+                                    title = stringResource(R.string.terminal_no_open_tabs),
+                                    actionLabel = stringResource(R.string.common_new_tab),
+                                    onAction = { viewModel.newTab() }
                                 )
-                            }
-                        }
-                        // 搜索浮层（BoxScope 扩展函数，可在此调用 .align）
-                        if (showSearchOverlay) {
-                            with(this@Box as androidx.compose.foundation.layout.BoxScope) {
-                                TerminalSearchOverlay(
-                                    onDismiss = { showSearchOverlay = false },
-                                    tabs = tabs,
-                                    activeTabId = activeTabId
-                                )
-                            }
-                        }
-                        // Ctrl 首次提示气泡（仅 Ctrl 按钮首次启用时显示）
-                        if (ctrlHintVisible && !ctrlHintShown && viewModel.modifiers.ctrl) {
-                            CtrlHintBubble(
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                onGotIt = {
-                                    ctrlHintVisible = false
-                                    viewModel.markCtrlHintShown()
+                            } else {
+                                androidx.compose.runtime.key(active.id) {
+                                    TerminalSurface(
+                                        tab = active,
+                                        viewModel = viewModel,
+                                        fontSizeSp = fontSizeSp,
+                                        onLongPress = { pos -> showTerminalMenu = TerminalMenuAnchor.Terminal(pos) }
+                                    )
                                 }
-                            )
+                            }
+                            // 搜索浮层（BoxScope 扩展函数，可在此调用 .align）
+                            if (showSearchOverlay) {
+                                with(this@Box as androidx.compose.foundation.layout.BoxScope) {
+                                    TerminalSearchOverlay(
+                                        onDismiss = { showSearchOverlay = false },
+                                        tabs = tabs,
+                                        activeTabId = activeTabId
+                                    )
+                                }
+                            }
+                            // Ctrl 首次提示气泡（仅 Ctrl 按钮首次启用时显示）
+                            if (ctrlHintVisible && !ctrlHintShown && viewModel.modifiers.ctrl) {
+                                CtrlHintBubble(
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onGotIt = {
+                                        ctrlHintVisible = false
+                                        viewModel.markCtrlHintShown()
+                                    }
+                                )
+                            }
                         }
                     }
 
@@ -327,19 +343,22 @@ fun TerminalScreen(
     showTabLongPressMenu?.let { tab ->
         TabLongPressDialog(
             tab = tab,
+            skin = skin,
             onDismiss = { showTabLongPressMenu = null },
             onRename = {
                 renameDialogForTab = tab
                 showTabLongPressMenu = null
             },
             onClose = {
-                viewModel.closeTab(tab.id)
+                viewModel.requestCloseTab(tab.id)
                 showTabLongPressMenu = null
             },
             onCloseOthers = {
-                viewModel.closeOtherTabs(tab.id)
+                viewModel.requestCloseOtherTabs(tab.id)
                 showTabLongPressMenu = null
-            }
+            },
+            onTogglePin = { viewModel.togglePin(tab.id) },
+            onSetColorMarker = { marker -> viewModel.setColorMarker(tab.id, marker) }
         )
     }
 
@@ -351,6 +370,19 @@ fun TerminalScreen(
             onConfirm = { newTitle ->
                 viewModel.renameTab(tab.id, newTitle)
                 renameDialogForTab = null
+            }
+        )
+    }
+
+    // 二次确认弹窗
+    confirmAction?.let { action ->
+        ConfirmActionDialog(
+            action = action,
+            onConfirm = {
+                viewModel.executeConfirmedAction(action)
+            },
+            onDismiss = {
+                viewModel.consumeConfirmAction()
             }
         )
     }

@@ -1,5 +1,6 @@
 package com.deep.rcode.feature.terminal.domain
 
+import androidx.compose.ui.graphics.Color
 import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
 
@@ -17,6 +18,22 @@ const val TAIL_LINES = 10
 /** 截取终端 transcript 的最后 n 行；null 输入返回 null。 */
 fun String?.takeTailLines(n: Int): String? =
     this?.lines()?.takeLast(n)?.joinToString("\n")
+
+/** 标签颜色标记 */
+enum class TabColorMarker(val color: Color, val label: String) {
+    NONE(Color.Transparent, "无"),
+    RED(Color(0xFFFF5252), "红"),
+    ORANGE(Color(0xFFFFA726), "橙"),
+    YELLOW(Color(0xFFFFEE58), "黄"),
+    GREEN(Color(0xFF66BB6A), "绿"),
+    BLUE(Color(0xFF42A5F5), "蓝"),
+    PURPLE(Color(0xFFAB47BC), "紫");
+
+    companion object {
+        /** 获取 NONE 之外的所有可选标记色 */
+        val selectable: List<TabColorMarker> get() = entries.filter { it != NONE }
+    }
+}
 
 /**
  * 后台命令结束时 emit 的事件，供 ViewModel 订阅后通知 AI。
@@ -50,7 +67,9 @@ class TerminalTab(
     val notifyOnExit: Boolean = false,
     /** 发起该后台命令的会话 id；交互标签为 null。回调据此路由回原会话。 */
     val sourceSessionId: String? = null,
-    runState: RunState
+    runState: RunState,
+    /** 会话创建时间戳（System.currentTimeMillis） */
+    val sessionStartTime: Long = System.currentTimeMillis()
 ) {
     var title: String = title
         internal set
@@ -61,10 +80,19 @@ class TerminalTab(
     var runState: RunState = runState
         internal set
 
-    /**
-     * 是否已向 AI 发出过完成事件。兜底监控与 onFinished 都可能触发完成，
-     * 用此标记保证同一命令只回调一次，避免进程迟退时重复通知。
-     */
+    /** 是否已固定（Pin 住），固定标签固定在列表左侧，无关闭按钮。 */
+    var isPinned: Boolean = false
+        internal set
+
+    /** 颜色标记 */
+    var colorMarker: TabColorMarker = TabColorMarker.NONE
+        internal set
+
+    /** 子进程数（近似值，用于信息显示） */
+    var childProcessCount: Int = 0
+        internal set
+
+    /** 是否已向 AI 发出过完成事件。 */
     @Volatile
     var finishedNotified: Boolean = false
 }

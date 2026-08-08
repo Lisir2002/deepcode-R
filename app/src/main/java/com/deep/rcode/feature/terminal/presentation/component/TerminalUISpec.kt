@@ -16,8 +16,12 @@ import com.deep.rcode.core.theme.Spacing
  */
 @Immutable
 object TerminalLayout {
-    /** Banner / TabBar / TerminalSurface / ExtraKeysRow 之间的垂直节奏 */
-    val sectionSpacingV: Dp = Spacing.sm  // 8 dp，保证 Banner 和 Tab 不贴一起
+    /** Banner → TabBar 之间的节奏（Banner 与 Tab 之间保留轻微缝隙，避免贴） */
+    val sectionSpacingV: Dp = Spacing.sm  // 8 dp
+    /** TabBar → TerminalSurface 之间不再留空白：仅 1dp 细分隔线 + 0 padding */
+    val tabTerminalDivider: Dp = 1.dp
+    /** TerminalSurface → ExtraKeysRow 之间不留额外空白（0） */
+    val terminalKeysDivider: Dp = 0.dp
 
     /** Banner 卡片内垂直 padding（顶部 title → desc → cta） */
     val bannerInnerPadding = Spacing.md   // 12 dp

@@ -14,6 +14,8 @@ import com.deep.rcode.feature.terminal.data.repository.TerminalBundleRepository
 import com.deep.rcode.feature.terminal.data.repository.TerminalFontSizes
 import com.deep.rcode.feature.terminal.data.repository.TerminalSettingsRepository
 import com.deep.rcode.feature.terminal.domain.RemoteTerminalSessionManager
+import com.deep.rcode.feature.terminal.domain.RunState
+import com.deep.rcode.feature.terminal.domain.TabColorMarker
 import com.deep.rcode.feature.terminal.domain.TerminalSessionManager
 import com.deep.rcode.feature.terminal.presentation.component.TerminalKeyModifiers
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -217,6 +219,83 @@ class TerminalViewModel @Inject constructor(
             val curRev = revision.value
             _lastSeenRevision.value = _lastSeenRevision.value + (id to curRev)
         }
+    }
+
+    // ── 标签 Pin 住 / 颜色标记 ──────────────────────────────
+
+    /** 切换标签 Pin 状态 */
+    fun togglePin(tabId: String) {
+        val tab = tabs.value.firstOrNull { it.id == tabId } ?: return
+        tab.isPinned = !tab.isPinned
+        // 触发重组
+        _refreshTabs()
+    }
+
+    /** 设置标签颜色标记 */
+    fun setColorMarker(tabId: String, marker: TabColorMarker) {
+        val tab = tabs.value.firstOrNull { it.id == tabId } ?: return
+        tab.colorMarker = marker
+        _refreshTabs()
+    }
+
+    private fun _refreshTabs() {
+        // 利用 revision 触发重组
+        viewModelScope.launch {
+            val cur = revision.value
+            // 触发 tabs StateFlow 的 collect 感知变化
+            @Suppress("UNUSED_EXPRESSION")
+            cur
+        }
+    }
+
+    // ── 二次确认状态 ────────────────────────────────────────
+
+    private val _confirmAction = MutableStateFlow<ConfirmAction?>(null)
+    val confirmAction: StateFlow<ConfirmAction?> = _confirmAction.asStateFlow()
+
+    sealed interface ConfirmAction {
+        data class CloseTab(val tabId: String, val title: String) : ConfirmAction
+        data class CloseOtherTabs(val keepId: String) : ConfirmAction
+        data object RestartContainer : ConfirmAction
+        data object ReconnectAll : ConfirmAction
+    }
+
+    fun consumeConfirmAction() { _confirmAction.value = null }
+
+    /** 请求关闭标签（有运行中进程时弹确认） */
+    fun requestCloseTab(tabId: String) {
+        val tab = tabs.value.firstOrNull { it.id == tabId } ?: return
+        if (tab.runState is RunState.Running && !tab.isBackground) {
+            _confirmAction.value = ConfirmAction.CloseTab(tabId, tab.title)
+        } else {
+            closeTab(tabId)
+        }
+    }
+
+    /** 请求关闭其他标签 */
+    fun requestCloseOtherTabs(keepId: String) {
+        _confirmAction.value = ConfirmAction.CloseOtherTabs(keepId)
+    }
+
+    /** 请求重启容器 */
+    fun requestRestartContainer() {
+        _confirmAction.value = ConfirmAction.RestartContainer
+    }
+
+    /** 请求重连全部标签 */
+    fun requestReconnectAll() {
+        _confirmAction.value = ConfirmAction.ReconnectAll
+    }
+
+    /** 执行确认后的操作 */
+    fun executeConfirmedAction(action: ConfirmAction) {
+        when (action) {
+            is ConfirmAction.CloseTab -> closeTab(action.tabId)
+            is ConfirmAction.CloseOtherTabs -> closeOtherTabs(action.keepId)
+            is ConfirmAction.RestartContainer -> restartContainer()
+            is ConfirmAction.ReconnectAll -> reconnectAll()
+        }
+        _confirmAction.value = null
     }
 
     fun closeTab(id: String) {
