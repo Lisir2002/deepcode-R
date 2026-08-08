@@ -1,77 +1,139 @@
 package com.deep.rcode.feature.terminal.presentation.component
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.view.inputmethod.InputMethodManager
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import com.deep.rcode.core.theme.AppTopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import android.content.Context
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.flowWithLifecycle
+import com.deep.rcode.R
+import com.deep.rcode.core.theme.AppEmptyState
+import com.deep.rcode.core.theme.AppLoadingState
+import com.deep.rcode.core.theme.AppTopAppBar
+import com.deep.rcode.core.theme.Elevation
+import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
-import com.deep.rcode.core.ui.rememberImeBottomInset
 import com.deep.rcode.feature.agent.domain.container.ContainerInitState
+import com.deep.rcode.feature.terminal.data.repository.TerminalFontSizes
 import com.deep.rcode.feature.terminal.domain.RunState
-import com.deep.rcode.feature.terminal.domain.TerminalSessionManager
 import com.deep.rcode.feature.terminal.domain.TerminalTab
 import com.deep.rcode.feature.terminal.presentation.TerminalViewModel
 import com.termux.view.TerminalView
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
+import compose.icons.feathericons.ArrowDown
+import compose.icons.feathericons.ArrowRight
+import compose.icons.feathericons.ArrowUp
+import compose.icons.feathericons.ChevronDown
+import compose.icons.feathericons.Copy
+import compose.icons.feathericons.Edit3
+import compose.icons.feathericons.Grid
+import compose.icons.feathericons.Menu
+import compose.icons.feathericons.MoreVertical
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.RotateCcw
+import compose.icons.feathericons.Search
+import compose.icons.feathericons.Settings
+import compose.icons.feathericons.Share2
+import compose.icons.feathericons.Trash2
+import compose.icons.feathericons.Type
 import compose.icons.feathericons.X
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import com.deep.rcode.R
+import compose.icons.feathericons.XCircle
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+@androidx.annotation.OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun TerminalScreen(
     viewModel: TerminalViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onSendToAI: ((tailOutput: String) -> Unit)? = null
 ) {
     val prepareState by viewModel.prepareState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     val containerInit by viewModel.containerInit.collectAsStateWithLifecycle()
     val tabs by viewModel.tabs.collectAsStateWithLifecycle()
     val activeTabId by viewModel.activeTabId.collectAsStateWithLifecycle()
-    // revision 变化时强制重组：标签输出/状态在管理器里就地更新（非 data class 替换），靠它驱动刷新。
     val revision by viewModel.revision.collectAsStateWithLifecycle()
+    val fontSizeSp by viewModel.fontSizeSp.collectAsStateWithLifecycle()
+    val fullExtraKeys by viewModel.fullExtraKeys.collectAsStateWithLifecycle()
+    val errorToast by viewModel.errorToast.collectAsStateWithLifecycle()
+    val hasNewOutputMap by viewModel.hasNewOutputFlow.collectAsState(initial = emptyMap())
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // errorToast → Snackbar
+    LaunchedEffect(errorToast) {
+        errorToast?.let {
+            scope.launch {
+                snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Long)
+            }
+            viewModel.consumeErrorToast()
+        }
+    }
+
+    // 终端操作弹窗状态
+    var showReconnectMenu by remember { mutableStateOf(false) }
+    var showTerminalMenu by remember { mutableStateOf<TerminalMenuAnchor?>(null) }
+    var showTabLongPressMenu by remember { mutableStateOf<TerminalTab?>(null) }
+    var renameDialogForTab by remember { mutableStateOf<TerminalTab?>(null) }
+    var showSearchOverlay by remember { mutableStateOf(false) }
+    var ctrlHintVisible by remember { mutableStateOf(true) }
+    val ctrlHintShown by viewModel.ctrlHintShown.collectAsStateWithLifecycle()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -83,309 +145,236 @@ fun TerminalScreen(
                 navigationIcon = FeatherIcons.ArrowLeft,
                 navigationContentDescription = stringResource(R.string.common_back)
             ) {
-                IconButton(onClick = { viewModel.reconnectActive() }, modifier = Modifier.size(40.dp)) {
-                    Icon(
-                        FeatherIcons.RefreshCw,
-                        contentDescription = stringResource(R.string.terminal_reconnect_tab),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 重连下拉：当前 / 全部 / 重启容器
+                Box {
+                    IconButton(onClick = { showReconnectMenu = true }, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            FeatherIcons.RefreshCw,
+                            contentDescription = stringResource(R.string.terminal_reconnect_tab),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    ReconnectDropdown(
+                        expanded = showReconnectMenu,
+                        onDismiss = { showReconnectMenu = false },
+                        onReconnectActive = { showReconnectMenu = false; viewModel.reconnectActive() },
+                        onReconnectAll = { showReconnectMenu = false; viewModel.reconnectAll() },
+                        onRestartContainer = { showReconnectMenu = false; viewModel.restartContainer() }
+                    )
+                }
+                // 终端设置/菜单（主菜单入口，点击后弹出终端级菜单；对 TabChip 长按也会弹）
+                Box {
+                    IconButton(onClick = { showTerminalMenu = TerminalMenuAnchor.Bar }, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            FeatherIcons.MoreVertical,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    TerminalOperationsMenu(
+                        anchor = showTerminalMenu,
+                        onDismiss = { showTerminalMenu = null },
+                        onCopy = { showTerminalMenu = null; sendCopyToClipboard(tabs, activeTabId) },
+                        onPaste = { showTerminalMenu = null; sendPasteFromClipboard(tabs, activeTabId, viewModel) },
+                        onSelectAll = { showTerminalMenu = null; performSelectAll(tabs, activeTabId) },
+                        onClearScreen = { showTerminalMenu = null; performClearScreen(tabs, activeTabId, viewModel) },
+                        onSearch = { showTerminalMenu = null; showSearchOverlay = true },
+                        onRenameTab = {
+                            showTerminalMenu = null
+                            renameDialogForTab = tabs.firstOrNull { it.id == activeTabId }
+                        },
+                        onSendToAI = onSendToAI?.let { callback ->
+                            {
+                                showTerminalMenu = null
+                                tabs.firstOrNull { it.id == activeTabId }
+                                    ?.session?.emulator?.screen?.transcriptText
+                                    ?.trimEnd('\n')?.lines()?.takeLast(100)?.joinToString("\n")
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let { t -> callback(t) }
+                            }
+                        },
+                        onToggleFullKeys = { showTerminalMenu = null; viewModel.toggleFullExtraKeys() },
+                        onFontSizeStepUp = { showTerminalMenu = null; viewModel.setFontSizeSp(stepFont(fontSizeSp, +1)) },
+                        onFontSizeStepDown = { showTerminalMenu = null; viewModel.setFontSizeSp(stepFont(fontSizeSp, -1)) },
+                        fullExtraKeys = fullExtraKeys,
+                        allowSendToAI = onSendToAI != null
+                    )
                 }
             }
-        }
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(bottom = rememberImeBottomInset())
+                .padding(bottom = rememberImeBottomInsetForTerminal())
         ) {
             when (val state = prepareState) {
-                is TerminalViewModel.PrepareState.Loading -> StatusView(
-                    loading = true,
-                    message = containerInitMessage(context, containerInit)
+                is TerminalViewModel.PrepareState.Loading -> AppLoadingState(
+                    loadingText = containerInitMessage(LocalContext.current, containerInit)
                 )
-
-                is TerminalViewModel.PrepareState.Error -> StatusView(
-                    loading = false,
-                    message = stringResource(R.string.terminal_start_failed, state.message),
+                is TerminalViewModel.PrepareState.Error -> AppEmptyState(
+                    title = stringResource(R.string.terminal_start_failed, state.message),
                     actionLabel = stringResource(R.string.terminal_retry),
                     onAction = { viewModel.prepare() }
                 )
-
                 is TerminalViewModel.PrepareState.Ready -> {
-                    // revision 仅用于触发重组：读一下避免被优化掉。
                     @Suppress("UNUSED_EXPRESSION") revision
 
                     TabBar(
                         tabs = tabs,
                         activeTabId = activeTabId,
-                        onSelect = { viewModel.activate(it) },
-                        onClose = { viewModel.closeTab(it) },
-                        onNew = { viewModel.newTab() }
+                        hasNewOutputMap = hasNewOutputMap,
+                        onSelect = viewModel::activate,
+                        onClose = viewModel::closeTab,
+                        onNew = { viewModel.newTab() },
+                        onTabLongPress = { tab -> showTabLongPressMenu = tab }
                     )
 
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         val active = tabs.firstOrNull { it.id == activeTabId }
                         if (active == null) {
-                            StatusView(
-                                loading = false,
-                                message = stringResource(R.string.terminal_no_open_tabs),
+                            AppEmptyState(
+                                title = stringResource(R.string.terminal_no_open_tabs),
                                 actionLabel = stringResource(R.string.common_new_tab),
                                 onAction = { viewModel.newTab() }
                             )
                         } else {
-                            // 切换标签时按 id 重建 TerminalView，并把视图回填到该 tab、挂载其会话。
-                            key(active.id) {
-                                TerminalSurface(tab = active, viewModel = viewModel)
+                            androidx.compose.runtime.key(active.id) {
+                                TerminalSurface(
+                                    tab = active,
+                                    viewModel = viewModel,
+                                    fontSizeSp = fontSizeSp,
+                                    onLongPress = { pos -> showTerminalMenu = TerminalMenuAnchor.Terminal(pos) }
+                                )
                             }
+                        }
+                        // 搜索浮层（BoxScope 扩展函数，可在此调用 .align）
+                        if (showSearchOverlay) {
+                            with(this@Box as androidx.compose.foundation.layout.BoxScope) {
+                                TerminalSearchOverlay(
+                                    onDismiss = { showSearchOverlay = false },
+                                    tabs = tabs,
+                                    activeTabId = activeTabId
+                                )
+                            }
+                        }
+                        // Ctrl 首次提示气泡（仅 Ctrl 按钮首次启用时显示）
+                        if (ctrlHintVisible && !ctrlHintShown && viewModel.modifiers.ctrl) {
+                            CtrlHintBubble(
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onGotIt = {
+                                    ctrlHintVisible = false
+                                    viewModel.markCtrlHintShown()
+                                }
+                            )
                         }
                     }
 
                     if (activeTabId != null) {
-                        ExtraKeysRow(viewModel)
+                        ExtraKeysRow(
+                            viewModel = viewModel,
+                            full = fullExtraKeys
+                        )
                     }
                 }
             }
         }
     }
-}
 
-/** 可横滑的标签栏：每个标签显示状态点 + 标题 + 关闭；末尾「+」新建。 */
-@Composable
-private fun TabBar(
-    tabs: List<TerminalTab>,
-    activeTabId: String?,
-    onSelect: (String) -> Unit,
-    onClose: (String) -> Unit,
-    onNew: () -> Unit
-) {
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            tabs.forEach { tab ->
-                TabChip(
-                    tab = tab,
-                    selected = tab.id == activeTabId,
-                    onClick = { onSelect(tab.id) },
-                    onClose = { onClose(tab.id) }
-                )
+    // 标签长按弹窗
+    showTabLongPressMenu?.let { tab ->
+        TabLongPressDialog(
+            tab = tab,
+            onDismiss = { showTabLongPressMenu = null },
+            onRename = {
+                renameDialogForTab = tab
+                showTabLongPressMenu = null
+            },
+            onClose = {
+                viewModel.closeTab(tab.id)
+                showTabLongPressMenu = null
+            },
+            onCloseOthers = {
+                viewModel.closeOtherTabs(tab.id)
+                showTabLongPressMenu = null
             }
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
-                    .clickable(onClick = onNew),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    FeatherIcons.Plus,
-                    contentDescription = stringResource(R.string.common_new_tab),
-                    tint = androidx.compose.ui.graphics.Color(0xFF424242),
-                    modifier = Modifier.size(18.dp)
-                )
+        )
+    }
+
+    // 重命名输入弹窗
+    renameDialogForTab?.let { tab ->
+        RenameTabDialog(
+            initial = tab.title,
+            onDismiss = { renameDialogForTab = null },
+            onConfirm = { newTitle ->
+                viewModel.renameTab(tab.id, newTitle)
+                renameDialogForTab = null
             }
-        }
-    }
-}
-
-@Composable
-private fun TabChip(
-    tab: TerminalTab,
-    selected: Boolean,
-    onClick: () -> Unit,
-    onClose: () -> Unit
-) {
-    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-    val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-    val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    // 状态点：运行中=绿，已结束=灰；后台标签用主题三级色提示。
-    val running = tab.runState is RunState.Running
-    val dot = when {
-        !running -> MaterialTheme.colorScheme.outline
-        tab.isBackground -> MaterialTheme.colorScheme.tertiary
-        else -> Color(0xFF22C55E)
-    }
-    Row(
-        modifier = Modifier
-            .height(36.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(bg)
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(dot)
-        )
-        Text(
-            text = tab.title,
-            color = fg,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp
-        )
-        Box(
-            modifier = Modifier
-                .size(20.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onClose),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                FeatherIcons.X,
-                contentDescription = stringResource(R.string.terminal_close_tab),
-                tint = androidx.compose.ui.graphics.Color(0xFF424242),
-                modifier = Modifier.size(14.dp)
-            )
-        }
-    }
-}
-
-/** Termux TerminalView 的 Compose 包装：渲染与输入全部由该开源组件负责。 */
-@Composable
-private fun TerminalSurface(tab: TerminalTab, viewModel: TerminalViewModel) {
-    AndroidView(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black),
-        factory = { ctx ->
-            val view = TerminalView(ctx, null)
-            val density = ctx.resources.displayMetrics.density
-            view.setTextSize((11f * density).toInt())
-            view.setTerminalViewClient(
-                AppTerminalViewClient(
-                    context = ctx,
-                    viewProvider = { view },
-                    modifiers = viewModel.modifiers
-                )
-            )
-            view.isFocusable = true
-            view.isFocusableInTouchMode = true
-            // 把视图回填到该标签：会话 client 的 viewProvider 据此把输出刷到当前挂载的视图。
-            tab.view = view
-            view.attachSession(tab.session)
-            // 切回已有标签时立即把累计的屏幕缓冲渲染出来。
-            view.onScreenUpdated()
-            view.requestFocus()
-            view
-        },
-        onRelease = { view ->
-            // 视图被回收（切走/重建）时解除引用，避免管理器把输出刷到已废弃的视图。
-            if (tab.view === view) tab.view = null
-        }
-    )
-}
-
-@Composable
-private fun StatusView(
-    loading: Boolean,
-    message: String,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
-) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(Spacing.lg),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        if (loading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(28.dp),
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(Spacing.md))
-        }
-        Text(
-            text = message,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp
-        )
-        if (actionLabel != null && onAction != null) {
-            Spacer(Modifier.height(Spacing.lg))
-            Button(onClick = onAction) { Text(actionLabel) }
-        }
-    }
-}
-
-/** 把容器初始化进度状态映射为 Loading 阶段展示给用户的文案。 */
-private fun containerInitMessage(context: Context, state: ContainerInitState): String = when (state) {
-    is ContainerInitState.ExtractingRootfs ->
-        context.getString(R.string.terminal_extracting_env, state.processed)
-    ContainerInitState.DeployingProot ->
-        context.getString(R.string.terminal_deploying_proot)
-    is ContainerInitState.InstallingPackages ->
-        context.getString(R.string.terminal_installing_packages, state.line ?: "")
-    is ContainerInitState.Failed ->
-        context.getString(R.string.terminal_preparing_env_failed, state.reason)
-    ContainerInitState.Idle, ContainerInitState.Ready ->
-        context.getString(R.string.terminal_preparing_env_first_run)
-}
-
-/** 手机软键盘缺失的常用按键：Esc / Tab / Ctrl(预置) / 方向键 / Ctrl-C / Ctrl-D。 */
-@Composable
-private fun ExtraKeysRow(viewModel: TerminalViewModel) {
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            KeyChip("Esc") { viewModel.write("") }
-            KeyChip("Tab") { viewModel.write("\t") }
-            KeyChip("Ctrl", active = viewModel.modifiers.ctrl) {
-                viewModel.modifiers.ctrl = !viewModel.modifiers.ctrl
-            }
-            KeyChip("←") { viewModel.write("[D") }
-            KeyChip("↑") { viewModel.write("[A") }
-            KeyChip("↓") { viewModel.write("[B") }
-            KeyChip("→") { viewModel.write("[C") }
-            KeyChip("C-c") { viewModel.writeBytes(0x03) }
-            KeyChip("C-d") { viewModel.writeBytes(0x04) }
-            KeyChip("/") { viewModel.write("/") }
-            KeyChip("-") { viewModel.write("-") }
-        }
-    }
-}
-
-@Composable
-private fun KeyChip(label: String, active: Boolean = false, onClick: () -> Unit) {
-    val bg = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-    val borderColor = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    val fg = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-    Box(
-        modifier = Modifier
-            .height(36.dp)
-            .widthChip(label)
-            .clip(RoundedCornerShape(8.dp))
-            .background(bg)
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = label,
-            color = fg,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(horizontal = 12.dp)
         )
     }
 }
 
-/** 单字符按键给固定宽度，多字符按键自适应。 */
-private fun Modifier.widthChip(label: String): Modifier =
-    if (label.length <= 1) this.width(40.dp) else this
+/** 通过 LocalComposition 向 rememberImeBottomInset 提供 Activity 上下文；避免每次导入。 */
+@Composable
+private fun rememberImeBottomInsetForTerminal() =
+    com.deep.rcode.core.ui.rememberImeBottomInset()
+
+private fun stepFont(current: Int, direction: Int): Int {
+    val steps = TerminalFontSizes.STEPS
+    val idx = steps.binarySearch(current).let { if (it < 0) -it - 1 else it }
+    return steps[(idx + direction).coerceIn(0, steps.lastIndex)]
+}
+
+// ── 工具：直接操作 clipboard / TerminalView（通过 Tab.view） ────────────────
+private fun sendCopyToClipboard(tabs: List<TerminalTab>, activeId: String?) {
+    val tab = tabs.firstOrNull { it.id == activeId } ?: return
+    val view = tab.view
+    // Termux 没有公开 selection/copyCurrentSelection API；兜底：取 transcript 最后 200 行。
+    // 如果视图正在文本选择模式（isSelectingText），尽量不打断用户——但缺 API 无法精确取选中文本。
+    val ctx = view?.context ?: return
+    val transcript = tab.session.emulator?.screen?.transcriptText
+    // 优先：有正在选择的（不可读，退化成整屏可见区）；否则：最后 200 行
+    val text: String = if (view.isSelectingText) {
+        // 缺 API，取可见区（屏幕底部 activeRows 行）
+        transcript?.lines()?.takeLast(tab.session.emulator?.screen?.activeRows ?: 50)
+            ?.joinToString("\n")
+    } else {
+        transcript?.lines()?.takeLast(200)?.joinToString("\n")
+    } ?: return
+    if (text.isBlank()) return
+    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+    cm.setPrimaryClip(ClipData.newPlainText("terminal", text))
+}
+
+private fun sendPasteFromClipboard(tabs: List<TerminalTab>, activeId: String?, vm: TerminalViewModel) {
+    val tab = tabs.firstOrNull { it.id == activeId } ?: return
+    val ctx = tab.view?.context ?: return
+    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+    val text = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString()?.takeIf { it.isNotEmpty() } ?: return
+    vm.write(text)
+}
+
+private fun performSelectAll(tabs: List<TerminalTab>, activeId: String?) {
+    val view = tabs.firstOrNull { it.id == activeId }?.view ?: return
+    // 缺 setSelection 公开 API：触发「进入文本选择模式」作为语义等价。
+    // 从 (0, 0) 附近的虚拟坐标触发 startTextSelectionMode；实际位置仅用于光标渲染。
+    runCatching {
+        val e = android.view.MotionEvent.obtain(
+            android.os.SystemClock.uptimeMillis(),
+            android.os.SystemClock.uptimeMillis(),
+            android.view.MotionEvent.ACTION_DOWN,
+            10f, 10f, 0
+        )
+        view.startTextSelectionMode(e)
+        e.recycle()
+    }
+}
+
+private fun performClearScreen(tabs: List<TerminalTab>, activeId: String?, vm: TerminalViewModel) {
+    // 用 Ctrl-L（0x0C）：对大多数 shell 及 curses 应用，等价于清屏；同时清除 scrollback 思路靠命令侧。
+    vm.writeBytes(0x0C)
+}

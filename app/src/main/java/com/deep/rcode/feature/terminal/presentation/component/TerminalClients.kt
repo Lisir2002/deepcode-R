@@ -104,8 +104,19 @@ class AppTerminalViewClient(
 
     private companion object { const val TAG = "TerminalView" }
 
-    // 暂不支持双指缩放字号：原样返回，不改变字号。
-    override fun onScale(scale: Float): Float = scale
+    // ── 双指缩放字号：交由外部 ViewModel 档位化处理 ─────────────
+    private var scaleListener: ((Float) -> Unit)? = null
+    fun setScaleListener(l: ((Float) -> Unit)?) { scaleListener = l }
+
+    // ── 长按回调：像素坐标 (xPx, yPx)，给 Compose 层弹菜单 ─────
+    private var longPressListener: ((xPx: Float, yPx: Float) -> Unit)? = null
+    fun setLongPressListener(l: ((Float, Float) -> Unit)?) { longPressListener = l }
+
+    // 缩放：返回 1.0 表示不做「默认缩放处理」，同时把缩放量交给外部档位化。
+    override fun onScale(scale: Float): Float {
+        scaleListener?.invoke(scale)
+        return 1.0f
+    }
 
     override fun onSingleTapUp(e: MotionEvent?) {
         val view = viewProvider() ?: return
@@ -115,9 +126,6 @@ class AppTerminalViewClient(
     }
 
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
-    // 返回 false → 输入框用 InputType.TYPE_NULL（Termux 上游默认）。这样 Gboard 等多数输入法会把
-    // 方向键/退格等作为真正的 KeyEvent 下发，TerminalView 才能映射成光标移动序列；若返回 true 走
-    // 「字符输入」模式（VISIBLE_PASSWORD），方向键会被输入法吞作内部光标移动，永远到不了终端。
     override fun shouldEnforceCharBasedInput(): Boolean = false
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
     override fun isTerminalViewSelected(): Boolean = true
@@ -125,7 +133,12 @@ class AppTerminalViewClient(
 
     override fun onKeyDown(keyCode: Int, e: KeyEvent?, session: TerminalSession?): Boolean = false
     override fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean = false
-    override fun onLongPress(event: MotionEvent?): Boolean = false
+
+    override fun onLongPress(event: MotionEvent?): Boolean {
+        val e = event ?: return false
+        longPressListener?.invoke(e.x, e.y)
+        return true  // 消费掉，不进入 Termux 默认 copyMode（我们有更完善的 UI 菜单）
+    }
 
     override fun readControlKey(): Boolean = modifiers.ctrl
     override fun readAltKey(): Boolean = modifiers.alt
