@@ -19,11 +19,13 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
-// gitVersionName 从 git tag 动态解析，彻底解决“发版时手改 build.gradle.kts 与 tag 双向不同步”问题。
-// 规则：
-//   1. 若当前 commit 刚好有 tag（如 v1.7.0 或 v1.7.0-rc1），直接提取为 "1.7.0" 或 "1.7.0-rc1"；
-//   2. 若当前 commit 比上个 tag 多了 N 个提交（如 v1.7.0-2-g04bc2fa），提取为 "1.7.0-dev.2+g04bc2fa"；
-//   3. 若无 git 环境或报错，fallback 到默认版本号 "1.7.0-dev"。
+// 初始版本号锁定：0.1.0；后续版本号升级必须由用户明确指令
+val BASE_VERSION = "0.1.0"
+
+// 版本号策略：
+//   1. 仅当 git tag 以 v0.1.0 开头时（如 v0.1.0 / v0.1.0-rc20），沿用 tag 中的后缀；
+//   2. 其他情况（tag 为其他版本号 / 无 tag / 无 git 环境），一律 fallback 到 "0.1.0-dev"；
+//   3. 严禁从旧 1.x tag 推导版本号，避免版本号回跳到 1.x 系列。
 fun gitVersionName(): String = try {
     val process = Runtime.getRuntime().exec(
         arrayOf("git", "describe", "--tags", "--always", "--dirty"),
@@ -33,24 +35,29 @@ fun gitVersionName(): String = try {
     process.waitFor()
     val raw = process.inputStream.bufferedReader().readText().trim()
     if (raw.startsWith("v")) {
-        val version = raw.substring(1) // 去掉开头的 'v'
-        // 如 "1.7.0"、"1.7.0-rc1" 或 "1.7.0-2-g04bc2fa"
-        // 将 git describe 格式 "1.7.0-2-g04bc2fa" 转为规范语义化版本 "1.7.0-dev.2+g04bc2fa"
-        val devRegex = Regex("""^(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?)-(\d+)-g([0-9a-f]+)(.*)$""")
-        val match = devRegex.matchEntire(version)
-        if (match != null) {
-            val (base, count, hash, dirty) = match.destructured
-            "$base-dev.$count+$hash$dirty"
+        val version = raw.substring(1)
+        // 仅接受 0.1.0 系列的 tag
+        if (version.startsWith("$BASE_VERSION")) {
+            // "0.1.0" / "0.1.0-rc20" / "0.1.0-2-g04bc2fa"
+            val devRegex = Regex("""^(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?)-(\d+)-g([0-9a-f]+)(.*)$""")
+            val match = devRegex.matchEntire(version)
+            if (match != null) {
+                val (base, count, hash, dirty) = match.destructured
+                "$base-dev.$count+$hash$dirty"
+            } else {
+                version
+            }
         } else {
-            version
+            // 非 0.1.0 系列 tag（如旧的 1.8.0），一律忽略，走 fallback
+            "$BASE_VERSION-dev"
         }
     } else if (raw.isNotEmpty()) {
-        "1.7.0-dev+$raw"
+        "$BASE_VERSION-dev+$raw"
     } else {
-        "1.7.0-dev"
+        "$BASE_VERSION-dev"
     }
 } catch (e: Exception) {
-    "1.7.0-dev"
+    "$BASE_VERSION-dev"
 }
 
 // versionCode 从 git 提交数自动生成：随每次提交单调递增，无需手动维护，
@@ -212,6 +219,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    @Suppress("DEPRECATION")
     kotlinOptions {
         jvmTarget = "17"
     }
