@@ -77,6 +77,7 @@ import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Save
 import compose.icons.feathericons.Server
+import compose.icons.feathericons.Terminal
 
 /** 设置页内部二级菜单分区。Menu 为首页菜单，其余为各自的二级页。 */
 internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
@@ -98,6 +99,8 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onNavigateBack: () -> Unit,
+    onNavigateToTerminalSettings: () -> Unit = {},
+    onNavigateToSshHosts: () -> Unit = {},
     onStopAllAndCloseTerminal: () -> Unit = {}
 ) {
     val providers by viewModel.providers.collectAsStateWithLifecycle()
@@ -251,7 +254,8 @@ fun SettingsScreen(
                             viewModel.refreshLogs(filterServerName = null)
                         }
                         section = it
-                    }
+                    },
+                    onNavigateToTerminalSettings = onNavigateToTerminalSettings
                 )
                 SettingsSection.Providers -> ProvidersSection(
                     providers = providers,
@@ -400,7 +404,8 @@ internal fun SettingsMenu(
     onToggleKeepalive: (Boolean) -> Unit,
     currentLanguageDisplayName: String,
     onOpenLanguageSheet: () -> Unit,
-    onOpen: (SettingsSection) -> Unit
+    onOpen: (SettingsSection) -> Unit,
+    onNavigateToTerminalSettings: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -452,6 +457,13 @@ internal fun SettingsMenu(
         // ── 运行环境 ──
         AppSectionHeader(text = stringResource(R.string.settings_category_environment))
         AppSectionGroup {
+            GroupMenuRow(
+                icon = FeatherIcons.Terminal,
+                title = stringResource(R.string.settings_terminal),
+                subtitle = stringResource(R.string.settings_terminal_subtitle),
+                onClick = onNavigateToTerminalSettings,
+                showDivider = true
+            )
             GroupMenuRow(
                 icon = FeatherIcons.HardDrive,
                 title = stringResource(SettingsSection.Container.titleRes),

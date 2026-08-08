@@ -817,11 +817,25 @@ fun containerInitMessage(context: Context, state: ContainerInitState): String = 
         context.getString(R.string.terminal_extracting_env, state.processed)
     ContainerInitState.DeployingProot ->
         context.getString(R.string.terminal_deploying_proot)
-    is ContainerInitState.InstallingPackages ->
-        context.getString(R.string.terminal_installing_packages, state.line ?: "")
+    is ContainerInitState.BundleInstalling -> {
+        val bundleName = state.bundleId?.let { bid ->
+            when (bid) {
+                com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.PYTHON -> "Python 运行时"
+                com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.NODE -> "Node.js 运行时"
+                com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.RIPGREP -> "高速搜索 (rg)"
+                com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.GIT -> "Git"
+                com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.BASH -> "Bash 环境"
+                com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.NET -> "网络工具"
+            }
+        } ?: "环境"
+        val tail = state.line?.takeIf { it.isNotBlank() }?.let { "\n$it" } ?: ""
+        "正在安装 $bundleName…$tail"
+    }
+    is ContainerInitState.BundleUninstalling ->
+        "正在卸载包…"
     is ContainerInitState.Failed ->
         context.getString(R.string.terminal_preparing_env_failed, state.reason)
-    ContainerInitState.Idle, ContainerInitState.Ready ->
+    ContainerInitState.Idle, is ContainerInitState.Ready ->
         context.getString(R.string.terminal_preparing_env_first_run)
     else ->
         context.getString(R.string.terminal_preparing_env_first_run)

@@ -198,13 +198,13 @@ class RemoteSshEngine @Inject constructor(
 
     override suspend fun ensureInstalled() = connectMutex.withLock {
         if (connection.isConnected()) {
-            _initProgress.value = ContainerInitState.Ready
+            _initProgress.value = ContainerInitState.Ready()
             return@withLock
         }
-        _initProgress.value = ContainerInitState.InstallingPackages(line = "正在连接 SSH 服务器…")
+        _initProgress.value = ContainerInitState.BundleInstalling(bundleId = null, line = "正在连接 SSH 服务器…")
         try {
             connection.connect()
-            _initProgress.value = ContainerInitState.Ready
+            _initProgress.value = ContainerInitState.Ready()
         } catch (e: Exception) {
             FileLogger.e(TAG, "SSH 连接失败", e)
             val friendly = friendlySshError(e)

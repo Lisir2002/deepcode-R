@@ -1,6 +1,11 @@
 package com.deep.rcode.feature.agent.domain.container
 
 import com.deep.rcode.core.util.FileLogger
+import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundle
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundles
+import com.deep.rcode.feature.terminal.data.repository.TerminalBundleRepository
 import com.deep.rcode.feature.workspace.domain.WorkspacePathMapper
 import com.deep.rcode.R
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -75,7 +80,8 @@ class LinuxContainerEngine @Inject constructor(
     @param:ApplicationContext private val context: android.content.Context,
     private val containerInstaller: ContainerInstaller,
     private val containerSettingsRepository: com.deep.rcode.feature.settings.data.repository.ContainerSettingsRepository,
-    private val workspacePathMapper: WorkspacePathMapper
+    private val workspacePathMapper: WorkspacePathMapper,
+    private val bundleRepository: TerminalBundleRepository
 ) : CommandEngine {
     /** 容器初始化的实时进度，供所有入口（终端页/AI/后台终端/MCP）共享同一份状态。 */
     private val _initProgress = MutableStateFlow<ContainerInitState>(ContainerInitState.Idle)
@@ -143,29 +149,16 @@ class LinuxContainerEngine @Inject constructor(
         private const val TIMEOUT_KILL_GRACE_MS = 200L
 
         /**
-         * 容器首次初始化时自动安装的基础包清单（Alpine 3.21 的 `python3` 即 3.12.x）。
-         * 包含：python3、git、pip（py3-pip）、nodejs、npm、bash、curl、ripgrep（rg）。用 `--no-cache` 避免 apk 缓存撑大 rootfs。
-         * bash：作为默认交互/命令 shell（见 [defaultShell]）；装好后比 busybox ash 更接近桌面习惯。
-         * curl：常用下载工具，skill 脚本与 AI 联网拉取常依赖。
-         * ripgrep：提供 `rg`，用于高速搜索代码与文本。
-         * 改清单时同步 +1 [PROVISION_VERSION] 触发重装。
+         * apk 安装单个 bundle / 自定义包的超时（毫秒）。
+         * 原 PROVISION_TIMEOUT_MS=600_000（一次性装 8 个包），拆到单个 bundle 后按 8 分钟、
+         * 自定义多包按 10 分钟给足网络慢场景时间。
          */
-        private const val PROVISION_PACKAGES = "python3 git py3-pip nodejs npm bash curl ripgrep"
+        private const val APK_ONE_BUNDLE_TIMEOUT_MS = 480_000L
+        private const val APK_CUSTOM_TIMEOUT_MS = 600_000L
 
-        /**
-         * 基础包配置版本。改 [PROVISION_PACKAGES] 或配置逻辑时 +1，触发在设备上重新 `apk add`。
-         * 独立于 [ContainerInstaller] 的 rootfs INSTALL_VERSION：rootfs 版本升级会删 rootfs
-         * （连带清掉本标记），故新 rootfs 必然重跑配置；同 rootfs 下改包清单则靠本版本号触发。
-         */
-        private const val PROVISION_VERSION = "py3.12-pip-node-bash-curl-rg-gitcredhelper-v4"
-
-        /** `apk add` 下载基础包的超时（毫秒）：首次配置需联网拉包，给足时间。 */
-        private const val PROVISION_TIMEOUT_MS = 600_000L
+        /** 自定义包刷新（apk list）的短超时。 */
+        private const val APK_LIST_TIMEOUT_MS = 60_000L
     }
-
-    /** 标记基础包（python3/git/rg 等）已按 [PROVISION_VERSION] 配置完成，内容为版本号。 */
-    private val provisionMarker: java.io.File
-        get() = java.io.File(containerInstaller.rootfsDir, ".provisioned")
 
     /**
      * 在容器内流式执行命令：每读到一行就 emit 一个 [CommandEvent.Line]，命令结束 emit
@@ -386,61 +379,262 @@ class LinuxContainerEngine @Inject constructor(
         }
     }
 
+    // ── Bundle / 自定义包 安装 & 卸载：公开 API（供终端设置页、AI Run 前置检测弹窗调用） ───
+
+    /** 串行化 bundle 级的 apk 操作，避免两个按钮同时点触发两次 apk add。 */
+    private val bundleOpMutex = Mutex()
+
     /**
-     * 首次初始化时配置基础包（python3 / git / pip / node / npm / rg）。幂等：已按 [PROVISION_VERSION] 配置则直接返回。
-     * 失败（断网/超时/退出码非 0）不写标记，下次 [ensureInstalled] 自动重试，且**不抛异常**——
-     * 配置失败不应阻塞用户使用容器（只是暂时没有这些工具）。
+     * 安装一个 Bundle（配置国内镜像源（幂等）+ apk update + apk add --no-cache <packages> + postInstallHook）。
      *
-     * 流式执行：用 [streamExecNoInstall]（不触发懒安装，避免与 [ensureInstalled] 递归）逐行拿到 apk 输出，
-     * 实时更新 [initProgress]，让 UI 能看到「正在安装…」+ 下载进度行。脚本内先幂等覆盖 apk 源为阿里云
-     * 国内镜像（兜底存量已解压旧 rootfs，其镜像源仍是官方 dl-cdn），再 update 索引、装包。
+     * 前置要求：rootfs + proot 已安装（[ensureInstalled] 已完成、返回过 Ready）。
+     * 未装直接抛异常，由 UI 弹"先初始化容器"提示。
      */
-    private suspend fun provisionIfNeeded() {
-        val marker = provisionMarker
-        if (marker.exists() && marker.readText().trim() == PROVISION_VERSION) return
-
-        FileLogger.i(TAG, "开始配置容器基础包：$PROVISION_PACKAGES（首次需联网，可能耗时较久）")
-        _initProgress.value = ContainerInitState.InstallingPackages(line = "配置国内镜像源…")
-
-        // 幂等覆盖镜像源 + 刷新索引 + 装包。apk 源用 http（minirootfs 无 ca-certificates，见 ALPINE_MIRROR 注释）。
-        val script = buildString {
-            append("set -e\n")
-            append("mkdir -p /etc/apk\n")
-            append("cat > /etc/apk/repositories <<EOF\n")
-            append("${ContainerInstaller.ALPINE_MIRROR}/${ContainerInstaller.ALPINE_BRANCH}/main\n")
-            append("${ContainerInstaller.ALPINE_MIRROR}/${ContainerInstaller.ALPINE_BRANCH}/community\n")
-            append("EOF\n")
-            append("apk update\n")
-            append("apk add --no-cache $PROVISION_PACKAGES\n")
-            // 装好 git 后配置两个 credential.helper：store（命中已有凭据秒过）+ rdeepcode 自定义 helper
-            // （store 未命中时经文件 IPC 通知 app 弹窗回填），让终端/AI/UI 三端裸 git 共用同一注入链。
-            // credential.helper 是 multi-valued，存量设备重配时若直接 `--add` 会与旧 store 行重复，
-            // 故先 `--replace-all` 清掉已有 helper 值再 `--add` rdeepcode，保证顺序幂等（store 唯一在前、rdeepcode 唯一在后）。
-            // 脚本由 [ContainerInstaller.extractCredentialHelper] 启动即提取到 /root/.rdeepcode/git-credential-rdeepcode。
-            append("git config --global --replace-all credential.helper 'store --file=/root/.rdeepcode/git-credentials'\n")
-            append("git config --global --add credential.helper '/root/.rdeepcode/git-credential-rdeepcode'\n")
-        }
-
-        var exitCode: Int? = null
-        // rootfs 此时已由 ensureInstalled→installRootfsIfNeed 解压就绪；streamExecNoInstall 不再触发安装，无递归。
-        streamExecNoInstall(script, projectPath = null, timeoutMs = PROVISION_TIMEOUT_MS).collect { event ->
-            when (event) {
-                is CommandEvent.Line ->
-                    _initProgress.value = ContainerInitState.InstallingPackages(line = event.text)
-                is CommandEvent.Exit -> exitCode = event.code
+    suspend fun installBundle(id: TerminalBundleId) {
+        val bundle = TerminalBundles.byId(id) ?: throw IllegalArgumentException("未知 bundle: $id")
+        if (!containerInstaller.isInstalledFor(currentProfile)) throw IllegalStateException("容器未初始化，请先初始化 rootfs")
+        bundleOpMutex.withLock {
+            // 已装直接返回
+            if (bundleRepository.isInstalledSnapshot(id)) return
+            bundleRepository.emitInstalling(id, line = "准备中…")
+            _initProgress.value = ContainerInitState.BundleInstalling(bundleId = id, line = "准备中…")
+            var exitCode: Int? = null
+            try {
+                val script = buildString {
+                    append("set -e\n")
+                    append(apkMirrorAndUpdateScriptOnce())
+                    append("apk add --no-cache ${bundle.packages}\n")
+                    bundle.postInstallHook?.let { hook ->
+                        append("# post-install hook for ").append(id.stableKey).append('\n')
+                        append(hook.trimIndent()).append('\n')
+                    }
+                    // GIT 两个 credential helper 的全局配置：以前写在 monolithic provisionIfNeeded 末尾，
+                    // 现在拆成 GIT bundle 自己的 post-install（定义在 TerminalBundles 里），保证不重复。
+                    // 为了兼容"旧存量用户只升级 app、不重装 rootfs"，Bash/Git 旧版本 provision 没这些行，
+                    // 我们在 GIT bundle 里强制重复配置：--replace-all / --add 语义天然幂等。
+                }
+                streamExecNoInstall(script, projectPath = null, timeoutMs = APK_ONE_BUNDLE_TIMEOUT_MS).collect { event ->
+                    when (event) {
+                        is CommandEvent.Line -> {
+                            bundleRepository.emitInstalling(id, line = event.text)
+                            _initProgress.value = ContainerInitState.BundleInstalling(bundleId = id, line = event.text)
+                        }
+                        is CommandEvent.Exit -> exitCode = event.code
+                    }
+                }
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "安装 bundle ${id.stableKey} 异常", e)
+                bundleRepository.markFailed(id, e.message ?: "异常")
+                _initProgress.value = ContainerInitState.Failed("安装 ${bundle.displayName} 失败：${e.message}")
+                throw e
+            }
+            if (exitCode == 0) {
+                bundleRepository.markInstalled(id, bundle)
+                FileLogger.i(TAG, "Bundle 安装成功：${bundle.displayName} (${bundle.packages})")
+            } else {
+                val reason = "安装 ${bundle.displayName} 失败（exit=$exitCode），请在终端设置中重试"
+                bundleRepository.markFailed(id, reason)
+                _initProgress.value = ContainerInitState.Failed(reason)
+                throw IllegalStateException(reason)
             }
         }
+    }
 
-        if (exitCode == 0) {
-            marker.writeText(PROVISION_VERSION)
-            FileLogger.i(TAG, "容器基础包配置完成：$PROVISION_PACKAGES")
-        } else {
-            FileLogger.w(
-                TAG,
-                "容器基础包配置未完成（退出码=$exitCode），将在下次初始化重试"
-            )
+    /** 批量安装多个 Bundle（AI 推荐组合一键安装使用）。遇到任一失败即停并向上抛。 */
+    suspend fun installBundlesOrdered(ids: Iterable<TerminalBundleId>) {
+        for (id in ids) installBundle(id)
+    }
+
+    /**
+     * 卸载一个 Bundle：apk del --purge <packages> + 清 bundle 标记。
+     *
+     * 注意：不自动清理被依赖的其他包（其他 bundle 可能 share python3 等），
+     * 也不回滚 post-install hook 的副作用（git config / shell 切换）。
+     * UI 层给用户文案提示"卸载后会释放 X MB，git/bash 配置需手动恢复"。
+     */
+    suspend fun uninstallBundle(id: TerminalBundleId) {
+        val bundle = TerminalBundles.byId(id) ?: throw IllegalArgumentException("未知 bundle: $id")
+        if (!containerInstaller.isInstalledFor(currentProfile)) {
+            // 容器没装自然没包装过，直接 NotInstalled
+            bundleRepository.markUninstalled(id)
+            return
+        }
+        bundleOpMutex.withLock {
+            if (!bundleRepository.isInstalledSnapshot(id)) return
+            bundleRepository.emitUninstalling(id)
+            _initProgress.value = ContainerInitState.BundleUninstalling(bundleId = id)
+            var exitCode: Int? = null
+            try {
+                streamExecNoInstall(
+                    "apk del --purge ${bundle.packages}",
+                    projectPath = null,
+                    timeoutMs = APK_ONE_BUNDLE_TIMEOUT_MS
+                ).collect { event ->
+                    when (event) {
+                        is CommandEvent.Line -> Unit
+                        is CommandEvent.Exit -> exitCode = event.code
+                    }
+                }
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "卸载 bundle ${id.stableKey} 异常", e)
+                // 异常不回退 state：实际可能是网络断等，让用户下次再试 apk del / 或重置容器。
+                bundleRepository.markUninstalled(id)
+                return
+            }
+            // apk del 的退出码我们相信为 0 就 OK。非 0 也把状态置为 NotInstalled——
+            // 因为 apk del 报"该包未安装"也会 exit != 0，我们不希望 UI 永远停在 Installing/Installed。
+            // 真失败下次 installBundle 会重新 apk add。
+            bundleRepository.markUninstalled(id)
+            FileLogger.i(TAG, "Bundle 卸载：${bundle.displayName} (exit=$exitCode)")
         }
     }
+
+    /** 自定义 apk 包批量安装（高级折叠区入口）。返回失败列表；全成功返回 emptyList。 */
+    suspend fun installCustomPackages(pkgs: List<String>): List<String> {
+        if (pkgs.isEmpty()) return emptyList()
+        if (!containerInstaller.isInstalledFor(currentProfile)) throw IllegalStateException("容器未初始化，请先初始化 rootfs")
+        val argLine = pkgs.joinToString(" ")
+        _initProgress.value = ContainerInitState.BundleInstalling(bundleId = null, line = "安装自定义包：$argLine …")
+        var exitCode: Int? = null
+        var lastLine: String? = null
+        bundleOpMutex.withLock {
+            try {
+                val script = buildString {
+                    append("set -e\n")
+                    append(apkMirrorAndUpdateScriptOnce())
+                    append("apk add --no-cache ").append(argLine).append('\n')
+                }
+                streamExecNoInstall(script, projectPath = null, timeoutMs = APK_CUSTOM_TIMEOUT_MS).collect { event ->
+                    when (event) {
+                        is CommandEvent.Line -> lastLine = event.text
+                        is CommandEvent.Exit -> exitCode = event.code
+                    }
+                }
+            } catch (e: Exception) {
+                lastLine = e.message
+                exitCode = -1
+            }
+        }
+        val failed = if (exitCode == 0) emptyList() else pkgs
+        if (failed.isEmpty()) {
+            // 成功：加到自定义包快照（UI 列表/磁盘标记都更新）
+            bundleRepository.addCustomSnapshots(pkgs)
+            FileLogger.i(TAG, "自定义包安装成功：$argLine")
+        } else {
+            FileLogger.w(TAG, "自定义包安装失败($lastLine)：$argLine")
+            _initProgress.value = ContainerInitState.Failed("安装自定义包失败：$lastLine")
+        }
+        // 成功/失败后都刷新一次"真实的"自定义包清单（减去和 bundle 包重叠的，留下用户真正装的）
+        runCatching { refreshCustomPackagesSnapshot() }
+        return failed
+    }
+
+    /** 卸载一个自定义包。成功返回 true。 */
+    suspend fun uninstallCustomPackage(pkg: String): Boolean {
+        if (!containerInstaller.isInstalledFor(currentProfile)) {
+            bundleRepository.removeCustomSnapshot(pkg)
+            return true
+        }
+        var ok = false
+        bundleOpMutex.withLock {
+            try {
+                streamExecNoInstall(
+                    "apk del --purge $pkg",
+                    projectPath = null,
+                    timeoutMs = APK_ONE_BUNDLE_TIMEOUT_MS
+                ).collect { event ->
+                    if (event is CommandEvent.Exit) ok = (event.code == 0)
+                }
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "卸载自定义包异常: $pkg", e)
+            }
+        }
+        bundleRepository.removeCustomSnapshot(pkg)
+        // 刷新一次真实列表
+        runCatching { refreshCustomPackagesSnapshot() }
+        return ok
+    }
+
+    /**
+     * 通过 `apk info` 把容器当前已安装的 apk 世界包列出来，
+     * 减去 7 个 bundle 覆盖的包，再把"用户自定义的"那部分写回 TerminalBundleRepository。
+     * 由终端设置页进入时 / 每次自定义包操作后调用一次，保证 UI 列表与实际一致。
+     */
+    suspend fun refreshCustomPackagesSnapshot() {
+        if (!containerInstaller.isInstalledFor(currentProfile)) {
+            bundleRepository.saveCustomPackagesSnapshot(emptyList())
+            return
+        }
+        val text = runCatching {
+            execCaptured("apk info", projectPath = null, timeoutMs = APK_LIST_TIMEOUT_MS).output
+        }.getOrDefault("")
+        val installed = text.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        val bundled = TerminalBundles.ALL
+            .flatMap { it.packages.split(" ") }
+            .map { it.trim() }.filter { it.isNotBlank() }
+            .toSet()
+        // 额外减去 Alpine 自带 minirootfs 的 base world（避免 busybox / alpine-base / musl 出现在用户列表里）
+        // 做法：凡是首次 apk add 没提到的包名一律先给出去；如果列表过大 UI 能接受——
+        // （apk info 通常 100~200 包，减去 bundle/base 后只剩几个用户自定义包）。
+        val basePkgs = setOf(
+            "alpine-base", "alpine-keys", "apk-tools", "busybox", "busybox-binsh", "musl", "musl-utils",
+            "libc-utils", "zlib", "ssl_client", "ca-certificates-bundle"
+        )
+        val custom = (installed - bundled - basePkgs).sorted()
+        bundleRepository.saveCustomPackagesSnapshot(custom)
+    }
+
+    /** 重置容器：物理删除 rootfs + proot 目录，bundleRepo 状态重置。高风险操作。 */
+    suspend fun resetContainer() {
+        // initMutex 保护：不与正在初始化的 job 并发
+        initMutex.withLock {
+            initJob?.cancel()
+            initJob = null
+        }
+        bundleRepository.resetAllToNotInstalled()
+        runCatching { containerInstaller.rootfsDir.deleteRecursively() }
+        runCatching { containerInstaller.prootBin.delete() }
+        runCatching { containerInstaller.prootLoader.delete() }
+        runCatching { containerInstaller.prootLoader32.delete() }
+        _initProgress.value = ContainerInitState.Idle
+    }
+
+    /** 切换 Alpine 镜像源并立刻 apk update 让其生效。成功返回 true。 */
+    suspend fun setApkMirrorAndUpdate(mirror: String = ContainerInstaller.ALPINE_MIRROR): Boolean {
+        if (!containerInstaller.isInstalledFor(currentProfile)) return false
+        var exitCode: Int? = null
+        bundleOpMutex.withLock {
+            try {
+                val script = buildString {
+                    append("set -e\n")
+                    append(apkMirrorAndUpdateScriptOnce(mirror))
+                }
+                streamExecNoInstall(script, projectPath = null, timeoutMs = APK_LIST_TIMEOUT_MS * 3).collect { event ->
+                    if (event is CommandEvent.Exit) exitCode = event.code
+                }
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "切换镜像源异常", e)
+            }
+        }
+        return exitCode == 0
+    }
+
+    /**
+     * 一次性写：镜像源写入 /etc/apk/repositories + apk update。
+     * 同一个脚本被 installBundle/installCustomPackages 复用，所以单独抽出。
+     * 每次安装前都写（幂等），保证：① 新解压 rootfs 立即有国内镜像；② 存量 rootfs（
+     * 其 /etc/apk/repositories 还是官方源）也被同步更新成国内源。
+     */
+    private fun apkMirrorAndUpdateScriptOnce(mirror: String = ContainerInstaller.ALPINE_MIRROR): String = buildString {
+        append("mkdir -p /etc/apk\n")
+        append("cat > /etc/apk/repositories <<EOF\n")
+        append("$mirror/${ContainerInstaller.ALPINE_BRANCH}/main\n")
+        append("$mirror/${ContainerInstaller.ALPINE_BRANCH}/community\n")
+        append("EOF\n")
+        append("apk update 2>&1 | tail -n 3\n")
+    }
+
+    // ── End Bundle 公开 API ──────────────────────────────────────────────────
 
     /**
      * 启动看门狗：等待 [timeoutMs] 后若进程仍存活，则标记超时并优雅→强制终止，借此解除
@@ -510,52 +704,59 @@ class LinuxContainerEngine @Inject constructor(
     override fun isContainerInstalled(): Boolean = containerInstaller.isInstalledFor(currentProfile)
 
     /**
-     * 基础包是否已配置完成（按当前 profile）。自定义镜像不 provision，视为已就绪——
-     * 所需工具由用户自行在容器内安装，不依赖本流程。
+     * "provisioned" 语义变化：以前=全量 8 包装完；现在=rootfs+proot 解压好（容器物理可用）。
+     * 这是为了与 `ensureInstalled` 语义对齐（M1 后 ensureInstalled 不再自动装 bundle）。
+     *
+     * 自定义镜像不 provision（bundle 体系不覆盖 custom profile），自定义视为 true。
      */
     override fun isProvisioned(): Boolean {
         if (!currentProfile.isBuiltin) return true
-        val marker = provisionMarker
-        return marker.exists() && marker.readText().trim() == PROVISION_VERSION
+        return containerInstaller.isInstalledFor(currentProfile)
     }
 
     /**
-     * 容器未就绪（rootfs 未解压或基础包未配置完成）时返回引导文案，就绪返回 null。
-     * 命令执行入口据此不自动初始化、直接失败并引导用户去终端页完成初始化。
+     * 容器未就绪（rootfs 未解压）时返回引导文案，就绪返回 null。
+     * 与旧版区别：现在**不再要求 bundle 包全装完**才视为"ready"。rootfs 解压好就允许执行命令；
+     * 缺 python3/rg/git 等工具的 command not found 会被 M2 彩色提示补"需要装 X bundle → 去终端设置"。
      */
     override fun notReadyHint(): String? {
-        if (containerInstaller.isInstalledFor(currentProfile) && isProvisioned()) return null
+        if (containerInstaller.isInstalledFor(currentProfile)) return null
         return context.getString(R.string.container_not_ready_hint)
     }
 
     /**
-     * 容器默认命令 shell：内置 Alpine 按 provision 状态选 `/bin/bash` 或 `/bin/sh`；
-     * 自定义镜像用 profile 指定的 [ContainerProfile.shellPath]，未指定回退 `/bin/sh`。
-     *
-     * 内置分支与改动前逐字等价。自定义镜像的 shell 路径由用户负责——若不存在，proot 会报错由用户看到。
+     * 默认命令 shell：
+     *   - 自定义 profile → profile 指定或 /bin/sh
+     *   - 内置 Alpine
+     *       · BASH bundle 已装 → /bin/bash
+     *       · 否则 → /bin/sh
+     * （不再按 isProvisioned() 做全局判断——而是按具体 BASH bundle 的状态。）
      */
     override fun defaultShell(): String {
         val profile = currentProfile
         if (!profile.isBuiltin) return profile.shellPath?.takeIf { it.isNotBlank() } ?: "/bin/sh"
-        return if (isProvisioned()) "/bin/bash" else "/bin/sh"
+        return if (bundleRepository.isInstalledSnapshot(TerminalBundleId.BASH)) "/bin/bash" else "/bin/sh"
     }
 
     /**
-     * 幂等地确保容器可用：先解压 rootfs/proot（首次耗时），内置再配置基础包（首次需联网）。
-     * 自定义镜像只解压 rootfs，不 provision——镜像源与所需工具由用户自行处理。
-     * 仅由终端页（[TerminalSessionManager]）作为唯一初始化入口调用；命令执行入口不再自动触发。
+     * 幂等地确保容器**物理可用**（仅解压 rootfs + proot，**不再自动 provision 全量 8 个包**）。
      *
-     * 耗时初始化（解压/装包）在引擎级 [initScope] 中执行，不随调用方（终端页 viewModelScope）
-     * 取消而中断——退出终端页后初始化仍在后台继续，下次进入可复用同一 job 或等待其完成。
-     * 全程通过 [initProgress] 上报阶段进度。rootfs 已解压但基础包配置失败时置 [ContainerInitState.Failed]
-     * 并抛异常（不静默置 Ready），让终端页进入失败态、可重试，避免"依赖缺失却显示成功"。
+     * 完成后：
+     *   - `containerInstaller.isInstalledFor(profile)` = true
+     *   - `initProgress` = Ready(migratedFromLegacyProvisioned)：检测到旧版 .provisioned 标记会打
+     *     全部 7 个 bundle 的 Installed 标记（存量用户零感知升级）
+     *   - 刷新容器 $HOME 缓存
+     *
+     * 后续：用户去终端设置手动点 "初始化 Python / Node" 等 bundle 卡片，或者进终端页
+     * 点 Banner 上的 CTA 跳到终端设置去点。
      */
     override suspend fun ensureInstalled() {
         val profile = currentProfile
         // 每次进入终端页前确保提取最新的内置文档
         containerInstaller.extractDocs()
-        if (containerInstaller.isInstalledFor(profile) && isProvisioned()) {
-            _initProgress.value = ContainerInitState.Ready
+        if (containerInstaller.isInstalledFor(profile)) {
+            val migrated = bundleRepository.migrateIfNeededAfterBoot()
+            _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = migrated)
             refreshContainerHome()
             return
         }
@@ -569,24 +770,21 @@ class LinuxContainerEngine @Inject constructor(
         }
         // 等待完成；若调用方（终端页）被取消，join 抛 CancellationException，但后台 job 继续执行。
         job.join()
-        if (containerInstaller.isInstalledFor(profile) && isProvisioned()) {
-            _initProgress.value = ContainerInitState.Ready
+        if (containerInstaller.isInstalledFor(profile)) {
+            val migrated = bundleRepository.migrateIfNeededAfterBoot()
+            _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = migrated)
             refreshContainerHome()
         } else {
-            val reason = if (containerInstaller.isInstalledFor(profile))
-                "容器基础包安装未完成（可能是网络问题），请重试"
-            else
-                "容器未安装（缺少 rootfs/proot）"
+            val reason = "容器未安装（缺少 rootfs/proot）"
             _initProgress.value = ContainerInitState.Failed(reason)
             throw IllegalStateException(reason)
         }
     }
 
-    /** 在 [initScope] 中真正执行一次性初始化：解压 rootfs + 配置基础包。 */
+    /** 在 [initScope] 中真正执行一次性初始化：只解压 rootfs + 部署 proot。 */
     private suspend fun doInit(profile: ContainerProfile) {
         // installRootfsIfNeed 在真正解压/部署时回调更新进度（已安装则快路径不回调）
         containerInstaller.installRootfsIfNeed(profile) { _initProgress.value = it }
-        if (profile.isBuiltin) provisionIfNeeded()
     }
 
     /** 查容器内 $HOME 并缓存到 [WorkspacePathMapper]，供文件工具展开 ~。 */

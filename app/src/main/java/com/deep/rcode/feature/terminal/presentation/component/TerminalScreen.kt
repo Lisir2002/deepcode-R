@@ -21,9 +21,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -44,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
@@ -78,6 +82,7 @@ import compose.icons.feathericons.ArrowRight
 import compose.icons.feathericons.ArrowUp
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.Copy
+import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.Edit3
 import compose.icons.feathericons.Grid
 import compose.icons.feathericons.Menu
@@ -100,6 +105,7 @@ import kotlin.math.roundToInt
 fun TerminalScreen(
     viewModel: TerminalViewModel,
     onNavigateBack: () -> Unit,
+    onNavigateToSettings: () -> Unit = {},
     onSendToAI: ((tailOutput: String) -> Unit)? = null
 ) {
     val prepareState by viewModel.prepareState.collectAsStateWithLifecycle()
@@ -163,6 +169,15 @@ fun TerminalScreen(
                         onRestartContainer = { showReconnectMenu = false; viewModel.restartContainer() }
                     )
                 }
+                // 终端设置（齿轮 → 跳转终端设置页）
+                IconButton(onClick = onNavigateToSettings, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        FeatherIcons.Settings,
+                        contentDescription = stringResource(R.string.settings_terminal),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
                 // 终端设置/菜单（主菜单入口，点击后弹出终端级菜单；对 TabChip 长按也会弹）
                 Box {
                     IconButton(onClick = { showTerminalMenu = TerminalMenuAnchor.Bar }, modifier = Modifier.size(40.dp)) {
@@ -223,6 +238,20 @@ fun TerminalScreen(
                 )
                 is TerminalViewModel.PrepareState.Ready -> {
                     @Suppress("UNUSED_EXPRESSION") revision
+
+                    // 首屏 Banner：容器未装 / Python 未装
+                    val banner by viewModel.currentBanner.collectAsStateWithLifecycle()
+                    banner?.let { b ->
+                        TerminalFirstRunBanner(
+                            banner = b,
+                            onGoSettings = onNavigateToSettings,
+                            onInstallPython = {
+                                // 「立即装 Python」先跳到终端设置页，用户可一键装组合或单个 Python
+                                onNavigateToSettings()
+                            },
+                            onDismiss = viewModel::dismissFirstRunBanner
+                        )
+                    }
 
                     TabBar(
                         tabs = tabs,
@@ -377,4 +406,95 @@ private fun performSelectAll(tabs: List<TerminalTab>, activeId: String?) {
 private fun performClearScreen(tabs: List<TerminalTab>, activeId: String?, vm: TerminalViewModel) {
     // 用 Ctrl-L（0x0C）：对大多数 shell 及 curses 应用，等价于清屏；同时清除 scrollback 思路靠命令侧。
     vm.writeBytes(0x0C)
+}
+
+// ================================================================
+// Banner：容器未初始化 / Python 未装 首屏提示
+// ================================================================
+@Composable
+private fun TerminalFirstRunBanner(
+    banner: TerminalViewModel.BannerType,
+    onGoSettings: () -> Unit,
+    onInstallPython: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val (title, desc, accentColor, showInstallBtn) = when (banner) {
+        TerminalViewModel.BannerType.ContainerNotInstalled ->
+            listOf(
+                "本地容器还未初始化",
+                "容器未就绪时仅可使用手机原生 shell（命令较少）。\n点下方「初始化环境」解锁 Alpine Linux + PRoot 以及 Python / Node / Git 等 6 大功能包。",
+                Color(0xFFFF8A65),
+                false
+            )
+        TerminalViewModel.BannerType.PythonMissing ->
+            listOf(
+                "AI 代码运行需要 Python",
+                "AI 的「Run Code / Search / git diff」依赖 Python 运行时。建议先一键安装 AI 推荐组合。",
+                Color(0xFF42A5F5),
+                true
+            )
+    }
+
+    Card(
+        modifier = Modifier
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = (accentColor as Color).copy(alpha = 0.12f)
+        ),
+        shape = RoundedCornerShape(10.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.md)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier
+                    .size(10.dp)
+                    .background(accentColor as Color, shape = RoundedCornerShape(50)))
+                Spacer(modifier = Modifier.width(Spacing.sm))
+                Text(
+                    text = title as String,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                // 暂不提醒（仅 PythonMissing 显示；容器未初始化强制提示直到安装好）
+                if (banner == TerminalViewModel.BannerType.PythonMissing) {
+                    TextButton(onClick = onDismiss, modifier = Modifier.height(32.dp)) {
+                        Text("暂不提醒", fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(Spacing.xs))
+            Text(
+                text = desc as String,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(Spacing.sm))
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Button(onClick = onGoSettings, modifier = Modifier.height(36.dp)) {
+                    Icon(FeatherIcons.Settings, null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (showInstallBtn as Boolean) "去终端设置" else "初始化环境", fontSize = 13.sp)
+                }
+                if (showInstallBtn as Boolean) {
+                    OutlinedButton(onClick = onInstallPython, modifier = Modifier.height(36.dp)) {
+                        Icon(FeatherIcons.Cpu, null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("立即装 Python", fontSize = 13.sp)
+                    }
+                }
+            }
+            // 容器未初始化时的原生 shell 说明
+            if (banner == TerminalViewModel.BannerType.ContainerNotInstalled) {
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                Text(
+                    "（当前会话使用原生 Android /system/bin/sh 作为 fallback，基础命令可用，但无法安装 apk 包。）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                )
+            }
+        }
+    }
 }

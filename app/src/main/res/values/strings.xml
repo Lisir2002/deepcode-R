@@ -17,6 +17,8 @@
     <string name="settings_log">日志等级</string>
     <string name="settings_permissions">工具授权</string>
     <string name="settings_remote_servers">远程工作区</string>
+    <string name="settings_terminal">终端设置</string>
+    <string name="settings_terminal_subtitle">环境、功能包、外观、键盘、SSH</string>
     <string name="settings_backup">备份与还原</string>
     <string name="settings_about">关于</string>
     <string name="settings_language">语言</string>

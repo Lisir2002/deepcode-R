@@ -7,6 +7,9 @@ import com.deep.rcode.feature.agent.domain.container.ContainerInitState
 import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
 import com.deep.rcode.feature.settings.data.repository.ExecutionMode
 import com.deep.rcode.feature.settings.data.repository.ExecutionModeHolder
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
+import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
+import com.deep.rcode.feature.terminal.data.repository.TerminalBundleRepository
 import com.deep.rcode.feature.terminal.data.repository.TerminalFontSizes
 import com.deep.rcode.feature.terminal.data.repository.TerminalSettingsRepository
 import com.deep.rcode.feature.terminal.domain.RemoteTerminalSessionManager
@@ -39,7 +42,8 @@ class TerminalViewModel @Inject constructor(
     private val remoteManager: RemoteTerminalSessionManager,
     private val modeHolder: ExecutionModeHolder,
     private val containerEngine: LinuxContainerEngine,
-    private val settingsRepo: TerminalSettingsRepository
+    private val settingsRepo: TerminalSettingsRepository,
+    private val bundleRepo: TerminalBundleRepository
 ) : ViewModel() {
 
     private companion object { const val TAG = "TerminalViewModel" }
@@ -77,6 +81,59 @@ class TerminalViewModel @Inject constructor(
     /** Ctrl 首次提示是否已展示。 */
     val ctrlHintShown: StateFlow<Boolean> = settingsRepo.ctrlHintShownFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** 首屏 Banner 是否已由用户点过「暂不提醒」关闭过。 */
+    val firstRunBannerDismissed: StateFlow<Boolean> = settingsRepo.firstRunBannerDismissedFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Bundle 安装状态：由 TerminalSettingsScreen 与本页 Banner 共用。 */
+    val bundleStates: StateFlow<Map<TerminalBundleId, BundleInstallState>> = bundleRepo.states
+
+    /** 容器是否已安装好（rootfs + proot），基于 containerInit 派生。 */
+    val containerInstalled: StateFlow<Boolean> = containerInit
+        .map { state ->
+            when (state) {
+                is ContainerInitState.Ready,
+                is ContainerInitState.BundleInstalling,
+                is ContainerInitState.BundleUninstalling -> true
+                else -> false
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Python bundle 是否已安装（AI Run 前置检查用 & Banner 用）。 */
+    val pythonInstalled: StateFlow<Boolean> = bundleStates
+        .map { states -> states[TerminalBundleId.PYTHON] is BundleInstallState.Installed }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** 终端页 Banner 类型：null 表示不显示 Banner。与 UI 同包，便于 UI 直接 when。 */
+    sealed interface BannerType {
+        /** 容器未初始化 → 提示去终端设置页初始化。 */
+        data object ContainerNotInstalled : BannerType
+        /** 容器就绪但 Python 未装 → 提示 AI Run 需要它；可以「立即安装」或「暂不提醒」。 */
+        data object PythonMissing : BannerType
+    }
+
+    /** Banner（容器未装 / Python 未装）是否应当显示：null = 不显示。 */
+    val currentBanner: StateFlow<BannerType?> = combine(
+        containerInstalled,
+        pythonInstalled,
+        firstRunBannerDismissed,
+        modeHolder.mode
+    ) { installed, pythonOk, bannerDismissed, mode ->
+        // 远程 SSH 下不展示本地容器相关 Banner。
+        if (mode == ExecutionMode.REMOTE_SSH) return@combine null
+        when {
+            !installed -> BannerType.ContainerNotInstalled
+            !pythonOk && !bannerDismissed -> BannerType.PythonMissing
+            else -> null
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** 用户 Banner 上「暂不提醒」。 */
+    fun dismissFirstRunBanner() {
+        viewModelScope.launch { settingsRepo.saveFirstRunBannerDismissed(true) }
+    }
 
     /** 用户错误提示流（Toast/Snackbar 消费）。 */
     private val _errorToast = MutableStateFlow<String?>(null)

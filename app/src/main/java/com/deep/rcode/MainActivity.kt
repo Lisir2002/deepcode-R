@@ -59,8 +59,10 @@ import com.deep.rcode.feature.settings.data.repository.ThemeSettingsRepository
 import com.deep.rcode.feature.settings.presentation.SettingsViewModel
 import com.deep.rcode.feature.settings.presentation.component.SettingsScreen
 import com.deep.rcode.feature.terminal.domain.TerminalKeepaliveService
+import com.deep.rcode.feature.terminal.presentation.TerminalSettingsViewModel
 import com.deep.rcode.feature.terminal.presentation.TerminalViewModel
 import com.deep.rcode.feature.terminal.presentation.component.TerminalScreen
+import com.deep.rcode.feature.terminal.presentation.component.TerminalSettingsScreen
 import com.deep.rcode.feature.workspace.presentation.WorkspaceViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -379,6 +381,14 @@ fun AppNavigation() {
                         navController.popBackStack() 
                         scope.launch { drawerState.open() }
                     },
+                    onNavigateToTerminalSettings = { navController.navigate("terminal_settings") },
+                    onNavigateToSshHosts = {
+                        // SSH 主机管理：目前还没独立页，先跳到设置页的 RemoteServers 入口，
+                        // 等 SSH 页补上后改成直接路由。
+                        if (!navController.popBackStack()) {
+                            navController.navigate("settings")
+                        }
+                    },
                     onStopAllAndCloseTerminal = { agentViewModel.stopAllAndCloseTerminal() }
                 )
             }
@@ -386,7 +396,19 @@ fun AppNavigation() {
                 val terminalViewModel: TerminalViewModel = hiltViewModel()
                 TerminalScreen(
                     viewModel = terminalViewModel,
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToSettings = { navController.navigate("terminal_settings") }
+                )
+            }
+            composable("terminal_settings") {
+                val terminalSettingsVM: TerminalSettingsViewModel = hiltViewModel()
+                TerminalSettingsScreen(
+                    viewModel = terminalSettingsVM,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToSshHosts = {
+                        // 同 RemoteServers 占位：先回 Settings 的对应分区。
+                        navController.popBackStack("settings", inclusive = false)
+                    }
                 )
             }
             composable("git") {

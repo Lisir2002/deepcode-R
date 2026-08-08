@@ -94,16 +94,32 @@ class TerminalSessionManager @Inject constructor(
     /**
      * 新建一个交互 shell 标签并设为当前。返回新标签 id。
      *
-     * 首次会触发 rootfs/proot 解压（幂等）；失败抛异常由调用方处理。
+     * 容器未就绪（rootfs/proot 没解压或解压失败）时，fallback 到手机原生 /system/bin/sh：
+     * 保证首次进入终端不会白屏或一直卡在 Loading；用户可见 Banner 提示去安装完整环境。
      */
     suspend fun createInteractiveTab(): String {
-        ensureContainer()
+        val installed = runCatching { ensureContainer(); containerEngine.isContainerInstalled() }
+            .getOrDefault(false)
         val id = nextId()
-        val session = buildSession(
-            // -w 已把 cwd 设为 /root/workspace，cd 仅作兜底；裸 sh/bash 在 tty 上自动进交互模式，
-            // 靠 ENV=/etc/profile 加载登录环境；exec 让 shell 取代外层 sh -c 成为前台交互 shell。
-            shellCommand = "cd ~/workspace 2>/dev/null; export ENV=/etc/profile; exec ${containerEngine.defaultShell()}"
-        )
+        val shellCommand = if (installed) {
+            "cd ~/workspace 2>/dev/null; export ENV=/etc/profile; exec ${containerEngine.defaultShell()}"
+        } else {
+            // 原生 sh：把 cwd 设到 app 私有 files/workspace（WorkspaceRepository 保证目录存在）；
+            // 写一个 MOTD 告诉用户此为 fallback shell、仅基础命令、apk/包管理不可用。
+            val cwd = workspaceRepository.currentPath()
+            val motd = listOf(
+                "╔══════════════════════════════════════════════════╗",
+                "║  ⚠️  本地容器未初始化，当前使用原生 Android sh     ║",
+                "║                                                   ║",
+                "║  • 可用基础命令：ls/cd/cat/echo/grep/ps/toybox   ║",
+                "║  • apk/pip/npm/git/curl 等工具不可用              ║",
+                "║  • 点顶栏「齿轮 → 初始化环境」解锁 Alpine Linux    ║",
+                "╚══════════════════════════════════════════════════╝",
+                ""
+            ).joinToString("\\n")
+            "cd \"$cwd\" 2>/dev/null; printf '%b\\n' \"$motd\"; exec /system/bin/sh -i"
+        }
+        val session = if (installed) buildSession(shellCommand) else buildNativeFallbackSession(shellCommand)
         addTab(
             TerminalTab(
                 id = id,
@@ -115,7 +131,7 @@ class TerminalSessionManager @Inject constructor(
             )
         )
         _activeTabId.value = id
-        FileLogger.i(TAG, "新建交互终端标签 $id")
+        FileLogger.i(TAG, "新建交互终端标签 $id（${if (installed) "容器模式" else "原生 sh fallback"}）")
         return id
     }
 
@@ -131,19 +147,24 @@ class TerminalSessionManager @Inject constructor(
         notify: Boolean,
         sourceSessionId: String?
     ): String {
-        ensureContainer()
+        val installed = runCatching { ensureContainer(); containerEngine.isContainerInstalled() }
+            .getOrDefault(false)
         val id = nextId()
-        // 用 `ec=$?` 捕获命令真实退出码后再 echo，否则 echo 本身恒为 0 会覆盖进程退出码，导致
-        // onFinished 回调里的 exitStatus 永远是 0、与屏幕上 echo 出来的码对不上。
-        // notify=true：echo 后 `exit $ec` 让 shell 以命令真实退出码结束 → proot 透传 → 回调 exitStatus
-        //   正确，且 shell 自然退出稳定触发 MSG_PROCESS_EXITED；否则脚本末尾是 echo，进程退出码被
-        //   污染成 0，而某些情况下进程不干净退出还会导致回调不触发。
-        // notify=false：echo 后 `exec ${shell}` 保活，标签可复用（dev server 退出后也能继续输入）；
-        //   此时进程不退出、不回调，退出码无意义，符合 dev server 场景设计。
-        val afterCommand = if (notify) "; exit \$ec" else "; exec ${containerEngine.defaultShell()}"
-        val shellCommand = "cd ~/workspace 2>/dev/null; export ENV=/etc/profile; " +
-            "$command; ec=\$?; echo \"[command exited: \$ec]\"$afterCommand"
-        val session = buildSession(shellCommand)
+        val shellCommand: String
+        if (installed) {
+            val afterCommand = if (notify) "; exit \$ec" else "; exec ${containerEngine.defaultShell()}"
+            shellCommand = "cd ~/workspace 2>/dev/null; export ENV=/etc/profile; " +
+                "$command; ec=\$?; echo \"[command exited: \$ec]\"$afterCommand"
+        } else {
+            // 容器未安装时，AI 发起的后台命令不真正执行：直接 echo 错误 + exit，提醒用户先初始化容器。
+            val err = "容器未初始化，本地后台命令暂不支持。请先在终端页点齿轮→初始化环境。"
+            shellCommand = buildString {
+                append("echo \"$err\" 1>&2;")
+                append(" echo \"[command exited: 100]\";")
+                append(if (notify) " exit 100" else " exec /system/bin/sh -i")
+            }
+        }
+        val session = if (installed) buildSession(shellCommand) else buildNativeFallbackSession(shellCommand)
         addTab(
             TerminalTab(
                 id = id,
@@ -254,8 +275,14 @@ class TerminalSessionManager @Inject constructor(
     suspend fun reconnect(id: String) {
         val old = tab(id) ?: return
         runCatching { old.session.finishIfRunning() }
-        ensureContainer()
-        val session = buildSession("cd ~/workspace 2>/dev/null; export ENV=/etc/profile; exec ${containerEngine.defaultShell()}")
+        val installed = runCatching { ensureContainer(); containerEngine.isContainerInstalled() }
+            .getOrDefault(false)
+        val session = if (installed) {
+            buildSession("cd ~/workspace 2>/dev/null; export ENV=/etc/profile; exec ${containerEngine.defaultShell()}")
+        } else {
+            val cwd = workspaceRepository.currentPath()
+            buildNativeFallbackSession("cd \"$cwd\" 2>/dev/null; exec /system/bin/sh -i")
+        }
         val newTab = TerminalTab(
             id = old.id,
             title = old.title,
@@ -276,10 +303,58 @@ class TerminalSessionManager @Inject constructor(
     }
 
     private suspend fun ensureContainer() {
-        containerEngine.ensureInstalled()
-        if (!containerEngine.isContainerInstalled()) {
-            throw IllegalStateException("容器未安装（缺少 rootfs/proot）")
-        }
+        runCatching { containerEngine.ensureInstalled() }
+    }
+
+    /**
+     * 构造一个原生 shell 会话（不依赖 proot/rootfs）：仅使用 Android 系统自带的
+     * /system/bin/sh 作为可执行文件。容器未装好时的 fallback，保证终端页面永远可用。
+     */
+    private fun buildNativeFallbackSession(shellCommand: String): TerminalSession {
+        val cwd = appContext.filesDir.absolutePath
+        // 以 /system/bin/sh -c '...' 启动；env 保留基础 HOME/TMPDIR/PATH。
+        lateinit var session: TerminalSession
+        val client = AppTerminalSessionClient(
+            context = appContext,
+            viewProvider = { _tabs.value.firstOrNull { it.session === session }?.view },
+            onFinished = { finished ->
+                _tabs.value.firstOrNull { it.session === finished }?.let { target ->
+                    target.runState = RunState.Finished(finished.exitStatus)
+                    bumpRevision()
+                    FileLogger.i(TAG, "（原生 fallback）标签 ${target.id} 会话结束 exit=${finished.exitStatus}")
+                    if (target.isBackground && _tabs.value.none { it.isBackground && it.runState is RunState.Running }) {
+                        stopKeepaliveService()
+                    }
+                    if (target.notifyOnExit && !target.finishedNotified) {
+                        target.finishedNotified = true
+                        _tabFinishedEvents.tryEmit(
+                            TabFinishedEvent(
+                                target.id, target.title, target.command, finished.exitStatus, target.sourceSessionId,
+                                tailOutput = getTabOutput(target.id)?.takeTailLines(TAIL_LINES)
+                            )
+                        )
+                    }
+                }
+            }
+        )
+        val envArray = arrayOf(
+            "HOME=$cwd",
+            "TMPDIR=${appContext.cacheDir.absolutePath}",
+            "PATH=/system/bin:/system/xbin:/vendor/bin",
+            "SHELL=/system/bin/sh",
+            "TERM=xterm-256color",
+            "PS1=\\u@\\h:\\w\\$ "
+        )
+        session = TerminalSession(
+            "/system/bin/sh",
+            cwd,
+            arrayOf("sh", "-c", shellCommand),
+            envArray,
+            TRANSCRIPT_ROWS,
+            client
+        )
+        session.updateSize(DEFAULT_COLUMNS, DEFAULT_ROWS)
+        return session
     }
 
     private fun nextId(): String = "term-${idCounter.incrementAndGet()}"
