@@ -118,6 +118,8 @@
     <string name="log_filter_tag">来源</string>
     <string name="log_filter_more_tags">还有 %1$d 个…</string>
     <string name="log_filter_no_tags">没有可用的来源标签</string>
+    <string name="log_search_hint">搜索日志内容...</string>
+    <string name="log_new_logs">有新日志，点击刷新</string>
     <string name="log_filter_date_from">从</string>
     <string name="log_filter_date_select">选择</string>
     <string name="log_filter_date_to">至</string>

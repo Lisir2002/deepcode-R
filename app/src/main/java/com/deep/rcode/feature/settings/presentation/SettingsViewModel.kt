@@ -44,6 +44,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -69,7 +71,7 @@ data class LogViewerUiState(
     val loading: Boolean = false,
     val error: String? = null,
 
-    // 筛选模块新增字段
+    // 筛选面板：默认收起，只通过点击筛选图标打开，通过 X 关闭
     val filterPanelExpanded: Boolean = false,
     val selectedDates: Set<String> = emptySet(),
     val selectedLevels: Set<LogLevel> = emptySet(),
@@ -77,7 +79,14 @@ data class LogViewerUiState(
     val allAvailableTags: List<String> = emptyList(),
     val dateRangeMode: Boolean = false,
     val dateRangeStart: String? = null,
-    val dateRangeEnd: String? = null
+    val dateRangeEnd: String? = null,
+
+    // 搜索
+    val searchQuery: String = "",
+
+    // 实时尾随
+    val liveTailEnabled: Boolean = false,
+    val hasNewLogs: Boolean = false
 )
 
 @HiltViewModel
@@ -105,6 +114,15 @@ class SettingsViewModel @Inject constructor(
     private companion object {
         const val MAX_LOG_LINES = 1200
     }
+
+    // ── 缓存：所有已读入的行（供局部过滤使用，避免重复读文件） ──
+    private var _cachedRawLines: List<String> = emptyList()
+
+    // ── 筛选防抖触发器：每次筛选变化递增，外层 debounce 300ms 后消费 ──
+    private val _filterTrigger = MutableStateFlow(0L)
+
+    // ── 实时尾随文件观察器 ──
+    private var _liveTailFileObserver: android.os.FileObserver? = null
 
     private val _providers = MutableStateFlow<List<AIProviderConfig>>(emptyList())
     val providers: StateFlow<List<AIProviderConfig>> = _providers.asStateFlow()
@@ -304,7 +322,19 @@ class SettingsViewModel @Inject constructor(
                     _projectRules.value = it
                 }
             }
+
+            // ── 筛选防抖消费者：筛选变化 300ms 后重新应用过滤 ──
+            launch {
+                _filterTrigger.debounce(300).collectLatest { _ ->
+                    applyLocalFilters()
+                }
+            }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopLiveTail()
     }
 
     fun upsertMcpServer(originalName: String?, config: McpServerConfig) {
@@ -380,7 +410,12 @@ class SettingsViewModel @Inject constructor(
     // ── 筛选控制方法 ──
 
     fun toggleFilterPanel() {
-        _logViewerState.update { it.copy(filterPanelExpanded = !it.filterPanelExpanded) }
+        // 只打开，不关闭；关闭由 closeFilterPanel() 负责
+        _logViewerState.update { it.copy(filterPanelExpanded = true) }
+    }
+
+    fun closeFilterPanel() {
+        _logViewerState.update { it.copy(filterPanelExpanded = false) }
     }
 
     fun setSelectedDates(dates: Set<String>) {
@@ -416,10 +451,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             logFilterSettingsRepository.saveSelectedLevels(_logViewerState.value.selectedLevels)
         }
-        loadLogs(
-            filterServerName = _logViewerState.value.filterServerName,
-            preferredFileName = _logViewerState.value.selectedFileName
-        )
+        // 局部过滤：不重新读文件
+        triggerDebouncedFilter()
     }
 
     fun toggleTag(tag: String) {
@@ -434,10 +467,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             logFilterSettingsRepository.saveSelectedTags(_logViewerState.value.selectedTags)
         }
-        loadLogs(
-            filterServerName = _logViewerState.value.filterServerName,
-            preferredFileName = _logViewerState.value.selectedFileName
-        )
+        // 局部过滤：不重新读文件
+        triggerDebouncedFilter()
+    }
+
+    fun setSearchQuery(query: String) {
+        _logViewerState.update { it.copy(searchQuery = query) }
+        // 局部过滤：不重新读文件
+        triggerDebouncedFilter()
     }
 
     fun resetFilters() {
@@ -446,6 +483,7 @@ class SettingsViewModel @Inject constructor(
                 selectedDates = emptySet(),
                 selectedLevels = emptySet(),
                 selectedTags = emptySet(),
+                searchQuery = "",
                 dateRangeStart = null,
                 dateRangeEnd = null
             )
@@ -454,14 +492,79 @@ class SettingsViewModel @Inject constructor(
             logFilterSettingsRepository.saveSelectedLevels(emptySet())
             logFilterSettingsRepository.saveSelectedTags(emptySet())
         }
-        loadLogs(
-            filterServerName = _logViewerState.value.filterServerName,
-            preferredFileName = _logViewerState.value.selectedFileName
-        )
+        // 局部过滤：不重新读文件
+        applyLocalFilters()
+    }
+
+    // ── 实时尾随 ──
+
+    fun toggleLiveTail() {
+        val current = _logViewerState.value
+        if (current.liveTailEnabled) {
+            stopLiveTail()
+        } else {
+            startLiveTail()
+        }
+    }
+
+    private fun startLiveTail() {
+        _logViewerState.update { it.copy(liveTailEnabled = true, hasNewLogs = false) }
+        // 启动 FileObserver 监听日志目录变化
+        val logDir = FileLogger.getLogDir() ?: return
+        _liveTailFileObserver = object : android.os.FileObserver(logDir, android.os.FileObserver.CLOSE_WRITE) {
+            override fun onEvent(event: Int, path: String?) {
+                if (path != null && path.startsWith("log-")) {
+                    _logViewerState.update { it.copy(hasNewLogs = true) }
+                }
+            }
+        }.apply { startWatching() }
+        // 立即刷新一次
+        refreshLogs()
+    }
+
+    private fun stopLiveTail() {
+        _liveTailFileObserver?.stopWatching()
+        _liveTailFileObserver = null
+        _logViewerState.update { it.copy(liveTailEnabled = false, hasNewLogs = false) }
+    }
+
+    fun dismissNewLogs() {
+        _logViewerState.update { it.copy(hasNewLogs = false) }
+        refreshLogs()
+    }
+
+    // ── 防抖触发 ──
+
+    private fun triggerDebouncedFilter() {
+        _filterTrigger.update { it + 1 }
+    }
+
+    /** 局部过滤：仅对已缓存的行做内存过滤，不重新读文件。 */
+    private fun applyLocalFilters() {
+        val snapshot = _logViewerState.value
+        val allLines = _cachedRawLines
+        if (allLines.isEmpty()) return
+
+        val filteredLines = allLines.filter { line ->
+            matchesFilters(line, snapshot.filterServerName, snapshot)
+        }
+        val visibleLines = filteredLines.takeLast(MAX_LOG_LINES)
+
+        val allTags = LogLineParser.extractTags(allLines)
+        _logViewerState.update {
+            it.copy(
+                content = visibleLines.joinToString("\n"),
+                totalLines = filteredLines.size,
+                shownLines = visibleLines.size,
+                allAvailableTags = allTags,
+                loading = false
+            )
+        }
     }
 
     // ── 核心加载逻辑 ──
 
+    /** 流式读取日志：从文件尾部向前扫描，只读最后 N 行。 */
     private fun loadLogs(filterServerName: String?, preferredFileName: String?) {
         viewModelScope.launch {
             val snapshot = _logViewerState.value
@@ -476,6 +579,7 @@ class SettingsViewModel @Inject constructor(
                 runCatching {
                     val allFiles = FileLogger.listLogFiles()
                     if (allFiles.isEmpty()) {
+                        _cachedRawLines = emptyList()
                         return@runCatching LogViewerUiState(
                             filterServerName = filterServerName,
                             error = "还没有日志文件"
@@ -485,21 +589,24 @@ class SettingsViewModel @Inject constructor(
                     // 1. 按日期筛选文件列表
                     val matchedFiles = filterFilesByDate(allFiles, snapshot)
 
-                    // 2. 读取所有匹配文件的行
-                    val allLines = matchedFiles.flatMap { it.readLines(Charsets.UTF_8) }
+                    // 2. 流式读取：从每个文件尾部向前扫描，只读最后 MAX_LOG_LINES 行
+                    val allLines = readTailLines(matchedFiles, MAX_LOG_LINES * 2)
 
-                    // 3. 提取所有可用 Tag（过滤前，保留完整视野）
+                    // 3. 缓存原始行（供局部过滤使用）
+                    _cachedRawLines = allLines
+
+                    // 4. 提取所有可用 Tag
                     val allTags = LogLineParser.extractTags(allLines)
 
-                    // 4. 多维度过滤
+                    // 5. 多维度过滤
                     val filteredLines = allLines.filter { line ->
                         matchesFilters(line, filterServerName, snapshot)
                     }
 
-                    // 5. 尾部截断
+                    // 6. 尾部截断
                     val visibleLines = filteredLines.takeLast(MAX_LOG_LINES)
 
-                    // 6. 确定选中文件名（UI 展示用）
+                    // 7. 确定选中文件名
                     val selectedName = preferredFileName
                         ?: allFiles.firstOrNull { it.name == preferredFileName }?.name
                         ?: matchedFiles.lastOrNull()?.name
@@ -518,7 +625,9 @@ class SettingsViewModel @Inject constructor(
                         allAvailableTags = allTags,
                         dateRangeMode = snapshot.dateRangeMode,
                         dateRangeStart = snapshot.dateRangeStart,
-                        dateRangeEnd = snapshot.dateRangeEnd
+                        dateRangeEnd = snapshot.dateRangeEnd,
+                        searchQuery = snapshot.searchQuery,
+                        liveTailEnabled = snapshot.liveTailEnabled
                     )
                 }.getOrElse { e ->
                     LogViewerUiState(
@@ -528,6 +637,60 @@ class SettingsViewModel @Inject constructor(
                 }
             }
             _logViewerState.value = state
+        }
+    }
+
+    /** 从多个文件尾部向前读取，收集最多 maxLines 行。 */
+    private fun readTailLines(files: List<java.io.File>, maxLines: Int): List<String> {
+        if (files.isEmpty()) return emptyList()
+        val result = mutableListOf<String>()
+        // 从最新文件开始读（文件列表按日期排序，最后一个是最近）
+        for (file in files.reversed()) {
+            if (result.size >= maxLines) break
+            val lines = readFileTail(file, maxLines - result.size)
+            result.addAll(0, lines) // 插到前面保持时间顺序
+        }
+        return result
+    }
+
+    /** 从单个文件尾部向前扫描，读取最后 n 行。 */
+    private fun readFileTail(file: java.io.File, n: Int): List<String> {
+        if (!file.exists() || file.length() == 0L) return emptyList()
+        try {
+            val raf = java.io.RandomAccessFile(file, "r")
+            try {
+                val fileLength = raf.length()
+                // 从尾部向前扫描，收集 n 行
+                val lines = mutableListOf<String>()
+                var pos = fileLength - 1
+                var remaining = n
+                val buf = StringBuilder()
+
+                while (pos >= 0 && remaining > 0) {
+                    raf.seek(pos)
+                    val byte = raf.readByte().toInt() and 0xFF
+                    if (byte == '\n'.code) {
+                        if (buf.isNotEmpty()) {
+                            lines.add(0, buf.reverse().toString())
+                            buf.clear()
+                            remaining--
+                        }
+                    } else if (byte != '\r'.code) {
+                        buf.append(byte.toChar())
+                    }
+                    pos--
+                }
+                // 处理文件开头剩余部分
+                if (buf.isNotEmpty() && remaining > 0) {
+                    lines.add(0, buf.reverse().toString())
+                }
+                return lines
+            } finally {
+                raf.close()
+            }
+        } catch (e: Exception) {
+            // 降级：使用 readLines
+            return file.readLines(Charsets.UTF_8).takeLast(n)
         }
     }
 
@@ -590,6 +753,14 @@ class SettingsViewModel @Inject constructor(
         // Tag 来源过滤
         if (snapshot.selectedTags.isNotEmpty()) {
             if (parsed.tag !in snapshot.selectedTags) {
+                return false
+            }
+        }
+
+        // 搜索关键词过滤
+        val query = snapshot.searchQuery.trim()
+        if (query.isNotEmpty()) {
+            if (!parsed.raw.contains(query, ignoreCase = true)) {
                 return false
             }
         }

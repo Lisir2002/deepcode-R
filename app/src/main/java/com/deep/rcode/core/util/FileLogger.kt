@@ -105,6 +105,9 @@ object FileLogger {
         write("ERROR", tag, message, throwable)
     }
 
+    /** 返回当前日志目录，供日志查看器使用。 */
+    fun getLogDir(): File? = logDir
+
     /** 返回当前所有日志文件，按文件名（即日期）排序，供"查看日志"等界面使用。 */
     fun listLogFiles(): List<File> {
         val dir = logDir ?: return emptyList()

@@ -118,6 +118,8 @@
     <string name="log_filter_tag">Tag</string>
     <string name="log_filter_more_tags">%1$d more…</string>
     <string name="log_filter_no_tags">No tags available</string>
+    <string name="log_search_hint">Search log content...</string>
+    <string name="log_new_logs">New logs, tap to refresh</string>
     <string name="log_filter_date_from">From</string>
     <string name="log_filter_date_select">Select</string>
     <string name="log_filter_date_to">To</string>
