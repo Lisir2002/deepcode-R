@@ -399,8 +399,6 @@ fun AIChatPanel(
                 onNewChat = { viewModel.newSession() },
                 onNavigateToTerminal = onNavigateToTerminal,
                 onNavigateToGit = onNavigateToGit,
-                currentMode = currentMode,
-                onToggleMode = { viewModel.setSessionMode(it) },
                 connectionState = connectionState?.takeIf { isRemote }
             )
         }

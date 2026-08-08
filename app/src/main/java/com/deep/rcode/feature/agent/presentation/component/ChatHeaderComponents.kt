@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import com.deep.rcode.R
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
-import com.deep.rcode.feature.agent.domain.model.AgentMode
 import com.deep.rcode.feature.settings.presentation.component.ModelLogoIcon
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
@@ -41,12 +40,15 @@ import compose.icons.feathericons.Star
 import compose.icons.feathericons.Terminal
 
 /**
- * 紧凑型聊天顶部栏（48dp，与 AppTopAppBar 一致）。
+ * 紧凑型聊天顶部栏。
  *
  * 设计要点：
- * - 高度固定 48dp，无额外 statusBarsPadding（由 Scaffold 或 edge-to-edge 统一处理）
- * - 图标按钮 32dp，图标 18dp，比默认更紧凑
- * - 标题 + 模型名占一行，垂直居中
+ * - 使用 statusBarsPadding() 自动适配状态栏（enableEdgeToEdge 已开启）
+ * - 内容行 44dp 高（与 AppTopAppBar 实际内容高度一致）
+ * - 图标按钮 40dp，图标 20dp，与 AppTopAppBar 对齐
+ * - 背景色 surface，与其他页面顶栏保持一致
+ * - 连接状态行单列紧凑显示，不撑顶栏高度
+ * - 参数精简：移除未使用的 currentMode / onToggleMode
  */
 @Composable
 internal fun ChatHeader(
@@ -58,32 +60,31 @@ internal fun ChatHeader(
     onNewChat: () -> Unit,
     onNavigateToTerminal: () -> Unit,
     onNavigateToGit: () -> Unit,
-    currentMode: AgentMode,
-    onToggleMode: (AgentMode) -> Unit,
     connectionState: com.deep.rcode.feature.agent.domain.container.ConnectionState? = null
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.background,
-        modifier = Modifier.fillMaxWidth()
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
     ) {
         Column {
-            // 主行：48dp 高度
+            // 主行：44dp 高度（与 Material3 TopAppBar 内容行一致）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .padding(horizontal = 2.dp),
+                    .height(44.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
                     onClick = onOpenDrawer,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
                         FeatherIcons.Menu,
                         contentDescription = stringResource(R.string.chat_open_sidebar),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp))
+                        modifier = Modifier.size(20.dp))
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -111,42 +112,43 @@ internal fun ChatHeader(
                 }
                 IconButton(
                     onClick = onNewChat,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
                         FeatherIcons.Plus,
                         contentDescription = stringResource(R.string.chat_new_session),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp))
+                        modifier = Modifier.size(20.dp))
                 }
                 IconButton(
                     onClick = onNavigateToGit,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
                         FeatherIcons.GitBranch,
                         contentDescription = stringResource(R.string.chat_open_git),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp))
+                        modifier = Modifier.size(20.dp))
                 }
                 IconButton(
                     onClick = onNavigateToTerminal,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
                         FeatherIcons.Terminal,
                         contentDescription = stringResource(R.string.chat_open_terminal),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp))
+                        modifier = Modifier.size(20.dp))
                 }
             }
 
-            // 远程模式连接状态行
+            // 远程模式连接状态 + 令牌统计：单行紧凑，两端对齐
             if (connectionState != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = Spacing.md, vertical = 1.dp),
+                        .height(22.dp)
+                        .padding(horizontal = Spacing.md),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {

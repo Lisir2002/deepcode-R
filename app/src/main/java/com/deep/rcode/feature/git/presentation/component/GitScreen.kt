@@ -115,14 +115,14 @@ fun GitScreen(
                 navigationContentDescription = stringResource(R.string.common_back)
             ) {
                 if (!showCredentials) {
-                    IconButton(onClick = { showCredentials = true }, modifier = Modifier.size(36.dp)) {
+                    IconButton(onClick = { showCredentials = true }, modifier = Modifier.size(40.dp)) {
                         Icon(FeatherIcons.Key, contentDescription = stringResource(R.string.git_credentials_and_identity), modifier = Modifier.size(20.dp))
                     }
-                    IconButton(onClick = { viewModel.refresh() }, enabled = !state.busy, modifier = Modifier.size(36.dp)) {
+                    IconButton(onClick = { viewModel.refresh() }, enabled = !state.busy, modifier = Modifier.size(40.dp)) {
                         Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.git_refresh), modifier = Modifier.size(20.dp))
                     }
                 } else {
-                    IconButton(onClick = { isAddingCredential = true }, modifier = Modifier.size(36.dp)) {
+                    IconButton(onClick = { isAddingCredential = true }, modifier = Modifier.size(40.dp)) {
                         Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.credential_add), modifier = Modifier.size(20.dp))
                     }
                 }
