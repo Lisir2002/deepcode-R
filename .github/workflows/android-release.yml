@@ -135,12 +135,8 @@ jobs:
         run: |
           # 仅当 release keystore 存在时才生成 properties 文件。
           if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
-            cat > app/keystore.properties <<EOF
-            storeFile=rdeepcode.jks
-            storePassword=$KEYSTORE_PASSWORD
-            keyAlias=$KEY_ALIAS
-            keyPassword=$KEY_PASSWORD
-            EOF
+            printf 'storeFile=rdeepcode.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > app/keystore.properties
             echo "app/keystore.properties generated"
           else
             echo "Release keystore secrets not fully configured — skipping keystore.properties, will use debug keystore fallback."
