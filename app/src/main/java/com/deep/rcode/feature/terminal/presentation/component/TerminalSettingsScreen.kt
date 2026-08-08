@@ -102,8 +102,7 @@ import kotlinx.coroutines.launch
 /**
  * 终端设置页。包含：
  *  - 容器环境大卡片
- *  - 功能包 Bundle（6 张独立卡片 + AI 推荐一键安装）
- *  - 高级折叠区：自定义 apk 包
+ *  - 子页入口：功能包管理 / 自定义 APK 包（各跳独立子页面）
  *  - 4 分组开关：外观 / 键盘交互 / 行为 / SSH 常用
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,7 +110,9 @@ import kotlinx.coroutines.launch
 fun TerminalSettingsScreen(
     viewModel: TerminalSettingsViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToSshHosts: () -> Unit
+    onNavigateToSshHosts: () -> Unit,
+    onNavigateToBundleManager: () -> Unit = {},
+    onNavigateToCustomPackages: () -> Unit = {}
 ) {
     val containerInit by viewModel.containerInit.collectAsStateWithLifecycle()
     val containerInstalled by viewModel.containerInstalled.collectAsStateWithLifecycle()
@@ -152,8 +153,6 @@ fun TerminalSettingsScreen(
     var showMirrorPicker by remember { mutableStateOf(false) }
     var showHeartbeatPicker by remember { mutableStateOf(false) }
     var showThemePicker by remember { mutableStateOf(false) }
-    var advancedExpanded by remember { mutableStateOf(false) }
-    var customInstallInput by remember { mutableStateOf("") }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -185,124 +184,24 @@ fun TerminalSettingsScreen(
                 onPickMirror = { showMirrorPicker = true }
             )
 
-            AppSectionHeader(text = "功能包 Bundle")
-            AiRecommendationStrip(
-                allInstalled = aiAllInstalled,
-                containerReady = containerInstalled,
-                onInstallAll = viewModel::installAiRecommended
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                viewModel.bundles().forEach { b ->
-                    BundleCard(
-                        bundle = b,
-                        state = bundleStates[b.id] ?: BundleInstallState.NotInstalled,
-                        containerReady = containerInstalled,
-                        onInstall = { viewModel.installBundle(b.id) },
-                        onUninstall = { viewModel.uninstallBundle(b.id) }
-                    )
-                }
-            }
-
-            AppSectionHeader(text = "高级选项")
-            Card(
-                modifier = Modifier.padding(horizontal = Spacing.md),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z1)
-            ) {
-                Column(modifier = Modifier.padding(Spacing.md)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(FeatherIcons.Grid, null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.width(Spacing.sm))
-                        Text(
-                            text = "自定义 apk 包",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        TextButton(onClick = { advancedExpanded = !advancedExpanded }) {
-                            Text(if (advancedExpanded) "收起" else "展开",
-                                color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    androidx.compose.animation.AnimatedVisibility(visible = advancedExpanded) {
-                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                            Spacer(modifier = Modifier.height(Spacing.xs))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-                            ) {
-                                OutlinedTextField(
-                                    value = customInstallInput,
-                                    onValueChange = { customInstallInput = it },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true,
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                                    placeholder = {
-                                        Text("包名空格分隔，如 htop neofetch openssh")
-                                    }
-                                )
-                                Button(onClick = {
-                                    viewModel.installCustom(customInstallInput)
-                                    customInstallInput = ""
-                                }, enabled = containerInstalled) {
-                                    Icon(FeatherIcons.Plus, null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(Spacing.sm))
-                                    Text("安装")
-                                }
-                            }
-                            if (!containerInstalled) {
-                                Text(
-                                    "容器未初始化，暂不可安装自定义包",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (customPkgs.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(Spacing.xs))
-                                Text("已自定义安装：", style = MaterialTheme.typography.bodyMedium)
-                                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                                    customPkgs.forEach { pkg ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                "• $pkg",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontFamily = FontFamily.Monospace,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            TextButton(onClick = { viewModel.uninstallCustom(pkg) }) {
-                                                Text("卸载", color = MaterialTheme.colorScheme.error)
-                                            }
-                                        }
-                                    }
-                                }
-                            } else if (containerInstalled) {
-                                Text(
-                                    "暂无自定义包",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                TextButton(onClick = viewModel::refreshCustom) {
-                                    Icon(FeatherIcons.RefreshCw, null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("刷新列表", fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    }
-                }
+            AppSectionHeader(text = "容器与依赖")
+            AppSectionGroup {
+                val installedBundleCount = bundleStates.count { it.value is BundleInstallState.Installed }
+                _MenuRow(
+                    icon = FeatherIcons.Box,
+                    title = "功能包管理",
+                    subtitle = "官方 Bundle · 共 ${viewModel.bundles().size} 个，已安装 $installedBundleCount${if (aiAllInstalled) " · AI 组合已就绪" else ""}",
+                    onClick = onNavigateToBundleManager,
+                    showDivider = true
+                )
+                _MenuRow(
+                    icon = FeatherIcons.Grid,
+                    title = "自定义 APK 包",
+                    subtitle = if (customPkgs.isEmpty()) "安装 Alpine 社区任意 apk 包（htop / neofetch / tmux 等）"
+                    else "已安装 ${customPkgs.size} 个自定义包：${customPkgs.take(4).joinToString(" ")}${if (customPkgs.size > 4) "…" else ""}",
+                    onClick = onNavigateToCustomPackages,
+                    showDivider = false
+                )
             }
 
             // G1 外观
