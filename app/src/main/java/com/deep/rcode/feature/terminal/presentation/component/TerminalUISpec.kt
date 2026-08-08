@@ -1,5 +1,7 @@
 package com.deep.rcode.feature.terminal.presentation.component
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
@@ -74,20 +76,6 @@ object TerminalCardsSpec {
 }
 
 /**
- * 终端首屏 Banner 规格：
- *  容器未初始化  accent = Warning
- *  Python 缺失    accent = Info (Secondary)
- *  背景 alpha 走 SemanticColors 统一（避免出现截图中"粗边框 + 超大圆角 + alpha 太淡合成出粗边"）
- */
-@Immutable
-object TerminalBannerSpec {
-    /** 容器未初始化强调色：柔和橙（Warning）*/
-    val ContainerAccent: Color = Color(0xFFFFA726)
-    /** Python 缺失强调色：主题二级色（亮/暗/动态色自适应） */
-    fun pythonAccent(secondary: Color): Color = secondary
-}
-
-/**
  * 终端颜色配色方案（Dracula / Light），用于 TerminalView 颜色覆盖。
  *  解决截图中"米白背景 + 极浅前景"的 Dracula 反向 bug：fallback shell 时背景色不会被覆盖。
  */
@@ -103,7 +91,6 @@ object TerminalViewTheme {
         val background = Color(0xFF282A36)
         val foreground = Color(0xFFF8F8F2)
         val cursor     = Color(0xFFFFFFFF)
-        val selection  = Color(0xFF44475A)
         // ansi[0] Black   MUST == background
         val black   = Color(0xFF282A36)
         val red     = Color(0xFFFF5555)
@@ -136,7 +123,6 @@ object TerminalViewTheme {
         val background = Color(0xFFFDF6E3)
         val foreground = Color(0xFF586E75)
         val cursor     = Color(0xFF073642)
-        val selection  = Color(0xFFEEE8D5)
         // ansi[0] Black MUST == background （Solarized Light 规范 Black=base02 深蓝黑）
         val black   = Color(0xFF073642)
         val red     = Color(0xFFDC322F)
@@ -161,4 +147,158 @@ object TerminalViewTheme {
 
     /** 字体大小步进默认值 */
     val DefaultFontSp = 14.sp
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TerminalSkinAdapter：终端色主导的壳 UI 语义颜色适配层
+// ═══════════════════════════════════════════════════════════════
+//
+// 设计目标：壳 UI（TabBar / Banner / Cards / ExtraKeys）的颜色
+// 不再直接吃 MaterialTheme.colorScheme，而是从当前 TerminalPalette
+// 派生并混合少量 Material 色，与终端画面融为一体。
+//
+// 数据流：
+//   TerminalPalette ← 当前终端主题（Dracula / SolarizedLight）
+//        │
+//        ▼
+//   TerminalSkinAdapter ─→ 产出全部壳 UI 颜色 token
+//        │
+//        ▼
+//   TabBar / Banner / Cards / ExtraKeys  → 只读 Adapter，不吃 raw MaterialTheme
+//
+// 混合比例：
+//   surface        = palette.bg × 92% + Material.surface × 8%
+//   surfaceVariant = palette.bg × 80% + Material.surface × 20%
+//
+// 语义色取自 ANSI 调色板（不再硬编码 #66BB6A / #FFA726）：
+//   success = ansi[2]（绿）  warning = ansi[3]（黄橙）
+//   error   = ansi[1]（红）  info    = ansi[4]（蓝）
+// ═══════════════════════════════════════════════════════════════
+
+/** 颜色混合：将两个 Color 按 weight 比例混合，weight 取值范围 0..1，越大越偏 a。 */
+private fun Color.mixWith(b: Color, weight: Float): Color {
+    val w = weight.coerceIn(0f, 1f)
+    return Color(
+        red   = red   * w + b.red   * (1 - w),
+        green = green * w + b.green * (1 - w),
+        blue  = blue  * w + b.blue  * (1 - w),
+        alpha = 1f
+    )
+}
+
+/**
+ * 终端皮肤适配器 —— 壳 UI 颜色唯一入口。
+ * 所有 TabBar / Banner / Cards / ExtraKeys / 语义色 全部从这里取，不再吃原始 MaterialTheme.colorScheme。
+ *
+ * @param palette 当前终端主题调色板（来自 rememberTerminalPalette）
+ * @param mixWeight 与 Material.surface 混合比例（0.92 = 92% 终端色 + 8% Material，默认值）
+ */
+@Immutable
+data class TerminalSkin(
+    val palette: TerminalPalette,
+    val mixWeight: Float = 0.92f
+) {
+    // ── 容器层级 ──
+    /** 壳 UI 主背景色（Tab 栏/键区背景/卡片背景） */
+    val surface: Color get() = intermix(palette.containerBg, mixWeight)
+    /** 壳 UI 二级背景（TabChip/KeyChip 默认态、卡片变体） */
+    val surfaceVariant: Color get() = intermix(palette.containerBg, mixWeight - 0.12f)
+    /** 壳 UI 文字色（onSurface） */
+    val onSurface: Color get() = palette.defaultForeground
+    /** 壳 UI 次要文字色（onSurface 降透明度） */
+    val onSurfaceVariant: Color get() = palette.defaultForeground.copy(alpha = 0.78f)
+
+    // ── 选中态/主色 ──
+    /** 选中/高亮背景（Tab 选中、主按钮背景、切换按钮选中态）—— 基于 ANSI blue 半透明叠加 */
+    val primaryContainer: Color get() = palette.ansi[4].copy(alpha = 0.24f)
+    /** 主色前景（onPrimaryContainer） */
+    val primaryFg: Color get() = palette.ansi[4]
+    /** 主色按钮/选中态上的文字色（自动选高对比色） */
+    val onPrimaryContainer: Color get() =
+        if (isDarkSurface(primaryContainer)) palette.ansi[15] else palette.ansi[0]
+
+    // ── 语义色（全部取自 ANSI，不再硬编码） ──
+    val semanticSuccess: Color get() = palette.ansi[2]   // 绿
+    val semanticWarning: Color get() = palette.ansi[3]   // 黄橙
+    val semanticError: Color get() = palette.ansi[1]     // 红
+    val semanticInfo: Color get() = palette.ansi[4]      // 蓝
+
+    // ── 细分隔线 ──
+    /** Tab ↔ Terminal 之间、组件间的细分隔线 */
+    val dividingLine: Color get() = palette.ansi[0].copy(alpha = 0.12f)
+
+    // ── ExtraKeys 3 级分层色 ──
+    /** A 类修饰键背景（Ctrl/Esc/Tab/C-z/C-l） */
+    val keyGroupABg: Color get() = surfaceVariant
+    /** A 类修饰键文字 */
+    val keyGroupAFg: Color get() = onSurface
+    /** A 类修饰键描边 */
+    val keyGroupABorder: Color get() = primaryFg.copy(alpha = 0.50f)
+    /** A 类修饰键描边宽度 */
+    val keyGroupABorderWidth: Dp get() = 1.2.dp
+
+    /** B 类普通键背景（/ - 等） */
+    val keyGroupBBg: Color get() = intermix(palette.containerBg, 0.98f)
+    /** B 类普通键文字 */
+    val keyGroupBFg: Color get() = onSurface.copy(alpha = 0.85f)
+    /** B 类普通键描边 */
+    val keyGroupBBorder: Color get() = palette.ansi[0].copy(alpha = 0.25f)
+    /** B 类普通键描边宽度 */
+    val keyGroupBBorderWidth: Dp get() = 0.8.dp
+
+    /** C 类方向键背景（←↑↓→）—— 同 A 类再加导航蓝 */
+    val keyGroupCBg: Color get() = intermix(
+        keyGroupABg,
+        weight = 0.85f
+    ).let { base ->
+        Color(
+            red   = base.red   * 0.88f + primaryFg.red   * 0.12f,
+            green = base.green * 0.88f + primaryFg.green * 0.12f,
+            blue  = base.blue  * 0.88f + primaryFg.blue  * 0.12f,
+            alpha = 1f
+        )
+    }
+    /** C 类方向键描边 —— 同 A 类 */
+    val keyGroupCBorder: Color get() = keyGroupABorder
+    /** C 类方向键描边宽度 */
+    val keyGroupCBorderWidth: Dp get() = keyGroupABorderWidth
+
+    /** D 类切换按钮背景（简洁/完整档切换按钮） */
+    val keyGroupDBg: Color get() = primaryContainer
+    /** D 类切换按钮文字 */
+    val keyGroupDFg: Color get() = onPrimaryContainer
+    /** D 类切换按钮描边 */
+    val keyGroupDBorder: Color get() = primaryFg.copy(alpha = 0.60f)
+    /** D 类切换按钮描边宽度 */
+    val keyGroupDBorderWidth: Dp get() = 1.2.dp
+
+    /** Ctrl/Alt 激活态背景 —— 跳 D 级 */
+    val ctrlActiveBg: Color get() = primaryContainer
+    /** Ctrl/Alt 激活态文字 */
+    val ctrlActiveFg: Color get() = onPrimaryContainer
+    /** Ctrl/Alt 激活态描边 */
+    val ctrlActiveBorder: Color get() = primaryFg.copy(alpha = 0.70f)
+
+    // ── 辅助方法 ──
+    private fun intermix(base: Color, weight: Float): Color {
+        val w = weight.coerceIn(0f, 1f)
+        return Color(
+            red   = base.red   * w + 0.5f * (1 - w),
+            green = base.green * w + 0.5f * (1 - w),
+            blue  = base.blue  * w + 0.5f * (1 - w),
+            alpha = 1f
+        )
+    }
+
+    companion object {
+        /** 给定 TerminalPalette 生成 TerminalSkin。 */
+        fun from(palette: TerminalPalette, mixWeight: Float = 0.92f): TerminalSkin =
+            TerminalSkin(palette, mixWeight)
+    }
+}
+
+/** 可组合的 TerminalSkin 快捷获取，传入当前 palette 即得对口壳 UI 色。 */
+@Composable
+fun rememberTerminalSkin(palette: TerminalPalette): TerminalSkin {
+    return TerminalSkin.from(palette)
 }

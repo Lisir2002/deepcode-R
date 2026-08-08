@@ -67,17 +67,14 @@ import compose.icons.feathericons.Trash2
 // ================================================================
 @Immutable
 object SemanticColors {
-    /** 成功/已就绪：柔和绿，不扎眼 */
-    val Success: Color @Composable get() = Color(0xFF66BB6A)
+    /** 成功/已就绪：使用主题 primary 绿色调，跟随亮/暗切换 */
+    val Success: Color @Composable get() = MaterialTheme.colorScheme.primary
     /** 进行中：使用主题 secondary，跟随亮/暗切换 */
     val InProgress: Color @Composable get() = MaterialTheme.colorScheme.secondary
     /** 失败/错误：主题 error，跟随亮/暗切换 / 动态色 */
     val Error: Color @Composable get() = MaterialTheme.colorScheme.error
-    /** 警告/进行中：柔和橙，用于未就绪/部署中 */
-    val Warning: Color @Composable get() = Color(0xFFFFA726)
-    /** container / section 背景：主容器背景统一 alpha（primary/secondary Container 都是这个） */
-    const val ContainerAlphaStrong = 0.38f
-    const val ContainerAlphaSoft = 0.28f
+    /** 警告/进行中：使用主题 tertiary，跟随亮/暗切换 */
+    val Warning: Color @Composable get() = MaterialTheme.colorScheme.tertiary
 }
 
 @Immutable

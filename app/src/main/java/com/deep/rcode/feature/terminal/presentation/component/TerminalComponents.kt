@@ -110,6 +110,7 @@ sealed interface TerminalMenuAnchor {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TabBar(
+    skin: TerminalSkin,
     tabs: List<TerminalTab>,
     activeTabId: String?,
     hasNewOutputMap: Map<String, Boolean>,
@@ -119,7 +120,7 @@ fun TabBar(
     onTabLongPress: (TerminalTab) -> Unit
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = skin.surface,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -133,6 +134,7 @@ fun TabBar(
         ) {
             tabs.forEach { tab ->
                 TabChip(
+                    skin = skin,
                     tab = tab,
                     selected = tab.id == activeTabId,
                     hasNewOutput = hasNewOutputMap[tab.id] == true,
@@ -146,10 +148,10 @@ fun TabBar(
                 modifier = Modifier
                     .size(TerminalLayout.newTabButtonSize)
                     .clip(RoundedCornerShape(Radius.md))
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(skin.surfaceVariant)
                     .border(
                         1.dp,
-                        MaterialTheme.colorScheme.outlineVariant,
+                        skin.dividingLine,
                         RoundedCornerShape(Radius.md)
                     )
                     .combinedClickable(onClick = onNew),
@@ -158,7 +160,7 @@ fun TabBar(
                 Icon(
                     FeatherIcons.Plus,
                     contentDescription = stringResource(R.string.common_new_tab),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = skin.onSurfaceVariant,
                     modifier = Modifier
                         .size(20.dp)
                         .align(Alignment.Center)
@@ -171,6 +173,7 @@ fun TabBar(
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun TabChip(
+    skin: TerminalSkin,
     tab: TerminalTab,
     selected: Boolean,
     hasNewOutput: Boolean,
@@ -178,16 +181,16 @@ private fun TabChip(
     onClose: () -> Unit,
     onLongPress: () -> Unit
 ) {
-    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-    val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-    val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+    val bg = if (selected) skin.primaryContainer else skin.surfaceVariant
+    val fg = if (selected) skin.onPrimaryContainer else skin.onSurface
+    val borderColor = if (selected) skin.primaryFg.copy(alpha = 0.50f) else skin.dividingLine
     val running = tab.runState is RunState.Running
     val dot = when {
-        !running -> MaterialTheme.colorScheme.outline
-        tab.isBackground -> MaterialTheme.colorScheme.tertiary
-        else -> SemanticColors.Success
+        !running -> skin.onSurfaceVariant
+        tab.isBackground -> skin.semanticWarning
+        else -> skin.semanticSuccess
     }
-    val closeTint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val closeTint = if (selected) skin.onPrimaryContainer else skin.onSurfaceVariant
 
     Box(
         modifier = Modifier
@@ -348,48 +351,87 @@ fun TerminalSurface(
 }
 
 /**
- * 一次性把 TerminalPalette 应用到 Termux TerminalView：
- *  1) view.setBackgroundColor：外层 View 背景（和 Modifier.background 对应，避免合成时透出系统色）
- *  2) mColors[16]：Termux 内部 16 色调色板
- *  3) Emulator.defaultFgColor / defaultBgColor / cursorForeColor：这是终端"提示符/正文默认字色"，
- *     之前**完全没设置**，就会在米白 containerBg 上仍使用 Termux 默认白前景 = 反色 bug 的根因。
- *  所有操作都 runCatching：即使反射失败也不崩，只是退回默认色。
+ * 一次性把 TerminalPalette 应用进 Termux TerminalView 的 mColors.mCurrentColors[0..258]。
+ *
+ *  Termux 颜色存储结构（全部 public，不需反射）：
+ *    view.mEmulator                      ← TerminalEmulator    (public)
+ *       .mColors                         ← TerminalColors      (public final)
+ *          .mCurrentColors[0..15]        ← ANSI 16 色
+ *          .mCurrentColors[16..231]      ← 216 色 cube
+ *          .mCurrentColors[232..255]     ← 24 级灰阶
+ *          .mCurrentColors[256]          ← COLOR_INDEX_FOREGROUND
+ *          .mCurrentColors[257]          ← COLOR_INDEX_BACKGROUND
+ *          .mCurrentColors[258]          ← COLOR_INDEX_CURSOR
+ *
+ *  !! 之前反射 TerminalView.mColors（不存在）→ NoSuchFieldException → 静默吞掉，
+ *     导致前景/光标/ANSI 16 色全部没有写入，始终是 Termux 默认纯白 `#FFFFFF`。
+ *     现在直接走 public 字段链，不再反射。
  */
 private fun applyTerminalPalette(palette: TerminalPalette, view: com.termux.view.TerminalView) {
-    runCatching {
-        // 1) View 级背景
-        view.setBackgroundColor(palette.defaultBackgroundInt)
-        // 2) mColors[16]
-        val mColorsField = com.termux.view.TerminalView::class.java
-            .getDeclaredField("mColors").apply { isAccessible = true }
-        mColorsField.set(view, palette.toAnsiIntArray())
-        // 3) Emulator
-        val emField = com.termux.view.TerminalView::class.java
-            .getDeclaredField("mEmulator").apply { isAccessible = true }
-        val emulator = emField.get(view) ?: return@runCatching
-        val emulatorClass = emulator.javaClass
-        runCatching {
-            emulatorClass.getMethod("setDefaultFgColor", Int::class.javaPrimitiveType as Class<*>)
-                .invoke(emulator, palette.defaultForegroundInt)
+    // 1) View 级背景（始终有效，且 TerminalSurface 的 Modifier.background 也用了 palette.containerBg）
+    view.setBackgroundColor(palette.defaultBackgroundInt)
+
+    // 2) mEmulator 在 attachSession 之前为 null，此时只写背景
+    val emulator = view.mEmulator ?: return
+    val colors = emulator.mColors.mCurrentColors
+
+    // 3) ANSI 16 色 (index 0-15)
+    val ansi = palette.toAnsiIntArray()
+    System.arraycopy(ansi, 0, colors, 0, 16)
+
+    // 4) 256 色扩展 (index 16-255) —— 如果 palette 提供了完整 259 色调色板
+    if (palette.full256 != null) {
+        System.arraycopy(palette.full256, 0, colors, 16, 240)
+    }
+
+    // 5) 前景 / 背景 / 光标 (index 256 / 257 / 258)
+    colors[com.termux.terminal.TextStyle.COLOR_INDEX_FOREGROUND] = palette.defaultForegroundInt
+    colors[com.termux.terminal.TextStyle.COLOR_INDEX_BACKGROUND] = palette.defaultBackgroundInt
+    colors[com.termux.terminal.TextStyle.COLOR_INDEX_CURSOR] = palette.cursorInt
+
+    // 6) 对比度验证：始终运行，如果主题配色正确则静默通过
+    assertColorContrast(
+        label = "fg vs bg",
+        fore = palette.defaultForegroundInt,
+        back = palette.defaultBackgroundInt,
+        minRatio = 4.5f
+    )
+    assertColorContrast(
+        label = "cursor vs bg",
+        fore = palette.cursorInt,
+        back = palette.defaultBackgroundInt,
+        minRatio = 7.0f
+    )
+
+    // 7) 触发重绘
+    view.invalidate()
+}
+
+/** Debug 对比度断言：计算两个 ARGB int 的 WCAG 相对亮度比，低于阈值抛 AssertionError。 */
+@Suppress("SameParameterValue")
+private fun assertColorContrast(label: String, fore: Int, back: Int, minRatio: Float) {
+    fun relativeLuminance(c: Int): Double {
+        fun linearize(v: Int): Double {
+            val s = v / 255.0
+            return if (s <= 0.03928) s / 12.92 else Math.pow((s + 0.055) / 1.055, 2.4)
         }
-        runCatching {
-            emulatorClass.getMethod("setDefaultBgColor", Int::class.javaPrimitiveType as Class<*>)
-                .invoke(emulator, palette.defaultBackgroundInt)
-        }
-        runCatching {
-            emulatorClass.getMethod("setCursorForeColor", Int::class.javaPrimitiveType as Class<*>)
-                .invoke(emulator, palette.cursorInt)
-        }
-        // 兼容：如果 Termux 内部没有上述公开 setter，直接暴力反射字段
-        fun setIfExists(cl: Class<*>, name: String, value: Int) = runCatching {
-            val f = cl.getDeclaredField(name).apply { isAccessible = true }
-            f.setInt(emulator, value)
-        }
-        setIfExists(emulatorClass, "mDefaultFgColor", palette.defaultForegroundInt)
-        setIfExists(emulatorClass, "mDefaultBgColor", palette.defaultBackgroundInt)
-        setIfExists(emulatorClass, "mCursorForeColor", palette.cursorInt)
+        val r = linearize((c shr 16) and 0xFF)
+        val g = linearize((c shr 8) and 0xFF)
+        val b = linearize(c and 0xFF)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    val l1 = relativeLuminance(fore)
+    val l2 = relativeLuminance(back)
+    val ratio = ((maxOf(l1, l2) + 0.05) / (minOf(l1, l2) + 0.05)).toFloat()
+    check(ratio >= minRatio) {
+        "[$label] contrast ratio ${"%.2f".format(ratio)} < $minRatio — " +
+        "fore=#${fore.toString(16).padStart(8, '0')} " +
+        "back=#${back.toString(16).padStart(8, '0')}"
     }
 }
+
+/** ExtraKeys 按键分组枚举 */
+private enum class KeyGroup { A, B, C, D }
 
 // ──────────────────────────────────────────────────────────
 // 扩展按键行：简洁档/完整档切换
@@ -400,9 +442,9 @@ private fun applyTerminalPalette(palette: TerminalPalette, view: com.termux.view
 // ──────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean) {
+fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean, skin: TerminalSkin) {
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = skin.surface,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -426,33 +468,30 @@ fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean) {
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        CtrlChipWithTooltip(viewModel)
-                        AltChipWithTooltip(viewModel)
-                        KeyChip("Esc") { viewModel.write("\u001B") }
-                        KeyChip("Tab") { viewModel.write("\t") }
-                        KeyChip("←") { viewModel.write("\u001B[D") }
-                        KeyChip("↑") { viewModel.write("\u001B[A") }
-                        KeyChip("↓") { viewModel.write("\u001B[B") }
-                        KeyChip("→") { viewModel.write("\u001B[C") }
-                        KeyChip("Home") { viewModel.write("\u001B[H") }
-                        KeyChip("End") { viewModel.write("\u001B[F") }
-                        KeyChip("PgUp") { viewModel.write("\u001B[5~") }
-                        KeyChip("PgDn") { viewModel.write("\u001B[6~") }
-                        KeyChip("Ins") { viewModel.write("\u001B[2~") }
-                        KeyChip("Del") { viewModel.write("\u007F") }
-                        KeyChip("C-c") { viewModel.writeBytes(0x03) }
-                        KeyChip("C-d") { viewModel.writeBytes(0x04) }
-                        KeyChip("C-z") { viewModel.writeBytes(0x1A) }
-                        KeyChip("C-l") { viewModel.writeBytes(0x0C) }
-                        KeyChip("~") { viewModel.write("~") }
-                        KeyChip("/") { viewModel.write("/") }
-                        KeyChip("-") { viewModel.write("-") }
+                        CtrlChipWithTooltip(viewModel, skin)
+                        AltChipWithTooltip(viewModel, skin)
+                        KeyChip("Esc", skin, KeyGroup.A) { viewModel.write("\u001B") }
+                        KeyChip("Tab", skin, KeyGroup.A) { viewModel.write("\t") }
+                        KeyChip("←", skin, KeyGroup.C) { viewModel.write("\u001B[D") }
+                        KeyChip("↑", skin, KeyGroup.C) { viewModel.write("\u001B[A") }
+                        KeyChip("↓", skin, KeyGroup.C) { viewModel.write("\u001B[B") }
+                        KeyChip("→", skin, KeyGroup.C) { viewModel.write("\u001B[C") }
+                        KeyChip("Home", skin, KeyGroup.C) { viewModel.write("\u001B[H") }
+                        KeyChip("End", skin, KeyGroup.C) { viewModel.write("\u001B[F") }
+                        KeyChip("PgUp", skin, KeyGroup.C) { viewModel.write("\u001B[5~") }
+                        KeyChip("PgDn", skin, KeyGroup.C) { viewModel.write("\u001B[6~") }
+                        KeyChip("Ins", skin, KeyGroup.C) { viewModel.write("\u001B[2~") }
+                        KeyChip("Del", skin, KeyGroup.C) { viewModel.write("\u007F") }
+                        KeyChip("C-c", skin, KeyGroup.A) { viewModel.writeBytes(0x03) }
+                        KeyChip("C-d", skin, KeyGroup.A) { viewModel.writeBytes(0x04) }
+                        KeyChip("C-z", skin, KeyGroup.A) { viewModel.writeBytes(0x1A) }
+                        KeyChip("C-l", skin, KeyGroup.A) { viewModel.writeBytes(0x0C) }
+                        KeyChip("~", skin, KeyGroup.B) { viewModel.write("~") }
+                        KeyChip("/", skin, KeyGroup.B) { viewModel.write("/") }
+                        KeyChip("-", skin, KeyGroup.B) { viewModel.write("-") }
                     }
                     // 切换按钮：固定宽度 72dp，始终可见，不被滚动
-                    CompactFullSwitcher(
-                        full = full,
-                        onClick = viewModel::toggleFullExtraKeys
-                    )
+                    CompactFullSwitcher(full = full, onClick = viewModel::toggleFullExtraKeys, skin = skin)
                 }
             } else {
                 // ── 简洁档 = 两行 ──
@@ -467,19 +506,16 @@ fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean) {
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        CtrlChipWithTooltip(viewModel)
-                        KeyChip("Esc") { viewModel.write("\u001B") }
-                        KeyChip("Tab") { viewModel.write("\t") }
-                        KeyChip("/") { viewModel.write("/") }
-                        KeyChip("-") { viewModel.write("-") }
-                        KeyChip("C-c") { viewModel.writeBytes(0x03) }
-                        KeyChip("C-d") { viewModel.writeBytes(0x04) }
+                        CtrlChipWithTooltip(viewModel, skin)
+                        KeyChip("Esc", skin, KeyGroup.A) { viewModel.write("\u001B") }
+                        KeyChip("Tab", skin, KeyGroup.A) { viewModel.write("\t") }
+                        KeyChip("/", skin, KeyGroup.B) { viewModel.write("/") }
+                        KeyChip("-", skin, KeyGroup.B) { viewModel.write("-") }
+                        KeyChip("C-c", skin, KeyGroup.A) { viewModel.writeBytes(0x03) }
+                        KeyChip("C-d", skin, KeyGroup.A) { viewModel.writeBytes(0x04) }
                     }
                     // 切换按钮：固定宽度，不参与 weight 分配 → 窄屏始终完整可见
-                    CompactFullSwitcher(
-                        full = false,
-                        onClick = viewModel::toggleFullExtraKeys
-                    )
+                    CompactFullSwitcher(full = false, onClick = viewModel::toggleFullExtraKeys, skin = skin)
                 }
                 // Row2：← ↑ ↓ → 4 方向键 + C-l / C-z（纯键，无切换按钮，自然填满）
                 Row(
@@ -487,12 +523,12 @@ fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean) {
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    KeyChip("←") { viewModel.write("\u001B[D") }
-                    KeyChip("↑") { viewModel.write("\u001B[A") }
-                    KeyChip("↓") { viewModel.write("\u001B[B") }
-                    KeyChip("→") { viewModel.write("\u001B[C") }
-                    KeyChip("C-z") { viewModel.writeBytes(0x1A) }
-                    KeyChip("C-l") { viewModel.writeBytes(0x0C) }
+                    KeyChip("←", skin, KeyGroup.C) { viewModel.write("\u001B[D") }
+                    KeyChip("↑", skin, KeyGroup.C) { viewModel.write("\u001B[A") }
+                    KeyChip("↓", skin, KeyGroup.C) { viewModel.write("\u001B[B") }
+                    KeyChip("→", skin, KeyGroup.C) { viewModel.write("\u001B[C") }
+                    KeyChip("C-z", skin, KeyGroup.A) { viewModel.writeBytes(0x1A) }
+                    KeyChip("C-l", skin, KeyGroup.A) { viewModel.writeBytes(0x0C) }
                 }
             }
         }
@@ -505,19 +541,19 @@ fun ExtraKeysRow(viewModel: TerminalViewModel, full: Boolean) {
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit) {
+private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit, skin: TerminalSkin) {
     Box(
         modifier = Modifier
             .height(TerminalLayout.keyHeight)
             .width(TerminalLayout.switcherWidth)   // ← 固定宽度：强制不参与 Row 的 weight 挤压
             .clip(RoundedCornerShape(TerminalLayout.keyRadius))
             .border(
-                1.dp,
-                if (full) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                if (full) skin.keyGroupDBorderWidth else skin.keyGroupABorderWidth,
+                if (full) skin.keyGroupDBorder else skin.keyGroupABorder,
                 RoundedCornerShape(TerminalLayout.keyRadius)
             )
             .background(
-                if (full) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                if (full) skin.keyGroupDBg else skin.keyGroupABg
             )
             .combinedClickable(onClick = onClick)
             .padding(horizontal = Spacing.sm),
@@ -531,12 +567,12 @@ private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit) {
                 FeatherIcons.Grid,
                 contentDescription = null,
                 modifier = Modifier.size(ButtonSpec.ChipIndicatorSize),
-                tint = if (full) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (full) skin.keyGroupDFg else skin.onSurfaceVariant
             )
             Text(
                 text = if (full) "完整" else "简洁",
                 fontSize = 12.sp,
-                color = if (full) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                color = if (full) skin.keyGroupDFg else skin.onSurface
             )
         }
     }
@@ -544,7 +580,7 @@ private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CtrlChipWithTooltip(viewModel: TerminalViewModel) {
+private fun CtrlChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkin) {
     val state = rememberTooltipState(isPersistent = false)
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -557,6 +593,8 @@ private fun CtrlChipWithTooltip(viewModel: TerminalViewModel) {
     ) {
         KeyChip(
             "Ctrl",
+            skin = skin,
+            group = KeyGroup.A,
             active = viewModel.modifiers.ctrl,
             onClick = { viewModel.modifiers.ctrl = !viewModel.modifiers.ctrl }
         )
@@ -565,7 +603,7 @@ private fun CtrlChipWithTooltip(viewModel: TerminalViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AltChipWithTooltip(viewModel: TerminalViewModel) {
+private fun AltChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkin) {
     val state = rememberTooltipState(isPersistent = false)
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -578,6 +616,8 @@ private fun AltChipWithTooltip(viewModel: TerminalViewModel) {
     ) {
         KeyChip(
             "Alt",
+            skin = skin,
+            group = KeyGroup.A,
             active = viewModel.modifiers.alt,
             onClick = { viewModel.modifiers.alt = !viewModel.modifiers.alt }
         )
@@ -586,17 +626,39 @@ private fun AltChipWithTooltip(viewModel: TerminalViewModel) {
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun KeyChip(label: String, active: Boolean = false, onClick: () -> Unit) {
-    val bg = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-    val borderColor = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    val fg = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+private fun KeyChip(label: String, skin: TerminalSkin, group: KeyGroup = KeyGroup.A, active: Boolean = false, onClick: () -> Unit) {
+    val bg = when {
+        active -> skin.ctrlActiveBg
+        group == KeyGroup.D -> skin.keyGroupDBg
+        group == KeyGroup.C -> skin.keyGroupCBg
+        group == KeyGroup.B -> skin.keyGroupBBg
+        else -> skin.keyGroupABg
+    }
+    val borderColor = when {
+        active -> skin.ctrlActiveBorder
+        group == KeyGroup.D -> skin.keyGroupDBorder
+        group == KeyGroup.C -> skin.keyGroupCBorder
+        group == KeyGroup.B -> skin.keyGroupBBorder
+        else -> skin.keyGroupABorder
+    }
+    val borderWidth = when {
+        group == KeyGroup.B -> skin.keyGroupBBorderWidth
+        else -> skin.keyGroupABorderWidth  // A, C, D = 1.2dp
+    }
+    val fg = when {
+        active -> skin.ctrlActiveFg
+        group == KeyGroup.D -> skin.keyGroupDFg
+        group == KeyGroup.C -> skin.keyGroupAFg
+        group == KeyGroup.B -> skin.keyGroupBFg
+        else -> skin.keyGroupAFg
+    }
     Box(
         modifier = Modifier
             .height(TerminalLayout.keyHeight)
             .then(if (label.length <= 1) Modifier.width(TerminalLayout.keyShortWidth) else Modifier)
             .clip(RoundedCornerShape(TerminalLayout.keyRadius))
             .background(bg)
-            .border(1.dp, borderColor, RoundedCornerShape(TerminalLayout.keyRadius))
+            .border(borderWidth, borderColor, RoundedCornerShape(TerminalLayout.keyRadius))
             .combinedClickable(onClick = onClick)
             .padding(horizontal = Spacing.sm),
         contentAlignment = Alignment.Center

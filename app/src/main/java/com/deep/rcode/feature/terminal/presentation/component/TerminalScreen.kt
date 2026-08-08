@@ -143,6 +143,10 @@ fun TerminalScreen(
     var ctrlHintVisible by remember { mutableStateOf(true) }
     val ctrlHintShown by viewModel.ctrlHintShown.collectAsStateWithLifecycle()
 
+    // 终端颜色：当前主题调色板 + 壳 UI 皮肤适配器（Tab/Banner/Keys 全部从这里取色）
+    val palette = rememberTerminalPalette()
+    val skin = rememberTerminalSkin(palette)
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -246,6 +250,7 @@ fun TerminalScreen(
                     banner?.let { b ->
                         TerminalFirstRunBanner(
                             banner = b,
+                            skin = skin,
                             onGoSettings = onNavigateToSettings,
                             onInstallRecommended = { viewModel.installAiRecommended() },
                             onInitContainer = { viewModel.prepare() },
@@ -255,6 +260,7 @@ fun TerminalScreen(
                     }
 
                     TabBar(
+                        skin = skin,
                         tabs = tabs,
                         activeTabId = activeTabId,
                         hasNewOutputMap = hasNewOutputMap,
@@ -308,7 +314,8 @@ fun TerminalScreen(
                     if (activeTabId != null) {
                         ExtraKeysRow(
                             viewModel = viewModel,
-                            full = fullExtraKeys
+                            full = fullExtraKeys,
+                            skin = skin
                         )
                     }
                 }
@@ -417,14 +424,15 @@ private fun performClearScreen(tabs: List<TerminalTab>, activeId: String?, vm: T
 @Composable
 private fun TerminalFirstRunBanner(
     banner: TerminalViewModel.BannerType,
+    skin: TerminalSkin,
     onGoSettings: () -> Unit,
     onInstallRecommended: () -> Unit,
     onInitContainer: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val accentColor: Color = when (banner) {
-        TerminalViewModel.BannerType.ContainerNotInstalled -> TerminalBannerSpec.ContainerAccent
-        TerminalViewModel.BannerType.PythonMissing -> TerminalBannerSpec.pythonAccent(MaterialTheme.colorScheme.secondary)
+        TerminalViewModel.BannerType.ContainerNotInstalled -> skin.semanticWarning
+        TerminalViewModel.BannerType.PythonMissing -> skin.semanticInfo
     }
     val title: String
     val desc: String
