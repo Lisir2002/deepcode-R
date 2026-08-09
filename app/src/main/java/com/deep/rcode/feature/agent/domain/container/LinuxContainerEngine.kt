@@ -433,7 +433,11 @@ class LinuxContainerEngine @Inject constructor(
                 runSync = ::execForManager,
                 streamShell = { cmd, to -> streamExecNoInstall(cmd, projectPath = null, timeoutMs = to) },
             )
-            progressAggregator.startInstallSession(slots = slotsN, totalDependsEstimate = pkgs.size * 6)
+            progressAggregator.startInstallSession(
+                slots = slotsN,
+                totalDependsEstimate = pkgs.size * 6,
+                bundleId = id,
+            )
             // 监听 Prefetch 槽流 → Aggregator
             val slotsCollectJob = initScope.launch {
                 prefetch.slots.collect { s -> progressAggregator.onSlotsFromPrefetch(s) }

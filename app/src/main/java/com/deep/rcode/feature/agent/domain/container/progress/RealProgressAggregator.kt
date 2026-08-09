@@ -4,6 +4,8 @@ import android.app.ActivityManager
 import android.content.Context
 import android.net.TrafficStats
 import com.deep.rcode.core.util.FileLogger
+import com.deep.rcode.feature.agent.domain.container.GlobalInstallArchiveStore
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -94,9 +96,24 @@ class RealProgressAggregator @Inject constructor(
     private val _state = MutableStateFlow(AggregateProgressState.INITIAL)
     val state: StateFlow<AggregateProgressState> = _state.asStateFlow()
 
+    /** A-主方案：当前正在安装/卸载的 Bundle ID，每 startInstallSession 时注入。 */
+    private var currentSessionBundleId: TerminalBundleId? = null
+
     /** 并发槽数：安装开始前一次性注入并画 N 个空槽。 */
-    suspend fun startInstallSession(slots: Int, totalDependsEstimate: Int) {
+    suspend fun startInstallSession(
+        slots: Int,
+        totalDependsEstimate: Int,
+        bundleId: TerminalBundleId? = null,
+    ) {
         mutex.withLock {
+            // A-主方案：先把「上一个正在操作的 state」快照塞进 ArchiveStore，
+            // 避免"装完 A 立刻装 B，A 的终态快照丢失"的边界问题。
+            if (currentSessionBundleId != null) {
+                runCatching {
+                    GlobalInstallArchiveStore.saveSnapshot(currentSessionBundleId!!, _state.value)
+                }
+            }
+            currentSessionBundleId = bundleId
             // reset
             phase = InstallPhase.DOWNLOAD
             source = ProgressSource.PREFETCH_MANAGER_CONFIRMED
@@ -465,6 +482,14 @@ class RealProgressAggregator @Inject constructor(
             failSummary = failSummary,
         )
         _state.value = snap
+        // A-主方案：每 publish 就把当前快照更新进 ArchiveStore，
+        // 保证用户切到别的 Bundle 再切回来，看到的是"尽量实时"的，
+        // 而不是仅终态才写入（中间进度丢失）。
+        currentSessionBundleId?.let { bid ->
+            runCatching {
+                GlobalInstallArchiveStore.updateSnapshot(bid, snap)
+            }
+        }
     }
 
     /** 下载阶段汇总（got bytes / total bytes）。total 未知为 0，调用方用 fallback 百分比估算。 */
@@ -492,14 +517,14 @@ class RealProgressAggregator @Inject constructor(
     }
 
     private fun appendLogLine(kind: LogLineKind, text: String, inlineProgress: Float = -1f, inlineSpeedBps: Float = 0f) {
-        logRing.append(
-            LogLine(
-                id = ++logSeqId,
-                kind = kind,
-                text = text,
-                inlineProgress = inlineProgress,
-                inlineSpeedBps = inlineSpeedBps,
-            ),
+        val line = LogLine(
+            id = ++logSeqId,
+            kind = kind,
+            text = text,
+            inlineProgress = inlineProgress,
+            inlineSpeedBps = inlineSpeedBps,
         )
+        // B-方案强点：统一入口自动注入 ownerBundleId，避免调用方忘记打标签
+        logRing.append(line, currentSessionBundleId)
     }
 }

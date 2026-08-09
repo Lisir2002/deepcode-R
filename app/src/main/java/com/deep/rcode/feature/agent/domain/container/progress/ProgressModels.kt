@@ -1,6 +1,7 @@
 package com.deep.rcode.feature.agent.domain.container.progress
 
 import androidx.compose.runtime.Immutable
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
 
 /** 安装流程总阶段。权重硬编码基准（国内镜像历史 100 次均值），后续埋点校准。 */
 enum class InstallPhase(val weight: Float) {
@@ -62,6 +63,8 @@ data class LogLine(
     val inlineProgress: Float = -1f,
     /** 行内瞬时速率 B/s，0 = 不显示。 */
     val inlineSpeedBps: Float = 0f,
+    /** B-方案强点：每行日志带 ownerBundleId 标签，便于跨 Bundle 日志溯源 & 全局一条环形日志时过滤。 */
+    val ownerBundleId: TerminalBundleId? = null,
 )
 
 enum class LogLineKind {
@@ -192,6 +195,19 @@ class LogLineStore(capacity: Int) : RingBuffer<LogLine>(capacity) {
         bump()
     }
 
+    /**
+     * B-方案强点封装：按当前会话 bundle 上下文追加，自动写入 ownerBundleId 标签。
+     * 调用方（Aggregator）不用每次手动拼字段，避免漏打标签。
+     */
+    fun append(value: LogLine, ownerBundleId: TerminalBundleId?): LogLine {
+        val enriched = if (ownerBundleId != null && value.ownerBundleId == null) {
+            value.copy(ownerBundleId = ownerBundleId)
+        } else value
+        super.append(enriched)
+        bump()
+        return enriched
+    }
+
     /** 批量移除，返回移除条数；哪怕没移除（pred 全 false）为了与外部调用方的空快照统一仍 bump。 */
     fun removeIf(predicate: (LogLine) -> Boolean): Int {
         var removed = 0
@@ -209,11 +225,15 @@ class LogLineStore(capacity: Int) : RingBuffer<LogLine>(capacity) {
     /**
      * 原位替换（关键 API：语义修正 —— 比如 INFO 的 "fetch APKINDEX.tar.gz" 改 kind=FETCH）。
      * 返回替换后的新行；index 越界为 null。
+     * 注意：默认保留旧行的 ownerBundleId，除非 transform 显式覆盖它。
      */
     fun replaceAt(index: Int, transform: (LogLine) -> LogLine): LogLine? {
         if (index < 0 || index >= deque.size) return null
         val old = deque[index]
-        val new = transform(old)
+        val newRaw = transform(old)
+        val new = if (newRaw.ownerBundleId == null && old.ownerBundleId != null) {
+            newRaw.copy(ownerBundleId = old.ownerBundleId)
+        } else newRaw
         deque[index] = new
         bump()
         return new

@@ -30,6 +30,8 @@ import com.deep.rcode.R
 import com.deep.rcode.core.theme.AppSectionHeader
 import com.deep.rcode.core.theme.AppTopAppBar
 import com.deep.rcode.core.theme.Spacing
+import com.deep.rcode.feature.agent.domain.container.ContainerInitState
+import com.deep.rcode.feature.agent.domain.container.GlobalInstallArchiveStore
 import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
 import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
 import com.deep.rcode.feature.terminal.presentation.TerminalSettingsViewModel
@@ -106,20 +108,31 @@ fun TerminalBundleManagerScreen(
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                 var openDialogFor by remember { mutableStateOf<TerminalBundleId?>(null) }
                 val agg by viewModel.aggregateProgress.collectAsStateWithLifecycle()
+                val containerInit by viewModel.containerInit.collectAsStateWithLifecycle()
                 val ctx = LocalContext.current
                 val snackbarHostStateHere = remember { SnackbarHostState() }
                 val onCopyError: (String) -> Unit = { reason ->
                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("install-error", reason))
                 }
+                // A主-3：判断某个 bundleId 是否为「当前正在进行的会话」
+                fun isBundleInProgress(id: TerminalBundleId): Boolean {
+                    val s = containerInit
+                    return s is ContainerInitState.BundleInstalling && s.bundleId == id
+                }
+                // 监听 GlobalInstallArchiveStore 的 globalRevision，让"有没有存档"在有新写入时 recompose
+                val archiveRev by remember(GlobalInstallArchiveStore.globalRevision) {
+                    mutableStateOf(GlobalInstallArchiveStore.globalRevision)
+                }
                 viewModel.bundles().forEach { b ->
                     val bState = bundleStates[b.id] ?: BundleInstallState.NotInstalled
+                    val inProgress = isBundleInProgress(b.id)
                     // 新 BundleInstallCard：3 行极简 + N 微槽块（按 Q9 选定：画在卡片内）；
                     // aggregate 为 null（走旧通路）时自动降级。
                     BundleInstallCard(
                         bundle = b.toUi(),
                         bundleState = bState,
-                        aggregate = agg.takeIf { bState is BundleInstallState.Installing },
+                        aggregate = agg.takeIf { inProgress },
                         onInstallClick = { viewModel.installBundle(b.id) },
                         onUninstallClick = { viewModel.uninstallBundle(b.id) },
                         onOpenLogDialog = { openDialogFor = b.id },
@@ -128,9 +141,16 @@ fun TerminalBundleManagerScreen(
                     )
                     val dialogBundle = openDialogFor
                     if (dialogBundle != null && dialogBundle == b.id) {
+                        val isCurrent = isBundleInProgress(b.id)
+                        val archiveSnapshot = run {
+                            archiveRev // 强制 snapshot read：revision 变 archive 就重新取
+                            GlobalInstallArchiveStore.getSnapshot(b.id)
+                        }
                         BundleLogDialog(
                             bundle = b.toUi(),
                             state = agg,
+                            isCurrentSession = isCurrent,
+                            archiveSnapshot = archiveSnapshot,
                             onDismiss = { openDialogFor = null },
                         )
                     }

@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -80,6 +81,7 @@ import com.deep.rcode.feature.agent.domain.container.progress.LogLine
 import com.deep.rcode.feature.agent.domain.container.progress.LogLineKind
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.AlertTriangle
+import compose.icons.feathericons.Archive
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
@@ -88,6 +90,7 @@ import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Download
 import compose.icons.feathericons.Flag
 import compose.icons.feathericons.Package
+import compose.icons.feathericons.Radio
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.X
@@ -107,25 +110,59 @@ import java.util.EnumMap
 fun BundleLogDialog(
     bundle: UiBundle,
     state: AggregateProgressState,
+    /** A主-4：true = 当前活跃会话（aggregator.state 实时）；false = 优先显示 ArchiveStore 快照。 */
+    isCurrentSession: Boolean = true,
+    /** A主-4：如果不是当前会话，把 GlobalInstallArchiveStore.getSnapshot(bundle.id) 传进来。 */
+    archiveSnapshot: AggregateProgressState? = null,
     onDismiss: () -> Unit,
 ) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true),
     ) {
+        // A主-4：E.2 数据源模式。
+        // - true = 实时会话（当前正在安装的 bundle）
+        // - false = 历史档案快照
+        val hasArchive = archiveSnapshot != null
+        // 默认：如果是当前会话就用实时；否则强制用历史（即便没存档也显示"暂无日志"空态）
+        var modeReal by remember(isCurrentSession, hasArchive) {
+            mutableStateOf(isCurrentSession)
+        }
+        // 切到其他 bundle 时重置 mode
+        LaunchedEffect(bundle.id) { modeReal = isCurrentSession }
+
+        val actualState by remember(state, archiveSnapshot, modeReal) {
+            derivedStateOf {
+                when {
+                    modeReal -> state
+                    hasArchive -> archiveSnapshot!!
+                    else -> AggregateProgressState.INITIAL
+                }
+            }
+        }
+
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = {
                         Column {
                             Text(
-                                text = "安装日志 · ${bundle.title}",
+                                text = buildString {
+                                    append("安装日志 · ").append(bundle.title)
+                                    append(
+                                        when {
+                                            modeReal -> " · 实时"
+                                            hasArchive -> " · 档案"
+                                            else -> " · 空"
+                                        }
+                                    )
+                                },
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.SemiBold,
                                 ),
                             )
                             Text(
-                                text = buildHeaderSubtitle(state),
+                                text = buildHeaderSubtitle(actualState),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -133,7 +170,7 @@ fun BundleLogDialog(
                     },
                     actions = {
                         val ctx = LocalContext.current
-                        IconButton(onClick = { copyAll(ctx, state) }) {
+                        IconButton(onClick = { copyAll(ctx, actualState) }) {
                             Icon(FeatherIcons.Copy, contentDescription = "复制全部")
                         }
                     },
@@ -146,21 +183,102 @@ fun BundleLogDialog(
             modifier = Modifier.fillMaxSize().padding(vertical = 24.dp, horizontal = 12.dp),
         ) { paddingValues ->
             Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+                // A主-4：E.2 「📚 历史档案 / 📡 实时会话」切换 Chip 行
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.md)
+                        .padding(bottom = Spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AssistChip(
+                        onClick = { modeReal = true },
+                        leadingIcon = { Icon(FeatherIcons.Radio, null, modifier = Modifier.size(12.dp)) },
+                        label = {
+                            Text(
+                                text = if (isCurrentSession) "当前会话" else "实时 (空)",
+                                style = MaterialTheme.typography.labelSmall,
+                                softWrap = false,
+                                maxLines = 1,
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = if (modeReal) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surface,
+                        ),
+                        border = AssistChipDefaults.assistChipBorder(
+                            enabled = true,
+                            borderColor = if (modeReal) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                            else MaterialTheme.colorScheme.outlineVariant,
+                        ),
+                    )
+                    AssistChip(
+                        onClick = { if (hasArchive) modeReal = false },
+                        enabled = hasArchive,
+                        leadingIcon = { Icon(FeatherIcons.Archive, null, modifier = Modifier.size(12.dp)) },
+                        label = {
+                            Text(
+                                text = if (hasArchive) "历史档案" else "无存档",
+                                style = MaterialTheme.typography.labelSmall,
+                                softWrap = false,
+                                maxLines = 1,
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = if (!modeReal && hasArchive) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surface,
+                        ),
+                        border = AssistChipDefaults.assistChipBorder(
+                            enabled = hasArchive,
+                            borderColor = if (!modeReal && hasArchive) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                            else MaterialTheme.colorScheme.outlineVariant,
+                        ),
+                    )
+                    if (archiveSnapshot?.isTerminal == true) {
+                        archiveSnapshot.finishStats?.let { fs ->
+                            Text(
+                                text = "✨ %.1fs · %d 包".format(fs.elapsedMs / 1000f, fs.packagesInstalled),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF2E7D32),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(100))
+                                    .background(Color(0xFFE8F5E9))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
+                        }
+                        archiveSnapshot.failSummary?.let {
+                            Text(
+                                text = "✗ 失败",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFFC62828),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(100))
+                                    .background(Color(0xFFFFEBEE))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
+                        }
+                    }
+                }
                 // 进度摘要（固定）
-                ProgressSummary(state)
+                Crossfade(targetState = actualState, label = "summary-crossfade") { st ->
+                    ProgressSummary(st)
+                }
                 Spacer(Modifier.height(Spacing.sm))
-                val lazyState = rememberLazyListState()
+                val lazyState = rememberLazyListState(modeReal.hashCode() xor bundle.id.hashCode())
                 val scope = rememberCoroutineScope()
                 // D.1 时间线锚点条（①下载 → ②安装 → ③后处理 → ④完成/失败）
                 TimelineAnchors(
-                    state = state,
+                    state = actualState,
                     onJumpToPhase = { idx ->
-                        val target = state.indexOfFirstPhase(idx)
+                        val target = actualState.indexOfFirstPhase(idx)
                         scope.launch {
                             when {
                                 target == null -> Unit
                                 target < 0 -> lazyState.animateScrollToItem(0)
-                                else -> lazyState.animateScrollToItem(target.coerceAtMost(maxOf(0, state.logLines.size - 1)))
+                                else -> lazyState.animateScrollToItem(
+                                    target.coerceAtMost(maxOf(0, actualState.logLines.size - 1))
+                                )
                             }
                         }
                     },
@@ -168,16 +286,18 @@ fun BundleLogDialog(
                 Spacer(Modifier.height(Spacing.xs))
                 // D.2 Filter Chips（5 类多选 + 每类条目计数）
                 // B-4：enabledKinds 用 StateFlow<ImmutableSet>，避免 SnapshotStateSet 批量 API 不触发 recompose
-                val enabledKindsFlow = remember { MutableStateFlow(LogLineKind.entries.toSet()) }
+                val enabledKindsFlow = remember(bundle.id, modeReal) {
+                    MutableStateFlow(LogLineKind.entries.toSet())
+                }
                 val enabledKinds by enabledKindsFlow.collectAsState()
                 FilterChipsRow(
-                    state = state,
+                    state = actualState,
                     enabledKinds = enabledKinds,
                     onChange = { newSet -> enabledKindsFlow.value = newSet },
                 )
                 Spacer(Modifier.height(Spacing.xs))
                 // 搜索框
-                var query by remember { mutableStateOf("") }
+                var query by remember(bundle.id, modeReal) { mutableStateOf("") }
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -188,24 +308,24 @@ fun BundleLogDialog(
                 )
                 Spacer(Modifier.height(Spacing.xs))
                 // B-5：过滤日志 + derivedStateOf（显式读 state.revision + enabledKinds，避免 size 不变时卡住）
-                val filtered by remember(state, enabledKinds, query) {
+                val filtered by remember(actualState, enabledKinds, query) {
                     derivedStateOf {
                         // snapshot read: revision 一变更 derived 失效重算（append/remove/原位 kind 替换都 bump revision）
-                        state.revision
+                        actualState.revision
                         val q = query.trim()
-                        state.logLines.filter { line ->
+                        actualState.logLines.filter { line ->
                             (line.kind in enabledKinds) &&
                                 (q.isEmpty() || line.text.contains(q, ignoreCase = true))
                         }
                     }
                 }
-                LaunchedEffect(filtered.size) {
-                    if (filtered.isNotEmpty() && state.phase.isTerminal.not()) {
+                LaunchedEffect(filtered.size, modeReal) {
+                    if (filtered.isNotEmpty() && actualState.phase.isTerminal.not() && modeReal) {
                         runCatching { lazyState.animateScrollToItem(filtered.size - 1) }
                     }
                 }
                 // D.4：已渲染过的 id 集合（用于判定新行高亮 0.3s）
-                val renderedIdsRef = remember { mutableStateOf<Set<Long>>(emptySet()) }
+                val renderedIdsRef = remember(bundle.id, modeReal) { mutableStateOf<Set<Long>>(emptySet()) }
                 val renderedIds: MutableSet<Long> = object : MutableSet<Long> {
                     private var s: Set<Long> get() = renderedIdsRef.value; set(v) { renderedIdsRef.value = v }
                     override val size get() = s.size
@@ -234,7 +354,7 @@ fun BundleLogDialog(
                         key = { it.id },
                         contentType = { it.kind },
                     ) { line ->
-                        val isNew = line.id !in renderedIds
+                        val isNew = modeReal && line.id !in renderedIds
                         if (isNew) renderedIds.add(line.id)
                         LogLineRow(line = line, isNewlyAppended = isNew)
                     }
@@ -244,7 +364,13 @@ fun BundleLogDialog(
                                 modifier = Modifier.fillMaxWidth().padding(32.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text("暂无日志", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = when {
+                                        !hasArchive && !modeReal -> "该 Bundle 尚无历史安装档案"
+                                        else -> "暂无日志"
+                                    },
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }

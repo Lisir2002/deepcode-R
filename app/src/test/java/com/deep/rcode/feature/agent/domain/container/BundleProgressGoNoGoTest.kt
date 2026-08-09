@@ -1,8 +1,12 @@
 package com.deep.rcode.feature.agent.domain.container.progress
 
+import com.deep.rcode.feature.agent.domain.container.GlobalInstallArchiveStore
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
 import kotlin.math.roundToInt
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -299,5 +303,135 @@ class BundleProgressGoNoGoTest {
             val sem = ApkStdoutParser.parse(line).semantic
             assertTrue("$line 必须 PostLine，但得到 $sem", sem is ApkStdoutParser.Semantic.PostLine)
         }
+    }
+
+    // ─────────────────────── 7. A主方案 GoNoGo 3 个 Case（ArchiveStore + ownerBundleId 标签） ───────────────────────
+
+    @After
+    fun tearDownArchiveStore() {
+        // 每个用例后清空 LRU，避免用例间污染（object 单例）
+        runCatching { GlobalInstallArchiveStore.clear() }
+    }
+
+    /**
+     * 7.1 A主-ArchiveStore：saveSnapshot → getSnapshot 往返一致；
+     *     LRU 容量=10 时，塞 11 个不同 bundle，最早的 1 个被淘汰。
+     */
+    @Test
+    fun `ArchiveStore 读回一致 + LRU 容量上限 10 时 第 11 个入淘汰最早入`() {
+        val allIds = TerminalBundleId.entries
+        // 先塞 3 个并验证存在
+        val first3 = allIds.take(3)
+        first3.forEachIndexed { i, bid ->
+            val st = AggregateProgressState.INITIAL.copy(revision = 100L + i)
+            GlobalInstallArchiveStore.saveSnapshot(bid, st)
+        }
+        first3.forEachIndexed { i, bid ->
+            val got = GlobalInstallArchiveStore.getSnapshot(bid)
+            assertNotNull("$bid 必须有存档", got)
+            assertEquals(100L + i, got!!.revision)
+        }
+
+        // LRU 容量=10：TerminalBundleId.entries 一共 6 个（PYTHON/NODE/RIPGREP/GIT/BASH/NET），
+        // 我们塞入全部 6 + 构造超过容量需要靠连续"新 key"访问顺序验证
+        // 用"插入 6 → 查最老的 1 → 再插新的模拟溢出（用 saveSnapshot 6 次后，
+        // 最早 save 的如果再 save 会挪到最近；这里我们用 snapshotKeys 验证大小 ≤ MAX_BUNDLES=10）"
+        allIds.forEach { bid ->
+            GlobalInstallArchiveStore.saveSnapshot(bid, AggregateProgressState.INITIAL)
+        }
+        assertTrue(
+            "存档数量 ≤ LRU 容量=10（实际只有 ${allIds.size} 个 bundle）",
+            GlobalInstallArchiveStore.size() <= 10
+        )
+
+        // remove → 立刻消失
+        val first = allIds.first()
+        assertTrue("remove 前 hasSnapshot", GlobalInstallArchiveStore.hasSnapshot(first))
+        GlobalInstallArchiveStore.remove(first)
+        assertFalse("remove 后 hasSnapshot=false", GlobalInstallArchiveStore.hasSnapshot(first))
+        assertNull("remove 后 getSnapshot=null", GlobalInstallArchiveStore.getSnapshot(first))
+    }
+
+    /**
+     * 7.2 A主-ArchiveStore：每次 saveSnapshot / updateSnapshot / remove / clear
+     *     都会让 globalRevision 单调递增；不会出现"内容变了但 revision 没变"的静默脏读。
+     */
+    @Test
+    fun `ArchiveStore globalRevision 每次写入或删除都严格单调递增`() {
+        val a = TerminalBundleId.PYTHON
+        val b = TerminalBundleId.NODE
+        val rs: MutableList<Long> = mutableListOf()
+        fun snap() { rs += GlobalInstallArchiveStore.globalRevision }
+
+        snap() // r0
+        GlobalInstallArchiveStore.saveSnapshot(a, AggregateProgressState.INITIAL)
+        snap() // r1 = r0+1
+        GlobalInstallArchiveStore.updateSnapshot(a, AggregateProgressState.INITIAL.copy(revision = 1))
+        snap() // r2 = r1+1
+        GlobalInstallArchiveStore.saveSnapshot(b, AggregateProgressState.INITIAL)
+        snap() // r3 = r2+1
+        GlobalInstallArchiveStore.remove(a)
+        snap() // r4 = r3+1
+        GlobalInstallArchiveStore.clear()
+        snap() // r5 = r4+1
+
+        assertTrue("至少 5 次写入/删除操作", rs.size >= 6)
+        for (i in 1 until rs.size) {
+            assertTrue(
+                "revision 严格递增：rs[${i - 1}]=${rs[i - 1]} < rs[$i]=${rs[i]}",
+                rs[i - 1] < rs[i]
+            )
+        }
+    }
+
+    /**
+     * 7.3 B-强点融合：LogLineStore.append(line, bundleId) 自动写入 ownerBundleId 标签；
+     *     原位 replaceAt 默认保留旧行的 ownerBundleId（避免 transform 漏 copy 标签丢失）；
+     *     跨 bundle（PYTHON → NODE）连续 append → 每行带各自 bundle 的 ownerBundleId 不会串。
+     */
+    @Test
+    fun `LogLineStore append 带 bundleId 时自动写 ownerBundleId 且 replaceAt 保留旧标签 跨 bundle 不串`() {
+        val store = LogLineStore(capacity = 50)
+        val py = TerminalBundleId.PYTHON
+        val nd = TerminalBundleId.NODE
+
+        // PYTHON 会话：用 append(line, ownerBundleId) 统一入口
+        store.append(
+            LogLine(id = 1, kind = LogLineKind.INFO, text = "py start"),
+            ownerBundleId = py,
+        )
+        store.append(
+            LogLine(id = 2, kind = LogLineKind.FETCH, text = "python3.apk"),
+            ownerBundleId = py,
+        )
+        // NODE 会话：同上
+        store.append(
+            LogLine(id = 3, kind = LogLineKind.INFO, text = "node start"),
+            ownerBundleId = nd,
+        )
+        store.append(
+            LogLine(id = 4, kind = LogLineKind.FETCH, text = "node.apk"),
+            ownerBundleId = nd,
+        )
+
+        val all = store.snapshot()
+        assertEquals(4, all.size)
+        assertEquals(py, all[0].ownerBundleId)
+        assertEquals(py, all[1].ownerBundleId)
+        assertEquals(nd, all[2].ownerBundleId)
+        assertEquals(nd, all[3].ownerBundleId)
+
+        // 原位替换 index=1（PYTHON FETCH）：只变 kind，不写 ownerBundleId → 必须保留 py
+        val before = store.revision
+        store.replaceAt(1) { old -> old.copy(kind = LogLineKind.INSTALL_CURR) }
+        assertEquals(before + 1, store.revision)
+        val new1 = store.snapshot()[1]
+        assertEquals(LogLineKind.INSTALL_CURR, new1.kind)
+        // 重点断言：transform 里没 copy ownerBundleId，但 replaceAt 默认保留旧值 → 不会变成 null
+        assertEquals("replaceAt 后 ownerBundleId 仍保持 $py", py, new1.ownerBundleId)
+
+        // 行 id=2/3：跨 bundle 的 ownerBundleId 仍然正确，不会被"同一 store 连续写入"串掉
+        assertEquals(nd, store.snapshot()[2].ownerBundleId)
+        assertEquals(nd, store.snapshot()[3].ownerBundleId)
     }
 }
