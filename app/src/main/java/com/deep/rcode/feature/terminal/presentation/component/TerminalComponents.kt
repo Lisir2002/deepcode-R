@@ -374,12 +374,12 @@ fun TerminalSurface(
             view.attachSession(tab.session)
             applyTerminalPalette(palette, view)
             view.onScreenUpdated()
-            view.requestFocus()
-            view.post {
-                view.requestFocus()
-                val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                imm?.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
-            }
+            // 不再主动 requestFocus + showSoftInput：
+            //   旧行为导致一切入终端 Tab 就弹软键盘，遮挡终端下半屏，且大多数用户进入终端
+            //   第一动作是看状态/切 Tab/看 Git/跑上次命令结果，不需要立即输入。
+            // 正确的交互：用户单击终端内容区时，TerminalClients.onSingleTapUp 会
+            // requestFocus + showSoftInput（见 TerminalClients.kt#L140-L145），实现
+            // 「只有点终端内容区才弹键盘」的规范行为。
             view
         },
         update = { view ->

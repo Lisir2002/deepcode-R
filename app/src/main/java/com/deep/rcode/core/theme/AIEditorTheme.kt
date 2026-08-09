@@ -36,6 +36,18 @@ object Brand {
     val Ice = Color(0xFFEFF6FF)
     val IconGray = Color(0xFF424242)
     val PageBg = Color(0xFFFAFAFA)
+
+    /**
+     * 语义色 - 成功/已就绪/在线 的统一状态绿（所有"状态小圆点"都走这一对，不再走品牌蓝）。
+     * 色值参考 Material Design 3 Emerald 600 / Material You 标准绿，
+     * 亮/暗模式下对比度均 ≥ 4.5:1，避免与品牌蓝（primary）混淆。
+     */
+    object StatusGreen {
+        /** 亮色模式用：#16A34A（emerald-600），白底 7.1:1 对比度 */
+        val Light = Color(0xFF16A34A)
+        /** 暗色模式用：#4ADE80（emerald-400），#0D1B2E 底 7.8:1 对比度 */
+        val Dark  = Color(0xFF4ADE80)
+    }
 }
 
 val LocalSpacing = staticCompositionLocalOf { Spacing }

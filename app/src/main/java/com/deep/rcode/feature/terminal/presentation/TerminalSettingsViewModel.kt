@@ -1,6 +1,7 @@
 package com.deep.rcode.feature.terminal.presentation
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
 import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 /**
@@ -32,10 +34,13 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class TerminalSettingsViewModel @Inject constructor(
+    application: Application,
     private val settingsRepo: TerminalSettingsRepository,
     private val bundleRepo: TerminalBundleRepository,
     private val containerEngine: LinuxContainerEngine
-) : ViewModel() {
+) : AndroidViewModel(application) {
+
+    private val appContext get() = getApplication<Application>().applicationContext
 
     private companion object { const val TAG = "TerminalSettingsVM" }
 
@@ -114,8 +119,48 @@ class TerminalSettingsViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    /** 容器占用（MB）：rootfs 目录大小 /data/data/<pkg>/files/rootfs。懒读。 */
-    val storageUsedMb: StateFlow<Long> = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    /** 容器占用（MB）：rootfs 目录大小 /data/data/<pkg>/files/rootfs。懒读 + 状态变更触发刷新。 */
+    private val _storageUsedMb = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val storageUsedMb: StateFlow<Long> = _storageUsedMb
+
+    private suspend fun computeRootfsSizeMb(): Long {
+        // ContainerInstaller.rootfsDir = File(context.filesDir, "rootfs")（ContainerInstaller.kt#L142-L143 约定）
+        val rootfsDir = File(appContext.filesDir, "rootfs")
+        if (!rootfsDir.exists() || !rootfsDir.isDirectory) return 0L
+        // 用 walkTopDown().sumOf 统计目录总字节（递归，符号链接按自身条目算，与「du」的语义近似）
+        // 结果 MB（1024×1024），与卡片文案「150 MB」量级一致。
+        val bytes = runCatching {
+            var acc = 0L
+            rootfsDir.walkTopDown().forEach { f ->
+                if (!f.isDirectory) acc += runCatching { f.length() }.getOrDefault(0L)
+            }
+            acc
+        }.getOrDefault(0L)
+        return bytes / (1024L * 1024L)
+    }
+
+    init {
+        // 容器初始化进度切换到 Ready 后触发一次统计；
+        // 另外任何容器安装状态 true→false / false→true 的跳变都再补一次。
+        viewModelScope.launch {
+            containerInit.collect { state ->
+                val readyish = state is com.deep.rcode.feature.agent.domain.container.ContainerInitState.Ready
+                    || state is com.deep.rcode.feature.agent.domain.container.ContainerInitState.BundleInstalling
+                    || state is com.deep.rcode.feature.agent.domain.container.ContainerInitState.BundleUninstalling
+                if (readyish) {
+                    _storageUsedMb.value = computeRootfsSizeMb()
+                }
+            }
+        }
+        // 启动时先填一次（如果 rootfs 早已就位），避免冷启动卡片永远 0M，直到下一次状态跳变
+        viewModelScope.launch {
+            val installed = containerInstalled.replayCache.firstOrNull()
+                ?: containerEngine.containerInstaller.isInstalledFor(containerEngine.currentProfile)
+            if (installed) {
+                _storageUsedMb.value = computeRootfsSizeMb()
+            }
+        }
+    }
 
     // ── Bundle 列表 & 状态 ────────────────────────────────────────
     val bundleStates: StateFlow<Map<TerminalBundleId, BundleInstallState>> = bundleRepo.states

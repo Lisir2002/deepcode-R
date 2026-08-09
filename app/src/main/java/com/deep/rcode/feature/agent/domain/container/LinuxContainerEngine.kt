@@ -530,7 +530,16 @@ class LinuxContainerEngine @Inject constructor(
             FileLogger.i(TAG, "自定义包安装成功：$argLine")
         } else {
             FileLogger.w(TAG, "自定义包安装失败($lastLine)：$argLine")
-            _initProgress.value = ContainerInitState.Failed("安装自定义包失败：$lastLine")
+            // ⚠️ 绝对不要再把容器整体状态置成 Failed（以前曾写成 ContainerInitState.Failed("安装自定义包失败…")）。
+            // 自定义包 apk add 失败是用户层面"部分命令非0 / 包名不存在"等问题，不代表 rootfs/prout 损坏。
+            // 一旦 _initProgress=Failed，ViewModel.containerInstalled=false，整张「本地容器环境」卡片
+            // 就会显示「失败：安装自定义包失败…」并显示「初始化容器」按钮（要求清 rootfs），
+            // 而实际上 apk 已成功安装的那些包还存在于 rootfs 中 → 典型矛盾。
+            // 修复：如果容器物理上仍处于"已安装 + 就绪"，保持 _initProgress=Ready，
+            // 调用方（TerminalSettingsViewModel）收到返回的 failed 列表自己弹 toast 即可。
+            if (containerInstaller.isInstalledFor(currentProfile)) {
+                _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
+            }
         }
         // 成功/失败后都刷新一次"真实的"自定义包清单（减去和 bundle 包重叠的，留下用户真正装的）
         runCatching { refreshCustomPackagesSnapshot() }

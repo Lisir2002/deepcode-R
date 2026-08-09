@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.deep.rcode.core.theme.Brand
 import com.deep.rcode.core.theme.Elevation
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
@@ -67,8 +68,9 @@ import compose.icons.feathericons.Trash2
 // ================================================================
 @Immutable
 object SemanticColors {
-    /** 成功/已就绪：使用主题 primary 绿色调，跟随亮/暗切换 */
-    val Success: Color @Composable get() = MaterialTheme.colorScheme.primary
+    /** 成功/已就绪：统一绿色（Brand.StatusGreen），不与品牌蓝（primary）混用，避免状态语义混淆 */
+    val Success: Color
+        @Composable get() = if (isSystemInDarkTheme()) Brand.StatusGreen.Dark else Brand.StatusGreen.Light
     /** 进行中：使用主题 secondary，跟随亮/暗切换 */
     val InProgress: Color @Composable get() = MaterialTheme.colorScheme.secondary
     /** 失败/错误：主题 error，跟随亮/暗切换 / 动态色 */
