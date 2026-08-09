@@ -407,6 +407,7 @@ class LinuxContainerEngine @Inject constructor(
             bundleRepository.emitInstalling(id, line = "准备中…")
             _initProgress.value = ContainerInitState.BundleInstalling(bundleId = id, line = "准备中…")
             var exitCode: Int? = null
+            var failedReason: String? = null
             try {
                 val script = buildString {
                     append("set -e\n")
@@ -432,18 +433,30 @@ class LinuxContainerEngine @Inject constructor(
                 }
             } catch (e: Exception) {
                 FileLogger.w(TAG, "安装 bundle ${id.stableKey} 异常", e)
-                bundleRepository.markFailed(id, e.message ?: "异常")
-                _initProgress.value = ContainerInitState.Failed("安装 ${bundle.displayName} 失败：${e.message}")
-                throw e
-            }
-            if (exitCode == 0) {
-                bundleRepository.markInstalled(id, bundle)
-                FileLogger.i(TAG, "Bundle 安装成功：${bundle.displayName} (${bundle.packages})")
-            } else {
-                val reason = "安装 ${bundle.displayName} 失败（exit=$exitCode），请在终端设置中重试"
-                bundleRepository.markFailed(id, reason)
-                _initProgress.value = ContainerInitState.Failed(reason)
-                throw IllegalStateException(reason)
+                failedReason = "安装 ${bundle.displayName} 失败：${e.message}"
+            } finally {
+                if (exitCode == 0 && failedReason == null) {
+                    bundleRepository.markInstalled(id, bundle)
+                    FileLogger.i(TAG, "Bundle 安装成功：${bundle.displayName} (${bundle.packages})")
+                } else {
+                    val reason = failedReason
+                        ?: "安装 ${bundle.displayName} 失败（exit=$exitCode），请在终端设置中重试"
+                    FileLogger.w(TAG, reason)
+                    bundleRepository.markFailed(id, reason)
+                }
+                // ⚠️ 无论成功/失败/异常，最后都复位 _initProgress 回 Ready（只要容器物理仍然 installed）。
+                // 缺失这一步是「快捷包装完永远卡『正在安装功能包…』死循环」的根因：
+                // UI 订阅 initProgress，BundleInstalling 下 ProgressIndicator 永远显示，
+                // 顶部卡片永远显示"正在安装功能包…"，用户看到的就是装完还在转圈圈。
+                if (containerInstaller.isInstalledFor(currentProfile)) {
+                    _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
+                }
+                // 对失败/异常把错误抛出去，上层 ViewModel 的 runCatching {}.onFailure { postError } 才会弹 toast
+                if (failedReason != null) throw IllegalStateException(failedReason)
+                if (exitCode != 0) {
+                    val reason = "安装 ${bundle.displayName} 失败（exit=$exitCode），请在终端设置中重试"
+                    throw IllegalStateException(reason)
+                }
             }
         }
     }
@@ -487,13 +500,18 @@ class LinuxContainerEngine @Inject constructor(
                 FileLogger.w(TAG, "卸载 bundle ${id.stableKey} 异常", e)
                 // 异常不回退 state：实际可能是网络断等，让用户下次再试 apk del / 或重置容器。
                 bundleRepository.markUninstalled(id)
-                return
+                return@withLock
+            } finally {
+                // apk del 的退出码我们相信为 0 就 OK。非 0 也把状态置为 NotInstalled——
+                // 因为 apk del 报"该包未安装"也会 exit != 0，我们不希望 UI 永远停在 Installing/Installed。
+                // 真失败下次 installBundle 会重新 apk add。
+                bundleRepository.markUninstalled(id)
+                FileLogger.i(TAG, "Bundle 卸载：${bundle.displayName} (exit=$exitCode)")
+                // 无论成功/异常退出 withLock 前都复位 Ready，避免 UI 永远停在 BundleUninstalling
+                if (containerInstaller.isInstalledFor(currentProfile)) {
+                    _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
+                }
             }
-            // apk del 的退出码我们相信为 0 就 OK。非 0 也把状态置为 NotInstalled——
-            // 因为 apk del 报"该包未安装"也会 exit != 0，我们不希望 UI 永远停在 Installing/Installed。
-            // 真失败下次 installBundle 会重新 apk add。
-            bundleRepository.markUninstalled(id)
-            FileLogger.i(TAG, "Bundle 卸载：${bundle.displayName} (exit=$exitCode)")
         }
     }
 
@@ -535,11 +553,11 @@ class LinuxContainerEngine @Inject constructor(
             // 一旦 _initProgress=Failed，ViewModel.containerInstalled=false，整张「本地容器环境」卡片
             // 就会显示「失败：安装自定义包失败…」并显示「初始化容器」按钮（要求清 rootfs），
             // 而实际上 apk 已成功安装的那些包还存在于 rootfs 中 → 典型矛盾。
-            // 修复：如果容器物理上仍处于"已安装 + 就绪"，保持 _initProgress=Ready，
-            // 调用方（TerminalSettingsViewModel）收到返回的 failed 列表自己弹 toast 即可。
-            if (containerInstaller.isInstalledFor(currentProfile)) {
-                _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
-            }
+            // 修复：保持 _initProgress=Ready，失败只走调用方 postError 弹 toast。
+        }
+        // 成功/失败都统一复位 Ready，避免装完永久停在 BundleInstalling
+        if (containerInstaller.isInstalledFor(currentProfile)) {
+            _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
         }
         // 成功/失败后都刷新一次"真实的"自定义包清单（减去和 bundle 包重叠的，留下用户真正装的）
         runCatching { refreshCustomPackagesSnapshot() }
