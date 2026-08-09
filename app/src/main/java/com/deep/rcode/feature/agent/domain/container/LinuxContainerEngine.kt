@@ -737,8 +737,8 @@ class LinuxContainerEngine @Inject constructor(
         append("$mirror/${ContainerInstaller.ALPINE_BRANCH}/community\n")
         append("EOF\n")
         append("# apk update 输出先存到临时文件，tail 只做展示用——避免管道 SIGPIPE 杀 apk update\n")
-        append("_apk_update_log=$(mktemp) && apk update > \"$_apk_update_log\" 2>&1\n")
-        append("tail -n 10 \"$_apk_update_log\"; rm -f \"$_apk_update_log\"\n")
+        append("_apk_update_log=\$(mktemp) && apk update > \"\$_apk_update_log\" 2>&1\n")
+        append("tail -n 10 \"\$_apk_update_log\"; rm -f \"\$_apk_update_log\"\n")
     }
 
     // ── End Bundle 公开 API ──────────────────────────────────────────────────
