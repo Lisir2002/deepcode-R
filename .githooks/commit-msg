@@ -54,7 +54,7 @@ cat >&2 <<EOF
   perf      性能优化
   test      测试
 
-scope 可选，建议用：agent settings terminal workspace git ui mcp db core deps
+scope 可选，建议用：agent settings terminal workspace git ui mcp db core docs build deps
 
 示例：
   feat(agent): 支持流式工具调用

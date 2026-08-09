@@ -133,7 +133,7 @@ ANDROID_HOME=/root/android/sdk \
 成功后 APK 输出路径取决于项目配置，通常在：
 
 ```
-app/build/outputs/apk/<flavor>/debug/app-<flavor>-debug.apk
+app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ---

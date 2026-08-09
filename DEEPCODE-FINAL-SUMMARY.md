@@ -42,7 +42,7 @@ deepcode-R/
 │   ├── ci.yml                          # main 推送/PR：assembleRelease + testReleaseUnitTest（release classpath 做门禁）
 │   └── android-release.yml             # Tag 打 v*：assembleRelease → 单 APK rdeepcode-arm64-<ver>.apk → GitHub Release
 │
-├── build.gradle.kts                    # AGP 8.9.3 / Kotlin 2.2.21 / Hilt 2.56.1 / KSP 2.0.21
+├── build.gradle.kts                    # AGP 8.9.3 / Kotlin 2.2.21 / Hilt 2.56.1 / KSP 2.2.21-2.0.5
 ├── settings.gradle.kts                 # 含腾讯云/阿里镜像 + JitPack + MavenCentral
 ├── gradle.properties                   # JVM 堆 -Xmx4g、Kotlin 增量编译
 │   └── app/
@@ -554,7 +554,7 @@ foregroundServiceType = "dataSync"
    - 功能/工具行为变化 → **必须**同步 `assets/docs/` 使用文档
    - UI 变化 → **必须**同步对应 docs 文档
    - 新 UI 文案 → **必须**写 `values/strings.xml`（中文）+ `values-en/strings.xml`（英文），禁止 .kt 硬编码中文；命名 = 语义化 `common_` 前缀
-3. **Conventional Commits**：type(scope): subject（type ∈ feat/fix/refactor/docs/style/chore/ci/build/perf/test；scope ∈ agent/settings/terminal/workspace/git/ui/mcp/db/core/build/deps）
+3. **Conventional Commits**：type(scope): subject（type ∈ feat/fix/refactor/docs/style/chore/ci/build/perf/test；scope ∈ agent/settings/terminal/workspace/git/ui/mcp/db/core/docs/build/deps）
 4. **提交前**：`./gradlew :app:assembleDebug`（debug buildType 冒烟，快）；验证 release 链路用 `:app:assembleRelease`（项目已无 flavor 概念，禁止使用 assembleUniversal/assembleArmsolo 等旧命令）
 5. **push 前**：`./gradlew :app:testReleaseUnitTest`（14 个单测，release classpath 与 CI 同款）
 6. **RC 发版判定**：新功能/行为变化/构建链路/容器镜像 → 必发 RC；纯文档/typo → 可直接正式
