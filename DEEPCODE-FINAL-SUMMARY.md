@@ -562,7 +562,7 @@ foregroundServiceType = "dataSync"
 8. **云端构建监控与产物校验**（详见 AGENTS.md §云端构建与实时监控自动化）：
    - Tag 推送后通过 GitHub API 实时轮询 `workflow_runs` + `jobs` 直到 `conclusion=success/failure`
    - 构建完成后必须校验：① 下载 APK → ② `unzip -l` 确认只有 `lib/arm64-v8a/*.so` → ③ `keytool -printcert` 确认正式签名（非 `CN=Android Debug`）→ ④ `sha256sum` 记录指纹
-   - **签名 Secrets 前置条件**：仓库必须配置 4 个 secrets（`AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`）；缺失任一会静默回退到 debug keystore 签名，产物不可上架
+   - **签名 Secrets 前置条件**：仓库必须配置 4 个 secrets（`AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`）；缺失任一 → **回退到项目级固定 debug keystore**（`CN=Android Debug, O=Android, C=US`，alias=`androiddebugkey`，密码 `android`， APK 证书 SHA256 固定 `7A:D5:EA:0E:3F:A9:6F:10:26:29:21:0C:9C:DB:AA:81:E3:CE:D4:9B:32:20:A5:21:7B:64:EC:1A:95:D2:FA:C8`），所有 RC Tag 构建输出同指纹 APK，可互相覆盖升级，但**仍不可上架**
    - **验证 secrets 存在性**：`GET /repos/{owner}/{repo}/actions/secrets` 返回 `total_count` 必须 ≥ 4
 
 ---

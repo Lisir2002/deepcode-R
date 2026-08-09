@@ -131,7 +131,9 @@ curl -s -u "<owner>:<token>" \
   | python3 -c "import sys,json;d=json.load(sys.stdin);print('secrets 总数:',d.get('total_count',0));[print(' -',s['name']) for s in d.get('secrets',[])]"
 ```
 
-> **⚠️ 若 secrets 总数 = 0 或缺少任一**：CI 构建的 APK 会**静默回退到 debug keystore 签名**（`CN=Android Debug`），产物不可上架、不可作为正式签名版本分发。构建前必须用上述 API 确认 4 个 secrets 全部存在。
+> **⚠️ 若 secrets 总数 = 0 或缺少任一**：CI 构建的 APK 会**回退到项目级固定 debug keystore 签名**（`CN=Android Debug, O=Android, C=US`，alias=`androiddebugkey`，密码均为 `android`，APK 签名证书 SHA256 固定 = `7A:D5:EA:0E:3F:A9:6F:10:26:29:21:0C:9C:DB:AA:81:E3:CE:D4:9B:32:20:A5:21:7B:64:EC:1A:95:D2:FA:C8`）。
+> 该方案**保证所有未配置正式签名的 Tag 构建输出同一份证书指纹的 APK**：RC24 / RC25 / … / RC∞ 之间覆盖安装不会再报「软件包与现有软件包冲突」。
+> 但它**仍不可上架**（证书 Owner 必须为开发者主体，而非 Android Debug），若需上架请配置上面 4 个 secrets。
 
 
 ## 构建与运行

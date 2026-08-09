@@ -32,26 +32,44 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # CI 跑 Ubuntu runner：自动生成 debug keystore 供 signingConfigs.release/androidDebug 回退使用。
+      # CI 跑 Ubuntu runner：写入「项目级固定 debug keystore」供 signingConfigs.release/androidDebug 回退使用。
       # 必须放在 Set up JDK 之后（keytool 是 JDK bin 下的工具，JAVA_HOME 未注入前调不到）。
-      # 如果有正式 keystore（secrets.AICODE_KEYSTORE_BASE64），下面的步骤会覆盖本步骤生成的；
-      # 如果没有，则 release 会自动回退到本步骤生成的 debug keystore，保证 assembleRelease 不崩。
-      - name: Generate debug keystore (CI fallback signing)
+      #
+      # —— 为什么不用 keytool -genkey 每次随机生成？——
+      #   keytool -genkey 会在每次 run 生成完全随机的 RSA 密钥对 → 不同 Tag 构建出来的 APK 签名 SHA256 不一样 →
+      #   安装时会因「同包名签名不同」报「软件包与现有软件包存在冲突」，所有 RC 版本之间不能覆盖升级，只能卸载重装。
+      #   因此我们在 repo 中固化一份 debug keystore 的 base64：虽然 debug keystore 仅用于回退（非上架签名），
+      #   但只要签名证书稳定，用户从 rc23→rc24→rc25→正式版之间都能 OTA 式覆盖升级，不用每次清数据。
+      #
+      # 如果有正式 keystore（secrets.AICODE_KEYSTORE_BASE64），下面的 "Restore release keystore" 步骤会
+      # 用 AICODE_KEYSTORE_BASE64 在 app/rdeepcode.jks 生成一份不同的 keystore，并写 app/keystore.properties
+      # 指向它 → Gradle 的 signingConfigs.release 会优先生效 → 产物为正式签名（SHA256 另算但同样稳定）。
+      #
+      # 若 secrets 未配置（绝大多数测试/迭代场景）：Restore release keystore 跳过 → 本步骤写的
+      # ~/.android/debug.keystore 生效，alias=androiddebugkey / storePassword=android / keyPassword=android，
+      # APK 签名证书 SHA256 固定 = 7A:D5:EA:0E:3F:A9:6F:10:26:29:21:0C:9C:DB:AA:81:E3:CE:D4:9B:32:20:A5:21:7B:64:EC:1A:95:D2:FA:C8。
+      - name: Install fixed debug keystore (CI fallback signing — stable across runs)
+        env:
+          # 项目级固定 debug keystore 的 base64（keytool -genkeypair 一次性生成后永远不变）。
+          # 规格：RSA 2048 / SHA384withRSA / 有效期 10000 天
+          #       / CN=Android Debug, O=Android, C=US
+          #       / alias=androiddebugkey, storePassword=android, keyPassword=android
+          # 对应 APK 级签名证书 SHA256（keytool -printcert -jarfile *.apk 查看）：
+          #   7A:D5:EA:0E:3F:A9:6F:10:26:29:21:0C:9C:DB:AA:81:E3:CE:D4:9B:32:20:A5:21:7B:64:EC:1A:95:D2:FA:C8
+          FIXED_DEBUG_KS_B64: "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"
         run: |
           set -e
           echo "JAVA_HOME=$JAVA_HOME"
           "$JAVA_HOME/bin/java" -version
           mkdir -p ~/.android
-          if [[ ! -f ~/.android/debug.keystore ]]; then
-            "$JAVA_HOME/bin/keytool" -genkey -v -keystore ~/.android/debug.keystore \
-              -storepass android -alias androiddebugkey -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-            echo "debug keystore created at ~/.android/debug.keystore"
-            ls -lh ~/.android/debug.keystore
-          else
-            echo "debug keystore already exists, skip creation"
-          fi
-
+          # 直接用 base64 还原：保证跨 workflow run 同一个 keystore、同一个 RSA key
+          printf '%s' "$FIXED_DEBUG_KS_B64" | base64 -d > ~/.android/debug.keystore
+          chmod 600 ~/.android/debug.keystore
+          echo "✓ fixed debug keystore installed at ~/.android/debug.keystore"
+          ls -lh ~/.android/debug.keystore
+          # 完整性 & 指纹自检（任何篡改/损坏会立即暴露，避免后面 Gradle 报莫名签名错误）
+          "$JAVA_HOME/bin/keytool" -list -v -keystore ~/.android/debug.keystore -storepass android \
+            | grep -E "Alias name|Owner|SHA256" | head -6
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
