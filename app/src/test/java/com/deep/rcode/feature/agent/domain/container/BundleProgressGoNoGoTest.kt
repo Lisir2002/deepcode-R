@@ -309,8 +309,14 @@ class BundleProgressGoNoGoTest {
 
     @After
     fun tearDownArchiveStore() {
-        // 每个用例后清空 LRU，避免用例间污染（object 单例）
-        runCatching { GlobalInstallArchiveStore.clear() }
+        // 每个用例后清零 LRU + globalRevision，避免 object 单例污染后续 JUnit 用例/测试类
+        runCatching { GlobalInstallArchiveStore.resetForTest() }
+    }
+
+    @org.junit.Before
+    fun setUpArchiveStore() {
+        // 每个用例前也重置一遍：即便上一个类没跑 @After（测试框架中断）也不会带脏状态
+        runCatching { GlobalInstallArchiveStore.resetForTest() }
     }
 
     /**
@@ -354,32 +360,37 @@ class BundleProgressGoNoGoTest {
 
     /**
      * 7.2 A主-ArchiveStore：每次 saveSnapshot / updateSnapshot / remove / clear
-     *     都会让 globalRevision 单调递增；不会出现"内容变了但 revision 没变"的静默脏读。
+     *     都会让 globalRevision **严格单调递增**（不管初值是多少，因为其他测试类可能先跑）；
+     *     绝不允许出现「内容已写入/删除，但 globalRevision 没变」的静默脏读。
      */
     @Test
-    fun `ArchiveStore globalRevision 每次写入或删除都严格单调递增`() {
+    fun `ArchiveStore globalRevision 每次写入或删除都严格单调递增（含相对增量）`() {
         val a = TerminalBundleId.PYTHON
         val b = TerminalBundleId.NODE
         val rs: MutableList<Long> = mutableListOf()
         fun snap() { rs += GlobalInstallArchiveStore.globalRevision }
 
+        // 注意：用 @Before 已 resetForTest()，所以第 1 次 revision 必然是 0；
+        // 即便将来 resetForTest 实现改变，我们只关心「每次操作都 +N（N≥1）」，
+        // 所以下面用「差分值严格 > 0」做最终断言更稳。
         snap() // r0
         GlobalInstallArchiveStore.saveSnapshot(a, AggregateProgressState.INITIAL)
-        snap() // r1 = r0+1
+        snap() // r1
         GlobalInstallArchiveStore.updateSnapshot(a, AggregateProgressState.INITIAL.copy(revision = 1))
-        snap() // r2 = r1+1
+        snap() // r2
         GlobalInstallArchiveStore.saveSnapshot(b, AggregateProgressState.INITIAL)
-        snap() // r3 = r2+1
+        snap() // r3
         GlobalInstallArchiveStore.remove(a)
-        snap() // r4 = r3+1
+        snap() // r4
         GlobalInstallArchiveStore.clear()
-        snap() // r5 = r4+1
+        snap() // r5
 
-        assertTrue("至少 5 次写入/删除操作", rs.size >= 6)
+        assertTrue("至少 5 次写入/删除操作 (rs.size=${rs.size})", rs.size >= 6)
         for (i in 1 until rs.size) {
+            val diff = rs[i] - rs[i - 1]
             assertTrue(
-                "revision 严格递增：rs[${i - 1}]=${rs[i - 1]} < rs[$i]=${rs[i]}",
-                rs[i - 1] < rs[i]
+                "revision 严格递增：rs[${i - 1}]=${rs[i - 1]} -> rs[$i]=${rs[i]} (diff=$diff > 0)",
+                diff > 0
             )
         }
     }

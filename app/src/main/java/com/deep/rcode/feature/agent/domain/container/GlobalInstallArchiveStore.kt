@@ -108,4 +108,18 @@ object GlobalInstallArchiveStore {
         lruCache.remove(bundleId)
         bumpGlobalRevision()
     }
+
+    /**
+     * 仅测试专用：彻底重置单例状态（LRU 清空 + globalRevision 归零），
+     * 避免「跨 JUnit 用例、跨 JUnit 测试类」的 object 单例相互污染——
+     * CI 的 :app:testReleaseUnitTest 会串行执行所有 src/test，
+     * GlobalInstallArchiveStore 作为 JVM 级 object 只会加载一次，
+     * 前一个测试类塞进去的快照如果不清理，后一个测试类会读到"脏状态"。
+     */
+    @Synchronized
+    @androidx.annotation.VisibleForTesting(otherwise = androidx.annotation.VisibleForTesting.PRIVATE)
+    fun resetForTest() {
+        lruCache.evictAll()
+        _globalRevision = 0L
+    }
 }
