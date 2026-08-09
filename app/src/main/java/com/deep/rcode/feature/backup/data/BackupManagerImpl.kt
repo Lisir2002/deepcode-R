@@ -514,12 +514,23 @@ class BackupManagerImpl @Inject constructor(
         // 解密失败兜底：DB 中残留明文（历史数据），直接原样返回。
         val isPwd = authType.equals("PASSWORD", ignoreCase = true)
             || authType.equals("password", ignoreCase = true)
-        val resolvedAuthData: String = when {
-            isPwd -> runCatching { encryptor.decrypt(authData) }.getOrElse { authData }
-            else -> authData // PRIVATE_KEY: 路径本身是明文，不解密
+        val resolvedAuthData: String = if (isPwd) {
+            try {
+                encryptor.decrypt(authData)
+            } catch (_: Throwable) {
+                authData // 兼容旧数据：解密失败当作明文
+            }
+        } else {
+            authData // PRIVATE_KEY: 路径本身是明文，不解密
         }
-        val resolvedPassphrase: String? = passphrase?.takeIf { it.isNotEmpty() }?.let {
-            runCatching { encryptor.decrypt(it) }.getOrElse { it }
+        val resolvedPassphrase: String? = if (!passphrase.isNullOrBlank()) {
+            try {
+                encryptor.decrypt(passphrase)
+            } catch (_: Throwable) {
+                passphrase // 兼容旧数据：解密失败当作明文
+            }
+        } else {
+            null
         }
         return RemoteConnectionDto(
             id, name, protocol.name, host, port, username, authType, resolvedAuthData, resolvedPassphrase
@@ -532,11 +543,16 @@ class BackupManagerImpl @Inject constructor(
         //  - PRIVATE_KEY 类型：authData = 私钥路径（明文保持），passphrase 非空则加密
         val isPwd = authType.equals("PASSWORD", ignoreCase = true)
             || authType.equals("password", ignoreCase = true)
-        val encryptedAuthData = when {
-            isPwd && authData.isNotEmpty() -> encryptor.encrypt(authData)
-            else -> authData // PRIVATE_KEY 路径无需加密
+        val encryptedAuthData: String = if (isPwd && authData.isNotEmpty()) {
+            encryptor.encrypt(authData)
+        } else {
+            authData // PRIVATE_KEY 路径无需加密
         }
-        val encryptedPassphrase = passphrase?.takeIf { it.isNotEmpty() }?.let { encryptor.encrypt(it) }
+        val encryptedPassphrase: String? = if (!passphrase.isNullOrBlank()) {
+            encryptor.encrypt(passphrase)
+        } else {
+            null
+        }
         return RemoteConnectionEntity(
             id, name, RemoteProtocol.valueOf(protocol), host, port, username, authType, encryptedAuthData, encryptedPassphrase
         )
