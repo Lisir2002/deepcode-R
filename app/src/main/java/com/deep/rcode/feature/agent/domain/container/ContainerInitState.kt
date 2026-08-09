@@ -44,9 +44,13 @@ sealed interface ContainerInitState {
         val line: String? = null
     ) : ContainerInitState
 
-    /** 卸载单个 Bundle 中。 */
+    /**
+     * 卸载单个 Bundle / 自定义包中。
+     *
+     * @param bundleId 正在卸的 bundle；null 表示正在卸载自定义 apk 包（与 BundleInstalling.bundleId 语义对齐）。
+     */
     data class BundleUninstalling(
-        val bundleId: TerminalBundleId
+        val bundleId: TerminalBundleId?
     ) : ContainerInitState
 
     /** 初始化失败，[reason] 为原因。 */
