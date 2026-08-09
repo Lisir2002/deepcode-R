@@ -152,11 +152,13 @@ class TerminalSettingsViewModel @Inject constructor(
                 }
             }
         }
-        // 启动时先填一次（如果 rootfs 早已就位），避免冷启动卡片永远 0M，直到下一次状态跳变
+        // 启动时先填一次（如果 rootfs 早已就位），避免冷启动卡片永远 0M，直到下一次状态跳变。
+        // 注：containerEngine.containerInstaller / currentProfile 都是 private，这里用「rootfs 目录存在」
+        // 作为容器物理已安装的代理判定——与 ContainerInstaller.isInstalledFor 的核心条件一致。
         viewModelScope.launch {
-            val installed = containerInstalled.replayCache.firstOrNull()
-                ?: containerEngine.containerInstaller.isInstalledFor(containerEngine.currentProfile)
-            if (installed) {
+            val containerInstalledCached = containerInstalled.replayCache.firstOrNull()
+                ?: File(appContext.filesDir, "rootfs").isDirectory
+            if (containerInstalledCached) {
                 _storageUsedMb.value = computeRootfsSizeMb()
             }
         }
@@ -185,37 +187,11 @@ class TerminalSettingsViewModel @Inject constructor(
         }
     }
 
-    /** 刷新 rootfs 占用（MB）。 */
-    private fun refreshStorageUsed() {
-        val dir = runCatching {
-            com.deep.rcode.feature.agent.domain.container.ContainerInstaller::class.java.getDeclaredMethod("getRootfsDir").apply {
-                isAccessible = true
-            }.invoke(null) as java.io.File?
-        }.getOrNull()
-        // 更稳妥：直接通过 containerInstaller 拿 rootfsDir（公开属性我们用反射兜底失败就跳过）。
-        val realDir = runCatching {
-            val f = containerEngine.javaClass.getDeclaredField("containerInstaller")
-            f.isAccessible = true
-            val ci = f.get(containerEngine) as com.deep.rcode.feature.agent.domain.container.ContainerInstaller
-            ci.rootfsDir
-        }.getOrNull()
-        val d = realDir ?: dir
-        val sizeBytes = if (d != null && d.exists()) walkDirSize(d) else 0L
-        (storageUsedMb as kotlinx.coroutines.flow.MutableStateFlow).value = sizeBytes / 1024L / 1024L
-    }
-
-    private fun walkDirSize(dir: java.io.File): Long {
-        var total = 0L
-        if (dir.isFile) return dir.length()
-        val stack = ArrayDeque<java.io.File>().apply { add(dir) }
-        while (stack.isNotEmpty()) {
-            val cur = stack.removeLast()
-            val ch = cur.listFiles() ?: continue
-            for (f in ch) {
-                if (f.isFile) total += f.length() else stack.add(f)
-            }
+    /** 刷新 rootfs 占用（MB）。UI "刷新"按钮触发。走 computeRootfsSizeMb，不反射访问 private 字段 */
+    fun refreshStorageUsed() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _storageUsedMb.value = computeRootfsSizeMb()
         }
-        return total
     }
 
     // ─────────── 动作：容器区 ──────────────────────────────────────
