@@ -262,68 +262,6 @@ class TerminalViewModel @Inject constructor(
 
     fun consumeConfirmAction() { _confirmAction.value = null }
 
-    // ── 长按浮动菜单（复制/粘贴/剪切/选择/浏览器打开） ────────────
-
-    /** 长按菜单锚点：tabId + 像素坐标（px）+ 当前选中文字（如果已经选中）。
-     *  Compose 层根据 showFloatingMenu 时的 anchorPx 在屏幕上定位 FloatingCard。 */
-    data class FloatingMenuState(
-        val tabId: String,
-        val anchorXPx: Float,
-        val anchorYPx: Float,
-        val hasSelection: Boolean,
-        val selectionText: String,
-        val selectionStartCol: Int,
-        val selectionStartRow: Int,
-        val selectionEndCol: Int,
-        val selectionEndRow: Int,
-        val cutEligibleBytes: Int,
-        val detectedUrl: String?
-    )
-
-    private val _floatingMenu = MutableStateFlow<FloatingMenuState?>(null)
-    val floatingMenu: StateFlow<FloatingMenuState?> = _floatingMenu.asStateFlow()
-
-    /** 触发浮动菜单（由 TerminalView 的 onLongPress 回调调用，
-     *  参数包含已通过 Termux API 计算的选中/选区信息。 */
-    fun showFloatingMenu(state: FloatingMenuState) { _floatingMenu.value = state }
-
-    fun dismissFloatingMenu() { _floatingMenu.value = null }
-
-    /** 用户点击"选择" → 开始拖动选区（通过 startTextSelectionMode）。 */
-    var onRequestStartSelection: ((tabId: String) -> Unit)? = null
-    var onRequestStopSelection: ((tabId: String) -> Unit)? = null
-    fun startSelection(tabId: String) { onRequestStartSelection?.invoke(tabId) }
-    fun stopSelection(tabId: String) { onRequestStopSelection?.invoke(tabId) }
-
-    /** "剪切"请求：先复制选中文本，再向 session 写入 N 个 \x7f (DEL) 完成删除。
-     *  执行权交给 Compose 层（它持有 view/session），ViewModel 只负责关闭菜单。 */
-    var onPerformCut: ((tabId: String, bytesBack: Int, selectedText: String) -> Unit)? = null
-    fun performCut(tabId: String, bytesBack: Int, selectedText: String) {
-        onPerformCut?.invoke(tabId, bytesBack, selectedText)
-        _floatingMenu.value = null
-    }
-
-    /** "复制"请求（同上，仅复制不删）。 */
-    var onPerformCopy: ((text: String) -> Unit)? = null
-    fun performCopy(text: String) {
-        onPerformCopy?.invoke(text)
-        _floatingMenu.value = null
-    }
-
-    /** "粘贴"。 */
-    var onPerformPaste: ((tabId: String) -> Unit)? = null
-    fun performPaste(tabId: String) {
-        onPerformPaste?.invoke(tabId)
-        _floatingMenu.value = null
-    }
-
-    /** "浏览器打开"：把检测到的 URL 通过 Intent 扔给系统。 */
-    var onOpenUrl: ((String) -> Unit)? = null
-    fun openUrl(url: String) {
-        onOpenUrl?.invoke(url)
-        _floatingMenu.value = null
-    }
-
     /** 请求关闭标签（有运行中进程时弹确认） */
     fun requestCloseTab(tabId: String) {
         val tab = tabs.value.firstOrNull { it.id == tabId } ?: return

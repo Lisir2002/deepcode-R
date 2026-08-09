@@ -7,7 +7,6 @@ import android.view.inputmethod.InputMethodManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -145,7 +144,6 @@ fun TerminalScreen(
     var ctrlHintVisible by remember { mutableStateOf(true) }
     val ctrlHintShown by viewModel.ctrlHintShown.collectAsStateWithLifecycle()
     val confirmAction by viewModel.confirmAction.collectAsStateWithLifecycle()
-    val floatingMenu by viewModel.floatingMenu.collectAsStateWithLifecycle()
 
     // 终端颜色：当前主题调色板 + 壳 UI 皮肤适配器（Tab/Banner/Keys 全部从这里取色）
     val palette = rememberTerminalPalette()
@@ -291,11 +289,6 @@ fun TerminalScreen(
                         Box(modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            // 点击空白区关闭浮层（不消费点击到 TerminalView，避免误触）
-                            .then(if (floatingMenu != null) Modifier.clickable(
-                                indication = null,
-                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                            ) { viewModel.dismissFloatingMenu() } else Modifier)
                         ) {
                             val active = tabs.firstOrNull { it.id == activeTabId }
                             if (active == null) {
@@ -311,12 +304,6 @@ fun TerminalScreen(
                                         viewModel = viewModel,
                                         fontSizeSp = fontSizeSp
                                     )
-                                }
-                            }
-                            // 长按浮动菜单卡片
-                            floatingMenu?.let { menuState ->
-                                with(this@Box as androidx.compose.foundation.layout.BoxScope) {
-                                    TerminalFloatingCard(state = menuState, viewModel = viewModel)
                                 }
                             }
                             // 搜索浮层（BoxScope 扩展函数，可在此调用 .align）

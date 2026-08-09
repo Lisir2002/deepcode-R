@@ -131,10 +131,6 @@ class AppTerminalViewClient(
     private var scaleListener: ((Float) -> Unit)? = null
     fun setScaleListener(l: ((Float) -> Unit)?) { scaleListener = l }
 
-    // ── 长按回调：像素坐标 (xPx, yPx)，给 Compose 层弹菜单 ─────
-    private var longPressListener: ((xPx: Float, yPx: Float) -> Unit)? = null
-    fun setLongPressListener(l: ((Float, Float) -> Unit)?) { longPressListener = l }
-
     // 缩放：返回 1.0 表示不做「默认缩放处理」，同时把缩放量交给外部档位化。
     override fun onScale(scale: Float): Float {
         scaleListener?.invoke(scale)
@@ -157,11 +153,7 @@ class AppTerminalViewClient(
     override fun onKeyDown(keyCode: Int, e: KeyEvent?, session: TerminalSession?): Boolean = false
     override fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean = false
 
-    override fun onLongPress(event: MotionEvent?): Boolean {
-        val e = event ?: return false
-        longPressListener?.invoke(e.x, e.y)
-        return true  // 消费掉，不进入 Termux 默认 copyMode（我们有更完善的 UI 菜单）
-    }
+    override fun onLongPress(event: MotionEvent?): Boolean = false
 
     override fun readControlKey(): Boolean = modifiers.ctrl
     override fun readAltKey(): Boolean = modifiers.alt
