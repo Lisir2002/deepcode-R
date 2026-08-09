@@ -249,33 +249,33 @@ fun TerminalScreen(
                 is TerminalViewModel.PrepareState.Ready -> {
                     @Suppress("UNUSED_EXPRESSION") revision
 
-                    // 用终端 palette.containerBg 作为 Ready 区块统一底色，
-                    // 避免 TabBar ↔ TerminalSurface 之间出现「白条」（Scaffold 底色透出）。
+                    // ========== 布局分层（按你的规则） ==========
+                    // 1) Tab 以上（Banner + 周围空白）→ 完全跟随程序主题（Scaffold surface）
+                    //    不管终端内容选了「白底黑字」，这里不会被终端底色污染。
+                    // 2) Tab 及以下（TabBar / 细分隔线 / TerminalSurface 内容区 /
+                    //    Tab→Terminal 的交界）→ 用 palette.containerBg 统一包裹，
+                    //    这一部分才会尊重终端配色三档（跟随程序/黑底/白底）；
+                    //    TabBar 属于外壳 UI，它的颜色走 skin.terminalSurface
+                    //    （本来就跟随程序 MaterialTheme），但它放在 palette 容器里
+                    //    是为了避免 Tab↔Terminal 缝里漏白条。
+                    val banner by viewModel.currentBanner.collectAsStateWithLifecycle()
+                    banner?.let { b ->
+                        TerminalFirstRunBanner(
+                            banner = b,
+                            skin = skin,
+                            onGoSettings = onNavigateToSettings,
+                            onInstallRecommended = { viewModel.installAiRecommended() },
+                            onInitContainer = { viewModel.prepare() },
+                            onDismiss = viewModel::dismissFirstRunBanner
+                        )
+                    }
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
                             .background(palette.containerBg)
                     ) {
-                        // 首屏 Banner：容器未装 / Python 未装
-                        //  注意：Banner 在终端内容底色 palette.containerBg 这一块里展示，
-                        //  所以卡片背景也必须等于 palette.containerBg，不能用外壳的
-                        //  MaterialTheme.colorScheme.primaryContainer——否则用户终端选
-                        //  「白底黑字」但外壳是暗主题时，Banner 周围会出现一大块
-                        //  「深蓝卡片 + 白边 + 白内容区」的三层断层（你现在看到的 bug）。
-                        val banner by viewModel.currentBanner.collectAsStateWithLifecycle()
-                        banner?.let { b ->
-                            TerminalFirstRunBanner(
-                                banner = b,
-                                skin = skin,
-                                palette = palette,
-                                onGoSettings = onNavigateToSettings,
-                                onInstallRecommended = { viewModel.installAiRecommended() },
-                                onInitContainer = { viewModel.prepare() },
-                                onDismiss = viewModel::dismissFirstRunBanner
-                            )
-                        }
-
                         TabBar(
                             skin = skin,
                             tabs = tabs,
@@ -467,7 +467,6 @@ private fun performClearScreen(tabs: List<TerminalTab>, activeId: String?, vm: T
 private fun TerminalFirstRunBanner(
     banner: TerminalViewModel.BannerType,
     skin: TerminalSkinSnapshot,
-    palette: TerminalPalette,
     onGoSettings: () -> Unit,
     onInstallRecommended: () -> Unit,
     onInitContainer: () -> Unit,
@@ -493,36 +492,26 @@ private fun TerminalFirstRunBanner(
         }
     }
 
-    // Banner 新规范（消除「终端白底 + Banner 深蓝外壳 + 白边」三层断层）：
-    //  ① Banner 卡片背景 = palette.containerBg（与下方终端内容区同色，视觉融为一体）
-    //  ② 提示卡片靠「accent 0.08 alpha 大圆角背景块 + 1dp accent 描边」表达提示层级，
-    //     而不是 primaryContainer 整块换色（会和终端内容底色冲突）
-    //  ③ 文字主色 = palette.defaultForeground（终端 fg，终端是黑底就白字、白底就黑字）
-    //     「强调点」用 accentColor（外壳 tertiary/secondary，来自 MaterialTheme，
-    //     对比度：终端黑底→白字→accent(secondary)=#7DD3FC(蓝)≥5.8:1 白底黑字→#0284C7≥5.2:1）
-    val cardBg = palette.containerBg
-    val textFg = palette.defaultForeground
-    val textFgDim = palette.defaultForeground.copy(alpha = 0.80f)
-    val accentSoftBg = accentColor.copy(alpha = 0.08f)
-    val accentStroke = accentColor.copy(alpha = 0.55f)
+    // Tab 以上的「提示框」完全属于外壳 UI：
+    //  ① 卡片背景 = MaterialTheme.colorScheme.primaryContainer（程序主题）
+    //  ② 文字 = onPrimaryContainer（自动 WCAG ≥ 4.5:1）
+    //  ③ 强调点（小圆点 / 描边）= accentColor × 合适透明度
+    //  这样不管终端内容底色选了什么，Banner 本身 + 周围 padding
+    //  都是统一的 MaterialTheme.surface / primaryContainer 外壳色。
+    val bannerBorderColor = accentColor.copy(alpha = 0.55f)
     Card(
         modifier = Modifier
             .padding(horizontal = Spacing.md, vertical = Spacing.sm)
             .fillMaxWidth()
-            .border(1.dp, accentStroke, RoundedCornerShape(Radius.md)),
+            .border(1.dp, bannerBorderColor, RoundedCornerShape(Radius.md)),
         colors = CardDefaults.cardColors(
-            containerColor = cardBg
+            containerColor = MaterialTheme.colorScheme.primaryContainer
         ),
         shape = RoundedCornerShape(Radius.md),
         elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z0)
     ) {
-        // 「重点提示背景层」：放在 Row 上方，让标题/说明整片区与下方按钮区分层
         Column(modifier = Modifier.padding(TerminalLayout.bannerInnerPadding)) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(accentSoftBg, RoundedCornerShape(Radius.sm))
-                    .padding(Spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
@@ -534,7 +523,7 @@ private fun TerminalFirstRunBanner(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = textFg,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
@@ -546,7 +535,7 @@ private fun TerminalFirstRunBanner(
                             .align(Alignment.CenterVertically),
                         contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 4.dp),
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = textFgDim,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     ) {
                         Text(
@@ -556,23 +545,21 @@ private fun TerminalFirstRunBanner(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(Spacing.sm))
+            Spacer(modifier = Modifier.height(Spacing.xs))
             Text(
                 text = desc,
                 style = MaterialTheme.typography.bodySmall,
-                color = textFgDim
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
             )
             Spacer(modifier = Modifier.height(Spacing.sm))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 when (banner) {
                     TerminalViewModel.BannerType.ContainerNotInstalled -> {
-                        // 主按钮：初始化容器
                         PrimaryButton(
                             onClick = onInitContainer,
                             icon = FeatherIcons.Plus,
                             text = "初始化环境"
                         )
-                        // 次按钮：跳设置
                         SecondaryButton(
                             onClick = onGoSettings,
                             icon = FeatherIcons.Settings,
@@ -580,13 +567,11 @@ private fun TerminalFirstRunBanner(
                         )
                     }
                     TerminalViewModel.BannerType.PythonMissing -> {
-                        // 主按钮：立即装 AI 推荐组合
                         PrimaryButton(
                             onClick = onInstallRecommended,
                             icon = FeatherIcons.Cpu,
                             text = "立即装 Python"
                         )
-                        // 次按钮：跳设置
                         SecondaryButton(
                             onClick = onGoSettings,
                             icon = FeatherIcons.Settings,
@@ -600,7 +585,7 @@ private fun TerminalFirstRunBanner(
                 Text(
                     "（当前会话使用原生 Android /system/bin/sh 作为 fallback，基础命令可用，但无法安装 apk 包。）",
                     style = MaterialTheme.typography.bodySmall,
-                    color = textFgDim
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.80f)
                 )
             }
         }

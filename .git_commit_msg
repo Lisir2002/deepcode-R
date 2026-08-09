@@ -1,15 +1,18 @@
-fix(terminal): 首屏提示 Banner 与终端内容同底色，不再用外壳 primaryContainer 造成深蓝卡片白边断层
+fix(terminal): Banner/Tab 以上整块一律跟随程序主题（不再受终端白底黑字设置影响）
 
-用户指出截图里「AI 代码运行需要 Python」Banner 周围有白边，且 Banner
-本身是深蓝色，看起来像外壳 UI 乱插到终端内容区里。根因是
-TerminalFirstRunBanner 的 Card.containerColor =
-MaterialTheme.colorScheme.primaryContainer（跟随程序外壳主题），
-而它的父容器 Column 背景是 palette.containerBg（终端底色，可能是
-用户在终端设置里选的白底黑字），两边拼在一起就是你看到的
-「Banner 深蓝 + 卡片四周露出终端白底 8dp 的白边」。
+用户批评设计思路：「提示框那里的不管是提示框还是周围区域，应该跟随程序
+主题懂不」——之前我把 Banner + TabBar + Terminal 全部塞进同一个
+palette.containerBg Column，导致终端选「白底黑字」时，程序是暗主题的
+情况下，Banner 周围 8dp padding 竟然透出终端白底色（截图里的断层）。
 
-修复：
-1. Card.containerColor = palette.containerBg（与终端内容完全融为一体）
-2. 文字颜色用 palette.defaultForeground（黑底白字/白底黑字都正确）
-3. 提示层级靠「accentColor*0.08 标题软底 + accentColor*0.55 1dp 描边」
-   来区分，对比度仍 ≥ 4.5:1（暗主题 secondary=7DD3FC / 亮主题 0284C7）
+按用户规则重排 Layout 分层：
+1) Tab 以上（Banner + 周围 padding + 空白间距）→ 放在 Scaffold.surface
+   里，100% 跟随程序主题（通过 MaterialTheme.colorScheme）；
+   Card.containerColor = primaryContainer / onPrimaryContainer，
+   周围 padding 露出的就是 Scaffold surface（程序暗就是深蓝、程序亮就是浅），
+   与终端选择彻底解耦。
+2) Tab 及以下（TabBar / 1dp 分隔线 / TerminalSurface 内容区 / 搜索浮层 /
+   Ctrl 气泡）→ 仍然包在 palette.containerBg Column 里，保证 Tab↔Terminal
+   之间无白条；TabBar/ExtraKeys/分隔线 本就走 skin + MaterialTheme，
+   「必然跟随程序」；仅 TerminalSurface 的内部颜色（fg/bg/cursor/256）
+   才会受终端配色三档（跟随程序/黑底白字/白底黑字）影响。
