@@ -66,6 +66,74 @@
 3. **真机装 rc 包**，至少跑通 AI 对话 + 终端 + 容器启动三条主线。
 4. 有问题 -> 从该 RC Tag 拉 `hotfix/xxx` 分支修复（**勿从最新 `main` 拉**，否则会把已合入的未发版功能带进修复包）-> 升 rc 序号打 Tag（`v1.7.0-rc2`）推送重发 -> 将修复合回 `main` 并推送 -> 删除 hotfix 分支；无问题 -> 直接打正式 Tag（`v1.7.0`）推远端转正。
 
+## 云端构建与实时监控自动化
+
+Tag 推送到 GitHub 后，由 `.github/workflows/android-release.yml` 自动接管构建、签名、发布全流程。AI / 维护者必须能通过 GitHub API **实时监控构建进度**并**自动校验产物**。
+
+### 触发方式
+
+- **自动触发**：`git push origin v0.1.0-rcN` / `git push origin v0.1.0`，CI 接收 `v*` tag push 事件后自动启动。
+- **手动触发**（仅测试用）：GitHub Actions 页面 → `android-release.yml` → Run workflow（workflow_dispatch），versionName = `manual-<run_number>`，**不作为正式发版**。
+
+### CI 全流程（单 job `build`，6 个逻辑阶段）
+
+> workflow 实际是**单 job 多 step**结构（jobs.build），下述 6 个阶段是按职责划分的逻辑阶段，对应 step 序列。
+
+1. **variables** → `Display release tag info` + `Verify versionCode monotonic`（versionCode 单调递增校验）+ `Determine release name`（手动触发用 `manual-<run_number>`）+ `Determine prerelease flag`（tag 含 `-rc/-dev/-beta/-alpha` 后缀自动标记 prerelease）
+2. **build** → `:app:testReleaseUnitTest`（发版质量门禁）→ `:app:assembleRelease` → `Restore release keystore`（还原 `AICODE_KEYSTORE_BASE64` 到 `app/rdeepcode.jks`）→ `Generate keystore.properties`（用 4 个签名 secrets 生成临时 `keystore.properties`）→ **正式签名**构建 APK 到 `app/build/outputs/apk/release/app-release.apk` → `Rename APK` 重命名为 `dist/rdeepcode-arm64-<tag>.apk`
+3. **upload-mapping** → `Upload R8 mapping`（`actions/upload-artifact@v4`，artifact 名 `r8-mapping-<tag>`，90 天保留，`if-no-files-found: ignore` 不阻塞）
+4. **create-release** → `Generate changelog from git log` + `Create GitHub Release & Upload assets`（`softprops/action-gh-release@v2`，prerelease 取决于 tag 是否含预发布后缀）
+5. **upload-apk** → 与 create-release 同 step 完成（`files: dist/rdeepcode-arm64-*.apk` 挂到 Release Assets）
+6. **summary** → `Write download URLs to Run Summary`（写入 Tag / Prerelease / APK 文件名 / SHA256 / Release 页面 / mapping artifact 名到 `$GITHUB_STEP_SUMMARY`）
+
+### 实时监控命令（GitHub API）
+
+```bash
+# 1. 查询最新 run 状态（tag 触发）
+curl -s -u "<owner>:<token>" \
+  "https://api.github.com/repos/<owner>/<repo>/actions/workflows/android-release.yml/runs?per_page=5" \
+  | python3 -c "import sys,json;[print(r['id'],r['status'],r.get('conclusion','-'),r['head_branch']) for r in json.load(sys.stdin)['workflow_runs']]"
+
+# 2. 查询指定 run 的每个 job 进度
+curl -s -u "<owner>:<token>" \
+  "https://api.github.com/repos/<owner>/<repo>/actions/runs/<run_id>/jobs" \
+  | python3 -c "import sys,json;[print(j['name'],j['status'],j.get('conclusion','-')) for j in json.load(sys.stdin)['jobs']]"
+
+# 3. 查询 Release 是否已创建 + APK asset
+curl -s -u "<owner>:<token>" \
+  "https://api.github.com/repos/<owner>/<repo>/releases/tags/<tag>" \
+  | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('tag_name'),d.get('prerelease'));[print(a['name'],a['size'],a['browser_download_url']) for a in d.get('assets',[])]"
+```
+
+### 产物校验清单（构建完成后必跑）
+
+1. **下载 APK** → `curl -sL -u "<owner>:<token>" -o rdeepcode-arm64-<tag>.apk "<browser_download_url>"`
+2. **ABI 校验** → `unzip -l <apk> | grep lib/` 必须只有 `lib/arm64-v8a/*.so`，无 x86_64
+3. **签名校验** → `keytool -printcert -jarfile <apk>` → Owner 必须为正式签名（非 `CN=Android Debug`）
+4. **SHA256** → `sha256sum <apk>` 记录指纹
+5. **Release 页面** → https://github.com/Lisir2002/deepcode-R/releases/tag/<tag>
+
+### 签名 Secrets 前置条件（构建正式签名 APK 必须配置）
+
+仓库 `Settings → Secrets and variables → Actions` 必须配置以下 4 个 secrets：
+
+| Secret 名称 | 取值 |
+|---|---|
+| `AICODE_KEYSTORE_BASE64` | `app/rdeepcode.jks` 文件的 base64 编码 |
+| `AICODE_KEYSTORE_PASSWORD` | keystore 的 storePassword |
+| `AICODE_KEY_ALIAS` | 签名 key 的 keyAlias |
+| `AICODE_KEY_PASSWORD` | key 的 keyPassword |
+
+**验证 secrets 是否存在**：
+```bash
+curl -s -u "<owner>:<token>" \
+  "https://api.github.com/repos/<owner>/<repo>/actions/secrets?per_page=30" \
+  | python3 -c "import sys,json;d=json.load(sys.stdin);print('secrets 总数:',d.get('total_count',0));[print(' -',s['name']) for s in d.get('secrets',[])]"
+```
+
+> **⚠️ 若 secrets 总数 = 0 或缺少任一**：CI 构建的 APK 会**静默回退到 debug keystore 签名**（`CN=Android Debug`），产物不可上架、不可作为正式签名版本分发。构建前必须用上述 API 确认 4 个 secrets 全部存在。
+
+
 ## 构建与运行
 
 本项目是 Android 应用，使用 Kotlin + Jetpack Compose + Hilt 构建，Gradle 为构建系统。

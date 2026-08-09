@@ -559,6 +559,11 @@ foregroundServiceType = "dataSync"
 5. **push 前**：`./gradlew :app:testReleaseUnitTest`（14 个单测，release classpath 与 CI 同款）
 6. **RC 发版判定**：新功能/行为变化/构建链路/容器镜像 → 必发 RC；纯文档/typo → 可直接正式
 7. **发版步骤**：main 打 tag v0.1.0-rc1 → CI 出 APK → 真机测 → 有问题从 RC tag 拉 hotfix（不从 main 防止夹带未发版功能）→ 升 rc 序号 → 合回 main → 打正式 tag
+8. **云端构建监控与产物校验**（详见 AGENTS.md §云端构建与实时监控自动化）：
+   - Tag 推送后通过 GitHub API 实时轮询 `workflow_runs` + `jobs` 直到 `conclusion=success/failure`
+   - 构建完成后必须校验：① 下载 APK → ② `unzip -l` 确认只有 `lib/arm64-v8a/*.so` → ③ `keytool -printcert` 确认正式签名（非 `CN=Android Debug`）→ ④ `sha256sum` 记录指纹
+   - **签名 Secrets 前置条件**：仓库必须配置 4 个 secrets（`AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`）；缺失任一会静默回退到 debug keystore 签名，产物不可上架
+   - **验证 secrets 存在性**：`GET /repos/{owner}/{repo}/actions/secrets` 返回 `total_count` 必须 ≥ 4
 
 ---
 
@@ -610,6 +615,7 @@ foregroundServiceType = "dataSync"
 | 改 Terminal Bundle 清单 / KeepaliveService 行为 / 前台服务类型 / 后台命令通知策略 | 第 9 节终端系统 |
 | 加 Manifest 权限 / 加 ProGuard keep 规则 / 加或删单元测试文件 | 第 11、12、13 节 |
 | 变更任何设计决策 / 引入新的技术权衡 / 调整 targetSdk / ABI 打包策略 / 构建配置 | 第 1.2 节决策矩阵 |
+| 变更 CI workflow / 签名 secrets / 监控命令 / 产物校验流程 / Release 命名规则 | 第 14 节第 8 条 + AGENTS.md §云端构建与实时监控自动化 |
 
 ### 16.2 每次提交代码前的"同步文档"检查清单
 

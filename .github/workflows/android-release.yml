@@ -2,7 +2,7 @@ name: Android Release
 
 # 打 Tag（如 v1.0.0）时触发：构建真机单架构 Release APK（arm64-v8a only）
 #   - 发布产物显式带 arm64 标签，避免用户误装到 x86_64 模拟器（安装阶段即失败，不会运行期崩溃）。
-#   - x86_64 模拟器如需开发使用，本地临时切回 abiFilters=[arm64-v8a,x86_64] 或 sourceSets 挂 _x86Assets 即可。
+#   - x86_64 模拟器如需开发使用，本地临时切回 abiFilters=[arm64-v8a,x86_64] 即可（_x86Assets 资产已按「只支持真机」设计决策删除，仓库不再保留 x86 容器备份）。
 # 创建 GitHub Release 并把 APK 作为资产发布。
 on:
   push:
@@ -171,6 +171,17 @@ jobs:
             exit 1
           fi
 
+      # 上传 R8 mapping.txt 作为 Run artifact（仅 release build 才会产出）。
+      # 用于线上 crash stack 反混淆与版本回溯。文件不存在时跳过，不阻塞流程。
+      - name: Upload R8 mapping (Run artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping-${{ github.ref_name }}
+          path: app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: ignore
+          retention-days: 90
+
       - name: Determine release name
         id: release
         run: |
@@ -225,6 +236,7 @@ jobs:
 
       - name: Create GitHub Release & Upload assets
         uses: softprops/action-gh-release@v2
+        id: gh_release
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: Release ${{ steps.release.outputs.tag }}
@@ -235,3 +247,24 @@ jobs:
             dist/rdeepcode-arm64-*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 把版本号、prerelease 标志、APK 下载链接、Release 页面写入 Run Summary，
+      # 方便 AI / 维护者通过 GitHub API 或 Actions 页面一眼定位产物（与 AGENTS.md §云端构建与实时监控自动化 对齐）。
+      - name: Write download URLs to Run Summary
+        if: always()
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          IS_PRERELEASE: ${{ steps.prerelease.outputs.is_prerelease }}
+          REPO: ${{ github.repository }}
+        run: |
+          apk="dist/rdeepcode-arm64-${TAG}.apk"
+          sha256="$(sha256sum "$apk" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
+          {
+            echo "## R-DeepCode Release — ${TAG}"
+            echo ""
+            echo "- **Prerelease**: ${IS_PRERELEASE}"
+            echo "- **APK**: \`rdeepcode-arm64-${TAG}.apk\`"
+            echo "- **SHA256**: \`${sha256}\`"
+            echo "- **Release page**: https://github.com/${REPO}/releases/tag/${TAG}"
+            echo "- **Artifact**: r8-mapping-${TAG} (Run artifact, 90d retention)"
+          } >> "$GITHUB_STEP_SUMMARY"

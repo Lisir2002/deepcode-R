@@ -34,6 +34,8 @@ design/
 
 # Release APKs
 release/*.apk
+# Local release artifact staging (rename/copy destination before upload)
+build-dist/
 
 # Local dev tool config
 mise.toml

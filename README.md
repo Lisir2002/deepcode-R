@@ -116,6 +116,15 @@ keyPassword=your_key_password
 ./gradlew :app:testDebugUnitTest      # Debug classpath 下单测
 ```
 
+### 云端构建（GitHub Actions 自动发版）
+
+发版走 Tag 驱动：在 `main` 节点上打 `v*` Tag 推送（如 `git push origin v0.1.0-rc1` / `v0.1.0`），由 [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) 自动接管 → 单测 → `assembleRelease` → 正式签名 → 上传 R8 mapping → 创建 GitHub Release → 挂载 `rdeepcode-arm64-<tag>.apk` → 写入 Run Summary。RC Tag（含 `-rc`）自动标记为 prerelease。
+
+- **正式签名前置条件**：仓库 `Settings → Secrets → Actions` 必须配置 4 个 secrets —— `AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`。缺失任一会**静默回退到 debug keystore 签名**，产物不可上架。
+- **实时监控与产物校验**（Tag 推送后必跑）：GitHub API 轮询 `workflow_runs` + `jobs` 直至 `conclusion` 落定 → 下载 APK → `unzip -l` 确认仅 `lib/arm64-v8a/*.so` → `keytool -printcert` 确认非 `CN=Android Debug` → `sha256sum` 记录指纹。
+- **完整命令、CI 6 个 job 详解、签名 secrets 验证 API**：见 [AGENTS.md §云端构建与实时监控自动化](./AGENTS.md#云端构建与实时监控自动化)。
+- **Release 页面**：https://github.com/Lisir2002/deepcode-R/releases
+
 ## 项目结构
 
 ```

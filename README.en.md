@@ -117,6 +117,15 @@ keyPassword=your_key_password
 ./gradlew :app:testDebugUnitTest
 ```
 
+### Cloud build (GitHub Actions release automation)
+
+Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push origin v0.1.0-rc1` / `v0.1.0`) and [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) takes over automatically → unit tests → `assembleRelease` → production signing → upload R8 mapping → create GitHub Release → attach `rdeepcode-arm64-<tag>.apk` → write Run Summary. RC tags (containing `-rc`) are auto-marked as prerelease.
+
+- **Production-signing prerequisite**: the repository `Settings → Secrets → Actions` must define 4 secrets — `AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`. Missing any one silently falls back to the debug keystore, and the artifact cannot be published.
+- **Real-time monitoring & artifact verification** (mandatory after pushing a tag): poll `workflow_runs` + `jobs` via the GitHub API until `conclusion` settles → download the APK → `unzip -l` to confirm only `lib/arm64-v8a/*.so` → `keytool -printcert` to confirm it is not `CN=Android Debug` → `sha256sum` to record the fingerprint.
+- **Full commands, the 6 CI jobs, and the signing-secrets verification API**: see [AGENTS.md § Cloud build & real-time monitoring automation](./AGENTS.md#云端构建与实时监控自动化).
+- **Release page**: https://github.com/Lisir2002/deepcode-R/releases
+
 ## Project Structure
 
 ```
