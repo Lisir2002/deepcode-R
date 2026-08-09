@@ -320,42 +320,48 @@ class BundleProgressGoNoGoTest {
     }
 
     /**
-     * 7.1 A主-ArchiveStore：saveSnapshot → getSnapshot 往返一致；
-     *     LRU 容量=10 时，塞 11 个不同 bundle，最早的 1 个被淘汰。
+     * 7.1 A主-ArchiveStore：
+     *   a) saveSnapshot → getSnapshot 往返一致（revision 保留）；
+     *   b) TerminalBundleId 只有 6 个枚举（LRU MAX_BUNDLES=10），
+     *      即便「对全部 6 个 save 再 save」也不会 size 膨胀（最多 6）；
+     *   c) remove(bid) 后 hasSnapshot=false / getSnapshot=null；
+     *   d) clear() 后 size=0。
      */
     @Test
-    fun `ArchiveStore 读回一致 + LRU 容量上限 10 时 第 11 个入淘汰最早入`() {
+    fun `ArchiveStore 读回一致 save6次 size≤6 remove后消失 clear后变空`() {
         val allIds = TerminalBundleId.entries
-        // 先塞 3 个并验证存在
-        val first3 = allIds.take(3)
-        first3.forEachIndexed { i, bid ->
+        // a) 逐个 save 并验证读回 revision 一致
+        allIds.forEachIndexed { i, bid ->
             val st = AggregateProgressState.INITIAL.copy(revision = 100L + i)
             GlobalInstallArchiveStore.saveSnapshot(bid, st)
-        }
-        first3.forEachIndexed { i, bid ->
             val got = GlobalInstallArchiveStore.getSnapshot(bid)
-            assertNotNull("$bid 必须有存档", got)
+            assertNotNull("$bid save 后必须有存档", got)
             assertEquals(100L + i, got!!.revision)
+            assertTrue(GlobalInstallArchiveStore.hasSnapshot(bid))
         }
-
-        // LRU 容量=10：TerminalBundleId.entries 一共 6 个（PYTHON/NODE/RIPGREP/GIT/BASH/NET），
-        // 我们塞入全部 6 + 构造超过容量需要靠连续"新 key"访问顺序验证
-        // 用"插入 6 → 查最老的 1 → 再插新的模拟溢出（用 saveSnapshot 6 次后，
-        // 最早 save 的如果再 save 会挪到最近；这里我们用 snapshotKeys 验证大小 ≤ MAX_BUNDLES=10）"
+        // b) 6 个枚举上限 ≤ LRU MAX_BUNDLES(=10)，save 完最多 6；再 save 同一组 size 不变
+        assertTrue(
+            "存档数量 = ${GlobalInstallArchiveStore.size()} ≤ ${allIds.size}",
+            GlobalInstallArchiveStore.size() <= allIds.size
+        )
+        assertEquals(allIds.size, GlobalInstallArchiveStore.snapshotKeys().size)
         allIds.forEach { bid ->
             GlobalInstallArchiveStore.saveSnapshot(bid, AggregateProgressState.INITIAL)
         }
-        assertTrue(
-            "存档数量 ≤ LRU 容量=10（实际只有 ${allIds.size} 个 bundle）",
-            GlobalInstallArchiveStore.size() <= 10
-        )
+        assertEquals(allIds.size, GlobalInstallArchiveStore.size())
+        assertEquals(allIds.size, GlobalInstallArchiveStore.snapshotKeys().size)
 
-        // remove → 立刻消失
+        // c) remove 一个
         val first = allIds.first()
-        assertTrue("remove 前 hasSnapshot", GlobalInstallArchiveStore.hasSnapshot(first))
         GlobalInstallArchiveStore.remove(first)
         assertFalse("remove 后 hasSnapshot=false", GlobalInstallArchiveStore.hasSnapshot(first))
         assertNull("remove 后 getSnapshot=null", GlobalInstallArchiveStore.getSnapshot(first))
+        assertEquals(allIds.size - 1, GlobalInstallArchiveStore.size())
+
+        // d) clear 后立刻全空
+        GlobalInstallArchiveStore.clear()
+        assertEquals(0, GlobalInstallArchiveStore.size())
+        assertTrue(GlobalInstallArchiveStore.snapshotKeys().isEmpty())
     }
 
     /**
