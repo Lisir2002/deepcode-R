@@ -1,5 +1,8 @@
 package com.deep.rcode.feature.terminal.presentation.component
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -15,9 +18,12 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.deep.rcode.R
@@ -25,7 +31,9 @@ import com.deep.rcode.core.theme.AppSectionHeader
 import com.deep.rcode.core.theme.AppTopAppBar
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
+import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
 import com.deep.rcode.feature.terminal.presentation.TerminalSettingsViewModel
+import com.deep.rcode.feature.terminal.presentation.component.toUi
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import kotlinx.coroutines.launch
@@ -96,14 +104,36 @@ fun TerminalBundleManagerScreen(
 
             AppSectionHeader(text = "独立功能包")
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                var openDialogFor by remember { mutableStateOf<TerminalBundleId?>(null) }
+                val agg by viewModel.aggregateProgress.collectAsStateWithLifecycle()
+                val ctx = LocalContext.current
+                val snackbarHostStateHere = remember { SnackbarHostState() }
+                val onCopyError: (String) -> Unit = { reason ->
+                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("install-error", reason))
+                }
                 viewModel.bundles().forEach { b ->
-                    SharedBundleCard(
-                        bundle = b,
-                        state = bundleStates[b.id] ?: BundleInstallState.NotInstalled,
-                        containerReady = containerInstalled,
-                        onInstall = { viewModel.installBundle(b.id) },
-                        onUninstall = { viewModel.uninstallBundle(b.id) }
+                    val bState = bundleStates[b.id] ?: BundleInstallState.NotInstalled
+                    // 新 BundleInstallCard：3 行极简 + N 微槽块（按 Q9 选定：画在卡片内）；
+                    // aggregate 为 null（走旧通路）时自动降级。
+                    BundleInstallCard(
+                        bundle = b.toUi(),
+                        bundleState = bState,
+                        aggregate = agg.takeIf { bState is BundleInstallState.Installing },
+                        onInstallClick = { viewModel.installBundle(b.id) },
+                        onUninstallClick = { viewModel.uninstallBundle(b.id) },
+                        onOpenLogDialog = { openDialogFor = b.id },
+                        onCopyError = onCopyError,
+                        modifier = Modifier.padding(horizontal = Spacing.md),
                     )
+                    val dialogBundle = openDialogFor
+                    if (dialogBundle != null && dialogBundle == b.id) {
+                        BundleLogDialog(
+                            bundle = b.toUi(),
+                            state = agg,
+                            onDismiss = { openDialogFor = null },
+                        )
+                    }
                 }
             }
         }

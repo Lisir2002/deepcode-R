@@ -370,16 +370,17 @@ fun TerminalSurface(
             )
             view.isFocusable = true
             view.isFocusableInTouchMode = true
-            tab.view = view
-            view.attachSession(tab.session)
-            applyTerminalPalette(palette, view)
-            view.onScreenUpdated()
-            // 不再主动 requestFocus + showSoftInput：
-            //   旧行为导致一切入终端 Tab 就弹软键盘，遮挡终端下半屏，且大多数用户进入终端
-            //   第一动作是看状态/切 Tab/看 Git/跑上次命令结果，不需要立即输入。
-            // 正确的交互：用户单击终端内容区时，TerminalClients.onSingleTapUp 会
-            // requestFocus + showSoftInput（见 TerminalClients.kt#L140-L145），实现
-            // 「只有点终端内容区才弹键盘」的规范行为。
+            // 防御：如果 tab 已被会话管理器移除（closeTab 后 session 正在 finish），
+            // 就不要 attach 也不要写 tab.view 了，避免与 finishIfRunning 交错导致 Native crash。
+            val stillAlive = runCatching {
+                viewModel.tabs.value.any { it.id == tab.id }
+            }.getOrDefault(true)
+            if (stillAlive) {
+                tab.view = view
+                runCatching { view.attachSession(tab.session) }
+                applyTerminalPalette(palette, view)
+                runCatching { view.onScreenUpdated() }
+            }
             view
         },
         update = { view ->
@@ -391,11 +392,16 @@ fun TerminalSurface(
                 view.onScreenUpdated()
             }
             applyTerminalPalette(palette, view)
-            view.onScreenUpdated()
+            // session 已 finish 时，emulator 可能已销毁，onScreenUpdated 内部有 null guard。
+            runCatching { view.onScreenUpdated() }
         },
         onRelease = { view ->
+            // 解绑顺序严格对齐 closeTab：先 client=null → attachSession(null) → 再 tab.view 断引用
+            runCatching {
+                view.setTerminalViewClient(null)
+                view.attachSession(null)
+            }
             if (tab.view === view) tab.view = null
-            // tab closed
         }
     )
 }

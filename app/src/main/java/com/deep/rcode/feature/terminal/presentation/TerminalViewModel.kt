@@ -299,25 +299,18 @@ class TerminalViewModel @Inject constructor(
     }
 
     fun closeTab(id: String) {
-        val hadOthers = tabs.value.size > 1
         val result = if (isRemote()) remoteManager.closeTab(id) else localManager.closeTab(id)
         if (!result) return
-        // 关闭最后一个标签：自动新建一个空 shell，避免用户落入「无标签」死角
-        viewModelScope.launch {
-            // 等 closeTab 的状态流更新结束再查
-            kotlinx.coroutines.delay(50)
-            val remaining = tabs.value
-            if (remaining.isEmpty()) {
-                runCatching {
-                    if (isRemote()) remoteManager.createInteractiveTab() else localManager.createInteractiveTab()
-                }.onFailure { e ->
-                    FileLogger.e(TAG, "自动新建兜底标签失败", e)
-                    _errorToast.value = "创建新标签失败：${e.message}"
-                }
-            } else if (!hadOthers) {
-                // 理论上不会命中，但防御性保持 activate
-                remaining.firstOrNull()?.let { activate(it.id) }
-            }
+        // 关闭后确保至少还有一个 tab：
+        // 之前的实现在这里 launch { delay(50) }，连续关闭 5~6 个时会出现：
+        //   - 多个协程同时判断 `tabs.value.isEmpty()` 同时为 true
+        //   - 同时 `createInteractiveTab()` → 同时 fork 多个 proot / 同时 mutate StateFlow
+        //   - Termux native 在未 attachView 的 session 上销毁 → Crash
+        // 现在：会话管理器内部提供 ensureAtLeastOneTab，具备 tabOpLock + 合并式 pendingJob。
+        if (isRemote()) {
+            remoteManager.ensureAtLeastOneTab(viewModelScope)
+        } else {
+            localManager.ensureAtLeastOneTab(viewModelScope)
         }
     }
 

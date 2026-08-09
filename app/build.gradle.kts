@@ -221,6 +221,13 @@ android {
     @Suppress("DEPRECATION")
     kotlinOptions {
         jvmTarget = "17"
+        // 全局 opt-in：Compose / Material3 实验性 API（FilterChip/ElevatedAssistChip/TooltipBox 等）
+        // —— CI 的 -Werror 会把 experimental warning 当成 error，这里一次性白名单。
+        freeCompilerArgs += listOf(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+            "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
+        )
     }
 
     buildFeatures {

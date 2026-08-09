@@ -23,8 +23,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.concurrent.withLock
 
 /**
  * 进程内常驻的终端会话池：所有 [TerminalSession] 的唯一所有者。
@@ -78,6 +80,21 @@ class TerminalSessionManager @Inject constructor(
     private val idCounter = AtomicInteger(0)
 
     private val monitorScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Tab 操作互斥锁。
+     * 修复：连续关闭 5~6 个 tab 就闪退 —— 根因是 closeTab 多次并发调用时，
+     * 「session.finishIfRunning() + tab.view=null + _tabs 更新 + 自动新建兜底 tab」
+     * 互相交错，导致：
+     *   ① Termux Emulator 正在 onDraw 时 session 被 native 销毁 → OOB/NPE
+     *   ② 多个 `delay(50) + createInteractiveTab()` 同时抢到 empty → 同时 fork proot
+     *   ③ view 正在被 AndroidView onRelease 时，closeTab 先 finish 再 view=null 顺序反
+     */
+    private val tabOpLock = ReentrantLock()
+
+    /** 自动新建兜底 tab 的 pendingJob，用于消除连续 closeTab 时的多协程竞态。 */
+    @Volatile
+    private var ensureTabJob: Job? = null
 
     val activeTab: TerminalTab? get() = _tabs.value.firstOrNull { it.id == _activeTabId.value }
 
@@ -254,22 +271,92 @@ class TerminalSessionManager @Inject constructor(
     }
 
     /** 关闭并销毁标签（用户主动关 / AI close）。从列表移除并杀会话。 */
-    override fun closeTab(id: String): Boolean {
-        val tab = tab(id) ?: return false
-        runCatching { tab.session.finishIfRunning() }
-        tab.view = null
-        val remaining = _tabs.value.filterNot { it.id == id }
-        _tabs.value = remaining
+    override fun closeTab(id: String): Boolean = tabOpLock.withLock {
+        val snapshot = _tabs.value
+        val idx = snapshot.indexOfFirst { it.id == id }
+        if (idx < 0) return false
+        val tab = snapshot[idx]
+
+        // ① 先从列表彻底移除，避免「session.finish 触发 onFinished 回调」对同一个 tab
+        //    还去改 runState（虽然 firstOrNull 查不到，但后面 bumpRevision 会乱）；
+        //    同时先把 activeTabId 切走，保证 UI 下一次重组不会再尝试渲染这个 tab 的 View。
+        val remaining = snapshot.toMutableList().apply { removeAt(idx) }
         if (_activeTabId.value == id) {
             _activeTabId.value = remaining.lastOrNull()?.id
         }
+        _tabs.value = remaining
         bumpRevision()
 
-        if (tab.isBackground && remaining.none { it.isBackground && it.runState is RunState.Running }) {
-            stopKeepaliveService()
+        // ② 解绑定 View（如果还挂着）→ 让 TerminalView 停止引用 session/emulator。
+        //    Termux 的 TerminalView.attachSession(null) 会把内部 mEmulator 置空，
+        //    之后 onDraw/onMeasure 只会走 early-return，不会再访问马上要销毁的内存。
+        runCatching {
+            val v = tab.view
+            if (v is TerminalView) {
+                v.setTerminalViewClient(null)
+                v.attachSession(null)
+            }
         }
-        FileLogger.i(TAG, "关闭终端标签 $id")
-        return true
+        tab.view = null
+
+        // ③ 延后到下一帧主线程空闲时再 finish 会话 → 此时 Compose 已重组 activeTab，
+        //    AndroidView 的 onRelease 也早已跑完（其 tab.view===view 判断现在也会
+        //    因我们已 tab.view=null 而 no-op，不会重复）。
+        monitorScope.launch(Dispatchers.Main.immediate) {
+            runCatching { tab.session.finishIfRunning() }
+                .onFailure { e -> FileLogger.w(TAG, "finish 会话 $id 异常（忽略）", e) }
+        }
+
+        if (tab.isBackground && remaining.none { it.isBackground && it.runState is RunState.Running }) {
+            runCatching { stopKeepaliveService() }
+        }
+        FileLogger.i(TAG, "关闭终端标签 $id · 剩余 ${remaining.size} 个")
+        true
+    }
+
+    /**
+     * 关闭最后一个 tab 时，由外部调用（ViewModel）确保至少还有一个。
+     * 合并连续关闭时的多次"空→新建"请求，保证全应用只有一个 pending 兜底任务。
+     *
+     * 注意：createInteractiveTab 是 suspend，不能在 ReentrantLock critical section
+     * 内调用（Kotlin 编译器会报「suspension point inside critical section」，因为挂起
+     * 时无法持锁）。所以锁只保护"空值检查 + 二次判空"，真正的创建在锁外执行。
+     */
+    fun ensureAtLeastOneTab(scope: CoroutineScope) {
+        if (_tabs.value.isNotEmpty()) {
+            ensureTabJob?.cancel()
+            ensureTabJob = null
+            return
+        }
+        if (ensureTabJob?.isActive == true) return
+        ensureTabJob = scope.launch(Dispatchers.Main) {
+            // 等待 150ms（不是 50ms，给连续关闭动作一些缓冲窗口）；
+            // 中途如果用户又开新标签 / 切到已有标签，这里就立即取消。
+            var waited = 0L
+            val stepMs = 30L
+            val totalMs = 150L
+            while (waited < totalMs) {
+                if (_tabs.value.isNotEmpty()) return@launch
+                delay(stepMs); waited += stepMs
+            }
+            // 只在锁内做"仍为空 → 假装占位"判断，真正 create 在锁外。
+            val shouldCreate = tabOpLock.withLock {
+                if (_tabs.value.isEmpty()) {
+                    // 在 tabs 列表末尾塞一个"占位"标记太复杂，这里直接用一个单独的
+                    // AtomicBoolean 风格的"我来创建"协议：先把 ensureTabJob 置 null
+                    // 并再次验证 _tabs.value.isEmpty() 双重检测，通过后才真正去 build。
+                    // （因为 isEmpty 是读 StateFlow.value，本身原子；与 closeTab 的
+                    //  tabOpLock 是串行写的，这里双重检查不会漏过。）
+                    _tabs.value.isEmpty()
+                } else {
+                    false
+                }
+            }
+            if (shouldCreate) {
+                runCatching { createInteractiveTab() }
+                    .onFailure { e -> FileLogger.e(TAG, "自动新建兜底标签失败", e) }
+            }
+        }
     }
 
     /** 重连：重建该标签的交互会话（仅对交互标签有意义）。 */

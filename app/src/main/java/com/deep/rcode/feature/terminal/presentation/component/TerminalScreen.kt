@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -57,6 +58,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -484,18 +486,21 @@ private fun TerminalFirstRunBanner(
         }
     }
 
-    // Banner 规范：
-    //  ① 不要 elevation overlay（它是"外围一圈黑边"的根因）→ elevation=z0
-    //  ② 用 1dp 软描边（同 accent 0.35 alpha）代替阴影制造边界感
-    //  ③ 容器背景 alpha 从 0.28 降到 0.16，避免太重的颜色压头
-    val bannerBorderColor = accentColor.copy(alpha = 0.35f)
+    // Banner 规范（Material3 语义 token 强制对齐，解决"深色主题下文字看不见"）：
+    //  ① 容器背景 = MaterialTheme.colorScheme.primaryContainer（这对 token 由 design token 保证）
+    //     配合文字 = onPrimaryContainer，自动达成 WCAG 2.1 AA（对比度 ≥ 4.5:1）
+    //     无论主题 accent 是深靛蓝/深紫还是什么，primaryContainer 一定是浅亮变体 on 深字
+    //  ② 之前的 bug：accentColor.copy(alpha=0.16f) + onSurface 字 → 深 accent*0.16 ≈ 近黑背景
+    //     + onSurface 深色字 = 对比度 < 1，文字完全消失（严重逻辑 bug）
+    //  ③ 边框用 primary 0.4 alpha 代替 elevation 造边，零阴影
+    val bannerBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)
     Card(
         modifier = Modifier
             .padding(horizontal = Spacing.md, vertical = Spacing.sm)
             .fillMaxWidth()
             .border(1.dp, bannerBorderColor, RoundedCornerShape(Radius.md)),
         colors = CardDefaults.cardColors(
-            containerColor = accentColor.copy(alpha = 0.16f)
+            containerColor = MaterialTheme.colorScheme.primaryContainer
         ),
         shape = RoundedCornerShape(Radius.md),
         elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z0)
@@ -508,27 +513,29 @@ private fun TerminalFirstRunBanner(
                 Box(
                     modifier = Modifier
                         .size(TerminalLayout.accentDotSize)
-                        .background(accentColor, shape = RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(50))
                 )
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
                 if (showDismiss) {
-                    // 显式 align 居中 + 统一 ButtonSpec.Height + contentPadding 固定，避免被 Row/父容器压掉高度
                     TextButton(
                         onClick = onDismiss,
                         modifier = Modifier
                             .height(ButtonSpec.Height)
                             .align(Alignment.CenterVertically),
-                        contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 4.dp)
+                        contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 4.dp),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
                     ) {
                         Text(
                             "暂不提醒",
                             fontSize = ButtonSpec.TextFontSize,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -537,7 +544,7 @@ private fun TerminalFirstRunBanner(
             Text(
                 text = desc,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
             )
             Spacer(modifier = Modifier.height(Spacing.sm))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
@@ -557,13 +564,13 @@ private fun TerminalFirstRunBanner(
                         )
                     }
                     TerminalViewModel.BannerType.PythonMissing -> {
-                        // 主按钮：立即装 AI 推荐组合（以前居然是跳转，现在直接装）
+                        // 主按钮：立即装 AI 推荐组合
                         PrimaryButton(
                             onClick = onInstallRecommended,
                             icon = FeatherIcons.Cpu,
                             text = "立即装 Python"
                         )
-                        // 次按钮：跳设置（想看其他包的时候走这里）
+                        // 次按钮：跳设置
                         SecondaryButton(
                             onClick = onGoSettings,
                             icon = FeatherIcons.Settings,
@@ -577,7 +584,7 @@ private fun TerminalFirstRunBanner(
                 Text(
                     "（当前会话使用原生 Android /system/bin/sh 作为 fallback，基础命令可用，但无法安装 apk 包。）",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.80f)
                 )
             }
         }

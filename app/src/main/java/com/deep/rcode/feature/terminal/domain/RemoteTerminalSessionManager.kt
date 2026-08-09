@@ -10,16 +10,23 @@ import com.deep.rcode.feature.terminal.presentation.component.TextInputTracker
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.concurrent.withLock
 
 private const val TAG = "RemoteTerminalSessionManager"
 private const val TRANSCRIPT_ROWS = 2000
@@ -52,6 +59,13 @@ class RemoteTerminalSessionManager @Inject constructor(
     override val tabFinishedEvents: SharedFlow<TabFinishedEvent> = _tabFinishedEvents.asSharedFlow()
 
     private val idCounter = AtomicInteger(0)
+
+    private val tabOpLock = ReentrantLock()
+
+    @Volatile
+    private var ensureTabJob: Job? = null
+
+    private val remoteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val activeTab: TerminalTab? get() = _tabs.value.firstOrNull { it.id == _activeTabId.value }
 
@@ -177,18 +191,65 @@ class RemoteTerminalSessionManager @Inject constructor(
         )
     }
 
-    override fun closeTab(id: String): Boolean {
-        val tab = tab(id) ?: return false
-        runCatching { tab.session.finishIfRunning() }
-        tab.view = null
-        val remaining = _tabs.value.filterNot { it.id == id }
-        _tabs.value = remaining
+    override fun closeTab(id: String): Boolean = tabOpLock.withLock {
+        val snapshot = _tabs.value
+        val idx = snapshot.indexOfFirst { it.id == id }
+        if (idx < 0) return false
+        val tab = snapshot[idx]
+
+        // ① 先移除 tab + 修正 activeId，避免 UI 再渲染即将销毁的 View
+        val remaining = snapshot.toMutableList().apply { removeAt(idx) }
         if (_activeTabId.value == id) {
             _activeTabId.value = remaining.lastOrNull()?.id
         }
+        _tabs.value = remaining
         bumpRevision()
-        FileLogger.i(TAG, "关闭远程终端标签 $id")
-        return true
+
+        // ② 解绑定 View → 置空引用
+        runCatching {
+            val v = tab.view
+            if (v is TerminalView) {
+                v.setTerminalViewClient(null)
+                v.attachSession(null)
+            }
+        }
+        tab.view = null
+
+        // ③ 下一帧主线程空闲时再 finish 会话（对齐本地实现）
+        remoteScope.launch(Dispatchers.Main.immediate) {
+            runCatching { tab.session.finishIfRunning() }
+                .onFailure { e -> FileLogger.w(TAG, "finish 远程会话 $id 异常（忽略）", e) }
+        }
+
+        FileLogger.i(TAG, "关闭远程终端标签 $id · 剩余 ${remaining.size} 个")
+        true
+    }
+
+    /** 对应 [TerminalSessionManager.ensureAtLeastOneTab]，语义一致。 */
+    fun ensureAtLeastOneTab(scope: CoroutineScope) {
+        if (_tabs.value.isNotEmpty()) {
+            ensureTabJob?.cancel()
+            ensureTabJob = null
+            return
+        }
+        if (ensureTabJob?.isActive == true) return
+        ensureTabJob = scope.launch(Dispatchers.Main) {
+            var waited = 0L
+            val stepMs = 30L
+            val totalMs = 150L
+            while (waited < totalMs) {
+                if (_tabs.value.isNotEmpty()) return@launch
+                delay(stepMs); waited += stepMs
+            }
+            // suspend 函数不可持锁 → 先锁内判空再锁外执行
+            val shouldCreate = tabOpLock.withLock {
+                _tabs.value.isEmpty() && ensureRemote()
+            }
+            if (shouldCreate) {
+                runCatching { createInteractiveTab() }
+                    .onFailure { e -> FileLogger.e(TAG, "自动新建兜底远程标签失败", e) }
+            }
+        }
     }
 
     fun activate(id: String) {
