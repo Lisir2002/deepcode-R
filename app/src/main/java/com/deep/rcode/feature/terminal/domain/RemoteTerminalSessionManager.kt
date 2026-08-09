@@ -292,13 +292,11 @@ class RemoteTerminalSessionManager @Inject constructor(
         val backend = SshShellBackend(shell)
         val termSession = TerminalSession(TRANSCRIPT_ROWS, AppRemoteSessionClient(), backend)
         termSession.updateSize(DEFAULT_COLUMNS, DEFAULT_ROWS)
-        val workspacePath = connection.config?.remoteWorkspacePath
-        if (!workspacePath.isNullOrBlank()) {
-            runCatching {
-                val cmd = "cd ${workspacePath} 2>/dev/null && cd \$HOME && mkdir -p .rdeepcode 2>/dev/null; exec \$SHELL -l\n"
-                backend.outputStream.write(cmd.toByteArray(Charsets.UTF_8))
-                backend.outputStream.flush()
-            }
+        // 与 openShellTab 对齐：先切到 ~/workspace 符号链接（由 updateWorkspaceSymlink 创建），
+        // 失败回退到 connection.config.remoteWorkspacePath 的真实路径，保证用户重连后仍在工作区内。
+        val wsPath = connection.config?.remoteWorkspacePath
+        if (!wsPath.isNullOrBlank() && wsPath != "/") {
+            termSession.write("cd ~/workspace 2>/dev/null || cd '${wsPath.trimEnd('/')}' 2>/dev/null\n")
         }
         val newTab = TerminalTab(
             id = old.id,

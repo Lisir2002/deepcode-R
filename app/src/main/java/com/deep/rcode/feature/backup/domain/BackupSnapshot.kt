@@ -116,7 +116,7 @@ data class RemoteConnectionDto(
     val host: String,
     val port: Int,
     val username: String,
-    val authType: String = "password",
+    val authType: String = "PASSWORD", // PASSWORD / PRIVATE_KEY；历史版本可能存小写 password/key，读取时两边都认
     val authData: String,
     val passphrase: String? = null
 )

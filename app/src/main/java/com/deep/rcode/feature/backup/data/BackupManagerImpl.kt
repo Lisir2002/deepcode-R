@@ -506,13 +506,41 @@ class BackupManagerImpl @Inject constructor(
         updatedAt = updatedAt
     )
 
-    private fun RemoteConnectionEntity.toDto() = RemoteConnectionDto(
-        id, name, protocol.name, host, port, username, authType, authData, passphrase
-    )
+    private fun RemoteConnectionEntity.toDto(): RemoteConnectionDto {
+        // 备份导出明文：跨设备迁移时备份用户自己保管，恢复时用新设备的 Keystore 重新加密。
+        // 规则：
+        //  - PASSWORD 类型：authData = 加密后的密码 → 解密后导出明文密码
+        //  - PRIVATE_KEY 类型：authData = 私钥文件路径（明文，无需加解密），passphrase = 加密后的 → 解密导出
+        // 解密失败兜底：DB 中残留明文（历史数据），直接原样返回。
+        val isPwd = authType.equals("PASSWORD", ignoreCase = true)
+            || authType.equals("password", ignoreCase = true)
+        val resolvedAuthData = when {
+            isPwd -> runCatching { encryptor.decrypt(authData) }.getOrElse { authData }
+            else -> authData // PRIVATE_KEY: 路径本身是明文，不解密
+        }
+        val resolvedPassphrase = passphrase?.let {
+            runCatching { encryptor.decrypt(it) }.getOrElse { it }
+        }
+        return RemoteConnectionDto(
+            id, name, protocol.name, host, port, username, authType, resolvedAuthData, resolvedPassphrase
+        )
+    }
 
-    private fun RemoteConnectionDto.toEntity() = RemoteConnectionEntity(
-        id, name, RemoteProtocol.valueOf(protocol), host, port, username, authType, authData, passphrase
-    )
+    private fun RemoteConnectionDto.toEntity(): RemoteConnectionEntity {
+        // 恢复入库：用当前设备的 CredentialEncryptor 重新加密敏感字段
+        //  - PASSWORD 类型：authData = 明文密码 → 加密存储
+        //  - PRIVATE_KEY 类型：authData = 私钥路径（明文保持），passphrase 非空则加密
+        val isPwd = authType.equals("PASSWORD", ignoreCase = true)
+            || authType.equals("password", ignoreCase = true)
+        val encryptedAuthData = when {
+            isPwd && authData.isNotEmpty() -> encryptor.encrypt(authData)
+            else -> authData // PRIVATE_KEY 路径无需加密
+        }
+        val encryptedPassphrase = passphrase?.takeIf { it.isNotEmpty() }?.let { encryptor.encrypt(it) }
+        return RemoteConnectionEntity(
+            id, name, RemoteProtocol.valueOf(protocol), host, port, username, authType, encryptedAuthData, encryptedPassphrase
+        )
+    }
 
     private fun RemoteMountEntity.toDto() = RemoteMountDto(id, connectionId, remotePath, localMountPath, isActive, autoConnect)
     private fun RemoteMountDto.toEntity() = RemoteMountEntity(id, connectionId, remotePath, localMountPath, isActive, autoConnect)

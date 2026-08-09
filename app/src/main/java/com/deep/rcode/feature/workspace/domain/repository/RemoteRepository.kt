@@ -47,14 +47,13 @@ class RemoteRepository @Inject constructor(
     /** 按 id 一次性读出带原始 RemoteAuth（含密码或私钥+passphrase）的完整配置。
      * 用于 AIEditorApp 冷启动、SettingsViewModel 切远程时组装 SSH 连接——
      * RemoteConnection.domain 只暴露 password（PASSWORD 类型），但 PRIVATE_KEY
-     * 类型时还需 passphrase，这个方法直接返回 auth 密封类。 */
+     * 类型时还需 passphrase，这个方法直接返回 auth 密封类。
+     *
+     * authType 兼容：rc60 之前存小写 "password"/"key"，rc60+ 统一写大写
+     * "PASSWORD"/"PRIVATE_KEY"；读取时两种都认，老用户升级不丢认证。 */
     suspend fun getAuthById(id: String): RemoteAuth? {
         val entity = dao.getConnectionById(id) ?: return null
-        return when (entity.authType) {
-            "PASSWORD" -> RemoteAuth.Password(decryptCredential(entity.authData))
-            "PRIVATE_KEY" -> RemoteAuth.PrivateKey(entity.authData, decryptCredential(entity.passphrase))
-            else -> null
-        }
+        return resolveAuth(entity.authType, entity.authData, entity.passphrase)
     }
     
     fun getMounts(): Flow<List<RemoteMount>> = combine(
@@ -76,9 +75,7 @@ class RemoteRepository @Inject constructor(
      */
     private fun decryptCredential(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
-        return runCatching { encryptor.decrypt(raw) }
-            .recover { runCatching { java.util.Base64.getDecoder().decode(raw); "" }.exceptionOrNull(); raw }
-            .getOrElse { raw }
+        return runCatching { encryptor.decrypt(raw) }.getOrElse { raw }
     }
 
     /** 密码和私钥 passphrase 存库前一律用 Android Keystore AES-256-GCM 加密。 */
@@ -170,14 +167,10 @@ class RemoteRepository @Inject constructor(
                 RemoteProtocol.LOCAL -> LocalSyncClient()
             }
 
-            val auth = if (connEntity.authType == "PASSWORD") {
-                RemoteAuth.Password(decryptCredential(connEntity.authData))
-            } else {
-                RemoteAuth.PrivateKey(connEntity.authData, decryptCredential(connEntity.passphrase))
-            }
+            val auth = resolveAuth(connEntity.authType, connEntity.authData, connEntity.passphrase)
 
             client.connect(conn.host, conn.port, conn.username, auth)
-            
+
             val engine = SyncEngine(
                 mount = mount, 
                 connection = conn, 
@@ -257,11 +250,7 @@ class RemoteRepository @Inject constructor(
                 RemoteProtocol.FTP -> FtpSyncClient()
                 RemoteProtocol.LOCAL -> LocalSyncClient()
             }
-            val auth = if (connEntity.authType == "PASSWORD") {
-                RemoteAuth.Password(decryptCredential(connEntity.authData))
-            } else {
-                RemoteAuth.PrivateKey(connEntity.authData, decryptCredential(connEntity.passphrase))
-            }
+            val auth = resolveAuth(connEntity.authType, connEntity.authData, connEntity.passphrase)
             
             client.connect(conn.host, conn.port, conn.username, auth)
             val files = client.listFiles(path).filter { it.isDirectory }.map { it.name }
@@ -277,6 +266,8 @@ class RemoteRepository @Inject constructor(
      * PASSWORD 类型为密码，PRIVATE_KEY 类型为空字符串，避免泄漏私钥 passphrase）。
      * 私钥 passphrase 只在真正构造 RemoteAuth 用于连接的地方 decrypt，不在 Domain 层
      * 暴露，减少内存明文驻留点。
+     *
+     * authType 兼容：新大写 PASSWORD/PRIVATE_KEY 与 旧小写 password/key 都认。
      */
     private fun RemoteConnectionEntity.toDomainModel() = RemoteConnection(
         id = id,
@@ -285,7 +276,7 @@ class RemoteRepository @Inject constructor(
         host = host,
         port = port,
         username = username,
-        password = if (authType == "PASSWORD") decryptCredential(authData) else ""
+        password = if (isPasswordAuth(authType)) decryptCredential(authData) else ""
     )
 
     private fun RemoteMountEntity.toDomainModel(conn: RemoteConnection?) = RemoteMount(
@@ -297,4 +288,38 @@ class RemoteRepository @Inject constructor(
         autoConnect = autoConnect,
         connection = conn
     )
+
+    // ── authType 新旧值兼容辅助 ──────────────────────────────────────────
+
+    /**
+     * 密码类型判断：rc60 之前写 "password"，rc60+ 统一写 "PASSWORD"。
+     * 忽略大小写，两种都认。
+     */
+    private fun isPasswordAuth(authType: String): Boolean =
+        authType.equals("PASSWORD", ignoreCase = true)
+            || authType.equals("password", ignoreCase = true)
+
+    /**
+     * 私钥类型判断：rc60 之前写 "key"，rc60+ 统一写 "PRIVATE_KEY"。
+     * 忽略大小写，两种都认。
+     */
+    private fun isPrivateKeyAuth(authType: String): Boolean =
+        authType.equals("PRIVATE_KEY", ignoreCase = true)
+            || authType.equals("key", ignoreCase = true)
+
+    /**
+     * 从 Entity 的 authType/authData/passphrase 三字段构造 RemoteAuth。
+     * 密码 & passphrase 走 CredentialEncryptor 解密，decrypt 失败回退旧明文。
+     * authType 未知时默认当 Password 处理（兜底：至少让用户能看到密码字段再决定）。
+     */
+    private fun resolveAuth(
+        authType: String,
+        authData: String,
+        passphrase: String?
+    ): RemoteAuth = when {
+        isPrivateKeyAuth(authType) ->
+            RemoteAuth.PrivateKey(authData, decryptCredential(passphrase))
+        // PASSWORD 或未知类型：统一当作密码登录，避免老数据 authType 被脏写就完全登不上。
+        else -> RemoteAuth.Password(decryptCredential(authData))
+    }
 }
