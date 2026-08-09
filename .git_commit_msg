@@ -1,10 +1,6 @@
-fix(terminal): 外壳语义色/皮肤快照 跟随程序必然一致，改由 MaterialTheme.background 亮度判断
+fix(terminal): TerminalUISpec 补上丢失的 androidx.compose.ui.unit.sp import
 
-rc55 因为新增外壳侧直接引用 LocalAppDarkMode（静态 CompositionLocal），
-在 CI release 编译或 testReleaseUnit 环境中可能触发 composition context 相关报错。
-换成更稳的"MaterialTheme.colorScheme.background.relativeLuminance < 0.30 = 暗"：
-- 外壳所有颜色都来自 MaterialTheme，天然满足「必然跟随程序」
-- 只要 MainActivity 算好 darkTheme 并交给 AIEditorTheme，
-  外壳 background 的亮度就一定正确，不再需要单独的 CompositionLocal 传递
-- 终端内容区（TerminalPalette.FOLLOW_APP）仍用 LocalAppDarkMode（
-  必须精确 bool，不能被外壳半暗的 surface 背景误导），此部分 rc54 已通过 CI 不变
+rc55/rc56 连续两次 CI release 构建失败的根因：整理 import 时
+不小心删掉了 `import androidx.compose.ui.unit.sp`，但
+TerminalLayout.DefaultFontSp = 14.sp 仍然在用，Kotlin 编译直接
+Unresolved reference: sp，Step 11 Build release APK 失败。
