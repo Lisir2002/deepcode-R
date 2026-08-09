@@ -719,16 +719,16 @@ class LinuxContainerEngine @Inject constructor(
      * 每次安装前都写（幂等），保证：① 新解压 rootfs 立即有国内镜像；② 存量 rootfs（
      * 其 /etc/apk/repositories 还是官方源）也被同步更新成国内源。
      *
-     * ⚠️ 历史说明（不要回退到 pipefail+tail 模式）：
+     * ⚠️ 历史演进（不得回退 pipefail+tail 或 mktemp）：
      *  1. 旧版 1：`apk update 2>&1 | tail -n 3`（无 pipefail）——tail 永远 0，apk update 的失败码
      *     被吞，仓库损坏时继续 apk add，apk info 吐脏 WARNING。
      *  2. 旧版 2：加上 `set -o pipefail` —— 当 apk update 输出行数 >10 时，tail 先读完就关管道，
      *     apk update 收到 SIGPIPE 异常退出(128+13=141)，pipefail 把整条管道退出码记为 141≠0，
-     *     set -e 强制中止整个脚本，apk add 根本不执行。rc29 用户日志「1 error; 15 MiB in 24 packages」
-     *     就是这 bug：apk update 被 SIGPIPE 杀掉时脚本已经进行到 apk add，导致"部分装完但失败"。
-     *  3. 当前版：把 apk update 的 stdout 先存进临时变量（用命令替换 `$()` 等，避免管道 SIGPIPE），
-     *     再用 printf 只打最后 10 行给用户看进度。apk update 失败时退出码真实保留，
-     *     set -e 正常拦截（仓库损坏 / DNS 失败等真正的错误不被吞）。
+     *     set -e 强制中止整个脚本，apk add 根本不执行。
+     *  3. rc31 版：`$(mktemp)` —— Alpine busybox 不提供 `mktemp` 命令，返回空字符串，
+     *     `tail -n 10 ""` 报 `tail: no files`，set -e 中止，apk add 不执行。
+     *  4. 当前版：直接重定向到 `/tmp/apk_update.log`（`bundleOpMutex` 保证串行，无文件名冲突），
+     *     apk update 退出码 100% 保真，无管道无 SIGPIPE。`tail -n 10` 展示给用户看最后进度。
      */
     private fun apkMirrorAndUpdateScriptOnce(mirror: String = ContainerInstaller.ALPINE_MIRROR): String = buildString {
         append("mkdir -p /etc/apk\n")
@@ -736,9 +736,9 @@ class LinuxContainerEngine @Inject constructor(
         append("$mirror/${ContainerInstaller.ALPINE_BRANCH}/main\n")
         append("$mirror/${ContainerInstaller.ALPINE_BRANCH}/community\n")
         append("EOF\n")
-        append("# apk update 输出先存到临时文件，tail 只做展示用——避免管道 SIGPIPE 杀 apk update\n")
-        append("_apk_update_log=\$(mktemp) && apk update > \"\$_apk_update_log\" 2>&1\n")
-        append("tail -n 10 \"\$_apk_update_log\"; rm -f \"\$_apk_update_log\"\n")
+        append("# apk update 输出先存文件再 tail（避免管道 SIGPIPE 杀 apk update），且不依赖 mktemp（Alpine busybox 无此命令）\n")
+        append("apk update > /tmp/apk_update.log 2>&1\n")
+        append("tail -n 10 /tmp/apk_update.log; rm -f /tmp/apk_update.log\n")
     }
 
     // ── End Bundle 公开 API ──────────────────────────────────────────────────
