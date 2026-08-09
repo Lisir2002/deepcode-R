@@ -126,16 +126,19 @@ internal fun SharedContainerEnvCard(
     onPickMirror: () -> Unit = {}
 ) {
     val processingTextWhenReady: String? = run {
-        if (initProgress !is ContainerInitState.Ready) return@run null
+        // 安装/卸载功能包时，initProgress 会是 BundleInstalling / BundleUninstalling（而非 Ready），
+        // 所以不能用「先判断 !Ready 就 return」，那样后面 Installing 的分支永远进不去。
+        // 这里直接从 initProgress 取正在装/卸载的 bundleId，并结合 customInstallState 看自定义包：
         val bundleId = when (initProgress) {
             is ContainerInitState.BundleInstalling -> initProgress.bundleId
             is ContainerInitState.BundleUninstalling -> initProgress.bundleId
             else -> null
         }
         when {
-            bundleId != null ->
-                if (initProgress is ContainerInitState.BundleInstalling) "正在安装${bundleId.stableKey}…"
-                else "正在卸载${bundleId.stableKey}…"
+            initProgress is ContainerInitState.BundleInstalling && bundleId != null ->
+                "正在安装${bundleId.stableKey}…"
+            initProgress is ContainerInitState.BundleUninstalling && bundleId != null ->
+                "正在卸载${bundleId.stableKey}…"
             customInstallState is BundleInstallState.Installing -> "正在安装自定义包…"
             customInstallState is BundleInstallState.Uninstalling -> "正在卸载自定义包…"
             else -> null

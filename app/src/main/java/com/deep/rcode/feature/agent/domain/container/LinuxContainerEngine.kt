@@ -444,11 +444,14 @@ class LinuxContainerEngine @Inject constructor(
                     FileLogger.w(TAG, reason)
                     bundleRepository.markFailed(id, reason)
                 }
-                // ⚠️ 无论成功/失败/异常，最后都复位 _initProgress 回 Ready（只要容器物理仍然 installed）。
-                // 缺失这一步是「快捷包装完永远卡『正在安装功能包…』死循环」的根因：
-                // UI 订阅 initProgress，BundleInstalling 下 ProgressIndicator 永远显示，
-                // 顶部卡片永远显示"正在安装功能包…"，用户看到的就是装完还在转圈圈。
-                if (containerInstaller.isInstalledFor(currentProfile)) {
+                // ⚠️ 无论成功/失败/异常，最后都复位 _initProgress 回 Ready。
+                // 不再依赖 containerInstaller.isInstalledFor(currentProfile)：
+                //   - currentProfile 是 @Volatile，操作期间若被 profile flow 异步更新，条件可能为假
+                //   - 条件假 → 跳过复位 → UI 永久停在 BundleInstalling → 用户看到"装完还在转圈圈"
+                // 改为：只要当前状态仍是 BundleInstalling / BundleUninstalling（即本操作挂起的状态），
+                // 就无条件复位到 Ready。Idle/ExtractingRootfs/DeployingProot/Failed 不被破坏。
+                val cur = _initProgress.value
+                if (cur is ContainerInitState.BundleInstalling || cur is ContainerInitState.BundleUninstalling) {
                     _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
                 }
                 // 对失败/异常把错误抛出去，上层 ViewModel 的 runCatching {}.onFailure { postError } 才会弹 toast
@@ -507,8 +510,11 @@ class LinuxContainerEngine @Inject constructor(
                 // 真失败下次 installBundle 会重新 apk add。
                 bundleRepository.markUninstalled(id)
                 FileLogger.i(TAG, "Bundle 卸载：${bundle.displayName} (exit=$exitCode)")
-                // 无论成功/异常退出 withLock 前都复位 Ready，避免 UI 永远停在 BundleUninstalling
-                if (containerInstaller.isInstalledFor(currentProfile)) {
+                // 无论成功/异常退出 withLock 前都复位 Ready，避免 UI 永远停在 BundleUninstalling。
+                // 同 installBundle：不再依赖 isInstalledFor（currentProfile 异步更新可能导致假阴性），
+                // 只看当前状态是否还停在 BundleInstalling/BundleUninstalling。
+                val cur = _initProgress.value
+                if (cur is ContainerInitState.BundleInstalling || cur is ContainerInitState.BundleUninstalling) {
                     _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
                 }
             }
@@ -523,44 +529,58 @@ class LinuxContainerEngine @Inject constructor(
         _initProgress.value = ContainerInitState.BundleInstalling(bundleId = null, line = "安装自定义包：$argLine …")
         var exitCode: Int? = null
         var lastLine: String? = null
-        bundleOpMutex.withLock {
-            try {
-                val script = buildString {
-                    append("set -e\n")
-                    append(apkMirrorAndUpdateScriptOnce())
-                    append("apk add --no-cache ").append(argLine).append('\n')
-                }
-                streamExecNoInstall(script, projectPath = null, timeoutMs = APK_CUSTOM_TIMEOUT_MS).collect { event ->
-                    when (event) {
-                        is CommandEvent.Line -> lastLine = event.text
-                        is CommandEvent.Exit -> exitCode = event.code
+        var failed: List<String> = pkgs
+        try {
+            bundleOpMutex.withLock {
+                try {
+                    val script = buildString {
+                        append("set -e\n")
+                        append(apkMirrorAndUpdateScriptOnce())
+                        append("apk add --no-cache ").append(argLine).append('\n')
                     }
+                    streamExecNoInstall(script, projectPath = null, timeoutMs = APK_CUSTOM_TIMEOUT_MS).collect { event ->
+                        when (event) {
+                            is CommandEvent.Line -> {
+                                lastLine = event.text
+                                // 同步更新 _initProgress 的 line，让 UI 能看到最新输出行
+                                _initProgress.value = ContainerInitState.BundleInstalling(bundleId = null, line = event.text)
+                            }
+                            is CommandEvent.Exit -> exitCode = event.code
+                        }
+                    }
+                } catch (e: Exception) {
+                    lastLine = e.message
+                    exitCode = -1
                 }
-            } catch (e: Exception) {
-                lastLine = e.message
-                exitCode = -1
             }
+            failed = if (exitCode == 0) emptyList() else pkgs
+            if (failed.isEmpty()) {
+                // 成功：加到自定义包快照（UI 列表/磁盘标记都更新）
+                bundleRepository.addCustomSnapshots(pkgs)
+                FileLogger.i(TAG, "自定义包安装成功：$argLine")
+            } else {
+                FileLogger.w(TAG, "自定义包安装失败($lastLine)：$argLine")
+                // ⚠️ 绝对不要再把容器整体状态置成 Failed（以前曾写成 ContainerInitState.Failed("安装自定义包失败…")）。
+                // 自定义包 apk add 失败是用户层面"部分命令非0 / 包名不存在"等问题，不代表 rootfs/prout 损坏。
+                // 一旦 _initProgress=Failed，ViewModel.containerInstalled=false，整张「本地容器环境」卡片
+                // 就会显示「失败：安装自定义包失败…」并显示「初始化容器」按钮（要求清 rootfs），
+                // 而实际上 apk 已成功安装的那些包还存在于 rootfs 中 → 典型矛盾。
+                // 修复：保持 _initProgress=Ready，失败只走调用方 postError 弹 toast。
+            }
+        } finally {
+            // ⚠️ 无论成功/失败/异常，finally 都无条件复位 _initProgress 回 Ready。
+            // 不再依赖 containerInstaller.isInstalledFor(currentProfile) 条件：
+            //   - currentProfile 是 @Volatile，操作期间若被 profile flow 异步更新，条件可能假
+            //   - 一旦跳过，UI 永久停在 BundleInstalling，用户看到"装完还在转圈"
+            // 只要当前状态仍在 BundleInstalling/Uninstalling，就复位成 Ready；
+            // Idle / ExtractingRootfs / DeployingProot / Failed 这些非本操作的状态不破坏。
+            val cur = _initProgress.value
+            if (cur is ContainerInitState.BundleInstalling || cur is ContainerInitState.BundleUninstalling) {
+                _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
+            }
+            // 成功/失败后都刷新一次"真实的"自定义包清单（减去和 bundle 包重叠的，留下用户真正装的）
+            runCatching { refreshCustomPackagesSnapshot() }
         }
-        val failed = if (exitCode == 0) emptyList() else pkgs
-        if (failed.isEmpty()) {
-            // 成功：加到自定义包快照（UI 列表/磁盘标记都更新）
-            bundleRepository.addCustomSnapshots(pkgs)
-            FileLogger.i(TAG, "自定义包安装成功：$argLine")
-        } else {
-            FileLogger.w(TAG, "自定义包安装失败($lastLine)：$argLine")
-            // ⚠️ 绝对不要再把容器整体状态置成 Failed（以前曾写成 ContainerInitState.Failed("安装自定义包失败…")）。
-            // 自定义包 apk add 失败是用户层面"部分命令非0 / 包名不存在"等问题，不代表 rootfs/prout 损坏。
-            // 一旦 _initProgress=Failed，ViewModel.containerInstalled=false，整张「本地容器环境」卡片
-            // 就会显示「失败：安装自定义包失败…」并显示「初始化容器」按钮（要求清 rootfs），
-            // 而实际上 apk 已成功安装的那些包还存在于 rootfs 中 → 典型矛盾。
-            // 修复：保持 _initProgress=Ready，失败只走调用方 postError 弹 toast。
-        }
-        // 成功/失败都统一复位 Ready，避免装完永久停在 BundleInstalling
-        if (containerInstaller.isInstalledFor(currentProfile)) {
-            _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
-        }
-        // 成功/失败后都刷新一次"真实的"自定义包清单（减去和 bundle 包重叠的，留下用户真正装的）
-        runCatching { refreshCustomPackagesSnapshot() }
         return failed
     }
 
@@ -571,22 +591,32 @@ class LinuxContainerEngine @Inject constructor(
             return true
         }
         var ok = false
-        bundleOpMutex.withLock {
-            try {
-                streamExecNoInstall(
-                    "apk del --purge $pkg",
-                    projectPath = null,
-                    timeoutMs = APK_ONE_BUNDLE_TIMEOUT_MS
-                ).collect { event ->
-                    if (event is CommandEvent.Exit) ok = (event.code == 0)
+        // 进入卸载前先把整体状态挂成 BundleUninstalling（bundleId=null 表示自定义包）
+        _initProgress.value = ContainerInitState.BundleUninstalling(bundleId = null)
+        try {
+            bundleOpMutex.withLock {
+                try {
+                    streamExecNoInstall(
+                        "apk del --purge $pkg",
+                        projectPath = null,
+                        timeoutMs = APK_ONE_BUNDLE_TIMEOUT_MS
+                    ).collect { event ->
+                        if (event is CommandEvent.Exit) ok = (event.code == 0)
+                    }
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "卸载自定义包异常: $pkg", e)
                 }
-            } catch (e: Exception) {
-                FileLogger.w(TAG, "卸载自定义包异常: $pkg", e)
             }
+        } finally {
+            // 无论成功/失败/异常都复位到 Ready，避免永久停在 Uninstalling
+            val cur = _initProgress.value
+            if (cur is ContainerInitState.BundleInstalling || cur is ContainerInitState.BundleUninstalling) {
+                _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
+            }
+            bundleRepository.removeCustomSnapshot(pkg)
+            // 刷新一次真实列表
+            runCatching { refreshCustomPackagesSnapshot() }
         }
-        bundleRepository.removeCustomSnapshot(pkg)
-        // 刷新一次真实列表
-        runCatching { refreshCustomPackagesSnapshot() }
         return ok
     }
 
