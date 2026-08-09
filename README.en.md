@@ -13,8 +13,8 @@
   <img src="https://img.shields.io/badge/Language-Kotlin-purple.svg" alt="Kotlin" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4.svg" alt="Jetpack Compose UI" />
   <img src="https://img.shields.io/badge/MinSDK-26-orange.svg" alt="Min SDK 26 (Android 8.0)" />
-  <a href="https://github.com/jieapi/aicode/releases/latest"><img src="https://img.shields.io/github/v/release/jieapi/aicode?display_name=tag&include_prereleases" alt="Latest Release" /></a>
-  <a href="https://github.com/jieapi/aicode/releases"><img src="https://img.shields.io/github/downloads/jieapi/aicode/total" alt="Total Downloads" /></a>
+  <a href="https://github.com/Lisir2002/deepcode-R/releases/latest"><img src="https://img.shields.io/github/v/release/Lisir2002/deepcode-R?display_name=tag&include_prereleases" alt="Latest Release" /></a>
+  <a href="https://github.com/Lisir2002/deepcode-R/releases"><img src="https://img.shields.io/github/downloads/Lisir2002/deepcode-R/total" alt="Total Downloads" /></a>
 </p>
 
 <p align="center">
@@ -38,12 +38,15 @@ R-DeepCode is an AI-powered coding assistant that runs natively on Android. It i
 
 ## Features
 
-- **AI Agent** — Supports Anthropic (Claude), OpenAI (GPT), Gemini, and other providers. Deeply interacts with the dev environment via a tool system (file operations, shell execution, terminal management, web search, etc.). Supports streaming output, context compression, and multi-session management
-- **Built-in Terminal** — Based on Termux components + PRoot Alpine Linux container, providing a full Linux command-line environment with background persistence and multi-tab management
-- **Remote SSH Mode** — Connect to a remote SSH server as the execution backend. Commands via exec channel, file I/O via SFTP, terminal via shell channel, with auto-reconnect and status indicator
+- **AI Agent** — Supports Anthropic (Claude), OpenAI (GPT), Gemini, and other providers. Deeply interacts with the dev environment via 17 built-in tools (file read/write/edit, shell execution, terminal management, web search, MCP management, etc.). Supports streaming output, context compression, multi-session management, and PLAN/BUILD/AUTO execution modes
+- **Permission & Safety** — Seven-layer permission evaluation engine: catastrophic command interception, PLAN-mode read-only constraints, shell static analysis, built-in read-only whitelist, user approval and rule memory
+- **Checkpoints & Rollback** — Automatic file snapshots before modifications, with rollback to any checkpoint
+- **Built-in Terminal** — Based on Termux components + PRoot Alpine Linux container, providing a full Linux command-line environment with background persistence, multi-tab management, and 6 built-in bundles (Python/Node/Git/Bash/rg/Network tools)
+- **Remote SSH Mode** — Connect to a remote SSH server as the execution backend. Commands via exec channel, file I/O via exec + cat/base64, terminal via shell channel, with auto-reconnect and status indicator
 - **MCP Protocol** — Model Context Protocol client, connecting to local (stdio) or remote (HTTP) MCP servers to dynamically extend tool capabilities
-- **Git Integration** — Built-in visual Git operations (status/branches/commits/tags), with long-press action menus
+- **Git Integration** — Built-in visual Git operations (status/branches/commits/tags/graph), with unified credential management across three endpoints (UI Git / AI Bash / terminal git)
 - **Remote Sync** — SFTP / FTP workspace sync, with a built-in FTP server for desktop access
+- **Backup & Restore** — AES-256-GCM encrypted full data backup (sessions/config/credentials/workspace), with optional passphrase protection
 - **Markdown Rendering** — Real-time Markdown rendering in AI conversations, with code highlighting
 - **Custom Prompts** — System prompts support user-defined overrides, preserved across app upgrades
 
@@ -51,17 +54,20 @@ R-DeepCode is an AI-powered coding assistant that runs natively on Android. It i
 
 | Category | Technology |
 |----------|------------|
-| Language | Kotlin |
-| UI | Jetpack Compose + Material 3 |
-| DI | Hilt (Dagger) |
-| Database | Room |
-| Network | Retrofit + OkHttp |
+| Language | Kotlin 2.2.21 |
+| Build | Android Gradle Plugin 8.9.3 + KSP |
+| UI | Jetpack Compose (BOM 2025.12.01) + Material 3 |
+| DI | Hilt 2.56.1 (Dagger) |
+| Database | Room 2.7.1 (file-driven SQL migration system, Schema v31) |
+| Network | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
 | Async | Kotlin Coroutines / Flow |
-| Terminal | Termux terminal-emulator + terminal-view |
-| Container | PRoot + Alpine Linux rootfs |
-| Remote SSH | SSHJ (exec channel + SFTP + shell channel) |
-| Crypto | BouncyCastle (bcprov-jdk18on, sshj X25519 key exchange dependency) |
-| FTP | Commons Net |
+| Terminal | Termux terminal-emulator + terminal-view (JNI libtermux.so) |
+| Container | PRoot + Alpine Linux 3.21 rootfs (arm64-v8a / x86_64) |
+| Remote SSH | SSHJ 0.38.0 (exec channel + shell channel) |
+| Crypto | BouncyCastle bcprov-jdk18on 1.75 + Android Keystore AES-GCM |
+| FTP | Apache Commons Net 3.10.0 |
+| Compression | Apache Commons Compress 1.26.2 (tar.gz / XZ) |
+| Serialization | Gson + kotlinx.serialization |
 
 ## Getting Started
 
@@ -115,18 +121,23 @@ keyPassword=your_key_password
 
 ```
 app/src/main/java/com/deep/rcode/
-├── core/                # Core infrastructure (FileLogger, db/MigrationLoader, theme, common components)
+├── core/                # Core infrastructure (FileLogger, AILogger, db/MigrationLoader, CredentialEncryptor, LineDiff, theme)
+├── di/                  # Hilt DI (AgentModule, RepositoryModule, BackupModule)
 ├── feature/
-│   ├── agent/           # AI Agent (prompts, MCP, tool registry, multi-provider adapters, slash commands)
-│   ├── git/             # Git integration (status/branches/commits/tags)
-│   ├── settings/        # App settings (providers, container, MCP, remote, logs, etc.)
-│   ├── terminal/        # Terminal emulation & session management (local Termux + remote SSH)
-│   └── workspace/       # Workspace & document management (local + remote SFTP/FTP)
-├── AIEditorApp.kt       # Application entry point
-└── MainActivity.kt      # Main Activity
+│   ├── agent/           # AI Agent (MVI workflow, 17 tools, permission engine, MCP, skills, memory, checkpoints, provider adapters)
+│   ├── credentials/     # Git credential management (3-endpoint IPC bridge, file sync, global dialog)
+│   ├── git/             # Git visualization (status/branches/commits/tags/graph/diff)
+│   ├── settings/        # App settings (AI provider management, container, MCP, remote, logs, etc.)
+│   ├── terminal/        # Terminal emulation & session management (local PRoot + remote SSH, 6 built-in bundles)
+│   ├── workspace/       # Workspace & document management (local + remote SFTP/FTP sync)
+│   └── backup/          # AES-encrypted backup & restore
+├── AIEditorApp.kt       # Application entry (BC registration, credential bridge, MCP, keepalive init)
+└── MainActivity.kt      # Main Activity (NavHost + Drawer + global credential dialog)
 ```
 
 > 🔎 **In-depth code summary (source-verified + live-sync rules)**: See [DEEPCODE-FINAL-SUMMARY.md](./DEEPCODE-FINAL-SUMMARY.md) — the single authoritative document covering architecture decisions, the tool matrix, permission evaluation pipeline, database schema, startup lifecycle, Git credential chain, and the live-sync maintenance rules for every subsequent code change.
+>
+> 📋 **AI collaboration guidelines**: See [AGENTS.md](./AGENTS.md) — asset sync discipline, Conventional Commits, branching workflow, release process (RC gating), and other must-read rules for development.
 
 ## Known Limitations
 

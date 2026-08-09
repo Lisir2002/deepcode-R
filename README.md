@@ -13,8 +13,8 @@
   <img src="https://img.shields.io/badge/Language-Kotlin-purple.svg" alt="Kotlin" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4.svg" alt="Jetpack Compose UI" />
   <img src="https://img.shields.io/badge/MinSDK-26-orange.svg" alt="Min SDK 26 (Android 8.0)" />
-  <a href="https://github.com/jieapi/aicode/releases/latest"><img src="https://img.shields.io/github/v/release/jieapi/aicode?display_name=tag&include_prereleases" alt="Latest Release" /></a>
-  <a href="https://github.com/jieapi/aicode/releases"><img src="https://img.shields.io/github/downloads/jieapi/aicode/total" alt="Total Downloads" /></a>
+  <a href="https://github.com/Lisir2002/deepcode-R/releases/latest"><img src="https://img.shields.io/github/v/release/Lisir2002/deepcode-R?display_name=tag&include_prereleases" alt="Latest Release" /></a>
+  <a href="https://github.com/Lisir2002/deepcode-R/releases"><img src="https://img.shields.io/github/downloads/Lisir2002/deepcode-R/total" alt="Total Downloads" /></a>
 </p>
 
 <p align="center">
@@ -38,12 +38,15 @@ R-DeepCode 是一款在 Android 手机上运行的 AI 编程工具，将大语�
 
 ## 功能特性
 
-- **AI Agent** — 支持 Anthropic（Claude）、OpenAI（GPT）、Gemini 等多家提供商，通过工具系统（文件操作、Shell 执行、终端管理、网页搜索等）与开发环境深度交互；支持流式输出、上下文压缩、多会话管理
-- **内置终端** — 基于 Termux 组件 + PRoot Alpine Linux 容器，提供完整 Linux 命令行环境，支持后台常驻、多标签管理
-- **远程 SSH 模式** — 连接远程 SSH 服务器作为执行后端，命令走 exec channel、文件读写走 SFTP、终端走 shell channel，支持自动重连与状态指示
+- **AI Agent** — 支持 Anthropic（Claude）、OpenAI（GPT）、Gemini 等多家提供商，通过 17 个内置工具（文件读写/编辑、Shell 执行、终端管理、网页搜索、MCP 管理等）与开发环境深度交互；支持流式输出、上下文压缩、多会话管理、PLAN/BUILD/AUTO 三种执行模式
+- **权限与安全** — 七层权限评估引擎：灾难性命令拦截、PLAN 模式只读约束、Shell 静态分析、内置只读白名单、用户审批与规则记忆，确保 AI 操作可控
+- **检查点与回滚** — 文件修改前自动创建检查点快照，支持随时回滚到任意检查点
+- **内置终端** — 基于 Termux 组件 + PRoot Alpine Linux 容器，提供完整 Linux 命令行环境，支持后台常驻、多标签管理、6 个内置功能包（Python/Node/Git/Bash/rg/网络工具）
+- **远程 SSH 模式** — 连接远程 SSH 服务器作为执行后端，命令走 exec channel、文件读写走 exec + cat/base64、终端走 shell channel，支持自动重连与状态指示
 - **MCP 协议** — Model Context Protocol 客户端，连接本地（stdio）或远程（HTTP）MCP 服务器动态扩展工具能力
-- **Git 集成** — 内置可视化 Git 操作（状态/分支/提交/标签管理），支持长按操作菜单
+- **Git 集成** — 内置可视化 Git 操作（状态/分支/提交/标签/拓扑图），三端凭据统一管理（UI Git / AI Bash / 终端 git 共用同一份凭据）
 - **远程同步** — 支持 SFTP / FTP 工作区同步，内置 FTP 服务器方便电脑端管理
+- **备份与恢复** — AES-256-GCM 加密的完整数据备份（会话/配置/凭据/工作区），支持口令保护
 - **Markdown 渲染** — AI 对话中实时渲染 Markdown，支持代码高亮
 - **自定义提示词** — 系统提示词支持用户自定义覆盖，App 升级不丢失
 
@@ -51,17 +54,20 @@ R-DeepCode 是一款在 Android 手机上运行的 AI 编程工具，将大语�
 
 | 类别 | 技术 |
 |------|------|
-| 语言 | Kotlin |
-| UI | Jetpack Compose + Material 3 |
-| 依赖注入 | Hilt (Dagger) |
-| 数据库 | Room |
-| 网络 | Retrofit + OkHttp |
+| 语言 | Kotlin 2.2.21 |
+| 构建 | Android Gradle Plugin 8.9.3 + KSP |
+| UI | Jetpack Compose (BOM 2025.12.01) + Material 3 |
+| 依赖注入 | Hilt 2.56.1 (Dagger) |
+| 数据库 | Room 2.7.1（文件驱动 SQL 迁移系统，Schema v31） |
+| 网络 | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
 | 异步 | Kotlin Coroutines / Flow |
-| 终端 | Termux terminal-emulator + terminal-view |
-| 容器 | PRoot + Alpine Linux rootfs |
-| 远程 SSH | SSHJ（exec channel + SFTP + shell channel） |
-| 加密 | BouncyCastle（bcprov-jdk18on，sshj X25519 密钥交换依赖） |
-| FTP | Commons Net |
+| 终端 | Termux terminal-emulator + terminal-view（JNI libtermux.so） |
+| 容器 | PRoot + Alpine Linux 3.21 rootfs（arm64-v8a / x86_64） |
+| 远程 SSH | SSHJ 0.38.0（exec channel + shell channel） |
+| 加密 | BouncyCastle bcprov-jdk18on 1.75 + Android Keystore AES-GCM |
+| FTP | Apache Commons Net 3.10.0 |
+| 压缩 | Apache Commons Compress 1.26.2（tar.gz / XZ） |
+| 序列化 | Gson + kotlinx.serialization |
 
 ## 快速开始
 
@@ -115,18 +121,23 @@ keyPassword=your_key_password
 
 ```
 app/src/main/java/com/deep/rcode/
-├── core/                # 核心基础设施（FileLogger、db/MigrationLoader、主题、通用组件）
+├── core/                # 核心基础设施（FileLogger、AILogger、db/MigrationLoader、CredentialEncryptor、LineDiff、主题）
+├── di/                  # Hilt 依赖注入（AgentModule、RepositoryModule、BackupModule）
 ├── feature/
-│   ├── agent/           # AI Agent（提示词、MCP、工具注册、多提供商适配、斜杠命令）
-│   ├── git/             # Git 集成（状态/分支/提交/标签）
-│   ├── settings/        # 应用设置（提供商、容器、MCP、远程、日志等）
-│   ├── terminal/        # 终端模拟与会话管理（本地 Termux + 远程 SSH）
-│   └── workspace/       # 工作区与文档管理（本地 + 远程 SFTP/FTP）
-├── AIEditorApp.kt       # Application 入口
-└── MainActivity.kt      # 主 Activity
+│   ├── agent/           # AI Agent（MVI 工作流、17 工具、权限引擎、MCP、技能、记忆、检查点、Provider 适配）
+│   ├── credentials/     # Git 凭据统一管理（三端 IPC 桥、文件同步、全局弹窗）
+│   ├── git/             # Git 可视化（状态/分支/提交/标签/拓扑图/Diff）
+│   ├── settings/        # 应用设置（AI Provider 管理、容器、MCP、远程、日志等）
+│   ├── terminal/        # 终端模拟与会话管理（本地 PRoot + 远程 SSH，6 个内置 Bundle）
+│   ├── workspace/       # 工作区与文档管理（本地 + 远程 SFTP/FTP 同步）
+│   └── backup/          # AES 加密备份与恢复
+├── AIEditorApp.kt       # Application 入口（BC 注册、凭据桥、MCP、保活服务初始化）
+└── MainActivity.kt      # 主 Activity（NavHost + Drawer + 全局凭据弹窗）
 ```
 
 > 🔎 **深度代码总结（逐源码核验 + 实时同步机制）**：请见 [DEEPCODE-FINAL-SUMMARY.md](./DEEPCODE-FINAL-SUMMARY.md)——项目架构决策、工具矩阵、权限评估链路、数据库 Schema、启动流程、Git 凭据链路等全量细节，以及后续每次代码改动的同步维护规则都在这一份文档里。
+>
+> 📋 **AI 协同开发规范**：请见 [AGENTS.md](./AGENTS.md)——资产同步纪律、Conventional Commits 规范、分支工作流、发版流程（RC 判定）等开发必读规则。
 
 ## 已知限制
 
