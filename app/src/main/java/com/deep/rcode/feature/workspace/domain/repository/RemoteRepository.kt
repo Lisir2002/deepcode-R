@@ -1,12 +1,13 @@
 package com.deep.rcode.feature.workspace.domain.repository
 
+import com.deep.rcode.core.security.CredentialEncryptor
+import com.deep.rcode.core.security.HostKeyManager
 import com.deep.rcode.feature.workspace.data.local.dao.RemoteConnectionDao
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteMountEntity
 import com.deep.rcode.feature.workspace.domain.model.RemoteConnection
 import com.deep.rcode.feature.workspace.domain.model.RemoteMount
 import com.deep.rcode.feature.workspace.domain.model.RemoteProtocol
-import com.deep.rcode.core.security.HostKeyManager
 import com.deep.rcode.feature.workspace.domain.remote.RemoteAuth
 import com.deep.rcode.feature.workspace.domain.remote.SyncEngine
 import com.deep.rcode.feature.workspace.domain.remote.ftp.FtpSyncClient
@@ -14,9 +15,9 @@ import com.deep.rcode.feature.workspace.domain.remote.local.LocalSyncClient
 import com.deep.rcode.feature.workspace.domain.remote.sftp.SftpSyncClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -27,13 +28,33 @@ import javax.inject.Singleton
 class RemoteRepository @Inject constructor(
     private val dao: RemoteConnectionDao,
     private val syncSettings: com.deep.rcode.feature.settings.data.repository.SyncSettingsRepository,
-    private val hostKeyManager: HostKeyManager
+    private val hostKeyManager: HostKeyManager,
+    private val encryptor: CredentialEncryptor,
 ) {
     private val activeEngines = ConcurrentHashMap<String, SyncEngine>()
     private val activeEngineIds = MutableStateFlow<Set<String>>(emptySet())
 
     fun getConnections(): Flow<List<RemoteConnection>> = dao.getAllConnections().map { list ->
         list.map { it.toDomainModel() }
+    }
+
+    /** 按 id 一次性读（用于冷启动 SSH 连接组装、Profile 激活时查主机配置）。 */
+    suspend fun getConnectionById(id: String): RemoteConnection? {
+        val entity = dao.getConnectionById(id) ?: return null
+        return entity.toDomainModel()
+    }
+
+    /** 按 id 一次性读出带原始 RemoteAuth（含密码或私钥+passphrase）的完整配置。
+     * 用于 AIEditorApp 冷启动、SettingsViewModel 切远程时组装 SSH 连接——
+     * RemoteConnection.domain 只暴露 password（PASSWORD 类型），但 PRIVATE_KEY
+     * 类型时还需 passphrase，这个方法直接返回 auth 密封类。 */
+    suspend fun getAuthById(id: String): RemoteAuth? {
+        val entity = dao.getConnectionById(id) ?: return null
+        return when (entity.authType) {
+            "PASSWORD" -> RemoteAuth.Password(decryptCredential(entity.authData))
+            "PRIVATE_KEY" -> RemoteAuth.PrivateKey(entity.authData, decryptCredential(entity.passphrase))
+            else -> null
+        }
     }
     
     fun getMounts(): Flow<List<RemoteMount>> = combine(
@@ -48,11 +69,35 @@ class RemoteRepository @Inject constructor(
         }
     }
 
+    /**
+     * 解密凭据：优先当作密文用 CredentialEncryptor 解密，解密失败则回退为"旧版本明文"
+     * 原样返回。这样老用户升级到加密版本后，所有已保存的旧明文密码/私钥 passphrase
+     * 都不会失效，仍可正常登录，只是下次 save/update 时会被重新加密写入。
+     */
+    private fun decryptCredential(raw: String?): String {
+        if (raw.isNullOrBlank()) return ""
+        return runCatching { encryptor.decrypt(raw) }
+            .recover { runCatching { java.util.Base64.getDecoder().decode(raw); "" }.exceptionOrNull(); raw }
+            .getOrElse { raw }
+    }
+
+    /** 密码和私钥 passphrase 存库前一律用 Android Keystore AES-256-GCM 加密。 */
+    private fun encryptCredential(plain: String?): String {
+        if (plain.isNullOrBlank()) return ""
+        return encryptor.encrypt(plain)
+    }
+
     suspend fun addConnection(conn: RemoteConnection, auth: RemoteAuth) {
         val authType = if (auth is RemoteAuth.Password) "PASSWORD" else "PRIVATE_KEY"
-        val authData = if (auth is RemoteAuth.Password) auth.password else (auth as RemoteAuth.PrivateKey).privateKeyPath
-        val passphrase = if (auth is RemoteAuth.PrivateKey) auth.passphrase else null
-        
+        // PASSWORD 类型：authData = 密码（加密后）；PRIVATE_KEY 类型：authData = 私钥文件路径（路径本身不需要加密，明文即可）
+        val authData = when (auth) {
+            is RemoteAuth.Password -> encryptCredential(auth.password)
+            is RemoteAuth.PrivateKey -> auth.privateKeyPath
+        }
+        // passphrase 仅 PRIVATE_KEY 场景使用，同样加密（它也是凭据的一部分）。
+        val passphrase = (auth as? RemoteAuth.PrivateKey)?.passphrase
+        val passphraseEnc = if (passphrase.isNullOrBlank()) null else encryptCredential(passphrase)
+
         val entity = RemoteConnectionEntity(
             id = conn.id,
             name = conn.name,
@@ -62,7 +107,7 @@ class RemoteRepository @Inject constructor(
             username = conn.username,
             authType = authType,
             authData = authData,
-            passphrase = passphrase
+            passphrase = passphraseEnc,
         )
         dao.insertConnection(entity)
     }
@@ -126,9 +171,9 @@ class RemoteRepository @Inject constructor(
             }
 
             val auth = if (connEntity.authType == "PASSWORD") {
-                RemoteAuth.Password(connEntity.authData)
+                RemoteAuth.Password(decryptCredential(connEntity.authData))
             } else {
-                RemoteAuth.PrivateKey(connEntity.authData, connEntity.passphrase)
+                RemoteAuth.PrivateKey(connEntity.authData, decryptCredential(connEntity.passphrase))
             }
 
             client.connect(conn.host, conn.port, conn.username, auth)
@@ -213,9 +258,9 @@ class RemoteRepository @Inject constructor(
                 RemoteProtocol.LOCAL -> LocalSyncClient()
             }
             val auth = if (connEntity.authType == "PASSWORD") {
-                RemoteAuth.Password(connEntity.authData)
+                RemoteAuth.Password(decryptCredential(connEntity.authData))
             } else {
-                RemoteAuth.PrivateKey(connEntity.authData, connEntity.passphrase)
+                RemoteAuth.PrivateKey(connEntity.authData, decryptCredential(connEntity.passphrase))
             }
             
             client.connect(conn.host, conn.port, conn.username, auth)
@@ -227,6 +272,12 @@ class RemoteRepository @Inject constructor(
         }
     }
 
+    /**
+     * 从 Entity 构造 Domain Model：密码字段已解密（只填到 RemoteConnection.password，
+     * PASSWORD 类型为密码，PRIVATE_KEY 类型为空字符串，避免泄漏私钥 passphrase）。
+     * 私钥 passphrase 只在真正构造 RemoteAuth 用于连接的地方 decrypt，不在 Domain 层
+     * 暴露，减少内存明文驻留点。
+     */
     private fun RemoteConnectionEntity.toDomainModel() = RemoteConnection(
         id = id,
         name = name,
@@ -234,7 +285,7 @@ class RemoteRepository @Inject constructor(
         host = host,
         port = port,
         username = username,
-        password = if (authType == "PASSWORD") authData else ""
+        password = if (authType == "PASSWORD") decryptCredential(authData) else ""
     )
 
     private fun RemoteMountEntity.toDomainModel(conn: RemoteConnection?) = RemoteMount(

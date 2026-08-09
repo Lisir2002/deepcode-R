@@ -49,8 +49,30 @@ class RemoteSshConnection @Inject constructor(
     /** 连接状态流，供 UI 显示指示器、工作区初始化等待连接就绪。 */
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    /** 重连成功后回调，供工作区重新加载。由 [startSupervisor] 注册。 */
-    private var onReconnected: (suspend () -> Unit)? = null
+    /**
+     * 「SSH 重连成功」回调列表：
+     *  支持多个监听者同时注册（工作区重载、终端 tab 重连、文档同步各自监听）。
+     *  每次连接成功（含首次 connect / 前台 tryReconnectIfDisconnected / supervisor 自动重连）
+     *  都会并发执行所有回调（它们之间彼此独立，一个抛错不影响另一个）。
+     */
+    private val onReconnectedListeners =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<suspend () -> Unit>()
+
+    fun registerOnReconnectedListener(listener: suspend () -> Unit) {
+        onReconnectedListeners.add(listener)
+    }
+
+    fun unregisterOnReconnectedListener(listener: suspend () -> Unit) {
+        onReconnectedListeners.remove(listener)
+    }
+
+    private suspend fun fireReconnected() {
+        for (listener in onReconnectedListeners) {
+            runCatching { listener() }
+                .onFailure { FileLogger.w(TAG, "reconnected listener 抛错，忽略", it) }
+        }
+    }
+
     private var supervisorJob: Job? = null
 
     /** 远程服务器上的真实 home 路径（连接成功后查 $HOME 缓存），供文件工具展开 ~。 */
@@ -109,6 +131,8 @@ class RemoteSshConnection @Inject constructor(
                 FileLogger.i(TAG, "SSH 已连接 ${config.host}:${config.port} as ${config.username}")
             }
             _connectionState.value = ConnectionState.CONNECTED
+            // 新连接成功（首次 / 重连 / 前台）就触发所有监听者（工作区 reload、终端 tab 重连、文档同步）
+            fireReconnected()
         } catch (e: Exception) {
             _connectionState.value = ConnectionState.FAILED
             throw e
@@ -167,10 +191,7 @@ class RemoteSshConnection @Inject constructor(
         if (isConnected()) return true
         _connectionState.value = ConnectionState.CONNECTING
         return runCatching { connect(cfg) }
-            .onSuccess {
-                FileLogger.i(TAG, "SSH 重连成功（前台触发）")
-                runCatching { onReconnected?.invoke() }
-            }
+            .onSuccess { FileLogger.i(TAG, "SSH 重连成功（前台触发）") }
             .onFailure {
                 FileLogger.w(TAG, "SSH 重连失败（前台触发）", it)
                 _connectionState.value = ConnectionState.FAILED
@@ -179,11 +200,12 @@ class RemoteSshConnection @Inject constructor(
     }
 
     /**
-     * 启动连接监督协程：远程模式下定期探活，连接断开则自动重连（指数退避），
-     * 重连成功后触发 [onReconnected] 回调（供工作区重新加载）并维护 [connectionState]。
+     * 启动连接监督协程：远程模式下定期探活，连接断开则自动重连（指数退避）。
+     * [onReconnected] 回调（通常是工作区重载 + 文档同步）通过 [registerOnReconnectedListener]
+     * 注册，这样终端 tab 重连等其他子系统也能独立监听，不会互相覆盖。
      * 幂等：重复调用不会起多个 supervisor。仅在远程模式下生效。 */
     fun startSupervisor(scope: CoroutineScope, onReconnected: suspend () -> Unit) {
-        this.onReconnected = onReconnected
+        registerOnReconnectedListener(onReconnected)
         if (supervisorJob?.isActive == true) return
         supervisorJob = scope.launch {
             var backoffMs = 5000L
@@ -195,7 +217,7 @@ class RemoteSshConnection @Inject constructor(
                     backoffMs = 15000 // 连接正常，拉长探活间隔（仅兜底，断开有 DisconnectListener 即时通知）
                     continue
                 }
-                // 连接已断，尝试重连
+                // 连接已断，尝试重连（connect() 内部会 fireReconnected 触发所有监听者）
                 tryReconnectIfDisconnected()
                 // 重连失败后指数退避
                 if (!isConnected()) {

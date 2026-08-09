@@ -198,6 +198,18 @@ object AgentModule {
 
     @Provides
     @Singleton
+    fun provideRemoteTerminalSessionManager(
+        impl: com.deep.rcode.feature.terminal.domain.RemoteTerminalSessionManager,
+        connection: RemoteSshConnection
+    ): com.deep.rcode.feature.terminal.domain.RemoteTerminalSessionManager {
+        // 实例化后注册 SSH 重连监听：每次 SSH 断线重连成功，自动把 Running 的交互 shell tab
+        // 全部重建（后台命令 tab 不碰，避免副作用重复执行）。
+        connection.registerOnReconnectedListener { impl.reconnectAllInteractiveRunningTabs() }
+        return impl
+    }
+
+    @Provides
+    @Singleton
     fun provideDelegatingTerminalSessionProvider(
         modeHolder: com.deep.rcode.feature.settings.data.repository.ExecutionModeHolder,
         local: TerminalSessionManager,

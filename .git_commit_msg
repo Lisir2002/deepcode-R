@@ -1,18 +1,52 @@
-fix(terminal): Banner/Tab 以上整块一律跟随程序主题（不再受终端白底黑字设置影响）
+feat(ssh): 凭据加密 + 自动重连交互 tab + 统一数据源（rc60 核心问题修复）
 
-用户批评设计思路：「提示框那里的不管是提示框还是周围区域，应该跟随程序
-主题懂不」——之前我把 Banner + TabBar + Terminal 全部塞进同一个
-palette.containerBg Column，导致终端选「白底黑字」时，程序是暗主题的
-情况下，Banner 周围 8dp padding 竟然透出终端白底色（截图里的断层）。
+核心问题修复三件套：
 
-按用户规则重排 Layout 分层：
-1) Tab 以上（Banner + 周围 padding + 空白间距）→ 放在 Scaffold.surface
-   里，100% 跟随程序主题（通过 MaterialTheme.colorScheme）；
-   Card.containerColor = primaryContainer / onPrimaryContainer，
-   周围 padding 露出的就是 Scaffold surface（程序暗就是深蓝、程序亮就是浅），
-   与终端选择彻底解耦。
-2) Tab 及以下（TabBar / 1dp 分隔线 / TerminalSurface 内容区 / 搜索浮层 /
-   Ctrl 气泡）→ 仍然包在 palette.containerBg Column 里，保证 Tab↔Terminal
-   之间无白条；TabBar/ExtraKeys/分隔线 本就走 skin + MaterialTheme，
-   「必然跟随程序」；仅 TerminalSurface 的内部颜色（fg/bg/cursor/256）
-   才会受终端配色三档（跟随程序/黑底白字/白底黑字）影响。
+一、P0 安全：密码 & 私钥 passphrase 一律 Keystore AES-256-GCM 加密入库
+- RemoteRepository add/updateConnection：PASSWORD 类型 authData =
+  CredentialEncryptor.encrypt(password)，PRIVATE_KEY 类型 passphrase 也加密；
+  私钥路径本身只是文件路径不加密。
+- RemoteRepository 所有读路径（connectMount/connect/listRemoteDirectories/
+  toDomainModel）统一走 decryptCredential：先 try 解密，解密失败回退"旧版本明文"，
+  兼容老用户升级不丢凭据，下次 save/update 自动重新加密写回。
+- ExecutionModeRepository setRemoteConnection 的 v1 legacy 分支也对 PASSWORD_KEY
+  加密写入，remoteConnectionFlow 读取时 decryptCredentialCompat 回退明文。
+- 新增 RemoteRepository.getAuthById()：按 id 直接返回 RemoteAuth 密封类
+  （支持 PASSWORD / PRIVATE_KEY，含解密后的 passphrase），解决
+  RemoteConnection.domain password 字段暴露不到私钥场景的问题。
+
+二、P1 会话：SSH 断线 supervisor 重连后自动重建交互 shell tab
+- RemoteSshConnection 把单例 onReconnected 回调升级为
+  ConcurrentHashMap.newKeySet() 多监听器集合，暴露
+  registerOnReconnectedListener / unregisterOnReconnectedListener；
+  connect() 成功（含首次/前台/后台 supervisor/重连）统一 fireReconnected()
+  所有监听器并发独立 try/catch。
+- RemoteTerminalSessionManager 新增 reconnectAllInteractiveRunningTabs()：
+  只重建 !isBackground && RunState.Running 的交互 tab（后台命令 tab 不重启，
+  避免 `rm`/`git push` 这类副作用命令重复执行）。
+- recreateInteractiveShellForTab(old) 抽取 reconnect/reconnectAll 共用实现，
+  重连后先 cd 到 workspacePath 再 exec $SHELL -l，与新开交互 tab 行为一致。
+- DI AgentModule 新增 provideRemoteTerminalSessionManager：实例化后立刻
+  把 reconnectAllInteractiveRunningTabs 挂到 RemoteSshConnection reconnected
+  监听，全程无需 ViewModel 关心。
+
+三、P1 架构：消除双重持久化（ExecutionModeRepository ↔ Room 漂移）
+- ExecutionModeRepository v2 数据结构：新增 ssh_active_connection_id +
+  ssh_active_profile_id；写 activeConnectionId != null 时，DataStore 里的
+  HOST/PORT/USERNAME/PASSWORD legacy 字段会被 remove，不再重复存储。
+- 新增 SshConfigResolver.kt：RemoteConnectionSettings.resolveSshConfigOrNull()
+  把「空 host + 带 activeConnectionId」的 v2 占位配置解析成真实
+  RemoteConnectionConfig：
+   a) activeConnectionId 非空：从 Room remote_connections 按 id 查
+      host/port/username/auth（走 getAuthById 支持私钥认证场景）；
+      workspacePath 优先取 ContainerProfile.activeProfile 的
+      RootfsSource.RemoteSsh.remoteWorkspacePath（profile 是唯一真源），
+      次选 DataStore REMOTE_PATH_KEY，最后回退 /home/$username/workspace。
+   b) activeConnectionId 空：回退 legacy v1 路径拿 settings.host/password，
+      兼容 rc59 及以前版本。
+- SettingsViewModel.setActiveContainerProfile REMOTE_SSH 分支改写为 v2：
+  settings.activeConnectionId = ssh.connectionId，带 profileId，密码不再
+  复制到 DataStore；connect 用 getAuthById 支持 PRIVATE_KEY，不再限制
+  远程 SSH profile 只能用密码。
+- AIEditorApp.onCreate 冷启动 SSH 连接改为调用 resolveSshConfigOrNull，
+  不再硬编码 RemoteAuth.Password（天然丢失私钥认证能力的老逻辑删掉了）。

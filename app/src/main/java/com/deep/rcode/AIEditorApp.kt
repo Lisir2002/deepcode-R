@@ -95,6 +95,14 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var workspaceRepository: com.deep.rcode.feature.workspace.data.repository.WorkspaceRepository
 
+    /** 远程主机配置仓库：冷启动按 activeConnectionId 从 Room 单源取主机 + 凭据（密码/私钥）。 */
+    @Inject
+    lateinit var remoteRepository: com.deep.rcode.feature.workspace.domain.repository.RemoteRepository
+
+    /** 容器 profile 仓库：冷启动按 active profile 拿 RootfsSource.RemoteSsh 的 workspacePath。 */
+    @Inject
+    lateinit var containerSettingsRepository: com.deep.rcode.feature.settings.data.repository.ContainerSettingsRepository
+
     /** 模型元数据服务：启动即异步刷新 models.dev 目录（24h 缓存，失败静默，兜底内置数据）。 */
     @Inject
     lateinit var modelMetadataService: ModelMetadataService
@@ -140,17 +148,14 @@ class AIEditorApp : Application() {
             val mode = executionModeRepository.executionModeFlow.first()
             executionModeHolder.setMode(mode)
             if (mode == com.deep.rcode.feature.settings.data.repository.ExecutionMode.REMOTE_SSH) {
-                executionModeRepository.remoteConnectionFlow.first()?.let { settings ->
+                val settings = executionModeRepository.remoteConnectionFlow.first()
+                val cfg = settings?.resolveSshConfigOrNull(
+                    remoteRepository = remoteRepository,
+                    containerSettingsRepository = containerSettingsRepository,
+                )
+                if (cfg != null) {
                     runCatching {
-                        remoteSshConnection.connect(
-                            com.deep.rcode.feature.agent.domain.container.RemoteConnectionConfig(
-                                host = settings.host,
-                                port = settings.port,
-                                username = settings.username,
-                                auth = com.deep.rcode.feature.workspace.domain.remote.RemoteAuth.Password(settings.password),
-                                remoteWorkspacePath = settings.remoteWorkspacePath
-                            )
-                        )
+                        remoteSshConnection.connect(cfg)
                         // 连接成功后同步内置文档到远程 ~/.rdeepcode/docs/，供 AI 查阅。
                         syncDocsToRemote()
                     }.onFailure { FileLogger.e(TAG, "启动时 SSH 连接失败，将在首次命令时重试", it) }

@@ -260,21 +260,57 @@ class RemoteTerminalSessionManager @Inject constructor(
     suspend fun reconnect(id: String) {
         val old = tab(id) ?: return
         runCatching { old.session.finishIfRunning() }
+        recreateInteractiveShellForTab(old)
+    }
+
+    /**
+     * 自动重连所有「仍处于 Running 状态的交互 shell tab」。
+     * 由 RemoteSshConnection.registerOnReconnectedListener 在 SSH 断线重连成功后调用。
+     *
+     * 故意忽略：
+     *  - 后台命令 tab（!isBackground=false）：断连后命令已经死了，自动重启可能导致
+     *    重复执行（比如 `rm`、`git push` 这类副作用命令），安全上不能自动重启。
+     *  - Finished 状态的 tab：用户自己 exit 的，不需要复活。
+     */
+    suspend fun reconnectAllInteractiveRunningTabs() {
         if (!ensureRemote()) return
+        val snapshot = tabOpLock.withLock { _tabs.value.toList() }
+        val targets = snapshot.filter { !it.isBackground && it.runState is RunState.Running }
+        if (targets.isEmpty()) return
+        FileLogger.i(TAG, "SSH 重连成功，自动重建 ${targets.size} 个交互 shell tab: ${targets.joinToString { it.id }}")
+        for (old in targets) {
+            runCatching { old.session.finishIfRunning() }
+            runCatching { recreateInteractiveShellForTab(old) }
+                .onFailure { FileLogger.e(TAG, "重建交互 tab ${old.id} 失败", it) }
+        }
+    }
+
+    /** 按旧 tab 元数据重建一个 shell session（保持 id/title/运行状态）。 */
+    private suspend fun recreateInteractiveShellForTab(old: TerminalTab) {
         val session = connection.startShellSession().also { it.allocateDefaultPTY() }
         val shell = session.startShell()
         val backend = SshShellBackend(shell)
         val termSession = TerminalSession(TRANSCRIPT_ROWS, AppRemoteSessionClient(), backend)
         termSession.updateSize(DEFAULT_COLUMNS, DEFAULT_ROWS)
+        val workspacePath = connection.config?.remoteWorkspacePath
+        if (!workspacePath.isNullOrBlank()) {
+            runCatching {
+                val cmd = "cd ${workspacePath} 2>/dev/null && cd \$HOME && mkdir -p .rdeepcode 2>/dev/null; exec \$SHELL -l\n"
+                backend.outputStream.write(cmd.toByteArray(Charsets.UTF_8))
+                backend.outputStream.flush()
+            }
+        }
         val newTab = TerminalTab(
             id = old.id,
             title = old.title,
             session = termSession,
             isBackground = old.isBackground,
             command = old.command,
+            notifyOnExit = old.notifyOnExit,
+            sourceSessionId = old.sourceSessionId,
             runState = RunState.Running
         )
-        _tabs.value = _tabs.value.map { if (it.id == id) newTab else it }
+        _tabs.value = _tabs.value.map { if (it.id == old.id) newTab else it }
         bumpRevision()
     }
 

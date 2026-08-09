@@ -797,25 +797,31 @@ class SettingsViewModel @Inject constructor(
                     val ssh = profile.rootfsSource as? RootfsSource.RemoteSsh ?: return@launch
                     val conn = remoteConnections.value.firstOrNull { it.id == ssh.connectionId }
                         ?: return@launch
+                    val auth = runCatching { remoteRepository.getAuthById(ssh.connectionId) }.getOrNull()
+                        ?: com.deep.rcode.feature.workspace.domain.remote.RemoteAuth.Password(conn.password)
+                    val workspacePath = ssh.remoteWorkspacePath.ifBlank { "/home/${conn.username}/workspace" }
+                    // v2 统一数据源：只存 activeConnectionId + workspacePath + profileId，
+                    // 不再重复 host/port/username/password 到 DataStore，避免与 Room 漂移。
                     val settings = com.deep.rcode.feature.settings.data.repository.RemoteConnectionSettings(
-                        host = conn.host,
-                        port = conn.port,
-                        username = conn.username,
-                        password = conn.password,
-                        remoteWorkspacePath = ssh.remoteWorkspacePath.ifBlank { "/home/${conn.username}/workspace" }
+                        host = "",
+                        port = 22,
+                        username = "",
+                        password = "",
+                        remoteWorkspacePath = workspacePath,
+                        activeConnectionId = ssh.connectionId,
                     )
-                    executionModeRepository.setRemoteConnection(settings)
+                    executionModeRepository.setRemoteConnection(settings, activeProfileId = id)
                     executionModeRepository.setExecutionMode(ExecutionMode.REMOTE_SSH)
                     executionModeHolder.setMode(ExecutionMode.REMOTE_SSH)
                     // 运行时切换需主动连接（启动时由 AIEditorApp 连）；复用 RemoteSshConnection.connect
                     runCatching {
                         remoteSshConnection.connect(
                             com.deep.rcode.feature.agent.domain.container.RemoteConnectionConfig(
-                                host = settings.host,
-                                port = settings.port,
-                                username = settings.username,
-                                auth = com.deep.rcode.feature.workspace.domain.remote.RemoteAuth.Password(settings.password),
-                                remoteWorkspacePath = settings.remoteWorkspacePath
+                                host = conn.host,
+                                port = conn.port,
+                                username = conn.username,
+                                auth = auth,
+                                remoteWorkspacePath = workspacePath
                             )
                         )
                     }.onFailure { FileLogger.w("SettingsViewModel", "切换到远程镜像时 SSH 连接失败", it) }
