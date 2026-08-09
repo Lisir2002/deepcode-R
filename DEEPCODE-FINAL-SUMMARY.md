@@ -1,6 +1,6 @@
 # R-DeepCode 项目深度总结文档（经源码核验的最终版 2026-08-09）
 
-> **核验原则**：旧文档（README / SUMMARY.md）仅作参考，**全部声明以实际源码为准**。  
+> **文档权威性声明**：本文档是 R-DeepCode 项目的**唯一官方深度总结文档**，全部声明均以实际源码逐行核验为依据；不存在其他"旧版总结"作为并行来源。  
 > 每一次代码改动涉及的同步范围见 §十六，请在后续提交前回查并更新对应章节。
 
 ---
@@ -34,8 +34,8 @@ R-DeepCode 是**原生 Android 上的 AI 编程 IDE**，核心是让 **AI Agent 
 ```
 deepcode-R/
 ├── CLAUDE.md                          # AI 协同开发规范（资产同步纪律）
-├── SUMMARY.md                         # 历史版总结
-├── README.md / README.en.md
+├── DEEPCODE-FINAL-SUMMARY.md          # 本文档 —— 项目唯一官方深度总结
+├── README.md / README.en.md           # 项目首页（中英文）
 ├── LICENSE (GPL-3.0)
 ├── .githooks/commit-msg                # Conventional Commits 校验钩子
 ├── .github/workflows/

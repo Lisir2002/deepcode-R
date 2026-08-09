@@ -114,7 +114,7 @@ keyPassword=your_key_password
 ## Project Structure
 
 ```
-app/src/main/java/com/aicode/
+app/src/main/java/com/deep/rcode/
 ├── core/                # Core infrastructure (FileLogger, db/MigrationLoader, theme, common components)
 ├── feature/
 │   ├── agent/           # AI Agent (prompts, MCP, tool registry, multi-provider adapters, slash commands)
@@ -125,6 +125,8 @@ app/src/main/java/com/aicode/
 ├── AIEditorApp.kt       # Application entry point
 └── MainActivity.kt      # Main Activity
 ```
+
+> 🔎 **In-depth code summary (source-verified + live-sync rules)**: See [DEEPCODE-FINAL-SUMMARY.md](./DEEPCODE-FINAL-SUMMARY.md) — the single authoritative document covering architecture decisions, the tool matrix, permission evaluation pipeline, database schema, startup lifecycle, Git credential chain, and the live-sync maintenance rules for every subsequent code change.
 
 ## Known Limitations
 

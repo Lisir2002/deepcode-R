@@ -114,7 +114,7 @@ keyPassword=your_key_password
 ## 项目结构
 
 ```
-app/src/main/java/com/aicode/
+app/src/main/java/com/deep/rcode/
 ├── core/                # 核心基础设施（FileLogger、db/MigrationLoader、主题、通用组件）
 ├── feature/
 │   ├── agent/           # AI Agent（提示词、MCP、工具注册、多提供商适配、斜杠命令）
@@ -125,6 +125,8 @@ app/src/main/java/com/aicode/
 ├── AIEditorApp.kt       # Application 入口
 └── MainActivity.kt      # 主 Activity
 ```
+
+> 🔎 **深度代码总结（逐源码核验 + 实时同步机制）**：请见 [DEEPCODE-FINAL-SUMMARY.md](./DEEPCODE-FINAL-SUMMARY.md)——项目架构决策、工具矩阵、权限评估链路、数据库 Schema、启动流程、Git 凭据链路等全量细节，以及后续每次代码改动的同步维护规则都在这一份文档里。
 
 ## 已知限制
 
