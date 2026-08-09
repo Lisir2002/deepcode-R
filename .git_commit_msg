@@ -1,6 +1,16 @@
-fix(terminal): 终端内容配色 跟随系统 → 跟随程序，LocalAppDarkMode CompositionLocal 下发
+fix(terminal): 外壳(Tab/Banner/Keys/Status)颜色 必然跟随程序，不再读系统 uiMode
 
-1. TerminalTheme.SYSTEM → FOLLOW_APP（stableKey 仍保留 "system" 兼容老用户）
-2. MainActivity 根节点 CompositionLocalProvider 下发 LocalAppDarkMode，按 AppThemeMode 计算
-3. rememberTerminalPalette FOLLOW_APP 分支读 LocalAppDarkMode.current，不再自己 isSystemInDarkTheme
-4. UI 三处"跟随系统（暗/亮自动切换）"文案全部改成"跟随程序（暗/亮自动切换）"
+规则落地：
+- 终端内容区域：默认 FOLLOW_APP（跟随程序主题），
+  同时允许终端设置改成 PURE_BLACK/PURE_WHITE 强制覆盖（自定义）
+- 其余外壳 UI（顶部栏、首屏 Banner、Tab 栏、分隔线、功能键行、
+  安装状态卡 Success 绿点、皮肤快照 dark 标志）一律跟随程序。
+
+具体修改：
+1. TerminalUISpec.rememberTerminalSkin.dark：
+   isSystemInDarkTheme() → LocalAppDarkMode.current
+2. TerminalSettingCards.SemanticColors.Success：
+   isSystemInDarkTheme() → LocalAppDarkMode.current
+   （保证"就绪绿点"暗/亮模式在 App 强制主题下也正确取 Brand.StatusGreen）
+3. 代码内其它外壳颜色全部来自 MaterialTheme.colorScheme.*，
+   由 MainActivity.darkTheme 统一决定，天然满足「必然跟随程序」。

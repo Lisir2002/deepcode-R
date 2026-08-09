@@ -1,13 +1,12 @@
 package com.deep.rcode.feature.terminal.presentation.component
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.deep.rcode.core.theme.LocalAppDarkMode
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 
@@ -192,7 +191,7 @@ fun rememberTerminalSkin(@Suppress("UNUSED_PARAMETER") palette: TerminalPalette)
         ctrlActiveBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
         ctrlActiveFg = MaterialTheme.colorScheme.onPrimaryContainer,
         ctrlActiveBorder = MaterialTheme.colorScheme.primary.copy(alpha = 0.70f),
-        dark = isSystemInDarkTheme()
+        dark = LocalAppDarkMode.current
     )
 }
 
