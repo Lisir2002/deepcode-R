@@ -553,19 +553,41 @@ class LinuxContainerEngine @Inject constructor(
                     exitCode = -1
                 }
             }
-            failed = if (exitCode == 0) emptyList() else pkgs
+            if (exitCode == 0) {
+                failed = emptyList()
+            } else {
+                // ⚠️ 以前这里写：failed = pkgs（apk 非 0 退出就把所有输入包都标失败）。
+                // 但 rc29 用户日志显示：「zsh zsh-vcs」输入两个包，apk 退出码非 0（报 "1 error; 15 MiB in 24 packages"），
+                // 而 apk info 字符数从 230 → 295，证明 zsh 和 22 个依赖都已经装进去了，只有 zsh-vcs
+                // （Alpine 3.21 根本没有这个包名）报错——把 zsh 也列为失败是错误的。
+                // 修复：apk 非 0 退出时，逐个查每个输入包是否真的在 apk world 里，只把真正不存在的包列入 failed。
+                val installedWorld: Set<String> = runCatching {
+                    execCaptured("apk info 2>/dev/null", projectPath = null, timeoutMs = APK_LIST_TIMEOUT_MS)
+                        .output.lineSequence()
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() && APK_PKG_NAME_REGEX.matches(it) }
+                        .toSet()
+                }.getOrDefault(emptySet())
+                failed = pkgs.filter { pkg ->
+                    // apk world 里完全没包含任何一个与 pkg 名字匹配的已安装条目，才算真正失败
+                    installedWorld.none { installed -> installed == pkg || installed.startsWith("$pkg-") }
+                }
+                if (failed.size < pkgs.size) {
+                    // 有部分包其实成功了，把成功的那些也加到自定义快照里（不要漏掉）
+                    val okPkgs = pkgs - failed.toSet()
+                    if (okPkgs.isNotEmpty()) {
+                        bundleRepository.addCustomSnapshots(okPkgs)
+                        FileLogger.i(TAG, "自定义包部分成功（exit=$exitCode，部分失败）：已安装=$okPkgs，失败=$failed")
+                    }
+                }
+            }
             if (failed.isEmpty()) {
-                // 成功：加到自定义包快照（UI 列表/磁盘标记都更新）
+                // 全成功：加到自定义包快照（UI 列表/磁盘标记都更新）
                 bundleRepository.addCustomSnapshots(pkgs)
                 FileLogger.i(TAG, "自定义包安装成功：$argLine")
-            } else {
-                FileLogger.w(TAG, "自定义包安装失败($lastLine)：$argLine")
-                // ⚠️ 绝对不要再把容器整体状态置成 Failed（以前曾写成 ContainerInitState.Failed("安装自定义包失败…")）。
-                // 自定义包 apk add 失败是用户层面"部分命令非0 / 包名不存在"等问题，不代表 rootfs/prout 损坏。
-                // 一旦 _initProgress=Failed，ViewModel.containerInstalled=false，整张「本地容器环境」卡片
-                // 就会显示「失败：安装自定义包失败…」并显示「初始化容器」按钮（要求清 rootfs），
-                // 而实际上 apk 已成功安装的那些包还存在于 rootfs 中 → 典型矛盾。
-                // 修复：保持 _initProgress=Ready，失败只走调用方 postError 弹 toast。
+            } else if (failed.size == pkgs.size) {
+                // 全部失败，记录 warn（部分成功的 warn 已经在上面分支里打了）
+                FileLogger.w(TAG, "自定义包安装全部失败($lastLine)：$argLine")
             }
         } finally {
             // ⚠️ 无论成功/失败/异常，finally 都无条件复位 _initProgress 回 Ready。
@@ -697,10 +719,16 @@ class LinuxContainerEngine @Inject constructor(
      * 每次安装前都写（幂等），保证：① 新解压 rootfs 立即有国内镜像；② 存量 rootfs（
      * 其 /etc/apk/repositories 还是官方源）也被同步更新成国内源。
      *
-     * 注意：**调用方必须**在脚本开头先 `set -e`（或 `set -o pipefail`）。
-     * 以前写成 `apk update 2>&1 | tail -n 3` 会吞掉 `apk update` 的失败退出码，
-     * 导致仓库索引损坏 / `No such file or directory` 时继续 `apk add`，
-     * 最终 apk info 会长期吐 WARNING: opening from cache，UI 自定义包列表被污染。
+     * ⚠️ 历史说明（不要回退到 pipefail+tail 模式）：
+     *  1. 旧版 1：`apk update 2>&1 | tail -n 3`（无 pipefail）——tail 永远 0，apk update 的失败码
+     *     被吞，仓库损坏时继续 apk add，apk info 吐脏 WARNING。
+     *  2. 旧版 2：加上 `set -o pipefail` —— 当 apk update 输出行数 >10 时，tail 先读完就关管道，
+     *     apk update 收到 SIGPIPE 异常退出(128+13=141)，pipefail 把整条管道退出码记为 141≠0，
+     *     set -e 强制中止整个脚本，apk add 根本不执行。rc29 用户日志「1 error; 15 MiB in 24 packages」
+     *     就是这 bug：apk update 被 SIGPIPE 杀掉时脚本已经进行到 apk add，导致"部分装完但失败"。
+     *  3. 当前版：把 apk update 的 stdout 先存进临时变量（用命令替换 `$()` 等，避免管道 SIGPIPE），
+     *     再用 printf 只打最后 10 行给用户看进度。apk update 失败时退出码真实保留，
+     *     set -e 正常拦截（仓库损坏 / DNS 失败等真正的错误不被吞）。
      */
     private fun apkMirrorAndUpdateScriptOnce(mirror: String = ContainerInstaller.ALPINE_MIRROR): String = buildString {
         append("mkdir -p /etc/apk\n")
@@ -708,9 +736,9 @@ class LinuxContainerEngine @Inject constructor(
         append("$mirror/${ContainerInstaller.ALPINE_BRANCH}/main\n")
         append("$mirror/${ContainerInstaller.ALPINE_BRANCH}/community\n")
         append("EOF\n")
-        append("# pipefail 保证 apk update 失败时整条管道退出码非 0，set -e 会拦截后续 apk add\n")
-        append("set -o pipefail\n")
-        append("apk update 2>&1 | tail -n 10\n")
+        append("# apk update 输出先存到临时文件，tail 只做展示用——避免管道 SIGPIPE 杀 apk update\n")
+        append("_apk_update_log=$(mktemp) && apk update > \"$_apk_update_log\" 2>&1\n")
+        append("tail -n 10 \"$_apk_update_log\"; rm -f \"$_apk_update_log\"\n")
     }
 
     // ── End Bundle 公开 API ──────────────────────────────────────────────────
