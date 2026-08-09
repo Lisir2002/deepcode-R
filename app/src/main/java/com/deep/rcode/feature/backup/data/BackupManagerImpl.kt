@@ -514,11 +514,11 @@ class BackupManagerImpl @Inject constructor(
         // 解密失败兜底：DB 中残留明文（历史数据），直接原样返回。
         val isPwd = authType.equals("PASSWORD", ignoreCase = true)
             || authType.equals("password", ignoreCase = true)
-        val resolvedAuthData = when {
+        val resolvedAuthData: String = when {
             isPwd -> runCatching { encryptor.decrypt(authData) }.getOrElse { authData }
             else -> authData // PRIVATE_KEY: 路径本身是明文，不解密
         }
-        val resolvedPassphrase = passphrase?.let {
+        val resolvedPassphrase: String? = passphrase?.takeIf { it.isNotEmpty() }?.let {
             runCatching { encryptor.decrypt(it) }.getOrElse { it }
         }
         return RemoteConnectionDto(

@@ -13,6 +13,7 @@ import com.deep.rcode.feature.agent.domain.mcp.McpManager
 import com.deep.rcode.feature.settings.data.repository.KeepaliveSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.LanguageSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.LogSettingsRepository
+import com.deep.rcode.feature.settings.data.repository.resolveSshConfigOrNull
 import com.deep.rcode.feature.settings.data.remote.ModelMetadataService
 import com.deep.rcode.feature.terminal.domain.TerminalKeepaliveService
 import dagger.hilt.android.HiltAndroidApp
