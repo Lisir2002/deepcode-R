@@ -33,7 +33,7 @@ R-DeepCode 是**原生 Android 上的 AI 编程 IDE**，核心是让 **AI Agent 
 
 ```
 deepcode-R/
-├── CLAUDE.md                          # AI 协同开发规范（资产同步纪律）
+├── AGENTS.md                          # AI 协同开发规范（资产同步纪律，项目规则唯一权威源）
 ├── DEEPCODE-FINAL-SUMMARY.md          # 本文档 —— 项目唯一官方深度总结
 ├── README.md / README.en.md           # 项目首页（中英文）
 ├── LICENSE (GPL-3.0)
@@ -304,7 +304,7 @@ feature/agent/domain/provider/
 
 ### 5.2 SystemPromptProvider 11 段（实际 assets/prompts 11 文件确认）
 
-00-identity → 10-communication → 15-project-rules(加载 AGENTS.md/CLAUDE.md) → 20-coding-discipline → 30-comments → 40-approach → 50-safety(凭据脱敏) → 60-tools-and-paths → 70-skills-and-mcp(manageMcp 自动装 npx/pip 前置环境，绝不手改 mcp.json) → 80-plan-mode(只读约束 + PLAN 质量标准 + 末尾 switchMode 触发审查) → 81-auto-mode(全放行但灾难性 rm 仍拦截)
+00-identity → 10-communication → 15-project-rules(加载 AGENTS.md，代码回退查 CLAUDE.md 但项目只提供 AGENTS.md) → 20-coding-discipline → 30-comments → 40-approach → 50-safety(凭据脱敏) → 60-tools-and-paths → 70-skills-and-mcp(manageMcp 自动装 npx/pip 前置环境，绝不手改 mcp.json) → 80-plan-mode(只读约束 + PLAN 质量标准 + 末尾 switchMode 触发审查) → 81-auto-mode(全放行但灾难性 rm 仍拦截)
 
 ---
 
@@ -527,7 +527,7 @@ foregroundServiceType = "dataSync"
 
 ## 十三、测试清单（14 个 *Test.kt 实际 glob 一一核对）
 
-运行：`./gradlew :app:testUniversalDebugUnitTest`（CLAUDE.md 规定 push 前必跑）
+运行：`./gradlew :app:testUniversalDebugUnitTest`（AGENTS.md 规定 push 前必跑）
 
 1. FileMigrationTest — SQL 分号切分
 2. ShellCommandParserTest — 引号感知 / 段拆分 / 命令替换 / rm 解析
@@ -546,9 +546,9 @@ foregroundServiceType = "dataSync"
 
 ---
 
-## 十四、CLAUDE.md 必须遵守的纪律（资产同步纪律最重要，反复强调）
+## 十四、AGENTS.md 必须遵守的纪律（资产同步纪律最重要，反复强调）
 
-文件：`CLAUDE.md`
+文件：`AGENTS.md`（原 `CLAUDE.md` 已迁移至此，项目规则唯一权威源；App 运行时 SystemPromptProvider 优先加载 AGENTS.md，代码回退查 CLAUDE.md 仅为兼容用户自定义场景）
 
 1. **永远中文回复**
 2. **资产同步纪律（改代码必须同步文档，最容易漏）**：
@@ -591,7 +591,7 @@ foregroundServiceType = "dataSync"
 | 备份加密（RDCB1 magic + PBKDF2） | `app/src/main/java/com/deep/rcode/feature/backup/domain/BackupCrypto.kt` |
 | ProGuard keep 规则 | `app/proguard-rules.pro` |
 | Manifest | `app/src/main/AndroidManifest.xml` |
-| AI 协同规范（资产同步纪律） | `CLAUDE.md` |
+| AI 协同规范（资产同步纪律） | `AGENTS.md` |
 
 ---
 
@@ -630,6 +630,6 @@ foregroundServiceType = "dataSync"
 ### 16.3 文档变更的 Git 提交规范
 
 - **本文件的变更必须与引起它变更的代码提交放在同一次 commit 内**（不要单独"补文档"提交，避免代码与文档版本错位）。
-- 文档变更的 commit scope 按 CLAUDE.md 填写为 `docs` 或对应模块 + docs 说明：
+- 文档变更的 commit scope 按 AGENTS.md 填写为 `docs` 或对应模块 + docs 说明：
   - 例如：修改 Bash 工具参数 + 更新 §4.2 → commit message = `feat(agent): 为 Bash 增加 env 参数，并同步更新 DEEPCODE-FINAL-SUMMARY 工具矩阵`
   - 例如：新加 SQL 迁移 v32 + 更新 §6 → `feat(db): 增加会话书签（migration 32），同步更新 SUMMARY 的里程碑列表`
