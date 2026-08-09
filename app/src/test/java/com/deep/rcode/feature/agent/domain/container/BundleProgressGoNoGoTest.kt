@@ -203,4 +203,101 @@ class BundleProgressGoNoGoTest {
     // helper 仅用于断言语义（不引入实现，避免双向依赖）
     private fun firstEma(): Boolean = true
     private fun computePhaseTotalDone(): Float = 1f
+
+    // ─────────────────────── 6. B-方案 GoNoGo 新 4 个 Case（revision + 分类修复） ───────────────────────
+
+    /** 6.1 LogLineStore.replaceAt 原位 INFO→FETCH kind → revision bump + counts 正确更新。 */
+    @Test
+    fun `LogLineStore 原位替换 INFO 为 FETCH 时 revision 加 1 且快照读新 kind`() {
+        val store = LogLineStore(capacity = 20)
+        // 先塞 1 条 INFO 行
+        store.append(
+            LogLine(
+                id = 1L,
+                kind = LogLineKind.INFO,
+                text = "fetch http://mirrors.aliyun.com/alpine/v3.21/main/aarch64/APKINDEX.tar.gz",
+            ),
+        )
+        val revBefore = store.revision
+        assertEquals(1, store.snapshot().size)
+        assertEquals(LogLineKind.INFO, store.snapshot().first().kind)
+
+        // 原位替换 kind → FETCH（模拟 B-3 二级归一化修正 APKINDEX 分类错误）
+        val new = store.replaceAt(0) { it.copy(kind = LogLineKind.FETCH) }
+        assertEquals(LogLineKind.FETCH, new!!.kind)
+        val revAfter = store.revision
+
+        // revision 必须 +1（即使 store.size 没变 = 1）—— 这才是 counts/filtered 重算的硬信号
+        assertEquals(revBefore + 1, revAfter)
+        // 快照 kind 已更新
+        assertEquals(LogLineKind.FETCH, store.snapshot().first().kind)
+    }
+
+    /** 6.2 B-3：enabledKinds 切 set 移除 INSTALL → INSTALL_CURR + INSTALL_OK 都不再显示。 */
+    @Test
+    fun `enabledKinds set 运算 INSTALL 绑定的两类都移除后 filtered 结果不含任何 INSTALL 相关`() {
+        // ChipSpec.INSTALL = {INSTALL_CURR, INSTALL_OK}
+        val installSpecKinds = setOf(LogLineKind.INSTALL_CURR, LogLineKind.INSTALL_OK)
+        val initial: Set<LogLineKind> = LogLineKind.entries.toSet()
+        assertTrue(installSpecKinds.all { it in initial })
+
+        // 点 Chip onClick 移除 INSTALL → set arithmetic immutable
+        val afterClose: Set<LogLineKind> = initial - installSpecKinds
+
+        // INSTALL_CURR / INSTALL_OK 都不应该在 enabledKinds
+        assertFalse(LogLineKind.INSTALL_CURR in afterClose)
+        assertFalse(LogLineKind.INSTALL_OK in afterClose)
+        // 其他四类 FETCH / INFO / ERROR / POST_HOOK 还在
+        assertTrue(LogLineKind.FETCH in afterClose)
+        assertTrue(LogLineKind.INFO in afterClose)
+        assertTrue(LogLineKind.ERROR in afterClose)
+        assertTrue(LogLineKind.POST_HOOK in afterClose)
+
+        // 现在造 4 条 log，过滤之后 INSTALL 类应该为 0
+        val fakeLogs = listOf(
+            LogLine(id = 1, kind = LogLineKind.FETCH, text = "apk foo"),
+            LogLine(id = 2, kind = LogLineKind.INSTALL_CURR, text = "(1/2) Installing foo"),
+            LogLine(id = 3, kind = LogLineKind.INSTALL_OK, text = "(2/2) Installed bar"),
+            LogLine(id = 4, kind = LogLineKind.INFO, text = "OK: 2 packages"),
+        )
+        val filtered = fakeLogs.filter { it.kind in afterClose }
+        assertEquals(2, filtered.size) // FETCH + INFO
+        assertFalse(filtered.any { it.kind == LogLineKind.INSTALL_CURR || it.kind == LogLineKind.INSTALL_OK })
+    }
+
+    /** 6.3 B-3：apk 索引下载 APKINDEX.tar.gz 解析为 Semantic.Fetch(isIndex=true) —— 不再漏归 FETCH=0。 */
+    @Test
+    fun `parse APKINDEX tar gz 索引 fetch 归为 Fetch isIndex=true 且 pkgName 含 repo arch`() {
+        val lines = listOf(
+            "fetch http://mirrors.aliyun.com/alpine/v3.21/main/aarch64/APKINDEX.tar.gz",
+            "fetch http://mirrors.aliyun.com/alpine/v3.21/community/aarch64/APKINDEX.tar.gz",
+        )
+        lines.forEach { line ->
+            val sem = ApkStdoutParser.parse(line).semantic
+            assertTrue("$line should be Fetch", sem is ApkStdoutParser.Semantic.Fetch)
+            val fetch = sem as ApkStdoutParser.Semantic.Fetch
+            assertTrue("isIndex=true", fetch.isIndex)
+            // 虚拟包名必须是 "index: main/aarch64" / "index: community/aarch64"，不允许还是 APKINDEX.tar.gz
+            assertTrue("$fetch.pkgName 必须 index: 开头", fetch.pkgName.startsWith("index:"))
+            assertTrue("含 repo/arch", fetch.pkgName.contains('/'))
+            assertNull("index fetch apk 不写速率", fetch.rateMiBps)
+        }
+    }
+
+    /** 6.4 B-3：Trigger / Configuring busybox trigger 显式归 POST_HOOK（避免之前计数错位）。 */
+    @Test
+    fun `parse trigger Configuring 等 busybox post hook 输出归为 PostLine 语义`() {
+        val cases = listOf(
+            "Executing busybox-1.37.0-r12.trigger",
+            "* trigger: ca-certificates-20260413-r0",
+            "Configuring python3",
+            "Triggering gtk update-icon-cache",
+            "Updating MIME type database",
+            "post-install hook: updating /etc/shells",
+        )
+        cases.forEach { line ->
+            val sem = ApkStdoutParser.parse(line).semantic
+            assertTrue("$line 必须 PostLine，但得到 $sem", sem is ApkStdoutParser.Semantic.PostLine)
+        }
+    }
 }

@@ -120,6 +120,13 @@ data class AggregateProgressState(
     /** RingBuffer 行：最近 200 行。卡片只渲染最后 3 条可摘要项。 */
     val logLines: List<LogLine>,
 
+    /**
+     * B-方案 revision：LogLineStore 每次结构/内容变更（append / remove / replaceAt / clear）单调 +1。
+     * UI 端 counts / filtered / jumpTargets 全部 derivedStateOf 显式读该字段，避免「size 不变但 element 变了」
+     * （比如 INFO→FETCH kind 原位替换）时 remember(key=size) 不重算导致统计失真。
+     */
+    val revision: Long = 0L,
+
     /** 终端态：成功不为 null；失败可 null 或填错误摘要。 */
     val finishStats: FinishStats? = null,
     val failSummary: String? = null,
@@ -140,26 +147,87 @@ data class AggregateProgressState(
             etaMs = null,
             currentSpeedBps = 0f,
             logLines = emptyList(),
+            revision = 0L,
         )
     }
 }
 
 /** 固定容量环形缓冲；追加超过容量时头丢弃。线程安全：单写多读，调用方（Aggregator tick）在 Mutex 下写。 */
-class RingBuffer<T : Any>(private val capacity: Int) {
+open class RingBuffer<T : Any>(open val capacity: Int) {
     init {
         require(capacity > 0) { "capacity must be >0: $capacity" }
     }
 
-    private val deque = ArrayDeque<T>(capacity)
+    protected val deque = ArrayDeque<T>(capacity)
 
-    val size: Int get() = deque.size
+    open val size: Int get() = deque.size
 
-    fun append(value: T) {
+    open fun append(value: T) {
         if (deque.size >= capacity) deque.removeFirst()
         deque.addLast(value)
     }
 
-    fun snapshot(): List<T> = deque.toList()
+    open fun snapshot(): List<T> = deque.toList()
 
-    fun clear() = deque.clear()
+    open fun clear() = deque.clear()
+}
+
+/**
+ * 日志行权威存储（B 方案）：RingBuffer + revision 单调递增 + 统一写入 API。
+ *
+ * 基础原则：任何对日志行的变更（append/remove/原位 kind 修正/清空）**必须经过统一入口**，
+ * 每一次成功的写入都会 bump `revision`，下游 Compose 的 derivedStateOf 读 revision 即可
+ * 100% 捕获到「size 不变但 element 变了」的场景（比如 INFO 行原位替换 kind→FETCH）。
+ */
+class LogLineStore(capacity: Int) : RingBuffer<LogLine>(capacity) {
+    private var _revision: Long = 0L
+
+    /** 每次结构/内容变更 +1，单调递增，UI 端所有派生统计显式读它当硬 key。 */
+    val revision: Long get() = _revision
+
+    private fun bump() { _revision++ }
+
+    override fun append(value: LogLine) {
+        super.append(value)
+        bump()
+    }
+
+    /** 批量移除，返回移除条数；哪怕没移除（pred 全 false）为了与外部调用方的空快照统一仍 bump。 */
+    fun removeIf(predicate: (LogLine) -> Boolean): Int {
+        var removed = 0
+        val it = deque.iterator()
+        while (it.hasNext()) {
+            if (predicate(it.next())) {
+                it.remove()
+                removed++
+            }
+        }
+        bump()
+        return removed
+    }
+
+    /**
+     * 原位替换（关键 API：语义修正 —— 比如 INFO 的 "fetch APKINDEX.tar.gz" 改 kind=FETCH）。
+     * 返回替换后的新行；index 越界为 null。
+     */
+    fun replaceAt(index: Int, transform: (LogLine) -> LogLine): LogLine? {
+        if (index < 0 || index >= deque.size) return null
+        val old = deque[index]
+        val new = transform(old)
+        deque[index] = new
+        bump()
+        return new
+    }
+
+    override fun clear() {
+        super.clear()
+        bump()
+    }
+
+    /** 按 id 查找并替换（聚合器做"同一包 FETCH 行补 inline 进度"常用）。 */
+    fun replaceById(id: Long, transform: (LogLine) -> LogLine): LogLine? {
+        val idx = deque.indexOfFirst { it.id == id }
+        if (idx < 0) return null
+        return replaceAt(idx, transform)
+    }
 }

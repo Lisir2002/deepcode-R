@@ -55,7 +55,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateSetOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -165,8 +167,14 @@ fun BundleLogDialog(
                 )
                 Spacer(Modifier.height(Spacing.xs))
                 // D.2 Filter Chips（5 类多选 + 每类条目计数）
-                val enabledKinds = remember { mutableStateSetOf(*LogLineKind.entries.toTypedArray()) }
-                FilterChipsRow(state = state, enabledKinds = enabledKinds)
+                // B-4：enabledKinds 用 StateFlow<ImmutableSet>，避免 SnapshotStateSet 批量 API 不触发 recompose
+                val enabledKindsFlow = remember { MutableStateFlow(LogLineKind.entries.toSet()) }
+                val enabledKinds by enabledKindsFlow.collectAsState()
+                FilterChipsRow(
+                    state = state,
+                    enabledKinds = enabledKinds,
+                    onChange = { newSet -> enabledKindsFlow.value = newSet },
+                )
                 Spacer(Modifier.height(Spacing.xs))
                 // 搜索框
                 var query by remember { mutableStateOf("") }
@@ -179,12 +187,16 @@ fun BundleLogDialog(
                     singleLine = true,
                 )
                 Spacer(Modifier.height(Spacing.xs))
-                // 过滤日志 + tail 滚动
-                val filtered = remember(query, enabledKinds, state) {
-                    val q = query.trim()
-                    state.logLines.filter { line ->
-                        (line.kind in enabledKinds) &&
-                            (q.isEmpty() || line.text.contains(q, ignoreCase = true))
+                // B-5：过滤日志 + derivedStateOf（显式读 state.revision + enabledKinds，避免 size 不变时卡住）
+                val filtered by remember(state, enabledKinds, query) {
+                    derivedStateOf {
+                        // snapshot read: revision 一变更 derived 失效重算（append/remove/原位 kind 替换都 bump revision）
+                        state.revision
+                        val q = query.trim()
+                        state.logLines.filter { line ->
+                            (line.kind in enabledKinds) &&
+                                (q.isEmpty() || line.text.contains(q, ignoreCase = true))
+                        }
                     }
                 }
                 LaunchedEffect(filtered.size) {
@@ -351,14 +363,20 @@ private fun TimelineAnchors(
 @Composable
 private fun FilterChipsRow(
     state: AggregateProgressState,
-    enabledKinds: MutableSet<LogLineKind>,
+    enabledKinds: Set<LogLineKind>,
+    onChange: (Set<LogLineKind>) -> Unit,
 ) {
-    val counts: Map<LogLineKind, Int> = remember(state.logLines.size) {
-        val m = EnumMap<LogLineKind, Int>(LogLineKind::class.java)
-        state.logLines.forEach { line ->
-            m[line.kind] = (m[line.kind] ?: 0) + 1
+    // B-5：counts 用 derivedStateOf + 显式读 revision → 原位替换 kind / size 不变都能 100% 重算
+    val counts: Map<LogLineKind, Int> by remember(state) {
+        derivedStateOf {
+            // snapshot read：revision 一变更 counts 重算（原位 INFO→FETCH kind 替换的场景）
+            state.revision
+            val m = EnumMap<LogLineKind, Int>(LogLineKind::class.java)
+            state.logLines.forEach { line ->
+                m[line.kind] = (m[line.kind] ?: 0) + 1
+            }
+            m
         }
-        m
     }
     // 每个 Chip 可能对应多个 enum（比如 INSTALL = CURR + OK 两类），
     // 之前的 bug：entries 只绑 INSTALL_CURR → 关 Chip 后 INSTALL_OK 还显示！
@@ -388,18 +406,14 @@ private fun FilterChipsRow(
             val overlap = spec.kinds intersect enabledKinds
             val enabled = overlap.isNotEmpty()
             // 选中 = 该 chip 的所有 kind 都在 enabledKinds 里（保持原多选语义）
-            // 部分选中时显示为未选，方便用户一键"全开启"；若要三态则用 indeterminate，这里保持简单
             val allIn = overlap.size == spec.kinds.size
             FilterChip(
                 selected = allIn,
                 onClick = {
-                    if (allIn) {
-                        // 当前全选中 → 全部移除
-                        enabledKinds -= spec.kinds
-                    } else {
-                        // 当前全未选 or 部分选中 → 全部加入
-                        enabledKinds += spec.kinds
-                    }
+                    // B-4：单向数据流；不再 mutate SnapshotStateSet（批量 API 不 apply），
+                    // 直接算新 Immutable set 给 onChange emit → enabledKinds StateFlow 100% 通知。
+                    val next = if (allIn) enabledKinds - spec.kinds else enabledKinds + spec.kinds
+                    onChange(next)
                 },
                 label = {
                     Text(

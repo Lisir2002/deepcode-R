@@ -88,7 +88,7 @@ class RealProgressAggregator @Inject constructor(
     /** FAILED 按 reason 聚合：reason → pkg 列表。等 flushFailedSummary 一次性合并输出。 */
     private val failedByReason = linkedMapOf<String, MutableList<String>>()
 
-    private val logRing = RingBuffer<LogLine>(LOG_CAPACITY)
+    private val logRing = LogLineStore(LOG_CAPACITY)
     private var logSeqId: Long = 0L
 
     private val _state = MutableStateFlow(AggregateProgressState.INITIAL)
@@ -224,7 +224,7 @@ class RealProgressAggregator @Inject constructor(
                 // D1 Fix：⬇ 前缀由 UI prefixFor() 统一加
                 appendLogLine(
                     LogLineKind.FETCH,
-                    "apk ${sem.pkgName}",
+                    if (sem.isIndex) "${sem.pkgName} (repo index)" else "apk ${sem.pkgName}",
                     inlineProgress = -1f,
                     inlineSpeedBps = sem.rateMiBps?.times(1024f * 1024f) ?: 0f,
                 )
@@ -267,8 +267,33 @@ class RealProgressAggregator @Inject constructor(
                 appendLogLine(LogLineKind.POST_HOOK, sem.text)
             }
             null -> {
-                // 非结构化：原样塞进 INFO，避免用户漏看上下文（如 post-install hook 输出）
-                appendLogLine(LogLineKind.INFO, raw)
+                // B-3：二级归一化修复 —— 基于 text 关键字兜底分类，防止其他类似 APKINDEX.tar.gz 分类错误
+                //     （比如镜像输出格式变化导致正则没命中，但语义能一眼识别）
+                val t = raw.trim()
+                val repairedKind: LogLineKind = when {
+                    // fetch 开头但正则没命中 → FETCH（比如 HTTPS、fetch + 缩写 URL 等变体）
+                    t.startsWith("fetch ", ignoreCase = true) -> LogLineKind.FETCH
+                    // vN.N.N-XX-gXXXXXXXXXXX [http://...] —— 典型 repo index 版本行，归 INFO
+                    t.startsWith("v") && t.contains("-g") && t.contains("[http", ignoreCase = true) -> LogLineKind.INFO
+                    // "N distinct packages available" —— 版本信息汇总
+                    t.endsWith("distinct packages available", ignoreCase = true) ||
+                        t.contains("packages available", ignoreCase = true) -> LogLineKind.INFO
+                    // "* If you need ICU..." —— post-install hook 提示文本
+                    t.startsWith("* ") || t.startsWith("· ") -> LogLineKind.INFO
+                    // "unsatisfiable constraints" / "missing" —— apk ERROR 关键字行，即使没 "ERROR:" 前缀也算 ERROR
+                    t.contains("unsatisfiable constraints", ignoreCase = true) ||
+                        t.contains("(missing)", ignoreCase = true) ||
+                        t.contains(" not available", ignoreCase = true) -> LogLineKind.ERROR
+                    // "Configuring pkg" / "Triggering" 没被 RE_POST 命中的变体 → POST_HOOK
+                    t.startsWith("Configuring ", ignoreCase = true) ||
+                        t.startsWith("Triggering ", ignoreCase = true) ||
+                        t.startsWith("Updating ", ignoreCase = true) -> LogLineKind.POST_HOOK
+                    // POST_HOOK 阶段的普通文本：语义上就是 post-hook 输出，不落到 INFO 避免统计口径错位
+                    phase == InstallPhase.POST_HOOK -> LogLineKind.POST_HOOK
+                    // INSTALL 阶段纯文本：大概率是安装中上下文提示，归 INFO 不污染安装计数
+                    else -> LogLineKind.INFO
+                }
+                appendLogLine(repairedKind, raw)
             }
         }
         publish()
@@ -435,6 +460,7 @@ class RealProgressAggregator @Inject constructor(
             etaMs = etaMs,
             currentSpeedBps = speedEmaBps,
             logLines = logRing.snapshot(),
+            revision = logRing.revision,
             finishStats = finishStats,
             failSummary = failSummary,
         )
