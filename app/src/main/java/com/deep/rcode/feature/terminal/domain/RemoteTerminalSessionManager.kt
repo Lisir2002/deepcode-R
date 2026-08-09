@@ -46,6 +46,17 @@ class RemoteTerminalSessionManager @Inject constructor(
     private val workspaceRepository: WorkspaceRepository
 ) : TerminalSessionProvider {
 
+    init {
+        // SSH 断线自动重连 → 重建所有 Running 的交互 tab（后台命令 tab 不碰，避免重复副作用）。
+        // 监听在构造期注册，RemoteSshConnection 用 ConcurrentHashMap 保存监听器；
+        // 如果之后 connection 生命周期长于本类（目前双方都是 @Singleton，等同），
+        // 也无需 unregister——进程生命周期一致。
+        connection.registerOnReconnectedListener {
+            runCatching { reconnectAllInteractiveRunningTabs() }
+                .onFailure { FileLogger.w(TAG, "重连后重建交互 tab 失败", it) }
+        }
+    }
+
     private val _tabs = MutableStateFlow<List<TerminalTab>>(emptyList())
     val tabs: StateFlow<List<TerminalTab>> = _tabs.asStateFlow()
 
