@@ -6,9 +6,14 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.deep.rcode.core.theme.LocalAppDarkMode
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
+
+/** 计算标准相对亮度 Y (sRGB linear)，阈值 0.179 以下视为"深色" */
+private fun Color.relativeLuminance(): Float {
+    fun f(c: Float) = if (c <= 0.04045f) c / 12.92f else Math.pow((c + 0.055) / 1.055, 2.4).toFloat()
+    return 0.2126f * f(red) + 0.7152f * f(green) + 0.0722f * f(blue)
+}
 
 /**
  * 终端页面 UI 规格单一事实源。
@@ -191,7 +196,7 @@ fun rememberTerminalSkin(@Suppress("UNUSED_PARAMETER") palette: TerminalPalette)
         ctrlActiveBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
         ctrlActiveFg = MaterialTheme.colorScheme.onPrimaryContainer,
         ctrlActiveBorder = MaterialTheme.colorScheme.primary.copy(alpha = 0.70f),
-        dark = LocalAppDarkMode.current
+        dark = MaterialTheme.colorScheme.background.relativeLuminance() < 0.30f
     )
 }
 

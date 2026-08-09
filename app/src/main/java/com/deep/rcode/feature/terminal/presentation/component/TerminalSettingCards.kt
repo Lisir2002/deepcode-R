@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.deep.rcode.core.theme.Brand
 import com.deep.rcode.core.theme.Elevation
-import com.deep.rcode.core.theme.LocalAppDarkMode
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.domain.container.ContainerInitState
@@ -69,11 +68,21 @@ import compose.icons.feathericons.Trash2
 // ================================================================
 @Immutable
 object SemanticColors {
-    /** 成功/已就绪：统一绿色（Brand.StatusGreen），不与品牌蓝（primary）混用，避免状态语义混淆。
-     *  取色跟随「程序实际主题」（LocalAppDarkMode.current），而不是系统 uiMode：
-     *  当 App 强制亮/强制暗时，"已就绪"绿点也跟随外壳 MaterialTheme 变，保持语义一致。 */
+    /** 计算标准相对亮度 Y (sRGB linear)，阈值 0.30 以下视为"深色" */
+    private fun Color.relativeLuminance(): Float {
+        fun f(c: Float) = if (c <= 0.04045f) c / 12.92f else Math.pow((c + 0.055) / 1.055, 2.4).toFloat()
+        return 0.2126f * f(red) + 0.7152f * f(green) + 0.0722f * f(blue)
+    }
+
+    /** 成功/已就绪：统一绿色（Brand.StatusGreen），不与品牌蓝（primary）混用。
+     *  通过 MaterialTheme.colorScheme.background 的亮度判断程序实际是暗/亮主题，
+     *  外壳 UI 必然跟随程序主题——即便系统是亮色但 App 被切到"强制黑"，
+     *  也会正确选 Dark 色（而非系统 uiMode）。 */
     val Success: Color
-        @Composable get() = if (LocalAppDarkMode.current) Brand.StatusGreen.Dark else Brand.StatusGreen.Light
+        @Composable get() {
+            val bg = androidx.compose.material3.MaterialTheme.colorScheme.background
+            return if (bg.relativeLuminance() < 0.30f) Brand.StatusGreen.Dark else Brand.StatusGreen.Light
+        }
     /** 进行中：使用主题 secondary，跟随亮/暗切换 */
     val InProgress: Color @Composable get() = MaterialTheme.colorScheme.secondary
     /** 失败/错误：主题 error，跟随亮/暗切换 / 动态色 */

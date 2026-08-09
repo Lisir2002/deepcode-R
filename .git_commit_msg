@@ -1,16 +1,10 @@
-fix(terminal): 外壳(Tab/Banner/Keys/Status)颜色 必然跟随程序，不再读系统 uiMode
+fix(terminal): 外壳语义色/皮肤快照 跟随程序必然一致，改由 MaterialTheme.background 亮度判断
 
-规则落地：
-- 终端内容区域：默认 FOLLOW_APP（跟随程序主题），
-  同时允许终端设置改成 PURE_BLACK/PURE_WHITE 强制覆盖（自定义）
-- 其余外壳 UI（顶部栏、首屏 Banner、Tab 栏、分隔线、功能键行、
-  安装状态卡 Success 绿点、皮肤快照 dark 标志）一律跟随程序。
-
-具体修改：
-1. TerminalUISpec.rememberTerminalSkin.dark：
-   isSystemInDarkTheme() → LocalAppDarkMode.current
-2. TerminalSettingCards.SemanticColors.Success：
-   isSystemInDarkTheme() → LocalAppDarkMode.current
-   （保证"就绪绿点"暗/亮模式在 App 强制主题下也正确取 Brand.StatusGreen）
-3. 代码内其它外壳颜色全部来自 MaterialTheme.colorScheme.*，
-   由 MainActivity.darkTheme 统一决定，天然满足「必然跟随程序」。
+rc55 因为新增外壳侧直接引用 LocalAppDarkMode（静态 CompositionLocal），
+在 CI release 编译或 testReleaseUnit 环境中可能触发 composition context 相关报错。
+换成更稳的"MaterialTheme.colorScheme.background.relativeLuminance < 0.30 = 暗"：
+- 外壳所有颜色都来自 MaterialTheme，天然满足「必然跟随程序」
+- 只要 MainActivity 算好 darkTheme 并交给 AIEditorTheme，
+  外壳 background 的亮度就一定正确，不再需要单独的 CompositionLocal 传递
+- 终端内容区（TerminalPalette.FOLLOW_APP）仍用 LocalAppDarkMode（
+  必须精确 bool，不能被外壳半暗的 surface 背景误导），此部分 rc54 已通过 CI 不变
