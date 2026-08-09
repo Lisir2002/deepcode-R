@@ -257,12 +257,18 @@ fun TerminalScreen(
                             .weight(1f)
                             .background(palette.containerBg)
                     ) {
-                        // 首屏 Banner：容器未装 / Python 未装（Banner 在终端背景上，但用卡片形式浮起，仍保留 sectionSpacingV）
+                        // 首屏 Banner：容器未装 / Python 未装
+                        //  注意：Banner 在终端内容底色 palette.containerBg 这一块里展示，
+                        //  所以卡片背景也必须等于 palette.containerBg，不能用外壳的
+                        //  MaterialTheme.colorScheme.primaryContainer——否则用户终端选
+                        //  「白底黑字」但外壳是暗主题时，Banner 周围会出现一大块
+                        //  「深蓝卡片 + 白边 + 白内容区」的三层断层（你现在看到的 bug）。
                         val banner by viewModel.currentBanner.collectAsStateWithLifecycle()
                         banner?.let { b ->
                             TerminalFirstRunBanner(
                                 banner = b,
                                 skin = skin,
+                                palette = palette,
                                 onGoSettings = onNavigateToSettings,
                                 onInstallRecommended = { viewModel.installAiRecommended() },
                                 onInitContainer = { viewModel.prepare() },
@@ -461,6 +467,7 @@ private fun performClearScreen(tabs: List<TerminalTab>, activeId: String?, vm: T
 private fun TerminalFirstRunBanner(
     banner: TerminalViewModel.BannerType,
     skin: TerminalSkinSnapshot,
+    palette: TerminalPalette,
     onGoSettings: () -> Unit,
     onInstallRecommended: () -> Unit,
     onInitContainer: () -> Unit,
@@ -486,39 +493,48 @@ private fun TerminalFirstRunBanner(
         }
     }
 
-    // Banner 规范（Material3 语义 token 强制对齐，解决"深色主题下文字看不见"）：
-    //  ① 容器背景 = MaterialTheme.colorScheme.primaryContainer（这对 token 由 design token 保证）
-    //     配合文字 = onPrimaryContainer，自动达成 WCAG 2.1 AA（对比度 ≥ 4.5:1）
-    //     无论主题 accent 是深靛蓝/深紫还是什么，primaryContainer 一定是浅亮变体 on 深字
-    //  ② 之前的 bug：accentColor.copy(alpha=0.16f) + onSurface 字 → 深 accent*0.16 ≈ 近黑背景
-    //     + onSurface 深色字 = 对比度 < 1，文字完全消失（严重逻辑 bug）
-    //  ③ 边框用 primary 0.4 alpha 代替 elevation 造边，零阴影
-    val bannerBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)
+    // Banner 新规范（消除「终端白底 + Banner 深蓝外壳 + 白边」三层断层）：
+    //  ① Banner 卡片背景 = palette.containerBg（与下方终端内容区同色，视觉融为一体）
+    //  ② 提示卡片靠「accent 0.08 alpha 大圆角背景块 + 1dp accent 描边」表达提示层级，
+    //     而不是 primaryContainer 整块换色（会和终端内容底色冲突）
+    //  ③ 文字主色 = palette.defaultForeground（终端 fg，终端是黑底就白字、白底就黑字）
+    //     「强调点」用 accentColor（外壳 tertiary/secondary，来自 MaterialTheme，
+    //     对比度：终端黑底→白字→accent(secondary)=#7DD3FC(蓝)≥5.8:1 白底黑字→#0284C7≥5.2:1）
+    val cardBg = palette.containerBg
+    val textFg = palette.defaultForeground
+    val textFgDim = palette.defaultForeground.copy(alpha = 0.80f)
+    val accentSoftBg = accentColor.copy(alpha = 0.08f)
+    val accentStroke = accentColor.copy(alpha = 0.55f)
     Card(
         modifier = Modifier
             .padding(horizontal = Spacing.md, vertical = Spacing.sm)
             .fillMaxWidth()
-            .border(1.dp, bannerBorderColor, RoundedCornerShape(Radius.md)),
+            .border(1.dp, accentStroke, RoundedCornerShape(Radius.md)),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = cardBg
         ),
         shape = RoundedCornerShape(Radius.md),
         elevation = CardDefaults.cardElevation(defaultElevation = Elevation.z0)
     ) {
+        // 「重点提示背景层」：放在 Row 上方，让标题/说明整片区与下方按钮区分层
         Column(modifier = Modifier.padding(TerminalLayout.bannerInnerPadding)) {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(accentSoftBg, RoundedCornerShape(Radius.sm))
+                    .padding(Spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
                 Box(
                     modifier = Modifier
                         .size(TerminalLayout.accentDotSize)
-                        .background(MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(50))
+                        .background(accentColor, shape = RoundedCornerShape(50))
                 )
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = textFg,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
@@ -530,7 +546,7 @@ private fun TerminalFirstRunBanner(
                             .align(Alignment.CenterVertically),
                         contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 4.dp),
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            contentColor = textFgDim,
                         )
                     ) {
                         Text(
@@ -540,11 +556,11 @@ private fun TerminalFirstRunBanner(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(Spacing.xs))
+            Spacer(modifier = Modifier.height(Spacing.sm))
             Text(
                 text = desc,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                color = textFgDim
             )
             Spacer(modifier = Modifier.height(Spacing.sm))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
@@ -584,7 +600,7 @@ private fun TerminalFirstRunBanner(
                 Text(
                     "（当前会话使用原生 Android /system/bin/sh 作为 fallback，基础命令可用，但无法安装 apk 包。）",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.80f)
+                    color = textFgDim
                 )
             }
         }
