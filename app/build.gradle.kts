@@ -157,9 +157,8 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
-    // 真机单架构：sourceSets.main.assets 只挂 _armAssets。
-    // _x86Assets 目录仍保留在仓库中（方便未来恢复模拟器支持时一行切回），
-    // 但不会被打进 APK，release 包体积净省 ~3.0 MB 容器资产。
+    // 真机单架构：sourceSets.main.assets 只挂 _armAssets（对应 arm64-v8a）。
+    // _x86Assets 目录已按「只支持真机、不考虑虚拟机适配」的设计决策删除，仓库不再保留 x86 容器备份。
     sourceSets {
         getByName("main") {
             assets.srcDir("src/_armAssets")

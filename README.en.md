@@ -73,28 +73,24 @@ R-DeepCode is an AI-powered coding assistant that runs natively on Android. It i
 
 ### Prerequisites
 
-- Android 8.0+ (API 26) arm64-v8a or x86_64 device
-- JDK 17
+- **Physical device (officially supported)**: Android 8.0+ (API 26) **arm64-v8a** device (the mainstream ABI for current Android handsets)
+- **Build environment**: JDK 17
+- *Note: x86_64 emulators are not officially supported — design decision = "real devices only, no virtual machine considerations"*
 
 ### Build
 
 ```bash
-# Single-flavor smoke build (recommended for daily dev, only builds universal debug APK)
-./gradlew :app:assembleUniversalDebug
+# Daily dev smoke build (recommended, debug APK only; faster, no R8)
+./gradlew :app:assembleDebug
 
-# Release (requires signing config; builds all three flavors)
+# Release build (signing config required; auto-falls back to debug keystore when missing)
 ./gradlew assembleRelease
-
-# Build a single flavor
-./gradlew assembleArmsoloRelease     # arm64-v8a only + arm image
-./gradlew assembleX86soloRelease     # x86_64 only + x86 image
-./gradlew assembleUniversalRelease   # arm64-v8a + x86_64, both images
+# Output: app/build/outputs/apk/release/app-release.apk (single arm64-v8a ABI)
 
 # Release AAB
 ./gradlew bundleRelease
+# Output: app/build/outputs/bundle/release/app-release.aab
 ```
-
-> Output path for all three flavors: `app/build/outputs/apk/<flavor>/release/app-<flavor>-release.apk`
 
 <details>
 <summary>Release signing configuration</summary>
@@ -102,19 +98,23 @@ R-DeepCode is an AI-powered coding assistant that runs natively on Android. It i
 Add to `app/keystore.properties`:
 
 ```properties
-storeFile=aicode.jks
+storeFile=rdeepcode.jks
 storePassword=your_password
 keyAlias=your_alias
 keyPassword=your_key_password
 ```
+
+> `storeFile` path is customizable (filename not fixed). CI restores it from secrets to `app/rdeepcode.jks`. When signing config is not present, release build auto-falls back to the debug keystore, so `assembleRelease` always produces an APK.
 
 </details>
 
 ### Test
 
 ```bash
-./gradlew :app:testUniversalDebugUnitTest    # Single-flavor unit tests (recommended)
-./gradlew test                                # All-flavor unit tests
+# Unit tests on release classpath (matches CI gate & user runtime; recommended)
+./gradlew :app:testReleaseUnitTest
+# Unit tests on debug classpath
+./gradlew :app:testDebugUnitTest
 ```
 
 ## Project Structure
@@ -141,12 +141,10 @@ app/src/main/java/com/deep/rcode/
 
 ## Known Limitations
 
-- `targetSdk` is locked to 28 to bypass Android 10+ W^X policy, enabling PRoot execution.
-- Release builds are split into three variants by CPU/container image:
-  - `armsolo`: `arm64-v8a` only + arm image (recommended for physical devices)
-  - `x86solo`: `x86_64` only + x86 image (emulators / Chromebooks)
-  - `universal`: `arm64-v8a` + `x86_64`, both images (universal but larger)
-  - Container images are selected by system ABI; installing the wrong architecture package will fail to run PRoot.
+- `targetSdk` is locked to 28 to bypass Android 10+ W^X policy, enabling PRoot execution; trade-off: ineligible for Google Play (same as Termux).
+- Release artifacts are **physical-device arm64-v8a single-ABI** APKs:
+  - Supports all mainstream Android physical devices (Snapdragon/Dimensity/Kirin and other 64-bit ARM chipsets);
+  - x86_64 emulators or x86 Chromebooks will fail at install time (missing `x86_64` native libs) — no runtime crashes, aligned with the "don't waste build resources on virtual machines" design decision.
 
 ## Acknowledgements
 

@@ -15,7 +15,7 @@ R-DeepCode 是**原生 Android 上的 AI 编程 IDE**，核心是让 **AI Agent 
 | 决策 | 实际做法 | Why | 代价 |
 |------|---------|-----|------|
 | **targetSdk 锁定 28** | `build.gradle.kts` targetSdk = 28 | Android 10+ W^X 禁止 App 私有可写目录执行二进制，PRoot 需执行 rootfs 内 `/bin/sh`/`/usr/bin/git` | 无法上架 Google Play（与 Termux 同一取舍） |
-| **三 flavor 拆 ABI + 容器镜像** | `armsolo` / `x86solo` / `universal` | 真机包（arm64）少装一半 rootfs + proot 二进制，净省 ~3MB | 错 ABI 安装 PRoot 无法启动 |
+| **arm64-v8a 真机单产物策略** | `app/build.gradle.kts` abiFilters = [arm64-v8a]，sourceSets 仅挂 _armAssets（ContainerInstaller.ASSET_DIR 固定 container/arm） | x86_64 构建资源省 0，PRoot/rootfs/so 单一架构 APK 体积净省 3~5 MB | 不支持 x86_64 模拟器安装（安装阶段因缺 so 失败，无运行时崩溃） |
 | **SOFT_INPUT_ADJUST_NOTHING 全局** | MainActivity `window.setSoftInputMode(ADJUST_NOTHING)`，各页面 `rememberImeBottomInset()` 自绘跟随 | 切页时旧页面 dispose 会恢复默认 softInputMode 造成白屏闪烁 | 每个页面必须手动处理键盘边距，漏处理则输入栏被键盘遮挡 |
 | **BouncyCastle 注册到 Provider 末尾** | `Security.removeProvider("BC")` → `Security.addProvider(...)` → `SecurityUtils.setSecurityProvider("BC")` 还要告诉 sshj 用 BC | sshj 0.38.0 X25519 需要完整版 BC；放首位会抢占 BKS 实现导致 OkHttp "BKS not found" | - |
 | **RemoteSftpFileAccess 不用真 SFTP** | exec channel + `cat`/`printf` + `base64` | sshj 0.38.0 SFTP 在 Android Dalvik 上 Buffer 溢出必崩 | 读写性能略低，但稳定 |
@@ -39,19 +39,17 @@ deepcode-R/
 ├── LICENSE (GPL-3.0)
 ├── .githooks/commit-msg                # Conventional Commits 校验钩子
 ├── .github/workflows/
-│   ├── ci.yml                          # PR：assembleUniversalDebug + testUniversalDebugUnitTest
-│   └── android-release.yml             # Tag：三 flavor → GitHub Release
+│   ├── ci.yml                          # main 推送/PR：assembleRelease + testReleaseUnitTest（release classpath 做门禁）
+│   └── android-release.yml             # Tag 打 v*：assembleRelease → 单 APK rdeepcode-arm64-<ver>.apk → GitHub Release
 │
 ├── build.gradle.kts                    # AGP 8.9.3 / Kotlin 2.2.21 / Hilt 2.56.1 / KSP 2.0.21
 ├── settings.gradle.kts                 # 含腾讯云/阿里镜像 + JitPack + MavenCentral
 ├── gradle.properties                   # JVM 堆 -Xmx4g、Kotlin 增量编译
-│
-├── app/
-│   ├── build.gradle.kts                # 三 flavor、动态版本号、签名回退策略
+│   └── app/
+│       ├── build.gradle.kts            # arm64-v8a 单 ABI 真机单产物、动态版本号、签名回退策略（debug keystore 兜底）
 │   ├── proguard-rules.pro              # 实际 104 行 keep 规则
 │   └── src/
-│       ├── _armAssets/container/arm/   # arm64 rootfs + proot/bin/loader/.so
-│       ├── _x86Assets/container/x86/   # x86_64 对应资产
+│       ├── _armAssets/container/arm/   # arm64 rootfs + proot/bin/loader/.so（真机单架构，无 x86 资产）
 │       │
 │       ├── main/
 │       │   ├── AndroidManifest.xml
@@ -527,7 +525,7 @@ foregroundServiceType = "dataSync"
 
 ## 十三、测试清单（14 个 *Test.kt 实际 glob 一一核对）
 
-运行：`./gradlew :app:testUniversalDebugUnitTest`（AGENTS.md 规定 push 前必跑）
+运行：`./gradlew :app:testReleaseUnitTest`（AGENTS.md 规定 push 前必跑，release classpath 与 CI 门禁同款）
 
 1. FileMigrationTest — SQL 分号切分
 2. ShellCommandParserTest — 引号感知 / 段拆分 / 命令替换 / rm 解析
@@ -557,8 +555,8 @@ foregroundServiceType = "dataSync"
    - UI 变化 → **必须**同步对应 docs 文档
    - 新 UI 文案 → **必须**写 `values/strings.xml`（中文）+ `values-en/strings.xml`（英文），禁止 .kt 硬编码中文；命名 = 语义化 `common_` 前缀
 3. **Conventional Commits**：type(scope): subject（type ∈ feat/fix/refactor/docs/style/chore/ci/build/perf/test；scope ∈ agent/settings/terminal/workspace/git/ui/mcp/db/core/build/deps）
-4. **提交前**：`./gradlew :app:assembleUniversalDebug`（只单 flavor）
-5. **push 前**：`./gradlew :app:testUniversalDebugUnitTest`（14 个单测）
+4. **提交前**：`./gradlew :app:assembleDebug`（debug buildType 冒烟，快）；验证 release 链路用 `:app:assembleRelease`（项目已无 flavor 概念，禁止使用 assembleUniversal/assembleArmsolo 等旧命令）
+5. **push 前**：`./gradlew :app:testReleaseUnitTest`（14 个单测，release classpath 与 CI 同款）
 6. **RC 发版判定**：新功能/行为变化/构建链路/容器镜像 → 必发 RC；纯文档/typo → 可直接正式
 7. **发版步骤**：main 打 tag v0.1.0-rc1 → CI 出 APK → 真机测 → 有问题从 RC tag 拉 hotfix（不从 main 防止夹带未发版功能）→ 升 rc 序号 → 合回 main → 打正式 tag
 
@@ -611,7 +609,7 @@ foregroundServiceType = "dataSync"
 | 改 PRoot 初始化流程 / RemoteSshConnection 认证通道 / SyncEngine 三客户端 | 第 8 节容器引擎 & 远程 SSH |
 | 改 Terminal Bundle 清单 / KeepaliveService 行为 / 前台服务类型 / 后台命令通知策略 | 第 9 节终端系统 |
 | 加 Manifest 权限 / 加 ProGuard keep 规则 / 加或删单元测试文件 | 第 11、12、13 节 |
-| 变更任何设计决策 / 引入新的技术权衡 / 调整 targetSdk / flavor 结构 | 第 1.2 节决策矩阵 |
+| 变更任何设计决策 / 引入新的技术权衡 / 调整 targetSdk / ABI 打包策略 / 构建配置 | 第 1.2 节决策矩阵 |
 
 ### 16.2 每次提交代码前的"同步文档"检查清单
 

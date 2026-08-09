@@ -40,8 +40,8 @@
   - **日常 Bug 修复 / 补单元测试 / CI与构建配置 / 纯文档 / 资源文案**：直接在 `main` 分支提交，无需新建分支，避免分支过滥。
   - **预览版（RC）热修复**：已发 RC Tag 后发现问题，必须从**该 RC Tag** 拉 `hotfix/xxx` 分支修复（**勿从最新 `main` 或功能分支拉**，否则会把已合入的未发版功能带进修复包），修复验证后升 rc 序号打 Tag 发修复版，再合回 `main` 并清理分支（详见「发版流程」）。
 - **改动前先定分支**：涉及新功能开发时，先确认分支命名（如 `feat/session-model`），避免不同主题混在同一分支。
-- **提交前必跑冒烟**：改完编译型代码（`.kt` / `.gradle.kts` / `AndroidManifest.xml`）→ 提交前默认 `./gradlew :app:assembleUniversalDebug` 验证可编译（**勿跑 `assembleDebug`/`assembleRelease` 三 flavor**，详见构建与运行）。
-- **推送到远端前必跑单元测试**：任何 `git push` 到远端之前，必须先跑一次单元测试 `./gradlew :app:testUniversalDebugUnitTest`（单 flavor，勿跑聚合 `test`），确认测试全部通过后再推送。改动不涉及逻辑（纯文档 / 资源文案 / 纯 `.md`）时可跳过。
+- **提交前必跑冒烟**：改完编译型代码（`.kt` / `.gradle.kts` / `AndroidManifest.xml`）→ 提交前默认 `./gradlew :app:assembleDebug` 验证可编译（debug buildType 快，不跑 R8）。验证 release 链路用 `:app:assembleRelease`，**项目已无 flavor 概念，不要使用 assembleUniversalDebug/assembleArmsolo 等旧命令**。
+- **推送到远端前必跑单元测试**：任何 `git push` 到远端之前，必须先跑一次单元测试 `./gradlew :app:testReleaseUnitTest`（release classpath，与 CI 门禁同款），确认测试全部通过后再推送。改动不涉及逻辑（纯文档 / 资源文案 / 纯 `.md`）时可跳过。
 - **合并入 main**：本地合并并确认无冲突后，及时清理已被合并的本地分支（`git branch -d <branch_name>`，删前用 `git branch --merged main` 确认安全）；已推送过的分支同步删除远端（`git push origin --delete <branch_name>`），避免本地删了远端残留。分支删除不影响已打的 Tag，Tag 独立引用提交，可随时 `git show <tag>` 追溯。
 
 ## 版本号规范
@@ -55,7 +55,7 @@
 
 本项目靠 GitHub Release 分发且无灰度，发出去即终态，RC 是主要兜底。发版前按改动面判断是否先发 RC：
 
-- **必须先发 RC**：本发版周期含新功能 / 行为变化（定档 `x.Y.0`）；或构建链路 / 签名 / flavor / CI 改动；或容器镜像、PRoot、ABI 相关改动。
+- **必须先发 RC**：本发版周期含新功能 / 行为变化（定档 `x.Y.0`）；或构建链路 / 签名 / ABI 打包策略 / CI 改动；或容器镜像、PRoot 相关改动。
 - **可直接发正式**：本发版周期仅纯文档 / typo / 资源文案（定档 `x.y.Z`，无行为变化）。
 - **看改动面**：本发版周期仅纯 bug 修复（定档 `x.y.Z`）——小改直接正式，触碰启动/容器的仍先 RC。
 
@@ -70,18 +70,18 @@
 
 本项目是 Android 应用，使用 Kotlin + Jetpack Compose + Hilt 构建，Gradle 为构建系统。
 
-- **完整构建**：`./gradlew build` —— 含三 flavor 全量编译 + lint + 测试，耗时极长，日常开发不用。
-- **单 flavor 冒烟（AI 改完代码默认跑这个）**：`./gradlew :app:assembleUniversalDebug` —— `assembleDebug`/`assembleRelease` 是 flavor 聚合任务，会把 universal/armsolo/x86solo 三个 APK 各构一遍（三倍 Kotlin 编译 + 资源处理，慢）。AI 改完**编译型代码**（`.kt` / `.gradle.kts` / `AndroidManifest.xml`）后、提交前，默认只构 **universal debug** 单个 APK 做冒烟验证，不要触发全量三 flavor。仅改文档/资源/纯 `.md` 时可跳过。完整发版才用 `assembleRelease` 构三个。
-- **Release APK**：`./gradlew assembleRelease` —— 按容器镜像/CPU 拆三个 flavor，输出到 `app/build/outputs/apk/<flavor>/release/app-<flavor>-release.apk`（flavor ∈ universal/armsolo/x86solo）
-- **Release AAB**：`./gradlew bundleRelease` —— 输出到 `app/build/outputs/bundle/<flavor>/release/app-<flavor>-release.aab`
-- **单元测试**：`./gradlew :app:testUniversalDebugUnitTest`（单 flavor，日常推荐）；`./gradlew test` 为跨 flavor 聚合测试任务。
+- **完整构建**：`./gradlew build` —— 含 debug/release 两 buildType 全量编译 + lint + 测试，耗时极长，日常开发不用。
+- **单 buildType 冒烟（AI 改完代码默认跑这个）**：`./gradlew :app:assembleDebug` —— debug buildType 快，不跑 R8。验证 release 链路跑 `./gradlew :app:assembleRelease`。**项目已无 flavor 概念，不要使用 assembleUniversal/assembleArmsolo/assembleX86solo 等旧命令**。
+- **Release APK**：`./gradlew assembleRelease` —— 真机 arm64-v8a 单架构 APK，输出到 `app/build/outputs/apk/release/app-release.apk`
+- **Release AAB**：`./gradlew bundleRelease` —— 输出到 `app/build/outputs/bundle/release/app-release.aab`
+- **单元测试**：`./gradlew :app:testReleaseUnitTest`（release classpath，日常 / push 前推荐）；`./gradlew :app:testDebugUnitTest`（debug classpath）。
 
 ### Release 签名配置
 
 签名配置在 `app/build.gradle.kts` 中自动处理：
-- **Keystore 文件**：路径由 `app/keystore.properties` 的 `storeFile` 字段指定（文件名不固定为 `aicode.jks`）。本地通常不存放签名文件，CI 从 GitHub secret 还原到 `app/aicode.jks`。
+- **Keystore 文件**：路径由 `app/keystore.properties` 的 `storeFile` 字段指定（文件名可自定义，不固定为 `aicode.jks`）。本地通常不存放签名文件，CI 从 GitHub secret 还原到 `app/rdeepcode.jks`。
 - **凭据**：从 `app/keystore.properties` 加载（`storeFile`、`storePassword`、`keyAlias`、`keyPassword`）。
-- **目标 ABI**：按 flavor 拆分：`universal` 含 `arm64-v8a` + `x86_64`，`armsolo` 仅 `arm64-v8a`，`x86solo` 仅 `x86_64`。
+- **目标 ABI**：单架构 `arm64-v8a` 真机；x86_64 模拟器不做正式支持。
 
 *注：项目锁定 `targetSdk = 28` 以绕过 Android 10+ W^X 策略，使 PRoot 可执行。*
 

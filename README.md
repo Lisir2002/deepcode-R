@@ -73,28 +73,24 @@ R-DeepCode 是一款在 Android 手机上运行的 AI 编程工具，将大语�
 
 ### 环境要求
 
-- Android 8.0+（API 26）arm64-v8a 或 x86_64 设备
-- JDK 17
+- **真机（正式支持）**：Android 8.0+（API 26）**arm64-v8a** 设备（当前 Android 真机主流 ABI）
+- **开发机构建环境**：JDK 17
+- *注：x86_64 模拟器不做正式支持，设计决策为「只适配真机、不考虑虚拟机」*
 
 ### 构建
 
 ```bash
-# 单 flavor 冒烟（日常开发推荐，只构 universal debug 一个 APK）
-./gradlew :app:assembleUniversalDebug
+# 日常开发冒烟（推荐，只构 debug APK，速度快；与 release 同 buildType 但不跑 R8）
+./gradlew :app:assembleDebug
 
-# Release（需配置签名；构全部三个 flavor）
+# Release 发布包（需配置签名；不配置时自动回退到 debug keystore 签名，保证能产出 APK）
 ./gradlew assembleRelease
-
-# 仅构单一 flavor
-./gradlew assembleArmsoloRelease     # 仅 arm64-v8a + arm 镜像
-./gradlew assembleX86soloRelease     # 仅 x86_64 + x86 镜像
-./gradlew assembleUniversalRelease   # arm64-v8a + x86_64，含两套镜像
+# 产物路径：app/build/outputs/apk/release/app-release.apk（单 arm64-v8a 真机架构）
 
 # Release AAB
 ./gradlew bundleRelease
+# 产物路径：app/build/outputs/bundle/release/app-release.aab
 ```
-
-> 三个 flavor 的产物路径：`app/build/outputs/apk/<flavor>/release/app-<flavor>-release.apk`
 
 <details>
 <summary>Release 签名配置</summary>
@@ -102,19 +98,22 @@ R-DeepCode 是一款在 Android 手机上运行的 AI 编程工具，将大语�
 在 `app/keystore.properties` 中添加：
 
 ```properties
-storeFile=aicode.jks
+storeFile=rdeepcode.jks
 storePassword=your_password
 keyAlias=your_alias
 keyPassword=your_key_password
 ```
+
+> `storeFile` 路径可自定义（不固定文件名），CI 会从 secrets 还原到 `app/rdeepcode.jks`。未配置时 release 会自动回退到 debug keystore 签名，保证零配置下 `assembleRelease` 也能产出 APK。
 
 </details>
 
 ### 测试
 
 ```bash
-./gradlew :app:testUniversalDebugUnitTest    # 单 flavor 单元测试（日常推荐）
-./gradlew test                                # 全 flavor 单元测试
+# Release classpath 下单测（与 CI 门禁同款，最接近用户实际运行环境，日常推荐）
+./gradlew :app:testReleaseUnitTest
+./gradlew :app:testDebugUnitTest      # Debug classpath 下单测
 ```
 
 ## 项目结构
@@ -141,12 +140,10 @@ app/src/main/java/com/deep/rcode/
 
 ## 已知限制
 
-- `targetSdk` 锁定为 28 以绕过 Android 10+ W^X 策略，使 PRoot 可执行。
-- Release 按 CPU/容器镜像拆三个 variant：
-  - `armsolo`：仅 `arm64-v8a` + arm 镜像（真机首选）
-  - `x86solo`：仅 `x86_64` + x86 镜像（模拟器 / Chromebook）
-  - `universal`：`arm64-v8a` + `x86_64`，含两套镜像（通用但体积更大）
-  - 容器镜像随系统 ABI 选择，错架构设备安装单架构包后无法运行 PRoot。
+- `targetSdk` 锁定为 28 以绕过 Android 10+ W^X 策略，使 PRoot 可执行；代价为无法上架 Google Play（与 Termux 同一取舍）。
+- 发布产物为**真机 arm64-v8a 单架构** APK：
+  - 适配所有主流 Android 真机（骁龙/天玑/麒麟等 64 位 ARM 芯片）；
+  - x86_64 模拟器、Chromebook x86 安装时因缺少 `x86_64` so 会在安装阶段直接失败，不会进入运行期崩溃——符合「不在虚拟机场景浪费构建资源」的设计决策。
 
 ## 致谢
 
