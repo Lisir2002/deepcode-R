@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
+import com.deep.rcode.feature.agent.domain.container.progress.AggregateProgressState
 import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
 import com.deep.rcode.feature.terminal.data.bundle.TerminalBundle
 import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
@@ -16,6 +17,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -77,6 +80,9 @@ class TerminalSettingsViewModel @Inject constructor(
 
     val autoNewTabOnCloseLast: StateFlow<Boolean> = settingsRepo.autoNewTabOnCloseLastFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    // ── 深度进度：Level 2+3 聚合器 StateFlow（公开给 Bundle 卡片 + Dialog 用） ──
+    val aggregateProgress: StateFlow<AggregateProgressState> = containerEngine.progressAggregator.state
 
     val keepSessionWhenLeave: StateFlow<Boolean> = settingsRepo.keepSessionWhenLeaveFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)

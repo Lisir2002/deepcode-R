@@ -1,6 +1,12 @@
 package com.deep.rcode.feature.agent.domain.container
 
 import com.deep.rcode.core.util.FileLogger
+import com.deep.rcode.feature.agent.domain.container.progress.ApkStdoutParser
+import com.deep.rcode.feature.agent.domain.container.progress.InstallPhase
+import com.deep.rcode.feature.agent.domain.container.progress.ParallelPrefetchManager
+import com.deep.rcode.feature.agent.domain.container.progress.PrefetchConcurrencyPolicy
+import com.deep.rcode.feature.agent.domain.container.progress.ProgressSource
+import com.deep.rcode.feature.agent.domain.container.progress.RealProgressAggregator
 import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
 import com.deep.rcode.feature.terminal.data.bundle.TerminalBundle
 import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
@@ -81,7 +87,10 @@ class LinuxContainerEngine @Inject constructor(
     private val containerInstaller: ContainerInstaller,
     private val containerSettingsRepository: com.deep.rcode.feature.settings.data.repository.ContainerSettingsRepository,
     private val workspacePathMapper: WorkspacePathMapper,
-    private val bundleRepository: TerminalBundleRepository
+    private val bundleRepository: TerminalBundleRepository,
+    /** Level 2+3 融合：5 路真实信号聚合器；按 bundleId/custom(null) 各自独立，公开 StateFlow 给 UI。 */
+    val progressAggregator: RealProgressAggregator,
+    private val concurrencyPolicy: PrefetchConcurrencyPolicy,
 ) : CommandEngine {
     /** 容器初始化的实时进度，供所有入口（终端页/AI/后台终端/MCP）共享同一份状态。 */
     private val _initProgress = MutableStateFlow<ContainerInitState>(ContainerInitState.Idle)
@@ -393,6 +402,14 @@ class LinuxContainerEngine @Inject constructor(
     private val bundleOpMutex = Mutex()
 
     /**
+     * 把 execCaptured 包一层 Pair<String, Int?> 给 ParallelPrefetchManager 用，避免内部暴露 ExecResult。
+     */
+    private suspend fun execForManager(cmd: String, timeoutMs: Long): Pair<String, Int?> {
+        val r = execCaptured(cmd, projectPath = null, timeoutMs = timeoutMs)
+        return r.output to r.exitCode
+    }
+
+    /**
      * 安装一个 Bundle（配置国内镜像源（幂等）+ apk update + apk add --no-cache <packages> + postInstallHook）。
      *
      * 前置要求：rootfs + proot 已安装（[ensureInstalled] 已完成、返回过 Ready）。
@@ -406,9 +423,44 @@ class LinuxContainerEngine @Inject constructor(
             if (bundleRepository.isInstalledSnapshot(id)) return
             bundleRepository.emitInstalling(id, line = "准备中…")
             _initProgress.value = ContainerInitState.BundleInstalling(bundleId = id, line = "准备中…")
+
+            // ── Level 2+3 融合：开始会话（Prefetch + Aggregator） ──
+            val conResult = concurrencyPolicy.calculate()
+            val slotsN = conResult.slots
+            val pkgs = bundle.packages.trim().split(Regex("""\s+""")).filter(String::isNotBlank)
+            val prefetch = ParallelPrefetchManager(
+                slotsCount = slotsN,
+                runSync = ::execForManager,
+                streamShell = { cmd, to -> streamExecNoInstall(cmd, projectPath = null, timeoutMs = to) },
+            )
+            progressAggregator.startInstallSession(slots = slotsN, totalDependsEstimate = pkgs.size * 6)
+            // 监听 Prefetch 槽流 → Aggregator
+            val slotsCollectJob = initScope.launch {
+                prefetch.slots.collect { s -> progressAggregator.onSlotsFromPrefetch(s) }
+            }
             var exitCode: Int? = null
             var failedReason: String? = null
             try {
+                // Level 3a：先查依赖图 → 并行预取（fail-open：单包失败交给 apk 兜底）
+                runCatching {
+                    val depends = prefetch.resolveDependencies(pkgs, timeoutMs = APK_LIST_TIMEOUT_MS)
+                    // 预取异步跑；完成后让 Aggregator flush 失败合并摘要（Fix C 汇总不刷屏）
+                    initScope.launch {
+                        val fin = runCatching { prefetch.prefetch(depends) }
+                            .getOrNull()
+                        if (fin is ParallelPrefetchManager.PrefetchEvent.Finished) {
+                            runCatching {
+                                progressAggregator.flushPrefetchFailures(fin.failedPackages)
+                            }.onFailure { t -> FileLogger.w(TAG, "flush failures err", t) }
+                        }
+                    }
+                    // 给预取 800ms 头启动时间（让 curl 先拿 Content-Length，slot 立刻从 WAITING→DLING，UI 首帧不空方块）
+                    kotlinx.coroutines.delay(800)
+                }.onFailure { t ->
+                    FileLogger.w(TAG, "prefetch prepare 跳过：${t.message}")
+                }
+
+                val hookLines = bundle.postInstallHook?.trimIndent()?.lineSequence()?.count() ?: 0
                 val script = buildString {
                     append("set -e\n")
                     append(apkMirrorAndUpdateScriptOnce())
@@ -417,24 +469,46 @@ class LinuxContainerEngine @Inject constructor(
                         append("# post-install hook for ").append(id.stableKey).append('\n')
                         append(hook.trimIndent()).append('\n')
                     }
-                    // GIT 两个 credential helper 的全局配置：以前写在 monolithic provisionIfNeeded 末尾，
-                    // 现在拆成 GIT bundle 自己的 post-install（定义在 TerminalBundles 里），保证不重复。
-                    // 为了兼容"旧存量用户只升级 app、不重装 rootfs"，Bash/Git 旧版本 provision 没这些行，
-                    // 我们在 GIT bundle 里强制重复配置：--replace-all / --add 语义天然幂等。
+                }
+                // 告诉 Aggregator：apk OK 之后进入 POST_HOOK 阶段，行数在这里
+                if (hookLines > 0) {
+                    // 我们还没到 OK（INSTALL phase），这里先把计划行数存一下，等 OK 语义命中再 enterPostHook
                 }
                 streamExecNoInstall(script, projectPath = null, timeoutMs = APK_ONE_BUNDLE_TIMEOUT_MS).collect { event ->
                     when (event) {
                         is CommandEvent.Line -> {
                             bundleRepository.emitInstalling(id, line = event.text)
                             _initProgress.value = ContainerInitState.BundleInstalling(bundleId = id, line = event.text)
+                            progressAggregator.onApkLine(event.text)
+                            // 解析 OK 语义后，如果有 postHook 行数就切 phase 到 POST_HOOK
+                            val sem = ApkStdoutParser.parse(event.text).semantic
+                            if (sem is ApkStdoutParser.Semantic.Ok && hookLines > 0) {
+                                initScope.launch { progressAggregator.enterPostHook(totalLines = hookLines.coerceAtLeast(1)) }
+                            }
+                            if (sem is ApkStdoutParser.Semantic.Installing && hookLines == 0) {
+                                // noop
+                            }
+                            if (sem is ApkStdoutParser.Semantic.PostLine && hookLines > 0) {
+                                initScope.launch { progressAggregator.advancePostHookLine() }
+                            }
                         }
-                        is CommandEvent.Exit -> exitCode = event.code
+                        is CommandEvent.Exit -> {
+                            exitCode = event.code
+                            initScope.launch {
+                                progressAggregator.onExitCode(
+                                    code = event.code,
+                                    postHookDone = true,
+                                )
+                            }
+                        }
                     }
                 }
             } catch (e: Exception) {
                 FileLogger.w(TAG, "安装 bundle ${id.stableKey} 异常", e)
                 failedReason = "安装 ${bundle.displayName} 失败：${e.message}"
             } finally {
+                slotsCollectJob.cancel()
+                progressAggregator.endSession()
                 if (exitCode == 0 && failedReason == null) {
                     bundleRepository.markInstalled(id, bundle)
                     FileLogger.i(TAG, "Bundle 安装成功：${bundle.displayName} (${bundle.packages})")
@@ -445,16 +519,10 @@ class LinuxContainerEngine @Inject constructor(
                     bundleRepository.markFailed(id, reason)
                 }
                 // ⚠️ 无论成功/失败/异常，最后都复位 _initProgress 回 Ready。
-                // 不再依赖 containerInstaller.isInstalledFor(currentProfile)：
-                //   - currentProfile 是 @Volatile，操作期间若被 profile flow 异步更新，条件可能为假
-                //   - 条件假 → 跳过复位 → UI 永久停在 BundleInstalling → 用户看到"装完还在转圈圈"
-                // 改为：只要当前状态仍是 BundleInstalling / BundleUninstalling（即本操作挂起的状态），
-                // 就无条件复位到 Ready。Idle/ExtractingRootfs/DeployingProot/Failed 不被破坏。
                 val cur = _initProgress.value
                 if (cur is ContainerInitState.BundleInstalling || cur is ContainerInitState.BundleUninstalling) {
                     _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = false)
                 }
-                // 对失败/异常把错误抛出去，上层 ViewModel 的 runCatching {}.onFailure { postError } 才会弹 toast
                 if (failedReason != null) throw IllegalStateException(failedReason)
                 if (exitCode != 0) {
                     val reason = "安装 ${bundle.displayName} 失败（exit=$exitCode），请在终端设置中重试"
