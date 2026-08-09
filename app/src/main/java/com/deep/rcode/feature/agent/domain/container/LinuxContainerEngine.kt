@@ -158,6 +158,14 @@ class LinuxContainerEngine @Inject constructor(
 
         /** 自定义包刷新（apk list）的短超时。 */
         private const val APK_LIST_TIMEOUT_MS = 60_000L
+
+        /**
+         * apk world 包名正则（Alpine apk-tools 规范）：
+         * 首字符必须字母或数字，后续允许字母/数字/._+-；不允许大写、空白、URL、
+         * WARNING/ERROR 等前缀大写的日志行，也不允许 : / 等路径字符。
+         * 参考 apk-tools 源码 libapk/version.c 与 world 包名检查逻辑。
+         */
+        private val APK_PKG_NAME_REGEX = Regex("""^[a-z0-9][a-z0-9._+\-]*$""")
     }
 
     /**
@@ -566,16 +574,23 @@ class LinuxContainerEngine @Inject constructor(
             return
         }
         val text = runCatching {
-            execCaptured("apk info", projectPath = null, timeoutMs = APK_LIST_TIMEOUT_MS).output
+            // 显式把 stderr 与 stdout 分家：apk info 的 warning/error 默认走 stderr，
+            // 但 apk 在 PRoot/pty 下偶尔会把两条流合并，所以这里再 2>/dev/null 一次兜底。
+            // 另外 -I 或默认都可以，我们只需要纯包名清单。
+            execCaptured("apk info 2>/dev/null", projectPath = null, timeoutMs = APK_LIST_TIMEOUT_MS).output
         }.getOrDefault("")
-        val installed = text.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        val installed = text.lineSequence()
+            .map { it.trim() }
+            .filter { line ->
+                line.isNotBlank()
+                    // 纯包名：必须匹配 apk world 包名规则（小写字母/数字/._+-，无空白、无 URL、无前缀大写）
+                    && APK_PKG_NAME_REGEX.matches(line)
+            }
+            .toSet()
         val bundled = TerminalBundles.ALL
             .flatMap { it.packages.split(" ") }
             .map { it.trim() }.filter { it.isNotBlank() }
             .toSet()
-        // 额外减去 Alpine 自带 minirootfs 的 base world（避免 busybox / alpine-base / musl 出现在用户列表里）
-        // 做法：凡是首次 apk add 没提到的包名一律先给出去；如果列表过大 UI 能接受——
-        // （apk info 通常 100~200 包，减去 bundle/base 后只剩几个用户自定义包）。
         val basePkgs = setOf(
             "alpine-base", "alpine-keys", "apk-tools", "busybox", "busybox-binsh", "musl", "musl-utils",
             "libc-utils", "zlib", "ssl_client", "ca-certificates-bundle"
@@ -624,6 +639,11 @@ class LinuxContainerEngine @Inject constructor(
      * 同一个脚本被 installBundle/installCustomPackages 复用，所以单独抽出。
      * 每次安装前都写（幂等），保证：① 新解压 rootfs 立即有国内镜像；② 存量 rootfs（
      * 其 /etc/apk/repositories 还是官方源）也被同步更新成国内源。
+     *
+     * 注意：**调用方必须**在脚本开头先 `set -e`（或 `set -o pipefail`）。
+     * 以前写成 `apk update 2>&1 | tail -n 3` 会吞掉 `apk update` 的失败退出码，
+     * 导致仓库索引损坏 / `No such file or directory` 时继续 `apk add`，
+     * 最终 apk info 会长期吐 WARNING: opening from cache，UI 自定义包列表被污染。
      */
     private fun apkMirrorAndUpdateScriptOnce(mirror: String = ContainerInstaller.ALPINE_MIRROR): String = buildString {
         append("mkdir -p /etc/apk\n")
@@ -631,7 +651,9 @@ class LinuxContainerEngine @Inject constructor(
         append("$mirror/${ContainerInstaller.ALPINE_BRANCH}/main\n")
         append("$mirror/${ContainerInstaller.ALPINE_BRANCH}/community\n")
         append("EOF\n")
-        append("apk update 2>&1 | tail -n 3\n")
+        append("# pipefail 保证 apk update 失败时整条管道退出码非 0，set -e 会拦截后续 apk add\n")
+        append("set -o pipefail\n")
+        append("apk update 2>&1 | tail -n 10\n")
     }
 
     // ── End Bundle 公开 API ──────────────────────────────────────────────────
