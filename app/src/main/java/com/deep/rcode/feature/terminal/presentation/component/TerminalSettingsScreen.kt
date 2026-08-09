@@ -228,7 +228,7 @@ fun TerminalSettingsScreen(
                     icon = FeatherIcons.Moon,
                     title = "终端内容配色",
                     subtitle = when (theme) {
-                        TerminalTheme.SYSTEM -> "跟随系统（暗/亮自动切换）"
+                        TerminalTheme.FOLLOW_APP -> "跟随程序（暗/亮自动切换）"
                         TerminalTheme.PURE_BLACK -> "黑底白字（对比最强）"
                         TerminalTheme.PURE_WHITE -> "白底黑字（对比最强）"
                     },
@@ -631,7 +631,7 @@ private fun ThemePickerDialog(
     onConfirm: (TerminalTheme) -> Unit
 ) {
     val options = listOf(
-        TerminalTheme.SYSTEM to "跟随系统（暗/亮自动切换）",
+        TerminalTheme.FOLLOW_APP to "跟随程序（暗/亮自动切换）",
         TerminalTheme.PURE_BLACK to "黑底白字 · 对比最强",
         TerminalTheme.PURE_WHITE to "白底黑字 · 对比最强"
     )

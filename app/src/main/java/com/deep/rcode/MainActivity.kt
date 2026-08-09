@@ -177,15 +177,22 @@ class MainActivity : ComponentActivity() {
             }
 
             AIEditorTheme(darkTheme = darkTheme) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                // 将 MainActivity 算好的"APP 实际暗模式"通过 CompositionLocal 下发，
+                // 子树里的终端内容配色、跟随程序开关都读这同一个值，
+                // 保证 APP 切到"强制白/强制黑"时，终端颜色不会还停留在系统主题。
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.deep.rcode.core.theme.LocalAppDarkMode provides darkTheme
                 ) {
-                    AppNavigation()
-                    // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
-                    com.deep.rcode.feature.credentials.presentation.component.GlobalCredentialDialogHost(
-                        bridge = credentialRequestBridge
-                    )
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        AppNavigation()
+                        // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
+                        com.deep.rcode.feature.credentials.presentation.component.GlobalCredentialDialogHost(
+                            bridge = credentialRequestBridge
+                        )
+                    }
                 }
             }
         }

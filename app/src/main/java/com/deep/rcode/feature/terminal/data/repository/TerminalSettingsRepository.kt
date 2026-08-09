@@ -16,11 +16,18 @@ import javax.inject.Singleton
 private val Context.terminalDataStore by preferencesDataStore(name = "terminal_prefs")
 
 /** 终端内容区配色：仅两套 + 跟随系统。外壳 UI（TabBar/Banner/ExtraKeys）独立走 Material 主题。 */
-enum class TerminalTheme(@Suppress("unused") val stableKey: String) {
-    SYSTEM("system"),
+enum class TerminalTheme(val stableKey: String) {
+    /**
+     * 跟随"程序自己的主题设置"（不是系统）。
+     * 具体暗/亮由 MainActivity 根据 ThemeSettingsRepository.themeModeFlow 计算后，
+     * 通过 LocalAppDarkMode CompositionLocal 下发。
+     *
+     * 兼容注意：stableKey 仍保留 "system"，避免已安装用户 DataStore 里存的旧值失效。
+     */
+    FOLLOW_APP("system"),
     PURE_BLACK("pure_black"),        // 黑底白字，对比绝对
     PURE_WHITE("pure_white"),        // 白底黑字，对比绝对
-    // 向后兼容读取：旧值 Dracula/Solarized 自动映射到跟随系统（避免 valueOf 抛异常）
+    // 向后兼容读取：旧值 Dracula/Solarized 自动映射到跟随程序（避免 valueOf 抛异常）
 }
 
 /** SSH 心跳间隔枚举。 */
@@ -79,17 +86,19 @@ class TerminalSettingsRepository @Inject constructor(
         it[FONT_SIZE_SP_KEY] ?: 12
     }
 
-    /** 终端内容区配色：跟随系统 / 黑底白字 / 白底黑字。默认跟随系统。
-     *  对历史旧值 DRACULA_DARK / SOLARIZED_LIGHT 做兼容映射，避免 valueOf 抛异常。 */
+    /** 终端内容区配色：跟随程序 / 黑底白字 / 白底黑字。默认跟随程序。
+     *  对历史旧值 DRACULA_DARK / SOLARIZED_LIGHT 做兼容映射，避免 valueOf 抛异常。
+     *  历史值 "system" 对应 FOLLOW_APP（stableKey 已保持一致，这里 valueOf 也手动兜底）。 */
     val themeFlow: Flow<TerminalTheme> = context.terminalDataStore.data.map {
         val raw = it[THEME_KEY]
-        if (raw.isNullOrBlank()) TerminalTheme.SYSTEM
+        if (raw.isNullOrBlank()) TerminalTheme.FOLLOW_APP
         else runCatching { TerminalTheme.valueOf(raw) }
             .getOrElse {
                 when (raw) {
                     "DRACULA_DARK" -> TerminalTheme.PURE_BLACK   // 历史暗色值 → 黑底
                     "SOLARIZED_LIGHT" -> TerminalTheme.PURE_WHITE  // 历史亮色值 → 白底
-                    else -> TerminalTheme.SYSTEM
+                    "system" -> TerminalTheme.FOLLOW_APP            // 历史枚举 SYSTEM → FOLLOW_APP
+                    else -> TerminalTheme.FOLLOW_APP
                 }
             }
     }

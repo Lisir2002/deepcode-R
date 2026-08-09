@@ -59,7 +59,7 @@ class TerminalSettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, 12)
 
     val terminalTheme: StateFlow<TerminalTheme> = settingsRepo.themeFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, TerminalTheme.SYSTEM)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, TerminalTheme.FOLLOW_APP)
 
     val showTabBar: StateFlow<Boolean> = settingsRepo.showTabBarFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)

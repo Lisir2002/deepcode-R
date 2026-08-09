@@ -1,0 +1,6 @@
+fix(terminal): 终端内容配色 跟随系统 → 跟随程序，LocalAppDarkMode CompositionLocal 下发
+
+1. TerminalTheme.SYSTEM → FOLLOW_APP（stableKey 仍保留 "system" 兼容老用户）
+2. MainActivity 根节点 CompositionLocalProvider 下发 LocalAppDarkMode，按 AppThemeMode 计算
+3. rememberTerminalPalette FOLLOW_APP 分支读 LocalAppDarkMode.current，不再自己 isSystemInDarkTheme
+4. UI 三处"跟随系统（暗/亮自动切换）"文案全部改成"跟随程序（暗/亮自动切换）"

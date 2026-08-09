@@ -52,6 +52,18 @@ object Brand {
 
 val LocalSpacing = staticCompositionLocalOf { Spacing }
 
+/**
+ * 应用实际生效的"当前是否为暗模式"。
+ * 由 MainActivity 根据 ThemeSettingsRepository.themeModeFlow 计算后写入：
+ *   AUTO  → 跟随系统
+ *   DARK  → true
+ *   LIGHT → false
+ * 终端内容配色、各子页面"跟随程序"都统一读这一个 CompositionLocal，
+ * 保证 APP 自己切主题（强制黑/强制白）时，所有"跟随程序"的子控件同步变化，
+ * 而不是去读 android.content.res.Configuration 的系统 uiMode。
+ */
+val LocalAppDarkMode = androidx.compose.runtime.staticCompositionLocalOf<Boolean> { false }
+
 private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFF60A5FA),
     onPrimary = Color(0xFF082F49),

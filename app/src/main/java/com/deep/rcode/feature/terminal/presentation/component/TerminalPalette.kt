@@ -1,11 +1,11 @@
 package com.deep.rcode.feature.terminal.presentation.component
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.deep.rcode.core.theme.LocalAppDarkMode
 import com.deep.rcode.feature.terminal.data.repository.TerminalSettingsRepository
 import com.deep.rcode.feature.terminal.data.repository.TerminalTheme
 import dagger.hilt.android.EntryPointAccessors
@@ -145,19 +145,21 @@ val PureWhitePalette: TerminalPalette = TerminalPalette(
  * 选主题：
  *  - PURE_BLACK → 强制黑底白字
  *  - PURE_WHITE → 强制白底黑字
- *  - SYSTEM     → 跟随系统暗/亮
- *  旧 DataStore 值 DRACULA_DARK / SOLARIZED_LIGHT 已在 settingsRepo.themeFlow 阶段
- *  自动映射为 PURE_BLACK / PURE_WHITE，此处不再出现。
+ *  - FOLLOW_APP → 跟随程序自己的主题（ThemeSettingsRepository.themeModeFlow）：
+ *                  APP 切到"强制黑"就黑、"强制白"就白、"AUTO"时才读系统暗/亮。
+ *  实现上统一读 MainActivity 通过 CompositionLocal 下发的 LocalAppDarkMode.current，
+ *  不再自己去 isSystemInDarkTheme()，避免 APP 强制切换时终端内容颜色不跟随。
  */
 @Composable
 fun rememberTerminalPalette(
     settingsRepo: TerminalSettingsRepository = hiltRepo()
 ): TerminalPalette {
-    val theme: TerminalTheme by settingsRepo.themeFlow.collectAsStateWithLifecycle(initialValue = TerminalTheme.SYSTEM)
+    val theme: TerminalTheme by settingsRepo.themeFlow.collectAsStateWithLifecycle(initialValue = TerminalTheme.FOLLOW_APP)
+    val appDarkMode = LocalAppDarkMode.current
     return when (theme) {
         TerminalTheme.PURE_BLACK -> PureBlackPalette
         TerminalTheme.PURE_WHITE -> PureWhitePalette
-        TerminalTheme.SYSTEM -> if (isSystemInDarkTheme()) PureBlackPalette else PureWhitePalette
+        TerminalTheme.FOLLOW_APP -> if (appDarkMode) PureBlackPalette else PureWhitePalette
     }
 }
 
