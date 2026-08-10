@@ -162,7 +162,12 @@ fun ProviderEditorScreen(
                 out
             }
         combined
-    }.collectAsState<Map<String, ModelCapabilityOverrideEntity>>(initial = emptyMap())
+    // 注意：这里不能写 <Map<...>> 单个泛型实参！
+    // Kotlin 标准库签名是 fun <T : R, R> Flow<T>.collectAsState(initial: R, ...): State<R>
+    // 显式写 2 个实参太啰嗦，利用 remember 返回值 combined 的显式类型 Flow<Map<...>> 自动推断即可。
+    // IDE 插件能兼容单实参写法，但 CI Kotlin 2.1.20 严格检查会报错：
+    // "2 type arguments expected for fun <T : R, R> Flow<T>.collectAsState(...)"
+    }.collectAsState(initial = emptyMap())
 
     DisposableEffect(Unit) {
         viewModel.resetFetchState()
