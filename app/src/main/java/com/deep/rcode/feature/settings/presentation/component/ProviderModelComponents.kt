@@ -42,6 +42,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -632,8 +633,8 @@ internal fun CapabilityOverrideSheet(
     }
 }
 
-/** 兼容 collectAsStateWithLifecycle 在非 androidx.lifecycle:lifecycle-runtime-compose 场景下的兜底实现（直接用 viewModel 的 flow + null 初值）。 */
+/** 兼容 collectAsStateWithLifecycle 在非 androidx.lifecycle:lifecycle-runtime-compose 场景下的兜底实现（直接用 viewModel 的 flow + initial 初值）。 */
 @Composable
 private fun <T> kotlinx.coroutines.flow.Flow<T>.collectAsStateWithLifecycleCompat(initial: T): androidx.compose.runtime.State<T> {
-    return androidx.lifecycle.compose.collectAsStateWithLifecycle(initialValue = initial)
+    return collectAsStateWithLifecycle(initialValue = initial)
 }

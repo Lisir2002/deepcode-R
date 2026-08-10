@@ -141,14 +141,28 @@ fun ProviderEditorScreen(
 
     /** RC63 ④ 单模型覆盖：ProviderModelRow 每个模型 hasOverride 的即时快照（Flow -> State）。 */
     val overridesMap: Map<String, ModelCapabilityOverrideEntity> by remember(type, models) {
-        val flows = models.associateWith { modelId -> viewModel.observeCapabilityOverride(type, modelId) }
-        // 把各单模型 Flow 合并成 Map<String, Entity>（null 视为未覆盖）：
-        kotlinx.coroutines.flow.combine(flows.entries.map { (m, f) ->
-            f.map { v -> m to v }
-        }) { pairs ->
-            pairs.filter { it.second != null }.associate { it.first to it.second!! }
-        }
-    }.collectAsState(initial = emptyMap())
+        // 注意 1：下面每一步都显式标注类型，原因是 CI（Kotlin 2.1.20 + AGP 8.9.3）对
+        // "combine(List<Flow<Pair<A,B?>>>)" 这种嵌套泛型 + lambda 的推断会失败，
+        // 报错 "Cannot infer type for type parameter T / R / B / K / V"，IDE 的 Kotlin 插件反而可以过。
+        // 注意 2：必须使用 combine(flowList) { values: Array<T> -> ... } 这种「Flow 列表 + transform」
+        // 三参/二参重载，避免 combine(vararg flows: Flow<T>) { ... } 推断不出来。
+        val flowsMap: Map<String, kotlinx.coroutines.flow.Flow<ModelCapabilityOverrideEntity?>> =
+            models.associateWith { modelId -> viewModel.observeCapabilityOverride(type, modelId) }
+        val modelIds: List<String> = flowsMap.keys.toList()
+        val flowList: List<kotlinx.coroutines.flow.Flow<ModelCapabilityOverrideEntity?>> =
+            modelIds.map { id -> flowsMap.getValue(id) }
+        val combined: kotlinx.coroutines.flow.Flow<Map<String, ModelCapabilityOverrideEntity>> =
+            kotlinx.coroutines.flow.combine(
+                flows = flowList
+            ) { values: Array<ModelCapabilityOverrideEntity?> ->
+                val out: MutableMap<String, ModelCapabilityOverrideEntity> = linkedMapOf()
+                values.forEachIndexed { index, entity ->
+                    if (entity != null) out[modelIds[index]] = entity
+                }
+                out
+            }
+        combined
+    }.collectAsState<Map<String, ModelCapabilityOverrideEntity>>(initial = emptyMap())
 
     DisposableEffect(Unit) {
         viewModel.resetFetchState()
