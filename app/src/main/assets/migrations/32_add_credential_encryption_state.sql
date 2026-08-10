@@ -1,26 +1,36 @@
+-- RC61 迁移 32（v0.1.0-rc61b 修正版）：
+-- 列名严格遵循全项目约定 = camelCase（与迁移 8/9/28 一致），与 Entity 字段逐字吻合。
+-- 不写 SQL DEFAULT：Kotlin 字段默认值（encScheme="V2"、lastRotatedAt=0、…）由 Room 在 INSERT 时填列，
+--   避免与 Room TableInfo.dflt_value 校验不一致（Room 2.7 会严格比较 PRAGMA table_info 的 dflt_value）。
+-- 索引命名与 Room 自动生成保持一致：index_{table}_{camelCaseColumn}。
+
+-- 单行配置表：MasterKey 指纹 + wrap 后的 DEK + 轮换/生物识别标志
 CREATE TABLE IF NOT EXISTS credential_encryption_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    master_key_fingerprint TEXT NOT NULL,
-    dek_ciphertext TEXT NOT NULL,
-    enc_scheme TEXT NOT NULL DEFAULT 'V2',
-    last_rotated_at INTEGER NOT NULL DEFAULT 0,
-    rotation_counter INTEGER NOT NULL DEFAULT 0,
-    biometric_required INTEGER NOT NULL DEFAULT 0,
-    migrated_from_v1 INTEGER NOT NULL DEFAULT 0
+    masterKeyFingerprint TEXT NOT NULL,
+    dekCiphertext TEXT NOT NULL,
+    encScheme TEXT NOT NULL,
+    lastRotatedAt INTEGER NOT NULL,
+    rotationCounter INTEGER NOT NULL,
+    biometricRequired INTEGER NOT NULL,
+    migratedFromV1 INTEGER NOT NULL
 );
 
+-- SSH 连接 / 凭据操作 / 备份导入导出 / SFTP 审计日志
 CREATE TABLE IF NOT EXISTS remote_audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     category TEXT NOT NULL,
     action TEXT NOT NULL,
-    connection_id TEXT,
-    connection_name TEXT,
-    remote_host TEXT,
+    connectionId TEXT,
+    connectionName TEXT,
+    remoteHost TEXT,
     success INTEGER NOT NULL,
     message TEXT,
-    source_ip TEXT,
-    created_at INTEGER NOT NULL
+    sourceIp TEXT,
+    createdAt INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_remote_audit_logs_created_at ON remote_audit_logs(created_at);
-CREATE INDEX IF NOT EXISTS idx_remote_audit_logs_category ON remote_audit_logs(category);
-CREATE INDEX IF NOT EXISTS idx_remote_audit_logs_connection_id ON remote_audit_logs(connection_id);
+
+-- 与 Entity indices = [Index("createdAt"), Index("category"), Index("connectionId")] 完全对齐
+CREATE INDEX IF NOT EXISTS index_remote_audit_logs_createdAt ON remote_audit_logs(createdAt);
+CREATE INDEX IF NOT EXISTS index_remote_audit_logs_category ON remote_audit_logs(category);
+CREATE INDEX IF NOT EXISTS index_remote_audit_logs_connectionId ON remote_audit_logs(connectionId);

@@ -91,6 +91,24 @@ class BackupManagerImpl @Inject constructor(
         prettyPrint = false
     }
 
+    /**
+     * RC61b：统一 DAO 访问安全壳。任何 DAO 调用（Room 首次 query 时会触发 onOpen schema 校验，
+     * 校验失败抛 IllegalStateException 直接崩进程）都必须通过此函数。
+     * 失败时：记 FileLogger + 按 [failValue] 返回，保证备份/导入流程失败不外溢到 UI 启动链。
+     */
+    private inline fun <T> safeDao(tag: String, failValue: T, block: () -> T): T {
+        return runCatching(block).onFailure {
+            FileLogger.e("BackupMgr", "safeDao[$tag] 失败，返回兜底值 failValue=$failValue", it)
+        }.getOrDefault(failValue)
+    }
+
+    /** safeDao 的 suspend 版本。DAO 本身是 suspend fun，必须走 withContext(Dispatchers.IO) 的调用方已处理。 */
+    private suspend inline fun <T> safeDaoSuspend(tag: String, failValue: T, crossinline block: suspend () -> T): T {
+        return runCatching { block() }.onFailure {
+            FileLogger.e("BackupMgr", "safeDaoSuspend[$tag] 失败，返回兜底值 failValue=$failValue", it)
+        }.getOrDefault(failValue)
+    }
+
     private fun currentSchemaVersion(): Int = AgentDatabase.SCHEMA_VERSION
 
     private fun appVersionName(): String = runCatching {
@@ -118,7 +136,8 @@ class BackupManagerImpl @Inject constructor(
 
     override suspend fun exportSession(sessionId: String, output: OutputStream) {
         withContext(Dispatchers.IO) {
-            val session = chatSessionDao.getById(sessionId) ?: error("Session not found: $sessionId")
+            val session = safeDaoSuspend("getSessionById", null) { chatSessionDao.getById(sessionId) }
+                ?: error("Session not found: $sessionId")
             val temp = createTempFile()
             try {
                 FileOutputStream(temp).use { fos ->
@@ -136,7 +155,10 @@ class BackupManagerImpl @Inject constructor(
                                 var lastTs = 0L
                                 var lastId = ""
                                 while (true) {
-                                    val batch = agentMessageDao.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE)
+                                    val batch = safeDaoSuspend(
+                                        "getMsgPageAfter_$sessionId",
+                                        emptyList()
+                                    ) { agentMessageDao.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE) }
                                     if (batch.isEmpty()) break
                                     batch.forEach { writer.writeLine(json.encodeToString(AgentMessageDto.serializer(), it.toDto())) }
                                     lastTs = batch.last().timestamp
@@ -147,7 +169,10 @@ class BackupManagerImpl @Inject constructor(
                                 var lastTs = 0L
                                 var lastId = ""
                                 while (true) {
-                                    val batch = todoItemDao.getBySessionPageAfter(sessionId, lastTs, lastId, PAGE_SIZE)
+                                    val batch = safeDaoSuspend(
+                                        "getTodoPageAfter_$sessionId",
+                                        emptyList()
+                                    ) { todoItemDao.getBySessionPageAfter(sessionId, lastTs, lastId, PAGE_SIZE) }
                                     if (batch.isEmpty()) break
                                     batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
                                     lastTs = batch.last().createdAt
@@ -218,7 +243,10 @@ class BackupManagerImpl @Inject constructor(
                             var lastTs = 0L
                             var lastId = ""
                             while (true) {
-                                val batch = chatSessionDao.getPageAfter(lastTs, lastId, PAGE_SIZE)
+                                val batch = safeDaoSuspend(
+                                    "getSessionPageAfter",
+                                    emptyList()
+                                ) { chatSessionDao.getPageAfter(lastTs, lastId, PAGE_SIZE) }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(ChatSessionDto.serializer(), it.toDto())) }
                                 lastTs = batch.last().updatedAt
@@ -229,7 +257,10 @@ class BackupManagerImpl @Inject constructor(
                             var lastTs = 0L
                             var lastId = ""
                             while (true) {
-                                val batch = agentMessageDao.getPageAfter(lastTs, lastId, PAGE_SIZE)
+                                val batch = safeDaoSuspend(
+                                    "getMsgPageAfter",
+                                    emptyList()
+                                ) { agentMessageDao.getPageAfter(lastTs, lastId, PAGE_SIZE) }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(AgentMessageDto.serializer(), it.toDto())) }
                                 lastTs = batch.last().timestamp
@@ -240,7 +271,10 @@ class BackupManagerImpl @Inject constructor(
                             var lastTs = 0L
                             var lastId = ""
                             while (true) {
-                                val batch = todoItemDao.getPageAfter(lastTs, lastId, PAGE_SIZE)
+                                val batch = safeDaoSuspend(
+                                    "getTodoPageAfter",
+                                    emptyList()
+                                ) { todoItemDao.getPageAfter(lastTs, lastId, PAGE_SIZE) }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
                                 lastTs = batch.last().createdAt
@@ -257,10 +291,10 @@ class BackupManagerImpl @Inject constructor(
         schemaVersion = currentSchemaVersion(),
         appVersion = appVersionName(),
         createdAt = System.currentTimeMillis(),
-        providers = if (options.providers) aiProviderDao.getAllProvidersOnce().map { it.toDto() } else emptyList(),
-        gitCredentials = if (options.gitCredentials) gitCredentialDao.getAllOnce().map { it.toDto() } else emptyList(),
-        remoteConnections = if (options.remoteConnections) remoteConnectionDao.getAllConnectionsOnce().map { it.toDto() } else emptyList(),
-        remoteMounts = if (options.remoteConnections) remoteConnectionDao.getAllMountsOnce().map { it.toDto() } else emptyList(),
+        providers = if (options.providers) safeDaoSuspend("getAllProviders", emptyList()) { aiProviderDao.getAllProvidersOnce().map { it.toDto() } } else emptyList(),
+        gitCredentials = if (options.gitCredentials) safeDaoSuspend("getAllGitCred", emptyList()) { gitCredentialDao.getAllOnce().map { it.toDto() } } else emptyList(),
+        remoteConnections = if (options.remoteConnections) safeDaoSuspend("getAllRemoteConn", emptyList()) { remoteConnectionDao.getAllConnectionsOnce().map { it.toDto() } } else emptyList(),
+        remoteMounts = if (options.remoteConnections) safeDaoSuspend("getAllRemoteMounts", emptyList()) { remoteConnectionDao.getAllMountsOnce().map { it.toDto() } } else emptyList(),
         mcpServers = if (options.mcpServers) mcpConfigRepository.getServers() else emptyList(),
         globalPermissionRules = if (options.permissionRules) permissionRulesRepository.getGlobalRulesOnce() else emptyList(),
         themeMode = if (options.appSettings) themeSettingsRepository.snapshot() else null,
@@ -330,19 +364,30 @@ class BackupManagerImpl @Inject constructor(
                     checkVersion(metadata.schemaVersion)
                 }
                 FILE_SESSIONS -> {
-                    val currentWorkspacePath = workspaceRepository.currentPath()
-                    stats += RestoreStats(chatSessions = restoreJsonl(tar, ChatSessionDto.serializer()) { dtos ->
-                        chatSessionDao.upsertAll(dtos.map { it.copy(workspacePath = currentWorkspacePath).toEntity() })
+                    val currentWorkspacePath = runCatching { workspaceRepository.currentPath() }
+                        .onFailure { FileLogger.w("BackupMgr", "读取当前 workspacePath 失败", it) }
+                        .getOrDefault("")
+                    stats += RestoreStats(chatSessions = restoreJsonl(tar, ChatSessionDto.serializer(), "upsertSessions") { dtos ->
+                        safeDaoSuspend("upsertSessions", 0) {
+                            chatSessionDao.upsertAll(dtos.map { it.copy(workspacePath = currentWorkspacePath).toEntity() })
+                            dtos.size
+                        }
                     })
                 }
                 FILE_MESSAGES -> {
-                    stats += RestoreStats(agentMessages = restoreJsonl(tar, AgentMessageDto.serializer()) { dtos ->
-                        agentMessageDao.insertAll(dtos.map { it.toEntity() })
+                    stats += RestoreStats(agentMessages = restoreJsonl(tar, AgentMessageDto.serializer(), "insertMessages") { dtos ->
+                        safeDaoSuspend("insertMessages", 0) {
+                            agentMessageDao.insertAll(dtos.map { it.toEntity() })
+                            dtos.size
+                        }
                     })
                 }
                 FILE_TODOS -> {
-                    stats += RestoreStats(todoItems = restoreJsonl(tar, TodoItemDto.serializer()) { dtos ->
-                        todoItemDao.upsertAll(dtos.map { it.toEntity() })
+                    stats += RestoreStats(todoItems = restoreJsonl(tar, TodoItemDto.serializer(), "upsertTodos") { dtos ->
+                        safeDaoSuspend("upsertTodos", 0) {
+                            todoItemDao.upsertAll(dtos.map { it.toEntity() })
+                            dtos.size
+                        }
                     })
                 }
             }
@@ -353,7 +398,12 @@ class BackupManagerImpl @Inject constructor(
     }
 
     /** 逐行解析 jsonl 条目，每 [PAGE_SIZE] 条回调一次批量插入；返回该文件的总条数。 */
-    private suspend fun <T> restoreJsonl(tar: TarArchiveInputStream, serializer: KSerializer<T>, insert: suspend (List<T>) -> Unit): Int {
+    private suspend fun <T> restoreJsonl(
+        tar: TarArchiveInputStream,
+        serializer: KSerializer<T>,
+        tag: String,
+        insert: suspend (List<T>) -> Int
+    ): Int {
         val buffer = ByteArray(64 * 1024)
         val line = ByteArrayOutputStream(16 * 1024)
         val batch = ArrayList<T>(PAGE_SIZE)
@@ -364,12 +414,17 @@ class BackupManagerImpl @Inject constructor(
             for (i in 0 until n) {
                 if (buffer[i] == '\n'.code.toByte()) {
                     if (line.size() > 0) {
-                        batch.add(json.decodeFromString(serializer, line.toString(Charsets.UTF_8)))
+                        val parsed = runCatching {
+                            json.decodeFromString(serializer, line.toString(Charsets.UTF_8))
+                        }.onFailure { FileLogger.w("BackupMgr", "restoreJsonl[$tag] 单行解析失败，跳过", it) }
+                            .getOrNull()
                         line.reset()
-                        if (batch.size >= PAGE_SIZE) {
-                            count += batch.size
-                            insert(batch.toList())
-                            batch.clear()
+                        if (parsed != null) {
+                            batch.add(parsed)
+                            if (batch.size >= PAGE_SIZE) {
+                                count += runCatching { insert(batch.toList()) }.getOrDefault(0)
+                                batch.clear()
+                            }
                         }
                     } else {
                         line.reset()
@@ -380,11 +435,12 @@ class BackupManagerImpl @Inject constructor(
             }
         }
         if (line.size() > 0) {
-            batch.add(json.decodeFromString(serializer, line.toString(Charsets.UTF_8)))
+            runCatching { json.decodeFromString(serializer, line.toString(Charsets.UTF_8)) }
+                .onFailure { FileLogger.w("BackupMgr", "restoreJsonl[$tag] 尾行解析失败，跳过", it) }
+                .getOrNull()?.let { batch.add(it) }
         }
         if (batch.isNotEmpty()) {
-            count += batch.size
-            insert(batch.toList())
+            count += runCatching { insert(batch.toList()) }.getOrDefault(0)
         }
         return count
     }
@@ -399,14 +455,22 @@ class BackupManagerImpl @Inject constructor(
     private suspend fun restoreLegacy(snapshot: BackupSnapshot): RestoreStats {
         var stats = restoreMeta(snapshot.toMetadata())
         if (snapshot.chatSessions.isNotEmpty()) {
-            val currentWorkspacePath = workspaceRepository.currentPath()
-            chatSessionDao.upsertAll(snapshot.chatSessions.map { it.copy(workspacePath = currentWorkspacePath).toEntity() })
+            val currentWorkspacePath = runCatching { workspaceRepository.currentPath() }
+                .onFailure { FileLogger.w("BackupMgr", "读取 workspacePath 失败(legacy)", it) }
+                .getOrDefault("")
+            safeDaoSuspend("legacyUpsertSessions", Unit) {
+                chatSessionDao.upsertAll(snapshot.chatSessions.map { it.copy(workspacePath = currentWorkspacePath).toEntity() })
+            }
         }
         if (snapshot.agentMessages.isNotEmpty()) {
-            agentMessageDao.insertAll(snapshot.agentMessages.map { it.toEntity() })
+            safeDaoSuspend("legacyInsertMessages", Unit) {
+                agentMessageDao.insertAll(snapshot.agentMessages.map { it.toEntity() })
+            }
         }
         if (snapshot.todoItems.isNotEmpty()) {
-            todoItemDao.upsertAll(snapshot.todoItems.map { it.toEntity() })
+            safeDaoSuspend("legacyUpsertTodos", Unit) {
+                todoItemDao.upsertAll(snapshot.todoItems.map { it.toEntity() })
+            }
         }
         return stats + RestoreStats(
             chatSessions = snapshot.chatSessions.size,
@@ -418,34 +482,51 @@ class BackupManagerImpl @Inject constructor(
     /** 元数据段还原（小表 + 应用设置），新旧格式共用。 */
     private suspend fun restoreMeta(meta: BackupMetadata): RestoreStats {
         if (meta.providers.isNotEmpty()) {
-            aiProviderDao.insertAllProviders(meta.providers.map { it.toEntity() })
+            safeDaoSuspend("insertProviders", Unit) {
+                aiProviderDao.insertAllProviders(meta.providers.map { it.toEntity() })
+            }
         }
         if (meta.gitCredentials.isNotEmpty()) {
-            gitCredentialDao.upsertAll(meta.gitCredentials.map { it.toEntity() })
+            safeDaoSuspend("upsertGitCreds", Unit) {
+                gitCredentialDao.upsertAll(meta.gitCredentials.map { it.toEntity() })
+            }
         }
         if (meta.remoteConnections.isNotEmpty()) {
-            remoteConnectionDao.insertAllConnections(meta.remoteConnections.map { it.toEntity() })
+            safeDaoSuspend("insertRemoteConns", Unit) {
+                remoteConnectionDao.insertAllConnections(meta.remoteConnections.map { it.toEntity() })
+            }
         }
         if (meta.remoteMounts.isNotEmpty()) {
-            remoteConnectionDao.insertAllMounts(meta.remoteMounts.map { it.toEntity() })
+            safeDaoSuspend("insertRemoteMounts", Unit) {
+                remoteConnectionDao.insertAllMounts(meta.remoteMounts.map { it.toEntity() })
+            }
         }
         if (meta.mcpServers.isNotEmpty()) {
-            mcpConfigRepository.setServers(meta.mcpServers)
-            mcpManager.reload()
+            runCatching {
+                mcpConfigRepository.setServers(meta.mcpServers)
+                mcpManager.reload()
+            }.onFailure { FileLogger.w("BackupMgr", "restoreMeta: MCP 恢复失败", it) }
         }
         if (meta.globalPermissionRules.isNotEmpty()) {
-            permissionRulesRepository.setGlobalRules(meta.globalPermissionRules)
+            runCatching { permissionRulesRepository.setGlobalRules(meta.globalPermissionRules) }
+                .onFailure { FileLogger.w("BackupMgr", "restoreMeta: permissionRules 恢复失败", it) }
         }
-        meta.themeMode?.let { themeSettingsRepository.restore(it) }
-        keepaliveSettingsRepository.restore(meta.keepaliveEnabled)
-        logSettingsRepository.restore(meta.logLevel)
+        runCatching { meta.themeMode?.let { themeSettingsRepository.restore(it) } }
+            .onFailure { FileLogger.w("BackupMgr", "restoreMeta: theme 恢复失败", it) }
+        runCatching { keepaliveSettingsRepository.restore(meta.keepaliveEnabled) }
+            .onFailure { FileLogger.w("BackupMgr", "restoreMeta: keepalive 恢复失败", it) }
+        runCatching { logSettingsRepository.restore(meta.logLevel) }
+            .onFailure { FileLogger.w("BackupMgr", "restoreMeta: logLevel 恢复失败", it) }
         if (meta.visionProviderId.isNotBlank() || meta.visionModel.isNotBlank()) {
-            visionModelSettingsRepository.setVisionModel(meta.visionProviderId, meta.visionModel)
+            runCatching { visionModelSettingsRepository.setVisionModel(meta.visionProviderId, meta.visionModel) }
+                .onFailure { FileLogger.w("BackupMgr", "restoreMeta: visionModel 恢复失败", it) }
         }
         if (meta.compactionProviderId.isNotBlank() || meta.compactionModel.isNotBlank()) {
-            compactionModelSettingsRepository.setCompactionModel(meta.compactionProviderId, meta.compactionModel)
+            runCatching { compactionModelSettingsRepository.setCompactionModel(meta.compactionProviderId, meta.compactionModel) }
+                .onFailure { FileLogger.w("BackupMgr", "restoreMeta: compactionModel 恢复失败", it) }
         }
-        meta.syncSettings?.let { syncSettingsRepository.restore(it) }
+        runCatching { meta.syncSettings?.let { syncSettingsRepository.restore(it) } }
+            .onFailure { FileLogger.w("BackupMgr", "restoreMeta: syncSettings 恢复失败", it) }
 
         return RestoreStats(
             providers = meta.providers.size,

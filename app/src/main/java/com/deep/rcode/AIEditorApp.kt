@@ -18,15 +18,17 @@ import com.deep.rcode.feature.settings.data.remote.ModelMetadataService
 import com.deep.rcode.feature.terminal.domain.TerminalKeepaliveService
 import com.deep.rcode.core.security.CredentialEncryptor
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -115,8 +117,15 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var credentialEncryptor: CredentialEncryptor
 
-    /** 长驻作用域：持续把持久化的日志等级同步到 FileLogger。 */
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** 长驻作用域：持续把持久化的日志等级同步到 FileLogger。
+     * RC61b：附加 [CoroutineExceptionHandler]，任何子协程未捕获的异常都兜底记日志，
+     * 避免 scope 内一个子协程崩把 scope.job 整个 cancel。 */
+    private val appScope: CoroutineScope = run {
+        val eh = CoroutineExceptionHandler { _, throwable ->
+            FileLogger.e("AppScope", "AppScope 未捕获异常（已隔离，不影响主流程）", throwable)
+        }
+        CoroutineScope(SupervisorJob() + Dispatchers.Default + eh)
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -147,11 +156,14 @@ class AIEditorApp : Application() {
         appScope.launch {
             logSettings.levelFlow.collectLatest { FileLogger.setMinLevel(it) }
         }
-        // ============== RC61a 关键修正：首帧优先，延后重活 ==============
+        // ============== RC61b 修正：首帧优先，延后重活 + 严格异常/超时隔离 ==============
         // 冷启动时把「加载执行模式 → 建立 SSH 连接」延后 500ms，
-        // 确保 MainActivity 先把首帧画出来（1-2 秒自动关闭通常是这一段阻塞了）。
-        // 同时在这段空闲窗口里后台预热 CredentialEncryptor（ensureInitialized 已强制 IO 线程）。
-        appScope.launch(NonCancellable + Dispatchers.Default) {
+        // 确保 MainActivity 先把首帧画出来。
+        // 设计要点：
+        //   ① 不再用 NonCancellable：进程低内存杀或系统要求取消时，这条链要可被取消。
+        //   ② SSH connect 包 withTimeout(15s)：避免 TCP SYN 超时几十秒僵住线程。
+        //   ③ 每段 runCatching 包住：任何一环失败都只记日志，不向上抛崩。
+        appScope.launch {
             // 先预热加密子系统（纯后台 IO，不抢首帧资源）
             runCatching {
                 credentialEncryptor.ensureInitialized()
@@ -160,25 +172,39 @@ class AIEditorApp : Application() {
             }
             // 延后 500ms 再启动「执行模式 → SSH」这条链
             delay(500L)
-            val mode = executionModeRepository.executionModeFlow.first()
-            executionModeHolder.setMode(mode)
-            if (mode == com.deep.rcode.feature.settings.data.repository.ExecutionMode.REMOTE_SSH) {
-                val settings = executionModeRepository.remoteConnectionFlow.first()
-                val cfg = settings?.resolveSshConfigOrNull(
-                    remoteRepository = remoteRepository,
-                    containerSettingsRepository = containerSettingsRepository,
-                )
-                if (cfg != null) {
-                    runCatching {
-                        remoteSshConnection.connect(cfg)
+            runCatching {
+                val mode = executionModeRepository.executionModeFlow.first()
+                executionModeHolder.setMode(mode)
+                if (mode == com.deep.rcode.feature.settings.data.repository.ExecutionMode.REMOTE_SSH) {
+                    val settings = executionModeRepository.remoteConnectionFlow.first()
+                    val cfg = settings?.resolveSshConfigOrNull(
+                        remoteRepository = remoteRepository,
+                        containerSettingsRepository = containerSettingsRepository,
+                    )
+                    if (cfg != null) {
+                        runCatching {
+                            // connect 设 15s 超时：sshj 默认 connect 超时慢，这里强制上限，
+                            // 超时/失败不阻塞首帧，首次命令时 retry。
+                            withTimeout(15_000L) {
+                                remoteSshConnection.connect(cfg)
+                            }
+                            syncDocsToRemote()
+                        }.onFailure { ex ->
+                            val note = when (ex) {
+                                is TimeoutCancellationException -> "SSH 连接超时 15s，将在首次命令时重试"
+                                else -> "启动时 SSH 连接失败，将在首次命令时重试"
+                            }
+                            FileLogger.e(TAG, note, ex)
+                        }
+                    }
+                    remoteSshConnection.startSupervisor(appScope) {
+                        runCatching { workspaceRepository.initialize() }
+                            .onFailure { FileLogger.w(TAG, "SSH 重连后重新加载工作区失败", it) }
                         syncDocsToRemote()
-                    }.onFailure { FileLogger.e(TAG, "启动时 SSH 连接失败，将在首次命令时重试", it) }
+                    }
                 }
-                remoteSshConnection.startSupervisor(appScope) {
-                    runCatching { workspaceRepository.initialize() }
-                        .onFailure { FileLogger.w(TAG, "SSH 重连后重新加载工作区失败", it) }
-                    syncDocsToRemote()
-                }
+            }.onFailure { ex ->
+                FileLogger.e(TAG, "启动期执行模式/SSH 初始化整体失败（不影响 UI 启动，后续首次命令重试）", ex)
             }
         }
         // 后台保活常驻通知的唯一反应器：监听开关，启停 TerminalKeepaliveService 的常驻模式。

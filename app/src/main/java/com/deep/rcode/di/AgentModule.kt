@@ -2,8 +2,9 @@ package com.deep.rcode.di
 
 import android.content.Context
 import androidx.room.Room
-import androidx.room.migration.Migration
+import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.data.local.dao.AgentMessageDao
 import com.deep.rcode.feature.agent.data.local.dao.ChatSessionDao
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointDao
@@ -70,13 +71,61 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideAgentDatabase(@ApplicationContext context: Context): AgentDatabase {
-        return Room.databaseBuilder(
+        // RC61b：双阶段构建，保证 schema 校验失败时应用依然可启动
+        // 第一阶段：优先走迁移（所有 SQL 脚本 + fallbackToDestructiveMigration(dropAllTables=false)）
+        //           即"未知版本 → 只删未知表、保留业务表"的保守降级。
+        // 第二阶段：第一阶段若抛异常（最常见 = migration 32 列名/索引与 Entity 不一致导致
+        //           Room.onOpen 校验 IllegalStateException），退化为 destructive = true 的彻底
+        //           重建。此路径会丢表中数据但保证 Hilt 注入链不崩 → App 不被系统杀。
+        val firstStage = runCatching {
+            buildAgentDatabase(context, destructiveFallback = false)
+        }
+        firstStage.onSuccess { return it }
+        FileLogger.e(
+            "AgentModule",
+            "Room 首阶段构建失败（可能是迁移 schema 不匹配），降级为 destructive 重建，" +
+                    "历史聊天/会话会清空但应用可继续使用。原因=${firstStage.exceptionOrNull()?.message}",
+            firstStage.exceptionOrNull()
+        )
+        return buildAgentDatabase(context, destructiveFallback = true)
+    }
+
+    private fun buildAgentDatabase(
+        context: Context,
+        destructiveFallback: Boolean,
+    ): AgentDatabase {
+        val builder = Room.databaseBuilder(
             context,
             AgentDatabase::class.java,
             "rdeepcode_agent_db"
         ).addMigrations(*MigrationLoader.loadMigrations(context))
-            .fallbackToDestructiveMigration(dropAllTables = false)
-            .build()
+            .addCallback(object : RoomDatabase.Callback() {
+                override fun onOpen(db: SupportSQLiteDatabase) {
+                    // onOpen 是 Room 进行 TableInfo 实际 schema 校验的时机；
+                    // 这里包一层 try，只记日志不向上抛（Room 本身也会抛），
+                    // 便于通过 FileLogger 追溯"启动 1-2s 秒退"是否由 schema mismatch 引发。
+                    runCatching {
+                        FileLogger.i("AgentModule", "Room DB onOpen，路径=${db.path}")
+                    }.onFailure { FileLogger.w("AgentModule", "DB onOpen 日志失败", it) }
+                }
+
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    FileLogger.i("AgentModule", "Room DB 首次创建 (onCreate)")
+                }
+
+                override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
+                    FileLogger.w(
+                        "AgentModule",
+                        "Room 触发 destructive migration（全表重建），destructiveFallback=$destructiveFallback"
+                    )
+                }
+            })
+        if (destructiveFallback) {
+            builder.fallbackToDestructiveMigration() // 真·兜底：未知版本直接删全部表再建
+        } else {
+            builder.fallbackToDestructiveMigration(dropAllTables = false) // 保守降级
+        }
+        return builder.build()
     }
 
     @Provides

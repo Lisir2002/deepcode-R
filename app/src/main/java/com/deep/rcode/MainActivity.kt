@@ -132,9 +132,11 @@ class MainActivity : ComponentActivity() {
 
     @Suppress("DEPRECATION") // 全局更新 application resources locale，createConfigurationContext 无法替代
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 绘制到系统状态栏/导航栏之下，让应用背景与系统栏融为一体（消除割裂的色块）。
-        enableEdgeToEdge()
+        // RC61b：enableEdgeToEdge() 必须在 super.onCreate() 之后调用（ComponentActivity 基类要求）。
+        // 早于 super 调用时，基类内部的 mSavedStateRegistry / mConfigChangeTracker 尚未初始化，
+        // 会在低版本 AndroidX Activity 上触发 NPE 或警告，导致冷启动偶发 1-2s 秒退。
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         // 监听语言偏好变化，更新 Application/Activity locale 后重建。
         lifecycleScope.launch {
             languageSettings.languageFlow.drop(1).distinctUntilChanged().collect { tag ->

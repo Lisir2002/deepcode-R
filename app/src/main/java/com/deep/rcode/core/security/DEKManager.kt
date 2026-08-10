@@ -4,13 +4,10 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import com.deep.rcode.core.util.FileLogger
 import java.security.KeyStore
-import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * 管理 MasterKey（Android Keystore）与 DEK（Data Encryption Key）的双层密钥体系。
@@ -78,10 +75,10 @@ class DEKManager private constructor() {
             KeyProperties.KEY_ALGORITHM_AES,
             ANDROID_KEYSTORE
         )
-        val specBuilder = KeyGenParameterSpec.Builder(
-            MASTERKEY_ALIAS,
-            KeyProperties.PURPOSE_WRAP_KEY or 8 // PURPOSE_UNWRAP_KEY (API 兼容常量)
-        )
+        // PURPOSE_WRAP_KEY | PURPOSE_UNWRAP_KEY = 允许该 MasterKey 执行 wrap/unwrap DEK。
+        // KeyProperties.PURPOSE_UNWRAP_KEY 自 API 23+ 起可用（本项目 minSdk=26，天然满足）。
+        val purpose = KeyProperties.PURPOSE_WRAP_KEY or KeyProperties.PURPOSE_UNWRAP_KEY
+        val specBuilder = KeyGenParameterSpec.Builder(MASTERKEY_ALIAS, purpose)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
@@ -158,9 +155,9 @@ class DEKManager private constructor() {
     fun unwrapDek(masterKey: SecretKey, dekCiphertextB64: String): SecretKey {
         val wrapped = Base64.getDecoder().decode(dekCiphertextB64)
         val cipher = Cipher.getInstance(TRANSFORMATION)
+        // WRAP/UNWRAP 模式的 IV 由 Cipher 在 wrap 时内部生成并随 wrapped bytes 一起编码，
+        // unwrap 时 cipher 自行从 wrapped 字节流解析，不需要外部 IV。
         cipher.init(Cipher.UNWRAP_MODE, masterKey)
-        val iv = ByteArray(IV_LEN)
-        // GCM UNWRAP 不需要 IV（wrap 时用的随机 IV 已经在 wrapped 里由 cipher 解析）
         val dek = cipher.unwrap(wrapped, KeyProperties.KEY_ALGORITHM_AES, Cipher.SECRET_KEY)
         cachedDek = dek as SecretKey
         return cachedDek!!

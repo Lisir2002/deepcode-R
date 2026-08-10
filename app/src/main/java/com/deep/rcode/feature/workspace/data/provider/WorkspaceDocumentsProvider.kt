@@ -74,6 +74,45 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
     private fun ctx() =
         context ?: throw IllegalStateException("Provider context unavailable")
 
+    /**
+     * RC61b：全链路沙箱校验。任何以「文件绝对路径」作为 docId 的访问都必须先过这关：
+     *   1. 先 canonicalize 规范化（解 symlink、去 /../ 等），防止路径混淆。
+     *   2. 根限定为 baseDir().canonicalPath（app 私有 filesDir），禁止越权到
+     *      databases/、shared_prefs/、rootfs 等敏感目录。
+     *   3. 再额外过一遍「根下白名单子目录」：只允许 projects/ 与 rdeepcode/。
+     * 访问越权一律抛 FileNotFoundException（SAF 契约的官方失败语义），避免被系统
+     * 文档管理器或三方 app 当作"安全漏洞"杀死进程。
+     */
+    private fun sandboxedFile(docIdOrPath: String, writeIntent: Boolean = false): File {
+        val base = runCatching { baseDir().canonicalPath }.getOrNull()
+            ?: throw FileNotFoundException("baseDir unavailable")
+        val raw = File(docIdOrPath)
+        val canonical = runCatching { raw.canonicalFile }.getOrNull()
+            ?: throw FileNotFoundException("canonicalize failed: $docIdOrPath")
+        // 规则 1：必须位于 filesDir 之下
+        val okUnderBase = (canonical.path == base) || canonical.path.startsWith(base + File.separator)
+        if (!okUnderBase) throw FileNotFoundException("outside baseDir: $docIdOrPath")
+        // 规则 2：baseDir 本身只允许"读目录查询"（根本身不允许写/打开）；
+        //         若 path == base，由调用方自己判断语义，这里先放行，调用方再判定。
+        if (canonical.path == base) return canonical
+        // 规则 3：白名单 projects/ 与 rdeepcode/ 下的任何后代才允许访问
+        val exposed = exposedChildren().mapNotNull { runCatching { it.canonicalPath }.getOrNull() }
+        val okUnderExposed = exposed.any { p ->
+            canonical.path == p || canonical.path.startsWith(p + File.separator)
+        }
+        if (!okUnderExposed) throw FileNotFoundException("outside exposed dirs: $docIdOrPath")
+        // 规则 4：写意图时防止跟随 symlink 跳到外部（虽然前序已挡，这里做二次保险）
+        if (writeIntent) {
+            val parent = canonical.parentFile?.canonicalPath
+                ?: throw FileNotFoundException("no parent: $docIdOrPath")
+            val parentOk = (parent == base) || exposed.any { p ->
+                parent == p || parent.startsWith(p + File.separator)
+            }
+            if (!parentOk) throw FileNotFoundException("write outside sandbox: $docIdOrPath")
+        }
+        return canonical
+    }
+
     override fun onCreate(): Boolean = true
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
@@ -101,7 +140,8 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
 
     override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor {
         val result = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
-        includeFile(result, documentId, null)
+        // queryDocument：读意图，但仍需在沙箱内
+        includeFile(result, sandboxedFile(documentId).absolutePath, null)
         return result
     }
 
@@ -111,7 +151,8 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         sortOrder: String?,
     ): Cursor {
         val result = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
-        val parent = fileForDocId(parentDocumentId)
+        val parent = sandboxedFile(parentDocumentId)
+        if (!parent.isDirectory) throw FileNotFoundException("not a dir: $parentDocumentId")
         // 根目录（filesDir 本身）只放出白名单子目录，隐藏 rootfs/数据库等内部目录；
         // 其余层级照常列出全部内容。
         val children = if (parent.absolutePath == baseDir().absolutePath) {
@@ -119,7 +160,11 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         } else {
             parent.listFiles()?.toList() ?: emptyList()
         }
-        children.forEach { child -> includeFile(result, null, child) }
+        children.forEach { child ->
+            // child 仍然要过沙箱：防止目录里放了跳出白名单的 symlink
+            runCatching { sandboxedFile(child.absolutePath) }.getOrNull()
+                ?.let { includeFile(result, null, it) }
+        }
         return result
     }
 
@@ -128,7 +173,9 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         mode: String,
         signal: CancellationSignal?,
     ): ParcelFileDescriptor {
-        val file = fileForDocId(documentId)
+        val write = mode.contains('w') || mode.contains('W') || mode.contains('t')
+        val file = sandboxedFile(documentId, writeIntent = write)
+        if (file.isDirectory) throw FileNotFoundException("is directory: $documentId")
         val accessMode = ParcelFileDescriptor.parseMode(mode)
         return ParcelFileDescriptor.open(file, accessMode)
     }
@@ -138,8 +185,13 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         mimeType: String,
         displayName: String,
     ): String {
-        val parent = fileForDocId(parentDocumentId)
+        val parent = sandboxedFile(parentDocumentId, writeIntent = true)
+        if (!parent.isDirectory) throw FileNotFoundException("parent not a dir: $parentDocumentId")
         var newFile = File(parent, displayName)
+        // 防路径穿越：displayName 不能包含 "/"，否则 File(parent, displayName) 会跳到 parent 之外。
+        if (displayName.contains('/') || displayName == "." || displayName == "..") {
+            throw FileNotFoundException("invalid display name: $displayName")
+        }
         var conflictId = 2
         while (newFile.exists()) {
             newFile = File(parent, "$displayName ($conflictId)")
@@ -151,18 +203,25 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
             throw FileNotFoundException("Failed to create document: ${newFile.path}")
         }
         if (!ok) throw FileNotFoundException("Failed to create document: ${newFile.path}")
-        return docIdForFile(newFile)
+        // 最终再沙箱校验一次（防止 mkdir 通过 symlink 跳走）
+        return sandboxedFile(newFile.absolutePath).absolutePath
     }
 
     override fun deleteDocument(documentId: String) {
-        val file = fileForDocId(documentId)
+        val file = sandboxedFile(documentId, writeIntent = true)
+        // 禁止删根（filesDir 本身）与白名单顶层目录（防止误把整个 projects/ 干掉）
+        val base = baseDir().canonicalPath
+        val exposed = exposedChildren().mapNotNull { runCatching { it.canonicalPath }.getOrNull() }
+        if (file.absolutePath == base || file.absolutePath in exposed) {
+            throw FileNotFoundException("refuse to delete root/exposed root: $documentId")
+        }
         if (!file.deleteRecursively()) {
             throw FileNotFoundException("Failed to delete document: $documentId")
         }
     }
 
     override fun getDocumentType(documentId: String): String =
-        mimeType(fileForDocId(documentId))
+        mimeType(sandboxedFile(documentId))
 
     override fun querySearchDocuments(
         rootId: String,
@@ -170,7 +229,7 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         projection: Array<out String>?,
     ): Cursor {
         val result = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
-        val root = fileForDocId(rootId)
+        val root = sandboxedFile(rootId)
         val rootCanonical = root.canonicalPath
         // 从根（filesDir）搜索时只下钻白名单子目录，避免扫到 rootfs 等内部目录；其余层级照常。
         val seeds = if (root.absolutePath == baseDir().absolutePath) exposedChildren() else listOf(root)
@@ -180,11 +239,10 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         while (pending.isNotEmpty() && result.count < MAX_SEARCH_RESULTS) {
             val file = pending.removeFirst()
             // 仅在根目录内搜索，避免 symlink 指向外部导致扫到整个磁盘
-            val insideRoot = try {
-                file.canonicalPath.startsWith(rootCanonical)
-            } catch (e: Exception) {
-                false
-            }
+            val insideRoot = runCatching {
+                sandboxedFile(file.absolutePath)
+                true
+            }.getOrDefault(false)
             if (!insideRoot) continue
             if (file.isDirectory) {
                 file.listFiles()?.let { pending.addAll(it) }
@@ -195,13 +253,26 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         return result
     }
 
-    override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean =
-        documentId.startsWith(parentDocumentId)
+    override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean {
+        // RC61b 修正：先通过 sandboxedFile 校验双方均在沙箱内，再 canonical 前缀比较。
+        // 防止 docId 路径混淆、或者一方是跳出沙箱的 symlink。
+        return runCatching {
+            val parent = sandboxedFile(parentDocumentId).canonicalPath
+            val child = sandboxedFile(documentId).canonicalPath
+            if (parent == child) return true
+            child.startsWith(parent + File.separator)
+        }.getOrDefault(false)
+    }
 
     private fun docIdForFile(file: File): String = file.absolutePath
 
+    /**
+     * 原始 docId → File 的兼容入口。
+     * 仅在 [includeFile] docId==null 场景（传入 child 是刚刚 sandboxedFile 过的安全 File）
+     * 才允许不走沙箱；**其余所有 SAF 入口已改用 [sandboxedFile]**。
+     */
     private fun fileForDocId(docId: String): File {
-        val f = File(docId)
+        val f = sandboxedFile(docId)
         if (!f.exists()) throw FileNotFoundException("${f.absolutePath} not found")
         return f
     }

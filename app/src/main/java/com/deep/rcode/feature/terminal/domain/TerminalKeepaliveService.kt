@@ -28,37 +28,55 @@ class TerminalKeepaliveService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_START_SESSION -> {
-                sessionCount++
-                ensureForeground()
-                FileLogger.i(TAG, "Session started, count=$sessionCount")
-            }
-            ACTION_STOP_SESSION -> {
-                sessionCount = (sessionCount - 1).coerceAtLeast(0)
-                if (sessionCount == 0 && !persistent) {
-                    stopSelf(startId)
-                    FileLogger.i(TAG, "All sessions ended, stopping service")
-                } else {
+        // START_STICKY 重建：系统会用 null intent 再次调 onStartCommand。
+        // 如果 intent 为空，说明 Service 被杀后系统重建了我们，所有 session/persistent 状态都已丢。
+        // 此时若不调 startForeground，Android 12+ 会在 10s 内抛
+        // ForegroundServiceDidNotStartInTimeException 并强制杀掉 App。
+        // 这里安全兜底：无论 intent 是否为空、能否识别 action，都确保前台通知就位。
+        runCatching {
+            when (intent?.action) {
+                ACTION_START_SESSION -> {
+                    sessionCount++
                     ensureForeground()
-                    FileLogger.i(TAG, "Session ended, count=$sessionCount, persistent=$persistent")
+                    FileLogger.i(TAG, "Session started, count=$sessionCount")
+                }
+                ACTION_STOP_SESSION -> {
+                    sessionCount = (sessionCount - 1).coerceAtLeast(0)
+                    if (sessionCount == 0 && !persistent) {
+                        stopSelf(startId)
+                        FileLogger.i(TAG, "All sessions ended, stopping service")
+                    } else {
+                        ensureForeground()
+                        FileLogger.i(TAG, "Session ended, count=$sessionCount, persistent=$persistent")
+                    }
+                }
+                ACTION_ENABLE_PERSISTENT -> {
+                    persistent = true
+                    ensureForeground()
+                    FileLogger.i(TAG, "Persistent keepalive enabled")
+                }
+                ACTION_DISABLE_PERSISTENT -> {
+                    persistent = false
+                    if (sessionCount == 0) {
+                        stopSelf(startId)
+                        FileLogger.i(TAG, "Persistent keepalive disabled, no sessions, stopping service")
+                    } else {
+                        ensureForeground()
+                        FileLogger.i(TAG, "Persistent keepalive disabled, sessions still running count=$sessionCount")
+                    }
+                }
+                else -> {
+                    // RC61b 兜底分支：
+                    //   a) null intent → START_STICKY 重建，状态丢失
+                    //   b) 未知 action → 不明确意图
+                    // 保守处理：立即 enter foreground，避免 DID_NOT_START_IN_TIME 崩溃
+                    FileLogger.w(TAG, "onStartCommand intent=$intent 无法识别，保活进入安全前台兜底")
+                    ensureForeground()
                 }
             }
-            ACTION_ENABLE_PERSISTENT -> {
-                persistent = true
-                ensureForeground()
-                FileLogger.i(TAG, "Persistent keepalive enabled")
-            }
-            ACTION_DISABLE_PERSISTENT -> {
-                persistent = false
-                if (sessionCount == 0) {
-                    stopSelf(startId)
-                    FileLogger.i(TAG, "Persistent keepalive disabled, no sessions, stopping service")
-                } else {
-                    ensureForeground()
-                    FileLogger.i(TAG, "Persistent keepalive disabled, sessions still running count=$sessionCount")
-                }
-            }
+        }.onFailure { ex ->
+            FileLogger.e(TAG, "onStartCommand 分支异常，尝试前台兜底", ex)
+            runCatching { ensureForeground() }
         }
         return START_STICKY
     }
