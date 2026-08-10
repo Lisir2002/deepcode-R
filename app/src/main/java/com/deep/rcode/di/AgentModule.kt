@@ -3,6 +3,7 @@ package com.deep.rcode.di
 import android.content.Context
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.data.local.dao.AgentMessageDao
