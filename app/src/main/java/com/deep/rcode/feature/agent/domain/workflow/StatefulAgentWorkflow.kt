@@ -421,8 +421,11 @@ class StatefulAgentWorkflow @Inject constructor(
 
                         try {
                             // 发送前按实际模型的视觉能力处理图片（同 execute 路径）。
-                            val supportsVision = state.pendingVisionRound || activeModelSupportsVision(currentContext.sessionId)
-                            val messagesToSend = sanitizeImagesForModel(compactedMessages, supportsVision)
+                            // 注意：这里用 shouldSendImages 而不是 activeModelSupportsVision，
+                            // 是为了避免把 source=INFERRED 的自定义多模态模型误当成纯文本模型，
+                            // 发送前剥离图片导致模型「图都收不到还怎么识别」。
+                            val sendImages = state.pendingVisionRound || shouldSendImages(currentContext.sessionId)
+                            val messagesToSend = sanitizeImagesForModel(compactedMessages, sendImages)
                             providerInUse.completeStream(systemPrompt, messagesToSend, currentTools, currentContext.reasoningEffort).collect { chunk ->
                                 when (chunk) {
                                     is AIStreamChunk.TextDelta -> {
@@ -666,6 +669,25 @@ class StatefulAgentWorkflow @Inject constructor(
         val config = resolveProviderConfig(sessionId) ?: return false
         val metadata = modelMetadataService.resolve(config.type, config.effectiveModel)
         return metadata.supportsVision
+    }
+
+    /**
+     * 发送前是否应该把图片带给模型。
+     * - catalog 明确标注 supportsVision = true → 发；
+     * - catalog 明确标注 supportsVision = false（MODELS_DEV 收录的纯文本模型）→ 不发，
+     *   否则上游直接 400；
+     * - source=INFERRED（未知模型，启发式也没命中）→ **信任用户意图发图片**。
+     *   这是「多模态模型识别不到图」的关键修复：很多用户自定义兼容端点、自建服务或新模型
+     *   根本不在 models.dev 里，如果原来一刀切 INFERRED 视为不支持 vision，
+     *   sanitizeImagesForModel() 会在发送前把 UserMessage.images 全置空，模型自然看不到图。
+     *   即便 INFERRED 真的是文本模型导致上游 400，AgentEvent.Failed 也会把错误正常显示，
+     *   远比「静默剥图，模型回复文本，用户以为模型笨」的体验要好。
+     */
+    private suspend fun shouldSendImages(sessionId: String?): Boolean {
+        val config = resolveProviderConfig(sessionId) ?: return false
+        val metadata = modelMetadataService.resolve(config.type, config.effectiveModel)
+        if (metadata.supportsVision) return true
+        return metadata.source == ModelMetadata.Source.INFERRED
     }
 
     /**

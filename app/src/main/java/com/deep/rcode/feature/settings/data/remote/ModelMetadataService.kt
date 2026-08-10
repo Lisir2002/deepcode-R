@@ -133,19 +133,46 @@ class ModelMetadataService @Inject constructor(
 
     private fun cacheFile(): File = File(context.cacheDir, CACHE_FILE_NAME)
 
-    /** 目录中匹配不到模型时的兜底：统一视为文本模型，128k 输入 / 64k 输出。 */
-    private fun default(type: ProviderType, modelId: String): ModelMetadata = ModelMetadata(
-        id = modelId,
-        providerId = type.name.lowercase(),
-        displayName = modelId,
-        contextTokens = DEFAULT_CONTEXT_TOKENS,
-        inputTokens = DEFAULT_CONTEXT_TOKENS,
-        outputTokens = DEFAULT_OUTPUT_TOKENS,
-        supportsTools = true,
-        supportsVision = false,
-        supportsReasoning = false,
-        source = ModelMetadata.Source.INFERRED
-    )
+    /**
+     * 目录中匹配不到模型时的兜底：
+     *  - supportsVision/supportsTools/supportsReasoning 不再一刀切 false，改为用 modelId 启发式判断。
+     *  这样即使用户配置了 catalog 未收录的自定义多模态模型（如 qwen-vl-max、glm-4v、自建兼容端点
+     *  的 vision 模型），也不会在发送前被 StatefulAgentWorkflow.sanitizeImagesForModel() 误把图片
+     *  剥空（那是「支持多模态模型但识别不到图」的根本原因）。
+     *  仅当启发式完全没命中时才保守 false。
+     */
+    private fun default(type: ProviderType, modelId: String): ModelMetadata {
+        val idLower = modelId.lowercase()
+        val probablyVision =
+            idLower.contains("vision") || idLower.contains("-vl") || idLower.contains("vl-") ||
+            idLower.contains("image") || idLower.contains("omni") || idLower.contains("gpt-4o") ||
+            idLower.contains("gpt-4.5") || idLower.contains("gemini-1.5") ||
+            idLower.contains("gemini-2") || idLower.startsWith("gemini-") ||
+            idLower.contains("glm-4v") || idLower.contains("glm-5v") ||
+            idLower.contains("qwen-vl") || idLower.contains("qwen2-vl") ||
+            idLower.contains("qwen3-vl") || idLower.contains("doubao") && idLower.contains("vision") ||
+            idLower.contains("ministral-3b") || idLower.contains("pixtral") ||
+            idLower.contains("claude-3-5-sonnet") || idLower.contains("claude-3-opus") ||
+            idLower.contains("claude-3-haiku") || idLower.contains("claude-3.7")
+        val probablyReasoning =
+            idLower.contains("reasoning") || idLower.contains("o1") || idLower.contains("o3") ||
+            idLower.contains("deepseek-r") || idLower.contains("rwkv") && idLower.contains("-r") ||
+            idLower.contains("qwen3-8b-a3b")
+        val probablyTools =
+            probablyVision || probablyReasoning || type != ProviderType.ANTHROPIC
+        return ModelMetadata(
+            id = modelId,
+            providerId = type.name.lowercase(),
+            displayName = modelId,
+            contextTokens = DEFAULT_CONTEXT_TOKENS,
+            inputTokens = DEFAULT_CONTEXT_TOKENS,
+            outputTokens = DEFAULT_OUTPUT_TOKENS,
+            supportsTools = probablyTools,
+            supportsVision = probablyVision,
+            supportsReasoning = probablyReasoning,
+            source = ModelMetadata.Source.INFERRED
+        )
+    }
 
     private fun findMetadata(
         catalog: Map<String, Map<String, ModelMetadata>>,

@@ -312,8 +312,19 @@ fun AIChatPanel(
         if (text.isNotEmpty() || pendingAttachments.isNotEmpty()) {
             val attachments = pendingAttachments
             val modelRequest = appendAttachmentsToRequest(context, text, attachments)
-            val modelSupportsVision = activeModelMetadata?.supportsVision == true
-            val images = if (modelSupportsVision) attachments.toAgentImages() else emptyList()
+            // 判断是否把 pendingAttachments 中的图片作为 vision 输入传给模型。
+            // 规则（多层防线，避免误杀用户配置的自定义多模态模型）：
+            //   - metadata == null：还没解析过，信任用户 → 发图片；
+            //   - metadata.supportsVision=true → 发；
+            //   - metadata.source=INFERRED：模型不在 models.dev catalog 内（自建/兼容端点/新模型），
+            //     信任用户的意图 → 发图片；即便真的是文本模型 API 报 400，错误也会正常显示，
+            //     远比「静默把图片置空，模型回复文本，用户以为模型不识字」要好。
+            //   - 仅当 metadata 明确来自 MODELS_DEV 且 supportsVision=false（收录的纯文本模型）→ 不发
+            val sendImages = when (val m = activeModelMetadata) {
+                null -> true
+                else -> m.supportsVision || m.source == com.deep.rcode.feature.settings.domain.model.ModelMetadata.Source.INFERRED
+            }
+            val images = if (sendImages) attachments.toAgentImages() else emptyList()
             // 统一走队列：AI 忙时入队（等本轮结束后自动发送下一条），空闲时直接发送。
             // 斜杠命令在 ViewModel 内（agent workflow 之前）分流执行，无需在此区分。
             viewModel.enqueueAgentRequest(
