@@ -147,9 +147,10 @@ class ParallelPrefetchManager(
             )
             scope.launch { _events.emit(fin) }
         }
-        // RC61f：4) 无论成功/失败，shutdown 时统一清理所有 .part 半截文件（用户反馈：失败不删垃圾、占存储）
-        runCatching { cleanupPartialCache(timeoutMs = 1500) }
-        FileLogger.i(TAG, "shutdown(reason=$reason) 执行完成，inflight 已释放 + 已清理 .part 垃圾")
+        // RC61f：.part 半截下载垃圾清理在 LinuxContainerEngine.installBundle 的 finally 里调
+        //   cleanupPartialCache（suspend 函数，必须在挂起上下文才能调；这里 shutdown 是非 suspend，
+        //   再加上 L130 已经 scope.cancel()，这里 scope.launch 也不会执行，所以不在这里清理）。
+        FileLogger.i(TAG, "shutdown(reason=$reason) 执行完成，inflight 已释放（垃圾清理由 finally 兜底）")
     }
 
     // ─── RC61f：下载垃圾清理 / 续传 / 中间文件（原子 mv）管理 ───
