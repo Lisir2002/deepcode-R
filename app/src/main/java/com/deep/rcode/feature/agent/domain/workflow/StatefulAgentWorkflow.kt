@@ -38,6 +38,7 @@ import com.deep.rcode.feature.agent.data.remote.openai.OpenAIApi
 import com.deep.rcode.feature.agent.domain.provider.AnthropicAdapter
 import com.deep.rcode.feature.agent.domain.provider.GeminiAdapter
 import com.deep.rcode.feature.agent.domain.provider.OpenAIAdapter
+import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.domain.model.ProviderType
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
 import kotlinx.coroutines.CancellationException
