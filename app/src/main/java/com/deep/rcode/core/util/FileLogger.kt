@@ -108,6 +108,40 @@ object FileLogger {
     /** 返回当前日志目录，供日志查看器使用。 */
     fun getLogDir(): File? = logDir
 
+    /**
+     * 紧急同步落盘：不进 ioExecutor 队列，阻塞当前线程直接把一行写到今天的日志文件。
+     * 仅用于「线程即将崩溃、进程马上被系统杀」这种最后一刻。ioExecutor 的排队任务
+     * 会因进程被杀而全部丢失（这正是用户说「闪退拿不到日志」的根因），因此 CrashHandler
+     * 必须绕过异步，保证 CRASH 记录在 return 前已经 fsync-ish 落盘。
+     */
+    fun flushSync(level: String, tag: String, message: String, throwable: Throwable?) {
+        val dir = logDir ?: return
+        val now = java.time.Instant.now()
+        val line = buildString {
+            append(timestampFormat.format(now))
+            append(" ").append(level)
+            append(" [").append(tag).append("] ")
+            append(message)
+            if (throwable != null) {
+                append("\n").append(stackTraceToString(throwable))
+            }
+            append("\n")
+        }
+        runCatching {
+            val file = File(dir, "log-${fileNameFormat.format(now)}.txt")
+            if (file.length() > MAX_FILE_BYTES) {
+                file.writeText("--- 日志文件超过 ${MAX_FILE_BYTES / 1024 / 1024}MB 已重置 ---\n")
+            }
+            file.appendText(line)
+            // 再尝试 flush 到 OS（不保证 fsync，但对 Java IO 已尽力），
+            // 避免后续立即杀进程导致缓冲行丢失。
+            runCatching { java.io.FileOutputStream(file, true).use { it.channel?.force(false) } }
+        }.onFailure {
+            // 紧急日志本身再失败，就只 logcat——此时 IO 基本挂了，也没法再兜
+            android.util.Log.e(TAG, "紧急同步落盘失败", it)
+        }
+    }
+
     /** 返回当前所有日志文件，按文件名（即日期）排序，供"查看日志"等界面使用。 */
     fun listLogFiles(): List<File> {
         val dir = logDir ?: return emptyList()

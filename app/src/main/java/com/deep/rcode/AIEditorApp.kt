@@ -262,12 +262,37 @@ class AIEditorApp : Application() {
         SecurityUtils.setSecurityProvider("BC")
     }
 
-    /** 捕获未处理异常并落盘，随后交回系统默认处理器（保留原有崩溃弹窗/上报行为）。 */
+    /** 捕获未处理异常并落盘，随后交回系统默认处理器（保留原有崩溃弹窗/上报行为）。
+     *
+     *  RC61b hotfix3 关键修正：此前 FileLogger 把 CRASH 行通过 ioExecutor 异步落盘，
+     *  但「调用 previous?.uncaughtException → 系统立即杀进程」之后排队任务根本没机会执行，
+     *  结果就是**用户看到 1-2 秒闪退、日志里找不到任何 CRASH 记录**。此处改为两步：
+     *    ① 先 e() 到 logcat（立即生效、不丢）；
+     *    ② 再 flushSync 同步阻塞落盘（return 前一定写进文件，哪怕慢 10ms）；
+     *  最后才交给系统默认处理器杀进程，保证**闪退之后一定能看到 CRASH 栈**。
+     */
     private fun installCrashHandler() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            FileLogger.e("CRASH", "线程 ${thread.name} 未捕获异常", throwable)
-            previous?.uncaughtException(thread, throwable)
+            val summary = "线程 ${thread.name} (id=${thread.id}) 未捕获异常，即将同步写入日志后交回系统"
+            // Step 1: logcat（即时，即使后续写文件也炸一定有保底）
+            android.util.Log.e("CRASH", summary, throwable)
+            // Step 2: 同步写日志文件（确保 return 前已写入）
+            runCatching {
+                FileLogger.flushSync("FATAL", "CRASH", summary, throwable)
+            }.onFailure {
+                android.util.Log.e("CRASH", "⚠️ 连同步落盘都失败了，此时只能靠上面 logcat 追溯", it)
+            }
+            // Step 3: 交给系统原处理器（弹出"应用已停止运行"弹窗 + 收集 dropbox，最终杀进程）
+            runCatching {
+                previous?.uncaughtException(thread, throwable)
+            }.getOrElse {
+                // 默认处理器自己也炸（极个别定制 ROM），兜底强杀让整个进程彻底退出，
+                // 绝不能「吞掉异常继续跑」——那会把 Application 留在半初始化状态。
+                android.util.Log.e("CRASH", "default uncaught handler 也抛异常，兜底 killProcess", it)
+                android.os.Process.killProcess(android.os.Process.myPid())
+                System.exit(10)
+            }
         }
     }
 

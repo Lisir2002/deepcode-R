@@ -26,6 +26,16 @@ import java.util.LinkedList
  * emulated 存储虽天然可见但内核拒绝 symlink。可见性这里用官方 SAF API 在 API 层补回，与物理位置解耦。
  *
  * docId 直接用文件绝对路径（与 Termux 实现一致），简单且跨进程稳定。
+ *
+ * ============= RC61b hotfix3 =============
+ * ContentProvider 生命周期早于 Application.onCreate：其 onCreate() 在 Application.attachBaseContext
+ * 之后、Application.onCreate 之前被系统调用。因此**这里的任何 RuntimeException 都会直接杀死整个进程**
+ * （Android 对 Provider 异常的惩罚比 Activity 更严，没有崩溃弹窗直接消失）。本 Provider 因此做三条铁律：
+ *   1. onCreate 先 FileLogger.init(context)，保证 Provider 自身抛异常也能落盘；
+ *   2. 所有 @Override SAF 入口过 providerSafe{}：把 IllegalStateException/SecurityException 等
+ *      非 SAF 契约异常统一转 FileNotFoundException（SAF 官方失败语义），禁止任何 Runtime 越抛穿透；
+ *   3. exposedChildren 热路径绝不做 asset IO：extractDocs 由 Application 后台协程负责，
+ *      Provider 内仅 lazy 建目录，避免首次 queryRoots 主线程 IO + 抛 IOEX 杀进程。
  */
 class WorkspaceDocumentsProvider : DocumentsProvider() {
 
@@ -61,18 +71,48 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
     /**
      * 根下唯一对外可见的子目录名白名单：工作区 `projects` 与 AI 配置 `rdeepcode`（容器内 /root/.rdeepcode，
      * 含 skills/ 与 mcp.json）。两者首次访问即创建，其余 filesDir 内部目录不列出。
+     *
+     * RC61b hotfix3: **这里绝对不能再同步调 ContainerInstaller.extractDocs(ctx())**。
+     * 它会触发 AssetManager.open（主线程 IO）且在个别 ROM 上会因 asset 路径不存在等原因抛
+     * RuntimeException，直接穿透到 queryRoots→ContentProvider→系统杀进程。
+     * 提取 docs 改为「AIEditorApp appScope 后台协程 + ContainerInstaller.init 协程」两处异步完成，
+     * Provider 内只保证目录存在、文档到时自然就能列出。
      */
     private fun exposedChildren(): List<File> {
-        ContainerInstaller.extractDocs(ctx())
         return listOf(
-            File(baseDir(), "projects").apply { mkdirs() },
-            File(baseDir(), "rdeepcode").apply { mkdirs() },
-        )
+            runCatching { File(baseDir(), "projects").apply { mkdirs() } }.getOrElse { emptyList<File>().first() }
+                ?: File(ctx().cacheDir, "projects_safe_fallback"),
+            runCatching { File(baseDir(), "rdeepcode").apply { mkdirs() } }.getOrElse { emptyList<File>().first() }
+                ?: File(ctx().cacheDir, "rdeepcode_safe_fallback"),
+        ).filterNotNull()
     }
 
-    /** minSdk 26 上基类无 requireContext()，这里自取非空 context。 */
-    private fun ctx() =
-        context ?: throw IllegalStateException("Provider context unavailable")
+    /** minSdk 26 上基类无 requireContext()，这里自取非空 context。
+     *  RC61b hotfix3：返回值非空，任何失败都转 Provider 安全的 FileNotFoundException。 */
+    private fun ctx(): android.content.Context =
+        context ?: throw FileNotFoundException("Provider context unavailable")
+
+    /**
+     * 统一 Provider 入口安全包装：
+     *   - 正常返回：原样透传；
+     *   - 抛 FileNotFoundException(SAF 契约异常)：原样透传，系统文件管理器按"文件不存在"处理；
+     *   - 抛其它任何异常：记日志并转 FileNotFoundException，**禁止向上抛 RuntimeException**。
+     */
+    private inline fun <T> providerSafe(tag: String, block: () -> T): T {
+        return try {
+            block()
+        } catch (fnf: FileNotFoundException) {
+            // SAF 契约内：直接抛即可，系统文件管理器按标准路径失败语义处理
+            throw fnf
+        } catch (t: Throwable) {
+            FileLogger.e(
+                "WorkspaceProvider",
+                "$tag 抛非 SAF 异常（Provider 崩会直接杀进程），降级为 FileNotFoundException 放行",
+                t
+            )
+            throw FileNotFoundException("$tag failed: ${t.message}")
+        }
+    }
 
     /**
      * RC61b：全链路沙箱校验。任何以「文件绝对路径」作为 docId 的访问都必须先过这关：
@@ -113,13 +153,28 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         return canonical
     }
 
-    override fun onCreate(): Boolean = true
-
-    override fun queryRoots(projection: Array<out String>?): Cursor {
-        val result = MatrixCursor(projection ?: DEFAULT_ROOT_PROJECTION)
-        addRoot(result, baseDir(), ctx().getString(R.string.app_name))
-        return result
+    override fun onCreate(): Boolean = providerSafe("onCreate") {
+        // Provider.onCreate 比 Application.onCreate 更早，必须在此确保 FileLogger 已初始化，
+        // 否则 Provider 链上抛异常后 FileLogger 还没就绪 = 无日志 = 用户拿不到信息。
+        runCatching {
+            val c = context
+            if (c != null) {
+                com.deep.rcode.core.util.FileLogger.init(c)
+                com.deep.rcode.core.util.FileLogger.i(
+                    "WorkspaceProvider",
+                    "onCreate，Provider 早于 Application.onCreate 先独立初始化 FileLogger 兜底"
+                )
+            }
+        }.onFailure { /* 即使 init 本身失败（极端存储不可用），也不能让 onCreate 抛异常 */ }
+        true
     }
+
+    override fun queryRoots(projection: Array<out String>?): Cursor =
+        providerSafe("queryRoots") {
+            val result = MatrixCursor(projection ?: DEFAULT_ROOT_PROJECTION)
+            addRoot(result, baseDir(), ctx().getString(R.string.app_name))
+            result
+        }
 
     /** 往根游标追加一个 root：docId 用目录绝对路径，与 [docIdForFile] 一致。 */
     private fun addRoot(result: MatrixCursor, dir: File, title: String) {
@@ -138,18 +193,18 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         }
     }
 
-    override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor {
-        val result = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
-        // queryDocument：读意图，但仍需在沙箱内
-        includeFile(result, sandboxedFile(documentId).absolutePath, null)
-        return result
-    }
+    override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor =
+        providerSafe("queryDocument") {
+            val result = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
+            includeFile(result, sandboxedFile(documentId).absolutePath, null)
+            result
+        }
 
     override fun queryChildDocuments(
         parentDocumentId: String,
         projection: Array<out String>?,
         sortOrder: String?,
-    ): Cursor {
+    ): Cursor = providerSafe("queryChildDocuments") {
         val result = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
         val parent = sandboxedFile(parentDocumentId)
         if (!parent.isDirectory) throw FileNotFoundException("not a dir: $parentDocumentId")
@@ -165,26 +220,26 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
             runCatching { sandboxedFile(child.absolutePath) }.getOrNull()
                 ?.let { includeFile(result, null, it) }
         }
-        return result
+        result
     }
 
     override fun openDocument(
         documentId: String,
         mode: String,
         signal: CancellationSignal?,
-    ): ParcelFileDescriptor {
+    ): ParcelFileDescriptor = providerSafe("openDocument") {
         val write = mode.contains('w') || mode.contains('W') || mode.contains('t')
         val file = sandboxedFile(documentId, writeIntent = write)
         if (file.isDirectory) throw FileNotFoundException("is directory: $documentId")
         val accessMode = ParcelFileDescriptor.parseMode(mode)
-        return ParcelFileDescriptor.open(file, accessMode)
+        ParcelFileDescriptor.open(file, accessMode)
     }
 
     override fun createDocument(
         parentDocumentId: String,
         mimeType: String,
         displayName: String,
-    ): String {
+    ): String = providerSafe("createDocument") {
         val parent = sandboxedFile(parentDocumentId, writeIntent = true)
         if (!parent.isDirectory) throw FileNotFoundException("parent not a dir: $parentDocumentId")
         var newFile = File(parent, displayName)
@@ -204,10 +259,10 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         }
         if (!ok) throw FileNotFoundException("Failed to create document: ${newFile.path}")
         // 最终再沙箱校验一次（防止 mkdir 通过 symlink 跳走）
-        return sandboxedFile(newFile.absolutePath).absolutePath
+        sandboxedFile(newFile.absolutePath).absolutePath
     }
 
-    override fun deleteDocument(documentId: String) {
+    override fun deleteDocument(documentId: String) = providerSafe("deleteDocument") {
         val file = sandboxedFile(documentId, writeIntent = true)
         // 禁止删根（filesDir 本身）与白名单顶层目录（防止误把整个 projects/ 干掉）
         val base = baseDir().canonicalPath
@@ -221,13 +276,13 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
     }
 
     override fun getDocumentType(documentId: String): String =
-        mimeType(sandboxedFile(documentId))
+        providerSafe("getDocumentType") { mimeType(sandboxedFile(documentId)) }
 
     override fun querySearchDocuments(
         rootId: String,
         query: String,
         projection: Array<out String>?,
-    ): Cursor {
+    ): Cursor = providerSafe("querySearchDocuments") {
         val result = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
         val root = sandboxedFile(rootId)
         val rootCanonical = root.canonicalPath
@@ -250,7 +305,7 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
                 includeFile(result, null, file)
             }
         }
-        return result
+        result
     }
 
     override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean {
@@ -259,7 +314,7 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         return runCatching {
             val parent = sandboxedFile(parentDocumentId).canonicalPath
             val child = sandboxedFile(documentId).canonicalPath
-            if (parent == child) return true
+            if (parent == child) return@runCatching true
             child.startsWith(parent + File.separator)
         }.getOrDefault(false)
     }

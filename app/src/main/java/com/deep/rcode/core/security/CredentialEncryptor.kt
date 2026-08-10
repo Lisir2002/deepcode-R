@@ -83,6 +83,26 @@ class CredentialEncryptor @Inject constructor(
      *    - 非空且 migratedFromV1=false：交给 V1toV2MigrationWorker（启动时后台迁移）。
      * 2. MasterKey fingerprint 不匹配 → 抛 [MasterKeyTamperedException]，
      *    UI 引导走「紧急解锁」。
+     *
+     * ============= RC61b hotfix3（RC60 后闪退根因级修复） =============
+     * RC60 之前 ExecutionModeRepository 不用 CredentialEncryptor；RC61 起它在
+     * remoteConnectionFlow 的 mapLatest { decryptCredentialCompat → encryptor.decrypt →
+     * ensureInitialized → stateDao.getSingleOrNull → DB open } 里被冷启动的 Flow 首次
+     * 订阅（Hilt 注入链 CredentialRequestBridge → LinuxContainerEngine → … → collect 点）
+     * 同步调用。此时若：
+     *   - Android Keystore 首次生成 MasterKey 在某些机型锁/首次解锁后 500ms+ 阻塞
+     *   - DB SCHEMA_VERSION=32 open 同时在做 migration 32 schema 校验 / destructive fallback
+     *   - 主线程同时在 Hilt provideAgentDatabase 拿同一个 Room DB 实例
+     * 会发生**启动期两线程争用 DB + Keystore 慢**的伪死锁：主线程拿不到 provideAgentDatabase
+     * 返回，首帧超 5s 被 ActivityManager/ANR 认为启动卡住 → 直接杀进程，无崩溃弹窗，只有
+     * logcat 有 W/ActivityManager: Launch timeout has expired, giving up wake lock! 字样。
+     *
+     * 修复策略：ensureInitialized 不再向上抛 MasterKeyTamperedException。任何初始化失败
+     * 只：
+     *   ① 记日志（同步 flushSync 保证即使进程马上被杀也能看到）；
+     *   ② dekCached 置 null，让后续 encrypt/decrypt 走 "失败回退明文/空串" 路径。
+     * 紧急解锁的 UI 入口仍可用（Settings 页按钮触发时会单独再 init + 验密码），但它
+     * 不再阻塞冷启动首帧。
      */
     suspend fun ensureInitialized() = withContext(Dispatchers.IO) {
         // 速通路径：volatile 双检，避免每次都进 Mutex
@@ -92,37 +112,35 @@ class CredentialEncryptor @Inject constructor(
             // Mutex 内再检查一次（另一个协程可能刚初始化完）
             if (initialized && dekCached != null) return@withLock
 
-            val existing = stateDao.getSingleOrNull()
-            val masterKey = try {
-                dekManager.getOrCreateMasterKey()
-            } catch (e: Exception) {
-                FileLogger.e(TAG, "MasterKey 加载失败", e)
-                throw MasterKeyTamperedException("Keystore 不可用: ${e.message}")
-            }
+            val result = runCatching {
+                val existing = stateDao.getSingleOrNull()
+                val masterKey = dekManager.getOrCreateMasterKey()
 
-            if (existing == null) {
-                // 首次初始化：生成 DEK + 写单行
-                val dek = dekManager.generateDek()
-                val dekCiphertext = dekManager.wrapDek(masterKey, dek)
-                val fingerprint = dekManager.getMasterKeyFingerprint(masterKey)
-                stateDao.upsert(
-                    CredentialEncryptionStateEntity(
-                        masterKeyFingerprint = fingerprint,
-                        dekCiphertext = dekCiphertext,
-                        encScheme = "V2",
-                        lastRotatedAt = System.currentTimeMillis(),
-                        migratedFromV1 = true // 无历史数据
+                if (existing == null) {
+                    // 首次初始化：生成 DEK + 写单行
+                    val dek = dekManager.generateDek()
+                    val dekCiphertext = dekManager.wrapDek(masterKey, dek)
+                    val fingerprint = dekManager.getMasterKeyFingerprint(masterKey)
+                    stateDao.upsert(
+                        CredentialEncryptionStateEntity(
+                            masterKeyFingerprint = fingerprint,
+                            dekCiphertext = dekCiphertext,
+                            encScheme = "V2",
+                            lastRotatedAt = System.currentTimeMillis(),
+                            migratedFromV1 = true // 无历史数据
+                        )
                     )
-                )
-                dekCached = dek
-                FileLogger.i(TAG, "首次初始化完成：MasterKey + DEK 已生成")
-            } else {
+                    dekCached = dek
+                    FileLogger.i(TAG, "首次初始化完成：MasterKey + DEK 已生成")
+                    return@runCatching InitResult.OK
+                }
+
                 // 检查 fingerprint 是否匹配
                 val currentFingerprint = dekManager.getMasterKeyFingerprint(masterKey)
                 if (currentFingerprint != existing.masterKeyFingerprint) {
-                    FileLogger.e(TAG, "MasterKey 指纹不匹配：Keystore 可能被外部重置")
+                    FileLogger.e(TAG, "MasterKey 指纹不匹配：Keystore 可能被外部重置（紧急解锁入口可用）")
                     dekCached = null
-                    throw MasterKeyTamperedException("MasterKey 已变更，请通过「紧急解锁」通道重置")
+                    return@runCatching InitResult.TAMPERED
                 }
 
                 // 加载 DEK 到内存
@@ -131,20 +149,38 @@ class CredentialEncryptor @Inject constructor(
                         dekCached = dekManager.unwrapDek(masterKey, existing.dekCiphertext)
                     } catch (e: Exception) {
                         FileLogger.e(TAG, "DEK unwrap 失败", e)
-                        throw MasterKeyTamperedException("DEK 解包失败: ${e.message}")
+                        return@runCatching InitResult.DEK_UNWRAP_FAIL
                     }
                 }
 
-                // V1→V2 迁移标记
+                // V1→V2 迁移标记（仍由后台 Worker 实际执行，这里只打日志）
                 if (!existing.migratedFromV1) {
-                    FileLogger.i(TAG, "检测到 V1 数据未迁移，标记为 pending")
-                    // V1toV2MigrationWorker 在 App 启动时由 AIEditorApp 触发
+                    FileLogger.i(TAG, "检测到 V1 数据未迁移，pending 后台 V1toV2MigrationWorker")
                 }
+
+                return@runCatching InitResult.OK
             }
 
-            initialized = true
+            when {
+                result.isSuccess && result.getOrNull() == InitResult.OK -> {
+                    initialized = true
+                }
+                else -> {
+                    // 任何非成功路径：只记日志 + dekCached=null + initialized 保持 false，
+                    // 让下次调用继续重试，绝不抛异常阻断启动链。
+                    dekCached = null
+                    val note = "CredentialEncryptor.ensureInitialized 失败（${result.exceptionOrNull()?.message ?: "reason=$result"}），" +
+                            "本次启动加密/解密功能降级：写入走明文、读取若为 V2: 前缀尝试用空 DEK 解失败后直接返回原文，" +
+                            "紧急解锁通道仍可在 Settings 页手动触发。"
+                    FileLogger.e(TAG, note, result.exceptionOrNull())
+                    FileLogger.flushSync("ERROR", TAG, note, result.exceptionOrNull())
+                }
+            }
         }
     }
+
+    /** 内部小枚举：ensureInitialized 各分支结果，避免用布尔值表达多态。 */
+    private enum class InitResult { OK, TAMPERED, DEK_UNWRAP_FAIL }
 
     // ============== 加密/解密（对外接口，与原签名兼容） ==============
 

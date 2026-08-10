@@ -72,6 +72,44 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideAgentDatabase(@ApplicationContext context: Context): AgentDatabase {
+        // RC61b hotfix3：再增加第 0 层兜底。
+        // provideAgentDatabase 本身是 Hilt 注入链上的 @Provides，若它抛任何 Throwable（包括
+        // Room builder 过程中的 ExceptionInInitializerError / NoClassDefFoundError / Room 内部
+        // IllegalStateException 没有被 firstStage.runCatching 精确兜到的情况），都会让整个
+        // Application.onCreate → Hilt component 构建失败 → 系统直接杀进程，连崩溃弹窗都没有。
+        // 因此这里外层再 try 一次，任何 Throwable 都走「空 DB + 破坏性重建」，绝不抛。
+        return runCatching {
+            provideAgentDatabaseInternal(context)
+        }.getOrElse { fatal ->
+            FileLogger.e(
+                "AgentModule",
+                "provideAgentDatabaseInternal 抛出非预期 Throwable（可能 Room 内部或 Asset 迁移异常），" +
+                        "直接走 destructive 终极兜底，历史数据可能丢但应用能启动。原因=${fatal.message}",
+                fatal
+            )
+            runCatching {
+                androidx.room.Room.databaseBuilder(
+                    context,
+                    AgentDatabase::class.java,
+                    "rdeepcode_agent_db"
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
+            }.getOrElse { fatal2 ->
+                // 真·最后一招：如果连 destructive build 都炸（通常是 context 本身都坏了或 APK
+                // 内置 Room 的 Entity schema 已损坏），继续抛就是杀进程——此时我们改抛一个
+                // 更轻的 RuntimeException 带完整原因，至少经 CrashHandler 能落日志。
+                FileLogger.e(
+                    "AgentModule",
+                    "连 destructive fallback 构建都失败，应用必然无法正常工作，只抛可记录的异常",
+                    fatal2
+                )
+                throw RuntimeException("Room DB 终极兜底构建失败，上一层原因=${fatal.message}", fatal2)
+            }
+        }
+    }
+
+    private fun provideAgentDatabaseInternal(@ApplicationContext context: Context): AgentDatabase {
         // RC61b：双阶段构建，保证 schema 校验失败时应用依然可启动
         // 第一阶段：优先走迁移（所有 SQL 脚本 + fallbackToDestructiveMigration(dropAllTables=false)）
         //           即"未知版本 → 只删未知表、保留业务表"的保守降级。

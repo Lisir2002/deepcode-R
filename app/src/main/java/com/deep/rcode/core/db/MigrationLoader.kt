@@ -49,29 +49,51 @@ object MigrationLoader {
     }
 
     private fun doLoad(context: Context): Array<Migration> {
-        val assetManager = context.assets
-        val migrationsDir = "migrations"
-        val files = runCatching { assetManager.list(migrationsDir) }.getOrNull() ?: emptyArray()
+        // RC61b hotfix3：整个迁移加载套一层 try，任何 asset 解析失败都返回空数组（不抛）。
+        // Hilt 注入链 AgentModule → buildAgentDatabase → MigrationLoader.loadMigrations 是
+        // Application.onCreate 同步路径，一旦这里抛 RuntimeException 会穿透到 Hilt component
+        // 构建失败 → 系统直接杀进程，且用户日志里没有 CRASH 记录（因 CrashHandler 注册虽早
+        // 但异步写被杀前丢，已由 hotfix3(1) 同步落盘补上，这里再做"启动链不抛"的双保险）。
+        return runCatching {
+            val assetManager = context.assets
+            val migrationsDir = "migrations"
+            val files = runCatching { assetManager.list(migrationsDir) }.getOrNull() ?: emptyArray()
 
-        val migrations = mutableListOf<Migration>()
+            val migrations = mutableListOf<Migration>()
 
-        for (fileName in files) {
-            if (!fileName.endsWith(".sql")) continue
+            for (fileName in files) {
+                if (!fileName.endsWith(".sql")) continue
 
-            val versionStr = fileName.substringBefore('_')
-            val version = versionStr.toIntOrNull() ?: continue
+                val versionStr = fileName.substringBefore('_')
+                val version = versionStr.toIntOrNull() ?: continue
 
-            val sqlContent = runCatching {
-                assetManager.open("$migrationsDir/$fileName").bufferedReader().use { it.readText() }
-            }.getOrNull() ?: continue
+                val sqlContent = runCatching {
+                    assetManager.open("$migrationsDir/$fileName").bufferedReader().use { it.readText() }
+                }.getOrNull() ?: continue
 
-            val statements = sqlContent.split(";")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
+                val statements = sqlContent.split(";")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
 
-            migrations.add(FileMigration(version, fileName, statements))
+                runCatching {
+                    migrations.add(FileMigration(version, fileName, statements))
+                }.onFailure {
+                    FileLogger.w(
+                        "MigrationLoader",
+                        "构造迁移 $fileName (v$version) 失败，跳过该条，应用仍可启动（若该迁移为必须，Room 首阶段会失败并自动转 destructive 兜底）",
+                        it
+                    )
+                }
+            }
+            migrations.toTypedArray()
+        }.getOrElse {
+            FileLogger.e(
+                "MigrationLoader",
+                "迁移资产加载整体失败，返回空迁移数组，Room 首阶段必然失败，" +
+                        "AgentModule 双阶段会自动降级 destructive 重建，应用仍能启动，历史迁移内容丢失。原因=${it.message}",
+                it
+            )
+            emptyArray()
         }
-
-        return migrations.toTypedArray()
     }
 }

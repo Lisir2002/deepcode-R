@@ -138,18 +138,42 @@ class ExecutionModeRepository @Inject constructor(
 
     /**
      * 解密 DataStore 里的 legacy password 字段：
-     *  - rc60 之后写入的：经 CredentialEncryptor 加密，decrypt 成功 → 返回明文
-     *  - rc60 之前的：字段是明文，decrypt 会抛异常 → 回退原样返回
+     *  - rc60 之后写入的：经 CredentialEncryptor 加密，格式"V2:xxx"
+     *  - rc60 之前的：字段是明文，直接用
      *  - 空/空白：直接 ""
      *
-     * RC61a 修正：强制切 IO 线程，避免在 DataStore Flow 收集线程上阻塞首帧，
-     * 造成 1-2 秒后系统杀掉启动卡住的应用。
+     * ============= RC61b hotfix3（RC60 后闪退根因级修复 #2） =============
+     * 旧实现：`runCatching { encryptor.decrypt(raw) }.getOrElse { raw }`
+     * 问题：encryptor.decrypt → ensureInitialized → stateDao.getSingleOrNull() → **强制 DB open**，
+     * 而 remoteConnectionFlow 是冷启动 Flow，会在 Hilt 构造链「CredentialRequestBridge →
+     * LinuxContainerEngine → 任意 ExecutionModeHolder/Repository 订阅点」时被首个订阅
+     * 同步触发；和主线程 Hilt.provideAgentDatabase 同时抢同一 RoomDB 实例 + Keystore
+     * MasterKey 生成，形成启动期两线程争用伪死锁 → ANR → 系统 1-2s 杀进程无弹窗。
+     *
+     * 修复：v1 legacy 路径的 password 字段本身就是明文（RC60 之前没加密），真正的 V2
+     * 密码根本**不会保存在 DataStore**（RC61+ 已改成 Room 单源 + DataStore 只存
+     * ssh_active_connection_id 指针），所以在这里解 V2 实际上是死路径。
+     * 我们改成「只看 raw 前缀」来区分，不调用任何需要 DB/Keystore 的方法：
+     *   - V2: 前缀 → 返回 ""（提示上层去 Room 单源读；v2 路径本来就不该到这里）
+     *   - 否则 → 直接返回 raw（RC60 前明文 legacy 语义）
+     * 避免在冷启动 Flow 上触发任何加密子系统初始化。
      */
-    private suspend fun decryptCredentialCompat(raw: String?): String =
-        withContext(Dispatchers.IO) {
-            if (raw.isNullOrBlank()) return@withContext ""
-            runCatching { encryptor.decrypt(raw) }.getOrElse { raw }
+    private fun decryptCredentialCompat(raw: String?): String {
+        if (raw.isNullOrBlank()) return ""
+        // V2: 前缀意味着这是 RC61+ 的 DEK 密文——但 v2 路径本就不会把密码写到 legacy
+        // DataStore（v2 只写 Room + activeConnectionId）。若真遇到：兜底空串，上层
+        // resolveSshConfigOrNull 会走 Room 单源重新查（v2 预期路径）。
+        if (raw.startsWith(CredentialEncryptionContract.SCHEME_V2)) {
+            FileLogger.w(
+                "ExecutionModeRepo",
+                "legacy password 字段意外含 V2 前缀（本应只出现在 Room 单源），" +
+                        "降级返回空字符串，由上层 resolveSshConfigOrNull 走 Room 重新按 activeConnectionId 查"
+            )
+            return ""
         }
+        // RC60 之前 legacy：明文直接返回（符合该 fallback 原本语义）
+        return raw
+    }
 
     suspend fun setExecutionMode(mode: ExecutionMode) {
         context.executionModeDataStore.edit { it[MODE_KEY] = mode.name }
