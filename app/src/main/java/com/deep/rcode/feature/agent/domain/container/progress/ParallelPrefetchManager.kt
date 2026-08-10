@@ -3,10 +3,12 @@ package com.deep.rcode.feature.agent.domain.container.progress
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.domain.container.CommandEvent
 import com.deep.rcode.feature.agent.domain.container.ContainerInstaller
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +69,71 @@ class ParallelPrefetchManager(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val semaphore = Semaphore(slotsCount)
 
+    // ─────────────────────────── RC61c S3+S4 Fix ────────────────────────────
+    /** 所有已经 fire 的 async jobs。失败时 shutdown 能 cancel 所有正在 curl/wget 的包。 */
+    private val inflightJobs = mutableListOf<kotlinx.coroutines.Deferred<*>>()
+    /** shutdown 调用后置 true，prefetch 的循环/single download 会立刻抛 Cancellation 退出。 */
+    @Volatile
+    private var shutdownRequested = false
+    /** APKINDEX fetch 连续 IO ERROR 计数（resolveDependencies + 主 apk update 公用）。
+     *  达到 2 立刻熔断：resolveDependencies 返回空 deps，prefetch 不启动。 */
+    @Volatile
+    private var consecutiveFetchIoErrors = 0
+    /** 线程安全地增加 consecutiveFetchIoErrors；达到 2 就返回 true 让调用方熔断。 */
+    @Synchronized
+    private fun incFetchIoErrorAndShouldCircuitBreak(): Boolean {
+        consecutiveFetchIoErrors += 1
+        return consecutiveFetchIoErrors >= 2
+    }
+    @Synchronized
+    private fun resetFetchIoErrors() { consecutiveFetchIoErrors = 0 }
+
+    /**
+     * RC61c S3 Fix：外部（通常是 installBundle 的 catch/finally/exitCode≠0 分支）调用
+     * 本方法，立刻释放所有并发资源：
+     *   - cancel 所有 inflight jobs（curl/wget streamShell 会收 CancellationException 停掉 Socket）
+     *   - cancel scope（所有 downloadSingle 子协程立刻停，不再占线程）
+     *   - 把所有 slot 立刻置 FAILED（释放 Permit 语义等价：sem.withPermit 退出后自动释放 permit）
+     *   - 发一次 Finished 事件，让 Aggregator 立刻进入 INSTALL phase 或结束，避免 UI 永远
+     *     显示「X 槽并行 · Y KB/s」好像还在继续下载占网。
+     *
+     * 幂等：多次调用安全。
+     */
+    fun shutdown(reason: String = "安装会话已结束") {
+        shutdownRequested = true
+        // 1) cancel 所有 inflight curl/wget（顺序不重要，cancel 是同步语义）
+        synchronized(inflightJobs) {
+            for (j in inflightJobs) {
+                runCatching { j.cancel("$reason: ParallelPrefetchManager.shutdown()") }
+            }
+            inflightJobs.clear()
+        }
+        // 2) cancel scope（子协程里挂起函数收 CancellationException → 立刻释放 Permit）
+        runCatching { scope.cancel("$reason: scope shutdown") }
+        // 3) UI 立刻更新：把所有 slot 清空 WAITING + 发一次 Finished，
+        //    Aggregator 收到后会把 slots 快照同步为 N 个空槽，UI 并行数立刻归 0。
+        runCatching {
+            val cur = _slots.value
+            val cleaned = cur.map {
+                it.copy(
+                    pkgName = null, bytesTotal = null, bytesGot = 0L, speedBps = 0f,
+                    status = SlotStatus.WAITING, failReason = null,
+                )
+            }
+            _slots.value = cleaned
+        }
+        runCatching {
+            val fin = PrefetchEvent.Finished(
+                successPackages = linkedSetOf(),
+                failedPackages = linkedMapOf("<shutdown>" to reason),
+            )
+            scope.launch { _events.emit(fin) }
+        }
+        FileLogger.i(TAG, "shutdown(reason=$reason) 执行完成，inflight 已释放")
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+
     /**
      * 查询架构（一次）。失败兜底 aarch64（真机发布单架构）。
      */
@@ -111,6 +178,28 @@ class ParallelPrefetchManager(
             FileLogger.w(TAG, "resolve deps apk update may have failed exit=$updateCode")
         }
         val lines = updateOut.lineSequence().map { it.trim() }.filterNot(String::isEmpty).toList()
+        // ───────────── RC61c S4 Fix: APKINDEX fetch IO ERROR 连续 2 次熔断 ─────────────
+        // 截图里 WARNING fetching community: IO ERROR → 镜像挂/本地网络差，继续 resolve/prefetch
+        // 只会浪费更多 Socket/线程；立刻返回空 deps，让下游 prefetch 不启动、apk add 直接走 apk 自带 fetch。
+        val lowerAll = updateOut.lowercase()
+        val hasIoWarn = (lowerAll.contains("io error") || lowerAll.contains("warning: fetching")) &&
+            (updateCode != 0 || lowerAll.contains("unable to select packages"))
+        if (hasIoWarn) {
+            val shouldBreak = incFetchIoErrorAndShouldCircuitBreak()
+            FileLogger.w(
+                TAG,
+                "resolveDependencies apk update 检测到镜像 IO ERROR（exit=$updateCode），" +
+                    "consecutiveFetchIoErrors=$consecutiveFetchIoErrors，circuit_break=$shouldBreak",
+            )
+            if (shouldBreak) {
+                // 连续 2 次命中：直接返回空，prefetch 不启动，apk add 自己负责 fetch
+                FileLogger.w(TAG, "FETCH 连续 IO ERROR 熔断：resolveDependencies 返回空 deps，跳过预取")
+                return emptyList()
+            }
+        } else {
+            resetFetchIoErrors()
+        }
+        // ──────────────────────────────────────────────────────────────────────────
         val raw = LinkedHashSet<String>()
         for (line in lines) {
             if (line.endsWith("depends on:")) {
@@ -205,9 +294,23 @@ class ParallelPrefetchManager(
             return finish
         }
 
+        // RC61c S3：预取前确保没被 cancel；如果失败分支已经触发 shutdown → 立刻短路返回空
+        if (shutdownRequested) {
+            val reason = "prefetch 启动前已 shutdown，跳过"
+            packages.forEach { failed[it] = reason }
+            val fin = PrefetchEvent.Finished(success, failed)
+            runCatching { _events.emit(fin) }
+            return fin
+        }
+
         val jobs = packages.map { pkg ->
             scope.async {
                 sem.withPermit {
+                    // RC61c S3：permit 拿到后再查一次 shutdownRequested，shutdown 发生在
+                    // sem.withPermit 进入后也能立刻释放 Permit 不占 semaphore。
+                    if (shutdownRequested) {
+                        throw CancellationException("prefetch cancelled (shutdown in sem.withPermit)")
+                    }
                     val slotIdx = acquireFreeSlotIndex()
                     try {
                         downloadSingle(
@@ -221,11 +324,26 @@ class ParallelPrefetchManager(
                             hasWget = hasWget,
                         )
                         success += pkg
+                    } catch (ce: CancellationException) {
+                        // CancellationException 正常不打 WARN（正常的 cancel 路径）
+                        failed[pkg] = "cancelled"
+                        markSlotFailed(slotIdx, pkg, "cancelled", bulk = true)
                     } catch (t: Throwable) {
                         failed[pkg] = (t.message ?: t.javaClass.simpleName)
                         markSlotFailed(slotIdx, pkg, (t.message ?: t.javaClass.simpleName))
-                        FileLogger.w(TAG, "prefetch single fail pkg=$pkg", t)
+                        // RC61c S4：fail-open，单包失败不再每条打 FileLogger.w 刷屏（最多打 3 条聚合）；
+                        // Aggregator 的 flushPrefetchFailures 统一输出。
+                        if (failed.size <= 3) {
+                            FileLogger.w(TAG, "prefetch single fail pkg=$pkg (${failed.size}/3 聚合上限)", t)
+                        }
                     }
+                }
+            }.also { job ->
+                // RC61c S3：把 job 注册进 inflightJobs，shutdown() 能逐个 cancel
+                synchronized(inflightJobs) { inflightJobs += job }
+                // 跑完后从 inflightJobs 移除（正常结束的包不需要 cancel）
+                job.invokeOnCompletion {
+                    synchronized(inflightJobs) { inflightJobs -= job }
                 }
             }
         }
@@ -334,6 +452,11 @@ class ParallelPrefetchManager(
         val repos = listOf("main", "community")
         var lastErr: String? = null
         for (repo in repos) {
+            // RC61c S3：curl/wget 拉 main/community 中间如果 shutdown 被调用 → 立刻中断不占网
+            if (shutdownRequested) {
+                lastErr = "shutdown requested"
+                break
+            }
             val url = "$mirror/$branch/$repo/$arch/$pkg.apk"
             val ok = if (hasCurl) {
                 runCurl(url = url, out = cachePath, slotIdx = slotIdx, timeoutMs = perPkgTimeoutMs)
@@ -346,7 +469,15 @@ class ParallelPrefetchManager(
             }
             lastErr = "repo $repo 4xx/5xx or too small"
         }
-        error(lastErr ?: "预取失败（所有仓库未命中），pkg=$pkg")
+        // RC61c S4：main/community 全失败 fail-open，不再用 error() 抛穿透
+        // （上游 catch 会把该包放入 failed map，apk add 会自己从镜像 fetch 真正的 URL 并做正确重试）。
+        // shutdownRequested 情况直接抛 CancellationException（释放 semaphore）。
+        if (shutdownRequested) {
+            throw CancellationException("downloadSingle cancelled during repos loop ($lastErr)")
+        }
+        val reason = lastErr ?: "预取失败（所有仓库未命中），pkg=$pkg"
+        markSlotFailed(slotIdx, pkg, reason, bulk = true)
+        throw IllegalStateException(reason)
     }
 
     /**

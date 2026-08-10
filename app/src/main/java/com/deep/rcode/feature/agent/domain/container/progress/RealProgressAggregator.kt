@@ -145,9 +145,55 @@ class RealProgressAggregator @Inject constructor(
         ensureTickerStarted()
     }
 
-    fun endSession() {
+    /**
+     * 结束一次安装会话。
+     *
+     * @param forceFailSnapshot
+     *   true 表示本次会话明确失败（apk exit!=0 或有 failedReason），需要立刻把 UI 快照切到
+     *   FAILED phase 并把 slots 清空 + speed 归零，避免用户看到「FAILED 0%」但顶栏依然显示
+     *   「X 槽并行 · Y KB/s」好像还在继续占网占线程的假像（RC61c 用户截图事故）。
+     *   false 走原来的语义：停 ticker 不强制改状态（DONE 分支用）。
+     */
+    fun endSession(forceFailSnapshot: Boolean = false) {
         runCatching { tickerJob?.cancel() }
         tickerJob = null
+        if (!forceFailSnapshot) return
+        runCatching {
+            // suspend 版本 publish 包在 suspend 函数里用更干净；这里 endSession 是普通函数，
+            // 用 scope launch 保证 Mutex + publish 都在正确调度器上跑。
+            scope.launch {
+                mutex.withLock {
+                    // 把所有可变状态切成"失败后静止"的快照：
+                    //  phase=FAILED
+                    //  slotsSnapshot=全空 WAITING（UI 「N 槽并行」显示为 N 个灰方块，且 N=0 更好，
+                    //    但为了对齐 BundleLogDialog 顶部 header 用 slots.size 取 N，这里如果 slots
+                    //    原本是 5 个保持大小，但全部置 WAITING，就不会显示任何 DLING/包名了）
+                    //  speedEmaBps = 0（header 的「速率」立刻显示 0）
+                    //  finishStats 清空 / failSummary 置为「安装失败」
+                    //  然后 publish 一次 → UI 所有指标立刻刷新
+                    phase = InstallPhase.FAILED
+                    source = ProgressSource.APK_STDOUT_CONFIRMED
+                    slotsSnapshot = slotsSnapshot.map {
+                        it.copy(
+                            pkgName = null, bytesTotal = null, bytesGot = 0L, speedBps = 0f,
+                            status = SlotStatus.WAITING, failReason = null,
+                        )
+                    }
+                    speedEmaBps = 0f
+                    lastTrafficRxBytes = -1L
+                    installingCurrent = null
+                    finishStats = null
+                    failSummary = failSummary
+                        ?: if (_state.value.failSummary.isNullOrBlank()) "安装失败（已停止所有并发下载）" else _state.value.failSummary
+                    // 额外打 1 条 INFO 日志进 Ring（日志最末尾出现一条"会话结束"，用户 copyAll 能看见）
+                    appendLogLine(
+                        kind = LogLineKind.INFO,
+                        text = "安装会话结束（失败态）：已释放所有并发槽与网络连接",
+                    )
+                    publish()
+                }
+            }
+        }
     }
 
     // ─── 对外推送真实信号（全部 Mutex 保护，可跨线程调用） ───

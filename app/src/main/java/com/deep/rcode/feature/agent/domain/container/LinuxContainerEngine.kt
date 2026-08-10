@@ -444,12 +444,14 @@ class LinuxContainerEngine @Inject constructor(
             }
             var exitCode: Int? = null
             var failedReason: String? = null
+            // RC61c S3：把 prefetch fire-and-forget 的 Job 存下来；失败分支/exitCode!=0 立刻 cancel
+            var prefetchJob: kotlinx.coroutines.Job? = null
             try {
                 // Level 3a：先查依赖图 → 并行预取（fail-open：单包失败交给 apk 兜底）
                 runCatching {
                     val depends = prefetch.resolveDependencies(pkgs, timeoutMs = APK_LIST_TIMEOUT_MS)
                     // 预取异步跑；完成后让 Aggregator flush 失败合并摘要（Fix C 汇总不刷屏）
-                    initScope.launch {
+                    prefetchJob = initScope.launch {
                         val fin = runCatching { prefetch.prefetch(depends) }
                             .getOrNull()
                         if (fin is ParallelPrefetchManager.PrefetchEvent.Finished) {
@@ -500,6 +502,14 @@ class LinuxContainerEngine @Inject constructor(
                             bundleRepository.emitInstalling(id, line = event.text)
                             _initProgress.value = ContainerInitState.BundleInstalling(bundleId = id, line = event.text)
                             progressAggregator.onApkLine(event.text)
+                            // RC61c S4：shell 里只要出现 WARNING fetching ... IO ERROR 就立刻 cancel 预取（避免继续占网）
+                            val t = event.text
+                            val lower = t.lowercase()
+                            if ((lower.contains("warning: fetching") || lower.contains("io error")) && prefetchJob?.isActive == true) {
+                                FileLogger.w(TAG, "apk 行内出现镜像 IO WARNING → 立刻 cancel prefetch")
+                                prefetchJob?.cancel("apk stdout saw IO WARNING fetching")
+                                runCatching { prefetch.shutdown("apk stdout IO WARNING") }
+                            }
                             // 解析 OK 语义后，如果有 postHook 行数就切 phase 到 POST_HOOK
                             val sem = ApkStdoutParser.parse(event.text).semantic
                             if (sem is ApkStdoutParser.Semantic.Ok && hookLines > 0) {
@@ -514,6 +524,12 @@ class LinuxContainerEngine @Inject constructor(
                         }
                         is CommandEvent.Exit -> {
                             exitCode = event.code
+                            // RC61c S3：exitCode≠0 立刻 cancel prefetch（用户截图 FAILED 后还 5K/s 占网）
+                            if (event.code != null && event.code != 0) {
+                                FileLogger.w(TAG, "apk exit=${event.code} → 立刻 cancel prefetch + shutdown（回收并发槽/Socket）")
+                                prefetchJob?.cancel("apk exit=${event.code} != 0")
+                                runCatching { prefetch.shutdown("apk exit=${event.code}") }
+                            }
                             initScope.launch {
                                 progressAggregator.onExitCode(
                                     code = event.code,
@@ -526,9 +542,19 @@ class LinuxContainerEngine @Inject constructor(
             } catch (e: Exception) {
                 FileLogger.w(TAG, "安装 bundle ${id.stableKey} 异常", e)
                 failedReason = "安装 ${bundle.displayName} 失败：${e.message}"
+                // RC61c S3：异常分支（比如 apk 解析炸/取消/etc.）也立刻释放预取资源
+                prefetchJob?.cancel("installBundle exception: ${e.message}")
+                runCatching { prefetch.shutdown("installBundle exception: ${e.message}") }
             } finally {
+                // RC61c S3：finally 最后兜底 cancel + shutdown（成功/失败/异常 三分支都要释放）
+                runCatching { prefetchJob?.cancel("installBundle finally") }
+                runCatching { prefetch.shutdown("installBundle finally") }
                 slotsCollectJob.cancel()
-                progressAggregator.endSession()
+                progressAggregator.endSession(
+                    // RC61c S3：若 exit 非 0 或 catch 进了 failedReason → 强制以 FAILED 快照结束会话，
+                    // UI 的「X 槽并行 · Y KB/s」会立刻归零，不会再显示「好像还在下载」的假速率。
+                    forceFailSnapshot = (exitCode != null && exitCode != 0) || failedReason != null,
+                )
                 if (exitCode == 0 && failedReason == null) {
                     bundleRepository.markInstalled(id, bundle)
                     FileLogger.i(TAG, "Bundle 安装成功：${bundle.displayName} (${bundle.packages})")
