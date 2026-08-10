@@ -98,7 +98,7 @@ class UserPasswordBackupCrypto {
         val buf = ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN)
         val magic = buf.short
         if (magic != MAGIC) throw BackupTamperedException()
-        val version = buf.get()
+        val version = buf.get()()
         if (version != VERSION) throw BackupTamperedException()
         val salt = ByteArray(16).also { buf.get(it) }
         val iter = buf.int
@@ -138,7 +138,7 @@ class UserPasswordBackupCrypto {
             rawIn.reset()
             val buf = ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN)
             if (buf.short != MAGIC) return null
-            val version = buf.get
+            val version = buf.get()
             if (version != VERSION) return null
             val salt = ByteArray(16).also { buf.get(it) }
             val iter = buf.int

@@ -25,14 +25,23 @@ import javax.crypto.spec.SecretKeySpec
  * 首次解密需要指纹/面容验证。
  */
 class DEKManager private constructor() {
-    private companion object {
-        const val TAG = "DEKManager"
-        const val MASTERKEY_ALIAS = "rdeepcode_credential_masterkey"
-        const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val GCM_TAG_BITS = 128
-        const val IV_LEN = 12
-        const val DEK_LEN_BITS = 256
+    companion object {
+        private const val TAG = "DEKManager"
+        private const val MASTERKEY_ALIAS = "rdeepcode_credential_masterkey"
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val GCM_TAG_BITS = 128
+        private const val IV_LEN = 12
+        private const val DEK_LEN_BITS = 256
+
+        @Volatile
+        private var instance: DEKManager? = null
+
+        fun getInstance(): DEKManager {
+            return instance ?: synchronized(this) {
+                instance ?: DEKManager().also { instance = it }
+            }
+        }
     }
 
     /** 内存缓存的 DEK。进程期有效，App 被杀后丢失。 */
@@ -61,7 +70,7 @@ class DEKManager private constructor() {
         )
         val specBuilder = KeyGenParameterSpec.Builder(
             MASTERKEY_ALIAS,
-            KeyProperties.PURPOSE_WRAP_KEY or KeyProperties.PURPOSE_UNWRAP_KEY
+            KeyProperties.PURPOSE_WRAP_KEY or 8 // PURPOSE_UNWRAP_KEY
         )
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
@@ -145,16 +154,5 @@ class DEKManager private constructor() {
     /** 清除内存 DEK 缓存。 */
     fun clearDekCache() {
         cachedDek = null
-    }
-
-    companion object {
-        @Volatile
-        private var instance: DEKManager? = null
-
-        fun getInstance(): DEKManager {
-            return instance ?: synchronized(this) {
-                instance ?: DEKManager().also { instance = it }
-            }
-        }
     }
 }

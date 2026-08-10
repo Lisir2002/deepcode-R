@@ -55,9 +55,9 @@ class V1toV2MigrationWorker @Inject constructor(
         for (conn in connections) {
             val result = migrateConnection(conn)
             when (result) {
-                is FieldMigrationResult.SUCCESS -> migrated++
-                is FieldMigrationResult.FAILED -> failed++
-                is FieldMigrationResult.UNMIGRATEABLE -> {
+                FieldMigrationResult.SUCCESS -> migrated++
+                FieldMigrationResult.FAILED -> failed++
+                FieldMigrationResult.UNMIGRATEABLE -> {
                     unmigrateable++
                     failedIds.add(conn.id)
                 }

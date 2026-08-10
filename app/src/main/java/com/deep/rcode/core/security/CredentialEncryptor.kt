@@ -9,6 +9,8 @@ import com.deep.rcode.feature.workspace.domain.RemoteAuditAction
 import com.deep.rcode.feature.workspace.domain.RemoteAuditCategory
 import com.deep.rcode.feature.workspace.domain.repository.RemoteAuditLogRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
@@ -49,6 +51,8 @@ class CredentialEncryptor @Inject constructor(
 
     private val dekManager = DEKManager.getInstance()
 
+    private val initMutex = Mutex()
+
     /** 内存缓存 DEK，避免每次加密/解密都走 Keystore unwrap。 */
     @Volatile
     private var dekCached: SecretKey? = null
@@ -64,55 +68,56 @@ class CredentialEncryptor @Inject constructor(
      * 2. MasterKey fingerprint 不匹配 → 抛 [MasterKeyTamperedException]，
      *    UI 引导走「紧急解锁」。
      */
-    @Synchronized
     suspend fun ensureInitialized() {
-        val existing = stateDao.getSingleOrNull()
-        val masterKey = try {
-            dekManager.getOrCreateMasterKey()
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "MasterKey 加载失败", e)
-            throw MasterKeyTamperedException("Keystore 不可用: ${e.message}")
-        }
+        initMutex.withLock {
+            val existing = stateDao.getSingleOrNull()
+            val masterKey = try {
+                dekManager.getOrCreateMasterKey()
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "MasterKey 加载失败", e)
+                throw MasterKeyTamperedException("Keystore 不可用: ${e.message}")
+            }
 
-        if (existing == null) {
-            // 首次初始化：生成 DEK + 写单行
-            val dek = dekManager.generateDek()
-            val dekCiphertext = dekManager.wrapDek(masterKey, dek)
-            val fingerprint = dekManager.getMasterKeyFingerprint(masterKey)
-            stateDao.upsert(
-                CredentialEncryptionStateEntity(
-                    masterKeyFingerprint = fingerprint,
-                    dekCiphertext = dekCiphertext,
-                    encScheme = "V2",
-                    lastRotatedAt = System.currentTimeMillis(),
-                    migratedFromV1 = true // 无历史数据
+            if (existing == null) {
+                // 首次初始化：生成 DEK + 写单行
+                val dek = dekManager.generateDek()
+                val dekCiphertext = dekManager.wrapDek(masterKey, dek)
+                val fingerprint = dekManager.getMasterKeyFingerprint(masterKey)
+                stateDao.upsert(
+                    CredentialEncryptionStateEntity(
+                        masterKeyFingerprint = fingerprint,
+                        dekCiphertext = dekCiphertext,
+                        encScheme = "V2",
+                        lastRotatedAt = System.currentTimeMillis(),
+                        migratedFromV1 = true // 无历史数据
+                    )
                 )
-            )
-            dekCached = dek
-            FileLogger.i(TAG, "首次初始化完成：MasterKey + DEK 已生成")
-        } else {
-            // 检查 fingerprint 是否匹配
-            val currentFingerprint = dekManager.getMasterKeyFingerprint(masterKey)
-            if (currentFingerprint != existing.masterKeyFingerprint) {
-                FileLogger.e(TAG, "MasterKey 指纹不匹配：Keystore 可能被外部重置")
-                dekCached = null
-                throw MasterKeyTamperedException("MasterKey 已变更，请通过「紧急解锁」通道重置")
-            }
-
-            // 加载 DEK 到内存
-            if (dekCached == null) {
-                try {
-                    dekCached = dekManager.unwrapDek(masterKey, existing.dekCiphertext)
-                } catch (e: Exception) {
-                    FileLogger.e(TAG, "DEK unwrap 失败", e)
-                    throw MasterKeyTamperedException("DEK 解包失败: ${e.message}")
+                dekCached = dek
+                FileLogger.i(TAG, "首次初始化完成：MasterKey + DEK 已生成")
+            } else {
+                // 检查 fingerprint 是否匹配
+                val currentFingerprint = dekManager.getMasterKeyFingerprint(masterKey)
+                if (currentFingerprint != existing.masterKeyFingerprint) {
+                    FileLogger.e(TAG, "MasterKey 指纹不匹配：Keystore 可能被外部重置")
+                    dekCached = null
+                    throw MasterKeyTamperedException("MasterKey 已变更，请通过「紧急解锁」通道重置")
                 }
-            }
 
-            // V1→V2 迁移标记
-            if (!existing.migratedFromV1) {
-                FileLogger.i(TAG, "检测到 V1 数据未迁移，标记为 pending")
-                // V1toV2MigrationWorker 在 App 启动时由 AIEditorApp 触发
+                // 加载 DEK 到内存
+                if (dekCached == null) {
+                    try {
+                        dekCached = dekManager.unwrapDek(masterKey, existing.dekCiphertext)
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "DEK unwrap 失败", e)
+                        throw MasterKeyTamperedException("DEK 解包失败: ${e.message}")
+                    }
+                }
+
+                // V1→V2 迁移标记
+                if (!existing.migratedFromV1) {
+                    FileLogger.i(TAG, "检测到 V1 数据未迁移，标记为 pending")
+                    // V1toV2MigrationWorker 在 App 启动时由 AIEditorApp 触发
+                }
             }
         }
     }
@@ -208,7 +213,7 @@ class CredentialEncryptor @Inject constructor(
             val durationMs = System.currentTimeMillis() - startMs
             val report = RotationReport(
                 rotatedAtMs = startMs,
-                affectedTables = listOf(TableCount("credential_encryption_state", 1)),
+                affectedTables = listOf(RotationReport.TableCount("credential_encryption_state", 1)),
                 durationMs = durationMs
             )
 
