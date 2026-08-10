@@ -67,10 +67,12 @@ private fun ModelMetadataTags(metadata: ModelMetadata?) {
         ModelTag(text = "Chat")
         metadata?.let {
             if (it.supportsVision) {
-                ModelTag(text = "Image")
+                // 小白友好：把英文 Image 换成「识图（Vision）」
+                ModelTag(text = "识图（Vision）")
             }
             if (it.supportsTools) {
-                ModelTag(text = "Tools")
+                // 同理：Tools → 「工具（Tools）」
+                ModelTag(text = "工具（Tools）")
             }
             val input = it.inputTokens?.takeIf { tokens -> tokens > 0 }
                 ?: it.contextTokens.takeIf { tokens -> tokens > 0 }
@@ -79,6 +81,10 @@ private fun ModelMetadataTags(metadata: ModelMetadata?) {
             }
             it.outputTokens?.takeIf { tokens -> tokens > 0 }?.let { output ->
                 ModelTag(text = "Output ${formatTokenLimit(output)}")
+            }
+            if (it.supportsReasoning) {
+                // 小白友好：加「思考（Reasoning）」徽章，中英文同时显示
+                ModelTag(text = "思考（Reasoning）")
             }
         }
     }

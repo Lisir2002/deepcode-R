@@ -9,6 +9,7 @@ import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.data.local.dao.AgentMessageDao
 import com.deep.rcode.feature.agent.data.local.dao.ChatSessionDao
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointDao
+import com.deep.rcode.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.deep.rcode.feature.agent.data.local.dao.TodoItemDao
 import com.deep.rcode.feature.settings.data.local.dao.AIProviderDao
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
@@ -219,6 +220,12 @@ object AgentModule {
     @Singleton
     fun provideRemoteAuditLogDao(database: AgentDatabase): com.deep.rcode.feature.workspace.data.local.dao.RemoteAuditLogDao {
         return database.remoteAuditLogDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideModelCapabilityOverrideDao(database: AgentDatabase): ModelCapabilityOverrideDao {
+        return database.modelCapabilityOverrideDao()
     }
 
     @Provides

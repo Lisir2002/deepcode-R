@@ -2,6 +2,9 @@ package com.deep.rcode.feature.settings.data.remote
 
 import android.content.Context
 import com.deep.rcode.core.util.FileLogger
+import com.deep.rcode.feature.agent.data.local.dao.ModelCapabilityOverrideDao
+import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
+import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
 import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.domain.model.ProviderType
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -23,7 +26,18 @@ import javax.inject.Singleton
 
 @Singleton
 class ModelMetadataService @Inject constructor(
-    @param:ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context,
+    /**
+     * 兼容端点默认策略 Repository（RC63 备选方案③）。
+     * 仅在 resolve → findMetadata 命中失败走 default() fallback 的时候才读取，
+     * catalog 已收录（MODELS_DEV 源）的模型完全不读，保证不影响整体。
+     */
+    private val compatibilityPolicyRepository: CompatibilityPolicyRepository,
+    /**
+     * 单模型能力复选框覆盖 Dao（RC63 备选方案④）。
+     * 仅在最后一步 merge 时读入，优先级最高；用户一旦手动覆盖，覆盖值就是最终决策。
+     */
+    private val modelCapabilityOverrideDao: ModelCapabilityOverrideDao
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -42,14 +56,18 @@ class ModelMetadataService @Inject constructor(
 
     suspend fun resolve(type: ProviderType, modelId: String): ModelMetadata = withContext(Dispatchers.IO) {
         val catalog = loadCatalog()
-        findMetadata(catalog, type, modelId) ?: default(type, modelId)
+        val base = findMetadata(catalog, type, modelId) ?: default(type, modelId)
+        // 决策链最后一步：应用兼容端点策略（仅 source=INFERRED 会读到；MODELS_DEV 的 catalog 模型
+        // base.source==MODELS_DEV，此处跳过，保证已收录模型零影响），再叠加④单模型复选框覆盖。
+        applyCompatibilityPolicies(base, type, modelId)
     }
 
     suspend fun resolveAll(type: ProviderType, modelIds: List<String>): Map<String, ModelMetadata> =
         withContext(Dispatchers.IO) {
             val catalog = loadCatalog()
             modelIds.associateWith { modelId ->
-                findMetadata(catalog, type, modelId) ?: default(type, modelId)
+                val base = findMetadata(catalog, type, modelId) ?: default(type, modelId)
+                applyCompatibilityPolicies(base, type, modelId)
             }
         }
 
@@ -176,9 +194,118 @@ class ModelMetadataService @Inject constructor(
             supportsTools = probablyTools,
             supportsVision = probablyVision,
             supportsReasoning = probablyReasoning,
-            source = ModelMetadata.Source.INFERRED
+            source = ModelMetadata.Source.INFERRED,
+            // 保留启发式命中详情，便于阶段 4 ④单模型覆盖 UI 的「智能预填 banner」展示来源。
+            inferenceReason = ModelMetadata.InferenceReason(
+                byProbablyVision = probablyVision,
+                byProbablyReasoning = probablyReasoning,
+                byProbablyTools = probablyTools
+            )
         )
     }
+
+    /**
+     * RC63 决策链最后一步：按优先级合并兼容端点策略 & ④单模型复选框手动覆盖。
+     *
+     * 合并原则（严格保证不影响整体）：
+     *  - MODELS_DEV 源（catalog 收录模型）：仅应用④单模型覆盖（其他任何策略不碰）。
+     *    为什么 catalog 收录也要允许覆盖？因为有些 catalog（api.official.json）的信息会比
+     *    用户真实接入的兼容端点滞后或漏字段，小白想手动覆盖支持 vision/tools/reasoning
+     *    时必须允许覆盖，这是 RC63 「针对性修复独立出来」的真正落脚点——用户掌控一切。
+     *  - INFERRED 源（自定义兼容端点 / 未收录模型）：
+     *      1) 先应用「③ 兼容端点 DefaultPolicy」（STRICT / HEURISTIC / LAX / MANUAL）；
+     *      2) 再应用「④ 单模型复选框覆盖」（最高优先级）。
+     */
+    private suspend fun applyCompatibilityPolicies(
+        base: ModelMetadata,
+        type: ProviderType,
+        modelId: String
+    ): ModelMetadata {
+        val afterPolicy = if (base.source != ModelMetadata.Source.INFERRED) {
+            base
+        } else {
+            val policy = compatibilityPolicyRepository.getDefaultPolicy()
+            val (v, t, r) = when (policy) {
+                CompatibilityPolicyRepository.DefaultPolicy.STRICT,
+                CompatibilityPolicyRepository.DefaultPolicy.HEURISTIC -> {
+                    // 严格/启发式：保持 probablyVision/Tools/Reasoning 的默认值不变（RC62d 语义）。
+                    Triple(base.supportsVision, base.supportsTools, base.supportsReasoning)
+                }
+                CompatibilityPolicyRepository.DefaultPolicy.LAX -> {
+                    // 宽松：INFERRED 一律三能力 true（RC62e 行为），用户手动开启。
+                    Triple(true, true, true)
+                }
+                CompatibilityPolicyRepository.DefaultPolicy.MANUAL -> {
+                    // 完全手动：三能力一律 false，只等用户在单模型复选框（④）手动覆盖开启。
+                    Triple(false, false, false)
+                }
+            }
+            base.copy(
+                supportsVision = v,
+                supportsTools = t,
+                supportsReasoning = r,
+                inferenceReason = base.inferenceReason?.copy(appliedPolicy = policy.name)
+                    ?: ModelMetadata.InferenceReason(
+                        byProbablyVision = v,
+                        byProbablyTools = t,
+                        byProbablyReasoning = r,
+                        appliedPolicy = policy.name
+                    )
+            )
+        }
+
+        // 阶段 4 ④：单模型复选框覆盖（优先级最高）。MODELS_DEV 与 INFERRED 源都允许。
+        val override = runCatching {
+            modelCapabilityOverrideDao.getByProviderAndModel(type.name, modelId)
+        }.onFailure {
+            FileLogger.w(TAG, "读取单模型能力覆盖失败(type=${type.name}, id=$modelId)", it)
+        }.getOrNull() ?: return afterPolicy
+
+        val vision = override.overrideVision ?: afterPolicy.supportsVision
+        val tools = override.overrideTools ?: afterPolicy.supportsTools
+        val reasoning = override.overrideReasoning ?: afterPolicy.supportsReasoning
+        val originReason = afterPolicy.inferenceReason ?: ModelMetadata.InferenceReason()
+        return afterPolicy.copy(
+            supportsVision = vision,
+            supportsTools = tools,
+            supportsReasoning = reasoning,
+            inferenceReason = originReason.copy(
+                overrideVision = override.overrideVision,
+                overrideTools = override.overrideTools,
+                overrideReasoning = override.overrideReasoning
+            )
+        )
+    }
+
+    // —— RC63 备选方案④对外接口：设置页 UI（单选按钮 / 一键推荐）统一通过下面几个方法写入覆盖。 ——
+
+    /** 保存（或覆盖）单个模型的手动覆盖。不想覆盖的字段传 null（维持自动决策）。 */
+    suspend fun saveOverride(
+        type: ProviderType,
+        modelId: String,
+        vision: Boolean?,
+        tools: Boolean?,
+        reasoning: Boolean?
+    ) = withContext(Dispatchers.IO) {
+        val entity = ModelCapabilityOverrideEntity(
+            id = ModelCapabilityOverrideEntity.composeId(type.name, modelId),
+            providerType = type.name,
+            modelId = modelId,
+            overrideVision = vision,
+            overrideTools = tools,
+            overrideReasoning = reasoning
+        )
+        modelCapabilityOverrideDao.upsert(entity)
+    }
+
+    /** 删除单个模型的覆盖（恢复到「启发式 + 兼容端点策略」的自动路径）。 */
+    suspend fun clearOverride(type: ProviderType, modelId: String) = withContext(Dispatchers.IO) {
+        modelCapabilityOverrideDao.deleteByProviderAndModel(type.name, modelId)
+    }
+
+    /** 流式观察单模型覆盖（设置页 UI 观察后实时刷新标签角标）。 */
+    fun observeOverride(type: ProviderType, modelId: String) =
+        modelCapabilityOverrideDao.observeByProviderAndModel(type.name, modelId)
 
     private fun findMetadata(
         catalog: Map<String, Map<String, ModelMetadata>>,

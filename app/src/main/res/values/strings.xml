@@ -7,8 +7,8 @@
     <string name="settings_providers">AI 提供商</string>
     <string name="settings_provider_editor">提供商</string>
     <string name="settings_default_models">默认模型</string>
-    <string name="settings_default_models_subtitle">配置识图模型等默认偏好</string>
-    <string name="settings_vision_model">识图模型</string>
+    <string name="settings_default_models_subtitle">配置识图模型（多模态识图 Vision）等默认偏好</string>
+    <string name="settings_vision_model">识图模型（多模态识图 Vision）</string>
     <string name="settings_compaction_model">压缩模型</string>
     <string name="settings_mcp">MCP 服务器</string>
     <string name="settings_container">容器镜像</string>
@@ -63,7 +63,7 @@
     <!-- Settings category titles -->
     <string name="settings_category_ai">AI 配置</string>
     <string name="settings_category_environment">运行环境</string>
-    <string name="settings_category_tools">工具与权限</string>
+    <string name="settings_category_tools">工具与权限（工具调用 Tools / Function Calling）</string>
     <string name="settings_category_appearance">外观与语言</string>
     <string name="settings_category_other">其他</string>
 
@@ -82,7 +82,7 @@
     <string name="common_image_preview">图片预览</string>
     <string name="common_expand">展开</string>
     <string name="common_workspace">工作区</string>
-    <string name="common_tool">工具</string>
+    <string name="common_tool">工具（Tools）</string>
     <string name="common_current">当前</string>
     <string name="common_collapse">折叠</string>
     <string name="common_collapse_action">收起</string>
@@ -147,7 +147,7 @@
     <string name="chat_open_sidebar">打开侧边栏</string>
     <string name="chat_add_attachment">添加附件</string>
     <string name="chat_take_photo">拍照</string>
-    <string name="chat_reasoning_effort">思考强度</string>
+    <string name="chat_reasoning_effort">思考强度（深度思考 Reasoning）</string>
     <string name="chat_reasoning_effort_low">低</string>
     <string name="chat_reasoning_effort_medium">中</string>
     <string name="chat_reasoning_effort_high">高</string>
@@ -702,7 +702,7 @@
 
     <!-- Vision Model -->
     <string name="vision_follow_chat_model">跟随当前聊天模型</string>
-    <string name="vision_follow_desc">识图始终用当前选中的聊天模型；当其不支持 Vision 时识图不可用。</string>
+    <string name="vision_follow_desc">识图始终使用当前选中的聊天模型；当其不支持「多模态识图（Vision）」能力时，识图功能不可用。</string>
     <string name="vision_no_models">暂无可用模型。请在「AI 提供商」中添加并配置模型后再选识图专用模型。</string>
 
     <!-- Compaction Model -->

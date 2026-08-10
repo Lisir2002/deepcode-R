@@ -405,10 +405,12 @@ private fun ModelMetadataTags(metadata: ModelMetadata?) {
         ModelTag(text = "Chat")
         if (metadata != null) {
             if (metadata.supportsVision) {
-                ModelTag(text = "Image", isHighlight = true)
+                // 小白友好：把英文 Image 换成「识图（Vision）」，既保留技术术语，又不晦涩
+                ModelTag(text = "识图（Vision）", isHighlight = true)
             }
             if (metadata.supportsTools) {
-                ModelTag(text = "Tools")
+                // 同理：Tools → 「工具（Tools）」
+                ModelTag(text = "工具（Tools）")
             }
             val input = metadata.inputTokens?.takeIf { it > 0 } ?: metadata.contextTokens.takeIf { it > 0 }
             if (input != null) {
@@ -416,6 +418,10 @@ private fun ModelMetadataTags(metadata: ModelMetadata?) {
             }
             metadata.outputTokens?.takeIf { it > 0 }?.let { output ->
                 ModelTag(text = "Output ${formatTokenLimit(output)}")
+            }
+            if (metadata.supportsReasoning) {
+                // Reasoning 单独加一枚「思考（Reasoning）」徽章，避免思考强度设置里只有「思考」看不到英文对照
+                ModelTag(text = "思考（Reasoning）")
             }
         }
     }

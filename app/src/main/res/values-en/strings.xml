@@ -7,8 +7,8 @@
     <string name="settings_providers">AI Providers</string>
     <string name="settings_provider_editor">Provider</string>
     <string name="settings_default_models">Default Models</string>
-    <string name="settings_default_models_subtitle">Configure default preferences like vision model</string>
-    <string name="settings_vision_model">Vision Model</string>
+    <string name="settings_default_models_subtitle">Configure default preferences like vision model (multimodal image understanding)</string>
+    <string name="settings_vision_model">Vision Model (Image Understanding)</string>
     <string name="settings_compaction_model">Compaction Model</string>
     <string name="settings_mcp">MCP Servers</string>
     <string name="settings_container">Container Image</string>
@@ -61,7 +61,7 @@
     <!-- Settings category titles -->
     <string name="settings_category_ai">AI Configuration</string>
     <string name="settings_category_environment">Environment</string>
-    <string name="settings_category_tools">Tools  &amp; Permissions</string>
+    <string name="settings_category_tools">Tools (Function Calling) &amp; Permissions</string>
     <string name="settings_category_appearance">Appearance  &amp; Language</string>
     <string name="settings_category_other">Other</string>
 
@@ -80,7 +80,7 @@
     <string name="common_image_preview">Image Preview</string>
     <string name="common_expand">Expand</string>
     <string name="common_workspace">Workspace</string>
-    <string name="common_tool">Tool</string>
+    <string name="common_tool">Tool (Function Calling)</string>
     <string name="common_current">Current</string>
     <string name="common_collapse">Collapse</string>
     <string name="common_collapse_action">Collapse</string>
@@ -145,7 +145,7 @@
     <string name="chat_open_sidebar">Open sidebar</string>
     <string name="chat_add_attachment">Add attachment</string>
     <string name="chat_take_photo">Take photo</string>
-    <string name="chat_reasoning_effort">Reasoning effort</string>
+    <string name="chat_reasoning_effort">Reasoning (Deep Thinking) Effort</string>
     <string name="chat_reasoning_effort_low">Low</string>
     <string name="chat_reasoning_effort_medium">Medium</string>
     <string name="chat_reasoning_effort_high">High</string>
@@ -700,7 +700,7 @@
 
     <!-- Vision Model -->
     <string name="vision_follow_chat_model">Follow current chat model</string>
-    <string name="vision_follow_desc">Vision always uses the currently selected chat model; if it doesn\'t support Vision, image recognition is unavailable.</string>
+    <string name="vision_follow_desc">Vision always uses the currently selected chat model; if it doesn\'t support Vision (Multimodal Image Understanding), image recognition is unavailable.</string>
     <string name="vision_no_models">No models available. Please add and configure a model in "AI Providers" before selecting a dedicated vision model.</string>
 
     <!-- Compaction Model -->

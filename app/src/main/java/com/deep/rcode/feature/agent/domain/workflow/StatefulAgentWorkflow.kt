@@ -29,6 +29,7 @@ import com.deep.rcode.feature.agent.domain.tool.ToolStreamEvent
 import com.deep.rcode.feature.agent.domain.tool.toTransportString
 import com.deep.rcode.feature.agent.presentation.AgentAttachment
 import com.deep.rcode.feature.settings.data.remote.ModelMetadataService
+import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
 import com.deep.rcode.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.VisionModelSettingsRepository
 import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
@@ -77,6 +78,12 @@ class StatefulAgentWorkflow @Inject constructor(
     private val modelMetadataService: ModelMetadataService,
     private val visionModelSettingsRepository: VisionModelSettingsRepository,
     private val compactionModelSettingsRepository: CompactionModelSettingsRepository,
+    /**
+     * RC63 备选方案③兼容端点策略 & ②自动降级总开关。
+     * 读两个字段：(a) viewImage 未收录模型守卫策略（FALLBACK_VISION_MODEL vs FAIL_FAST）；
+     * (b) 备选方案②「发送失败自动降级」总开关（用户关掉则即使触发也不自动降级）。
+     */
+    private val compatibilityPolicyRepository: CompatibilityPolicyRepository,
     private val sessionUseCase: SessionUseCase,
     private val messagePersistenceUseCase: MessagePersistenceUseCase,
     private val checkpointManager: CheckpointManager
@@ -87,6 +94,21 @@ class StatefulAgentWorkflow @Inject constructor(
         const val LIVE_TAIL_CHARS = 4_000
         const val PROGRESS_INTERVAL_MS = 250L
         const val USER_REJECTED_CODE = "USER_REJECTED"
+
+        /**
+         * 上游模型 API 返回「不支持多模态（image / image_url）」的特征关键字列表。
+         * 由 HttpErrorEnricher 把响应体里的 error.message 拼到异常 message 后是这种形式：
+         *   "HTTP 400: Invalid parameter: messages with type=image_url are not supported by this model"
+         * 捕获阶段 2 备选方案②的自动降级条件：用这些关键字做匹配。
+         */
+        val VISION_UNSUPPORTED_HINTS: List<String> = listOf(
+            "image_url",
+            "image",
+            "not supported",
+            "unsupported",
+            "invalid parameter",
+            "multimodal"
+        )
     }
 
     /** 不可变状态树 */
@@ -104,7 +126,13 @@ class StatefulAgentWorkflow @Inject constructor(
         /** 被策略/系统拒绝（非用户拒绝）的 tool 结果，key = toolCall.id */
         val rejectedToolResults: Map<String, ToolBatchResult> = emptyMap(),
         /** 标记下一轮 CallLlm 用于识图——若当前聊天模型不支持 vision 则临时切到识图专用模型发送。 */
-        val pendingVisionRound: Boolean = false
+        val pendingVisionRound: Boolean = false,
+        /**
+         * 备选方案②的防死循环 flag：本会话是否已经因为「上游报错不支持 vision」而自动降级过重试一次？
+         * 是则不再自动重试，直接给用户展示可操作的错误提示（去设置识图模型 / 去改模型覆盖）。
+         * 新用户请求（AgentAction.InitRequest）下发时会被清 false。
+         */
+        val visionFallbackRetried: Boolean = false
     )
 
     /** 改变状态的动作 (Action) */
@@ -228,7 +256,11 @@ class StatefulAgentWorkflow @Inject constructor(
 
         when (action) {
             is AgentAction.InitRequest -> {
-                newState = state.copy(messages = action.initialMessages)
+                // 新用户请求：清零备选方案②的降级重试标志，让兼容端点新请求有机会自动兜底
+                newState = state.copy(
+                    messages = action.initialMessages,
+                    visionFallbackRetried = false
+                )
                 effects.add(AgentSideEffect.CallLlm)
             }
             is AgentAction.LlmResponse -> {
@@ -460,13 +492,122 @@ class StatefulAgentWorkflow @Inject constructor(
                         } catch (e: Exception) {
                             val partial = acc.toString()
                             val reasoning = reasoningAcc.toString()
-                            // 流式被中断时也要落库已收到的思考：否则下方 finally 会清空流式思考气泡，
-                            // 而落库的接力消息又没产生，表现为「思考显示后凭空消失且无报错」。
-                            // 有正文或有思考其一即落库；两者皆空则不写空消息。
-                            if (partial.isNotEmpty() || reasoning.isNotBlank()) {
-                                send(AgentEvent.AssistantText(partial, emptyList(), reasoning))
+                            val errorMessage = e.message.orEmpty()
+
+                            // —— 备选方案②：自动降级兜底（上游明确拒绝 image / 多模态时触发） ——
+                            // 条件：(a) 本来就是带图在发的（sendImages=true）；(b) 还没自动降级重试过
+                            // （visionFallbackRetried=false）；(c) 错误文本符合 VISION_UNSUPPORTED_HINTS
+                            // 关键字特征。此时走两条兜底：
+                            //   路径 1（优先，若已配置识图模型）：把 messages 中的图片先调用
+                            //     runVisionFallback 翻译成文本描述，替换掉 images 字段后重发纯文本
+                            //     （重发过程中置 visionFallbackRetried=true 防止死循环）
+                            //   路径 2（没配识图模型）：直接剥 images 后重发一次纯文本，
+                            //     同时在 prompt 最前面追加一句「原请求含图片，当前模型不支持
+                            //     多模态识图（Vision），已自动转为纯文本发送，若需看图请去设置
+                            //     识图模型或修改当前模型覆盖配置」提示。
+                            val visionUnsupported = errorMessage.length >= 8 && run {
+                                val lower = errorMessage.lowercase()
+                                val containsVision = VISION_UNSUPPORTED_HINTS.count { lower.contains(it) }
+                                // 至少命中 image* 类 + not supported / unsupported / invalid parameter 类各一条
+                                (lower.contains("image") || lower.contains("image_url") || lower.contains("multimodal")) &&
+                                    (lower.contains("not support") || lower.contains("unsupported") || lower.contains("invalid parameter") || lower.contains("not allowed") || lower.contains("invalid request"))
                             }
-                            actionQueue.addLast(AgentAction.LlmError("LLM 调用失败: ${e.message}"))
+                            if (sendImages && !state.visionFallbackRetried && visionUnsupported &&
+                                compatibilityPolicyRepository.isAutoDowngradeOnSendFailure()
+                            ) {
+                                // 先标记降级已尝试，避免死循环
+                                state = state.copy(visionFallbackRetried = true)
+                                val fallbackReady = visionFallbackReady()
+                                val fallbackDescription = buildString {
+                                    append("【系统提示】原请求包含图片，检测到当前模型不支持「多模态识图（Vision）」，")
+                                    if (fallbackReady) append("已启用「识图专用模型」自动识别图片内容后，以纯文本形式重新发送。")
+                                    else append("未配置「识图专用模型」，已自动去掉图片并转为纯文本发送；若需要识别图片内容，请在设置中指定一个支持「多模态识图（Vision）」能力的模型，或在当前模型的能力覆盖中手动开启「多模态识图（Vision）」。")
+                                }
+                                // 构造去 images 的消息 + 前置系统提示 UserMessage
+                                val textOnlyMessages = sanitizeImagesForModel(compactedMessages, supportsVision = false).toMutableList()
+                                val firstUserIndex = textOnlyMessages.indexOfFirst { it is AgentMessage.UserMessage }
+                                if (firstUserIndex >= 0) {
+                                    val origin = textOnlyMessages[firstUserIndex] as AgentMessage.UserMessage
+                                    val newContent = buildString {
+                                        appendLine(fallbackDescription)
+                                        append("【图片内容摘要】")
+                                        appendLine("（注：以下图片摘要是系统兜底生成，如果图片内容对你不重要可忽略）")
+                                        // 如果有独立识图模型就用它去识别第一张图（runVisionFallback 的接口是传 ToolResult），
+                                        // 为复用代码这里先组装一个假的 ToolResult.Success 喂给 runVisionFallback；
+                                        // 没配识图模型就写"无"。
+                                        if (fallbackReady) {
+                                            val originImage = compactedMessages
+                                                .filterIsInstance<AgentMessage.UserMessage>()
+                                                .flatMap { it.images }
+                                                .firstOrNull()
+                                            if (originImage != null) {
+                                                val fake = ToolResult.Success(
+                                                    JsonObject(
+                                                        mapOf(
+                                                            "image" to JsonObject(
+                                                                mapOf(
+                                                                    "mime_type" to JsonPrimitive(originImage.mimeType),
+                                                                    "base64_data" to JsonPrimitive(originImage.base64Data),
+                                                                    "path" to JsonPrimitive(originImage.path.orEmpty())
+                                                                )
+                                                            )
+                                                        )
+                                                    )
+                                                )
+                                                runCatching {
+                                                    val summary = runVisionFallback(fake, currentContext.sessionId, null)
+                                                    append(summary)
+                                                }.onFailure { append("摘要失败：${it.message}") }
+                                            } else {
+                                                append("（未在历史消息中找到图片附件）")
+                                            }
+                                        } else {
+                                            append("（未配置识图专用模型，跳过图片识别）")
+                                        }
+                                        appendLine()
+                                        appendLine("—— 用户原始问题 ——")
+                                        append(origin.content)
+                                    }
+                                    textOnlyMessages[firstUserIndex] = origin.copy(content = newContent)
+                                }
+                                // 正式走一次纯文本请求（不再包 try，失败就按原逻辑给 AgentEvent.Failed）
+                                val acc2 = StringBuilder()
+                                val reasoning2 = StringBuilder()
+                                var final2: AIResponse? = null
+                                providerInUse.completeStream(systemPrompt, textOnlyMessages, currentTools, currentContext.reasoningEffort).collect { chunk ->
+                                    when (chunk) {
+                                        is AIStreamChunk.TextDelta -> {
+                                            acc2.append(chunk.text)
+                                            send(AgentEvent.AssistantDelta(acc2.toString()))
+                                        }
+                                        is AIStreamChunk.ReasoningDelta -> {
+                                            reasoning2.append(chunk.text)
+                                            send(AgentEvent.ReasoningDelta(reasoning2.toString()))
+                                        }
+                                        is AIStreamChunk.Retrying -> {
+                                            acc2.setLength(0)
+                                            reasoning2.setLength(0)
+                                            send(AgentEvent.Retrying(chunk.attempt, chunk.maxRetries))
+                                        }
+                                        is AIStreamChunk.Final -> final2 = chunk.response
+                                    }
+                                }
+                                val aiResp2 = (final2 ?: AIResponse(content = acc2.toString())).let {
+                                    if (reasoning2.isNotEmpty()) it.copy(reasoning = reasoning2.toString()) else it
+                                }
+                                if (aiResp2.content.isNotBlank() || aiResp2.toolCalls.isNotEmpty()) {
+                                    send(AgentEvent.AssistantText(aiResp2.content, aiResp2.toolCalls, reasoning2.toString(), aiResp2.signature ?: "", aiResp2.inputTokens, aiResp2.outputTokens))
+                                }
+                                actionQueue.addLast(AgentAction.LlmResponse(aiResp2))
+                            } else {
+                                // 流式被中断时也要落库已收到的思考：否则下方 finally 会清空流式思考气泡，
+                                // 而落库的接力消息又没产生，表现为「思考显示后凭空消失且无报错」。
+                                // 有正文或有思考其一即落库；两者皆空则不写空消息。
+                                if (partial.isNotEmpty() || reasoning.isNotBlank()) {
+                                    send(AgentEvent.AssistantText(partial, emptyList(), reasoning))
+                                }
+                                actionQueue.addLast(AgentAction.LlmError("LLM 调用失败: ${e.message}"))
+                            }
                         } finally {
                             if (state.pendingVisionRound) state = state.copy(pendingVisionRound = false)
                         }
@@ -588,10 +729,14 @@ class StatefulAgentWorkflow @Inject constructor(
         }
         return try {
             if (name == "viewImage" && !activeModelSupportsVision(context.sessionId)) {
-                if (!visionFallbackReady()) {
+                // RC63 备选方案③：viewImage 守卫策略（默认自动回退识图模型，FAIL_FAST 则直接报错提示用户）
+                val guardPolicy = compatibilityPolicyRepository.getViewImageUnknownGuardPolicy()
+                val fallbackReady = visionFallbackReady()
+                if (guardPolicy == CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FAIL_FAST || !fallbackReady) {
                     return ToolRunResult(
                         ToolResult.Error(
-                            "当前聊天模型不支持图片输入，且未配置支持 Vision 的识图专用模型。请在「设置 → 默认模型 → 识图模型」中指定一个支持 Vision 的模型后再查看图片。",
+                            "当前聊天模型不支持「多模态识图（Vision）」能力，且未配置专用的「多模态识图（Vision）」兜底模型。请在【设置 → 默认模型 → 识图模型】中指定一个支持「多模态识图（Vision）」能力的模型后再查看图片。\n" +
+                                "💡 你也可以在【设置 → AI 提供商 → 该模型 → 能力覆盖】中手动开启「多模态识图（Vision）」复选框，一步修复。",
                             "MODEL_VISION_UNSUPPORTED"
                         ).toTransportString(),
                         true
@@ -641,7 +786,7 @@ class StatefulAgentWorkflow @Inject constructor(
 
         val agentImage = AgentImage(mimeType = mimeType, base64Data = base64Data, path = path)
         val visionProvider = resolveVisionFallbackProvider(sessionId)
-            ?: return "识图模型不可用"
+            ?: return "「多模态识图（Vision）」兜底模型不可用，请先在设置中启用。"
 
         val promptText = if (!customPrompt.isNullOrBlank()) {
             "请针对用户/模型的如下关注重点，详细分析并描述这张图片：\n$customPrompt"
@@ -676,42 +821,36 @@ class StatefulAgentWorkflow @Inject constructor(
      *
      *  (2) `pendingVisionRound` 是否启用独立识图模型 fallback 的判定入口。
      *
-     * 语义必须与 `shouldSendImages` 一致宽松：
+     *  RC63 判定链优先级（从高到低）：
+     *  - ④ 单模型复选框手动覆盖（`ModelCapabilityOverrideDao`，在 resolve 内处理）；
      *  - catalog 明确 supportsVision=true → 支持；
      *  - catalog 明确 supportsVision=false（MODELS_DEV 收录的纯文本模型）→ 不支持；
-     *  - **source=INFERRED（模型不在 catalog，包括用户的兼容端点/自建服务/新命名）
-     *    → 一律视为支持多模态**。
+     *  - ③ 兼容端点默认策略 Repository（STRICT/HEURISTIC/LAX/MANUAL，resolve 内处理）；
+     *  - probablyVision 启发式（step- 家族白名单在 ModelMetadataService.default() 命中即为 true）。
      *
-     *  理由：即便是 INFERRED 的文本模型真的不支持 vision，最多也就是上游 API 报 400，
-     *  错误会正常走 AgentEvent.Failed 显示在 UI 上，用户秒懂并改正。
-     *  远好于这里把它误判成「不支持」，直接回退到独立识图模型/或报错（step-3.7-flash
-     *  官方文档明明写了原生多模态，但白名单没写它，就被这里守卫错拦到那条可怕的
-     *  「设置→默认模型→识图模型」提示里，用户以为自己的模型配置错了）。
+     *  RC63 关键决策（按用户要求「针对性修复独立出来」）：
+     *  - **撤销 RC62e 的 `source==INFERRED → 一律 true` 全局放宽**；
+     *  - 这里只返回最终 `metadata.supportsVision` 布尔值；
+     *  - step-3.7-flash 修复仅由 probablyVision step- 家族白名单单独命中，
+     *    不影响其他未收录模型（它们恢复 RC62d 之前的严格语义）。
      */
     private suspend fun activeModelSupportsVision(sessionId: String?): Boolean {
         val config = resolveProviderConfig(sessionId) ?: return false
         val metadata = modelMetadataService.resolve(config.type, config.effectiveModel)
-        if (metadata.supportsVision) return true
-        return metadata.source == ModelMetadata.Source.INFERRED
+        return metadata.supportsVision
     }
 
     /**
      * 发送前是否应该把图片带给模型。
-     * - catalog 明确标注 supportsVision = true → 发；
-     * - catalog 明确标注 supportsVision = false（MODELS_DEV 收录的纯文本模型）→ 不发，
-     *   否则上游直接 400；
-     * - source=INFERRED（未知模型，启发式也没命中）→ **信任用户意图发图片**。
-     *   这是「多模态模型识别不到图」的关键修复：很多用户自定义兼容端点、自建服务或新模型
-     *   根本不在 models.dev 里，如果原来一刀切 INFERRED 视为不支持 vision，
-     *   sanitizeImagesForModel() 会在发送前把 UserMessage.images 全置空，模型自然看不到图。
-     *   即便 INFERRED 真的是文本模型导致上游 400，AgentEvent.Failed 也会把错误正常显示，
-     *   远比「静默剥图，模型回复文本，用户以为模型笨」的体验要好。
+     * RC63 判定链与 [activeModelSupportsVision] 严格一致；
+     * 2026-08-10 RC63 按用户要求**撤销 RC62e 的 `source==INFERRED → 一律 true` 全局放宽**，
+     * 恢复 RC62d 之前的严格语义。未收录兼容端点模型仅当 probablyVision 启发式
+     * （或③兼容端点策略 / ④单模型覆盖）命中时才会带图发送，避免全局放宽的副作用。
      */
     private suspend fun shouldSendImages(sessionId: String?): Boolean {
         val config = resolveProviderConfig(sessionId) ?: return false
         val metadata = modelMetadataService.resolve(config.type, config.effectiveModel)
-        if (metadata.supportsVision) return true
-        return metadata.source == ModelMetadata.Source.INFERRED
+        return metadata.supportsVision
     }
 
     /**
