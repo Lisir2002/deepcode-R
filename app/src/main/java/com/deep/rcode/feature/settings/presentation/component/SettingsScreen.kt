@@ -84,7 +84,7 @@ import compose.icons.feathericons.Server
 import compose.icons.feathericons.Terminal
 
 /** 设置页内部二级菜单分区。Menu 为首页菜单，其余为各自的二级页。 */
-internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
+enum class SettingsSection(@param:StringRes val titleRes: Int) {
     Menu(R.string.settings_title),
     Providers(R.string.settings_providers),
     ProviderEditor(R.string.settings_provider_editor),
@@ -140,9 +140,16 @@ fun SettingsScreen(
     var showThemeSheet by remember { mutableStateOf(false) }
     var showLanguageSheet by remember { mutableStateOf(false) }
 
+    val currentLanguageDisplayName = if (languageTag.isNullOrBlank()) {
+        stringResource(R.string.language_follow_system)
+    } else {
+        com.deep.rcode.core.util.LanguageRegistry.languages.firstOrNull { it.tag == languageTag }?.displayName
+            ?: stringResource(R.string.language_follow_system)
+    }
+
     // RC62：跨屏跳转（terminal_settings → settings → RemoteServers）：接收来自 SettingsViewModel
     //   的 openSection 请求，切到 SettingsScreen 内部的 section。
-    // 注意：这段必须写在 `var section` remember 之后，否则 L142 会引用 section 报 Unresolved。
+    // 注意：这段必须写在 `var section` remember 之后，否则会引用 section 报 Unresolved。
     val pendingTick by viewModel.pendingOpenSectionTick.collectAsStateWithLifecycle()
     val consumedTick by viewModel.lastConsumedSectionTick.collectAsStateWithLifecycle()
     val lastRequestedSection by viewModel.lastRequestedSection.collectAsStateWithLifecycle()
