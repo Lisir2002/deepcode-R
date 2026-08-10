@@ -61,6 +61,23 @@ class ParallelPrefetchManager(
     private val _events = MutableSharedFlow<PrefetchEvent>(extraBufferCapacity = 64)
     val events: Flow<PrefetchEvent> = _events.asSharedFlow()
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // RC61f fix：内部辅助函数/属性必须「先声明后使用」（避免 Kotlin cascade 语法误报）
+    // 之前把 emptySlot 写在 L410，而 _slots 初始化在 L64 → 编译报 emptySlot Unresolved，
+    // 触发 Kotlin cascade：L89 假 Missing }、L636 假 Unclosed comment 、下游所有
+    // LinuxContainerEngine 对 ParallelPrefetchManager.xxx 引用全 Cannot infer type。
+    // 现在全部挪到 class body 顶部。
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private fun emptySlot(id: Int): DownloadSlot = DownloadSlot(
+        id = id,
+        pkgName = null,
+        bytesTotal = null,
+        bytesGot = 0L,
+        speedBps = 0f,
+        status = SlotStatus.WAITING,
+    )
+
     private val _slots = MutableStateFlow<List<DownloadSlot>>(
         List(slotsCount) { id -> emptySlot(id) },
     )
@@ -75,8 +92,8 @@ class ParallelPrefetchManager(
     /** shutdown 调用后置 true，prefetch 的循环/single download 会立刻抛 Cancellation 退出。 */
     @Volatile
     private var shutdownRequested = false
-    /** APKINDEX fetch 连续 IO ERROR 计数（resolveDependencies + 主 apk update 公用）。
-     *  达到 2 立刻熔断：resolveDependencies 返回空 deps，prefetch 不启动。 */
+    // APKINDEX fetch 连续 IO ERROR 计数（resolveDependencies + 主 apk update 公用）。
+    // 达到 2 立刻熔断：resolveDependencies 返回空 deps，prefetch 不启动。
     @Volatile
     private var consecutiveFetchIoErrors = 0
     /** 线程安全地增加 consecutiveFetchIoErrors；达到 2 就返回 true 让调用方熔断。 */
@@ -95,7 +112,7 @@ class ParallelPrefetchManager(
      *   - cancel scope（所有 downloadSingle 子协程立刻停，不再占线程）
      *   - 把所有 slot 立刻置 FAILED（释放 Permit 语义等价：sem.withPermit 退出后自动释放 permit）
      *   - 发一次 Finished 事件，让 Aggregator 立刻结束，避免 UI 永远显示「X 槽并行 · Y KB/s」。
-     *   - RC61f：最后 cleanupPartial() 清理 /var/cache/apk/*.part 半截下载垃圾，
+     *   - RC61f：最后 cleanupPartialCache 清理 /var/cache/apk/*.part 半截下载垃圾，
      *     防止 rootfs 里越积越多占用户手机存储。
      *
      * 幂等：多次调用安全。
@@ -406,15 +423,7 @@ class ParallelPrefetchManager(
     }
 
     // ──────────────────────────────── 内部辅助 ────────────────────────────────
-
-    private fun emptySlot(id: Int): DownloadSlot = DownloadSlot(
-        id = id,
-        pkgName = null,
-        bytesTotal = null,
-        bytesGot = 0L,
-        speedBps = 0f,
-        status = SlotStatus.WAITING,
-    )
+    // emptySlot 已挪到 class body 顶部（L72），避免「使用之前未声明」触发 Kotlin cascade 误报。
 
     /** 找第一个 WAITING 空槽；若都忙则随机选一个 DLING 槽（理论上不会到这因为 semaphore 限制）。 */
     private fun acquireFreeSlotIndex(): Int {
