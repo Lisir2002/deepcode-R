@@ -36,6 +36,14 @@ class DEKManager private constructor() {
         private const val IV_LEN = 12
         private const val DEK_LEN_BITS = 256
 
+        /**
+         * RC61b：Android Keystore 官方 `KeyProperties` 仅提供 `PURPOSE_WRAP_KEY=32`，
+         * 并未公开 `PURPOSE_UNWRAP_KEY` 常量，但 Cipher.UNWRAP_MODE 需要该权限位
+         * （实际值 = 0x8 = 8，自 API 23 引入 wrap/unwrap 即存在且稳定，与 RC61a 硬编码一致）。
+         * 用局部常量替代硬编码：既避免魔法数字，又规避「引用不存在官方符号导致编译失败」。
+         */
+        private const val PURPOSE_UNWRAP_KEY_COMPAT = 8
+
         @Volatile
         private var instance: DEKManager? = null
 
@@ -75,9 +83,10 @@ class DEKManager private constructor() {
             KeyProperties.KEY_ALGORITHM_AES,
             ANDROID_KEYSTORE
         )
-        // PURPOSE_WRAP_KEY | PURPOSE_UNWRAP_KEY = 允许该 MasterKey 执行 wrap/unwrap DEK。
-        // KeyProperties.PURPOSE_UNWRAP_KEY 自 API 23+ 起可用（本项目 minSdk=26，天然满足）。
-        val purpose = KeyProperties.PURPOSE_WRAP_KEY or KeyProperties.PURPOSE_UNWRAP_KEY
+        // PURPOSE_WRAP_KEY | PURPOSE_UNWRAP_KEY_COMPAT = 允许该 MasterKey 执行 wrap/unwrap DEK。
+        // 说明：KeyProperties 仅公开 PURPOSE_WRAP_KEY；PURPOSE_UNWRAP_KEY_COMPAT(8) 为兼容常量，
+        //       与 RC61a 已验证的硬编码一致，编译期不受 compileSdk 常量存在性影响。
+        val purpose = KeyProperties.PURPOSE_WRAP_KEY or PURPOSE_UNWRAP_KEY_COMPAT
         val specBuilder = KeyGenParameterSpec.Builder(MASTERKEY_ALIAS, purpose)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
