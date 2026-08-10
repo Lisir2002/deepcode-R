@@ -112,7 +112,7 @@ class ParallelPrefetchManager(
      *   - cancel scope（所有 downloadSingle 子协程立刻停，不再占线程）
      *   - 把所有 slot 立刻置 FAILED（释放 Permit 语义等价：sem.withPermit 退出后自动释放 permit）
      *   - 发一次 Finished 事件，让 Aggregator 立刻结束，避免 UI 永远显示「X 槽并行 · Y KB/s」。
-     *   - RC61f：最后 cleanupPartialCache 清理 /var/cache/apk/*.part 半截下载垃圾，
+     *   - RC61f：最后 cleanupPartialCache 清理 .part 半截下载垃圾，
      *     防止 rootfs 里越积越多占用户手机存储。
      *
      * 幂等：多次调用安全。
@@ -163,7 +163,7 @@ class ParallelPrefetchManager(
      *
      *  失败/成功会话结束都跑：
      *   - `.part`：永远是「写到一半」的不完整 apk，安全删除。
-     *   - 如果 cleanupInstalledApks=true（成功安装后传 true），再额外删 /var/cache/apk/*.apk
+     *   - 如果 cleanupInstalledApks=true（成功安装后传 true），再额外删缓存目录下的 *.apk
      *     （apk --no-cache 默认不写 cache，但我们预取写到了 cache 目录，apk add 不会自动清理。
      *      成功安装完后若要更省空间，可把本参数传 true；缺省 false 为了「断点续传+命中缓存」。）
      */
