@@ -98,19 +98,9 @@ object TerminalBundles {
             postInstallHook = """
             # ============================================================
             # RC61c S2 Fix: Python pip 安装的三链路兜底
-            # 背景（截图事故）：
-            #   Alpine v3.21 community 仓库有时镜像刷新/地区节点差异导致 py3-pip
-            #   查无此包（截图显示：apk ERROR: py3-pip (no such package) 且
-            #   WARNING: fetching http://mirrors.aliyun.com/alpine/v3.21/community: IO ERROR）。
-            # 三链路兜底（任何一条成功就退出，保证 python3 -m pip 永远可用）：
-            #   [1] apk info -e py3-pip 已装 OK → 直接返回
-            #   [2] apk add --no-cache py3-pip 成功 → OK
-            #   [3] python3 -m ensurepip --upgrade（Python 官方内置；不依赖外部仓库）
-            #   [4] curl/wget https://bootstrap.pypa.io/get-pip.py → python3 get-pip.py
             # ============================================================
             set +e
             pip_ok=0
-            # ---------- 链路 1&2：apk 里真的有 py3-pip（健康节点通常能命中） ----------
             if command -v apk >/dev/null 2>&1; then
               if apk info -e py3-pip >/dev/null 2>&1; then
                 echo "[pip] 链路1 命中：py3-pip 已安装，OK"
@@ -118,7 +108,7 @@ object TerminalBundles {
               else
                 echo "[pip] 链路2：尝试 apk add py3-pip（依赖 community 仓库）"
                 apk add --no-cache py3-pip >/tmp/py3_pip_apk.log 2>&1
-                if [ $$? -eq 0 ] && apk info -e py3-pip >/dev/null 2>&1; then
+                if [ ${'$'}? -eq 0 ] && apk info -e py3-pip >/dev/null 2>&1; then
                   echo "[pip] 链路2 成功"
                   pip_ok=1
                 else
@@ -127,43 +117,41 @@ object TerminalBundles {
                 fi
               fi
             fi
-            # ---------- 链路 3：ensurepip（Python 官方内置，不依赖 apk 仓库） ----------
-            if [ "$$pip_ok" -eq 0 ]; then
+            if [ "${'$'}pip_ok" -eq 0 ]; then
               echo "[pip] 链路3：python3 -m ensurepip --upgrade（不依赖 Alpine 仓库）"
               python3 -m ensurepip --upgrade >/tmp/py3_ensurepip.log 2>&1
-              rc=$$?
+              rc=${'$'}?
               if command -v pip3 >/dev/null 2>&1 || python3 -m pip --version >/dev/null 2>&1; then
-                echo "[pip] 链路3 成功 (ensurepip rc=$$rc)"
+                echo "[pip] 链路3 成功 (ensurepip rc=${'$'}rc)"
                 pip_ok=1
               else
                 echo "[pip] 链路3 失败，ensurepip 日志末 3 行："
                 tail -n 3 /tmp/py3_ensurepip.log 2>/dev/null || true
               fi
             fi
-            # ---------- 链路 4：get-pip.py（终极兜底，PyPA 官方，只依赖能联网下载 1.8MB） ----------
-            if [ "$$pip_ok" -eq 0 ]; then
+            if [ "${'$'}pip_ok" -eq 0 ]; then
               echo "[pip] 链路4：下载 PyPA get-pip.py 终极安装（失败 3 次停止不占网）"
               GP_URL="https://bootstrap.pypa.io/get-pip.py"
               GP_TMP="/tmp/get-pip.py"
               got=0
               for i in 1 2 3; do
-                rm -f "$$GP_TMP"
+                rm -f "${'$'}GP_TMP"
                 if command -v curl >/dev/null 2>&1; then
-                  curl -fsSL "$$GP_URL" -o "$$GP_TMP" >/dev/null 2>&1
+                  curl -fsSL "${'$'}GP_URL" -o "${'$'}GP_TMP" >/dev/null 2>&1
                 elif command -v wget >/dev/null 2>&1; then
-                  wget -q "$$GP_URL" -O "$$GP_TMP" >/dev/null 2>&1
+                  wget -q "${'$'}GP_URL" -O "${'$'}GP_TMP" >/dev/null 2>&1
                 else
                   echo "[pip] 链路4 中止：容器内无 curl/wget"
                   break
                 fi
-                if [ -s "$$GP_TMP" ] && [ "$$(wc -c < "$$GP_TMP")" -gt 4096 ]; then
+                if [ -s "${'$'}GP_TMP" ] && [ "${'$'}(wc -c < "${'$'}GP_TMP")" -gt 4096 ]; then
                   got=1
                   break
                 fi
                 sleep 1
               done
-              if [ "$$got" -eq 1 ]; then
-                python3 "$$GP_TMP" >/tmp/py3_getpip.log 2>&1
+              if [ "${'$'}got" -eq 1 ]; then
+                python3 "${'$'}GP_TMP" >/tmp/py3_getpip.log 2>&1
                 if command -v pip3 >/dev/null 2>&1 || python3 -m pip --version >/dev/null 2>&1; then
                   echo "[pip] 链路4 成功"
                   pip_ok=1
@@ -172,13 +160,11 @@ object TerminalBundles {
                   tail -n 3 /tmp/py3_getpip.log 2>/dev/null || true
                 fi
               fi
-              rm -f "$$GP_TMP"
+              rm -f "${'$'}GP_TMP"
             fi
-            # ---------- 最终输出 pip version ----------
-            if [ "$$pip_ok" -eq 1 ]; then
+            if [ "${'$'}pip_ok" -eq 1 ]; then
               echo "[pip] 三链路兜底成功。pip 版本："
               python3 -m pip --version 2>&1 || pip3 --version 2>&1 || true
-              # 顺手升到比较稳定的 pip 24.x（只升一次，失败不影响 pip 存在）
               python3 -m pip install --upgrade 'pip<25' >/dev/null 2>&1 || true
               exit 0
             else
