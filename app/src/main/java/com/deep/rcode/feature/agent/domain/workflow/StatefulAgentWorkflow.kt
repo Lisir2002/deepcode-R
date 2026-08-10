@@ -452,12 +452,16 @@ class StatefulAgentWorkflow @Inject constructor(
                         val reasoningAcc = StringBuilder()
                         var finalResponse: AIResponse? = null
 
+                        // sendImages 提级到 try 外面：catch 块（备选方案②自动降级）需要访问它判断
+                        // "本轮原本就是带图发送"，否则 try 里定义的局部变量 catch 不可见，
+                        // 会出现 Unresolved reference 'sendImages' 编译错。
+                        val sendImages = state.pendingVisionRound || shouldSendImages(currentContext.sessionId)
+
                         try {
                             // 发送前按实际模型的视觉能力处理图片（同 execute 路径）。
                             // 注意：这里用 shouldSendImages 而不是 activeModelSupportsVision，
                             // 是为了避免把 source=INFERRED 的自定义多模态模型误当成纯文本模型，
                             // 发送前剥离图片导致模型「图都收不到还怎么识别」。
-                            val sendImages = state.pendingVisionRound || shouldSendImages(currentContext.sessionId)
                             val messagesToSend = sanitizeImagesForModel(compactedMessages, sendImages)
                             providerInUse.completeStream(systemPrompt, messagesToSend, currentTools, currentContext.reasoningEffort).collect { chunk ->
                                 when (chunk) {

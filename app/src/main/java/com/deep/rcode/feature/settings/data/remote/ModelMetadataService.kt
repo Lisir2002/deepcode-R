@@ -5,6 +5,7 @@ import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
+import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository.DefaultPolicy
 import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.domain.model.ProviderType
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -226,16 +227,16 @@ class ModelMetadataService @Inject constructor(
         } else {
             val policy = compatibilityPolicyRepository.getDefaultPolicy()
             val (v, t, r) = when (policy) {
-                CompatibilityPolicyRepository.DefaultPolicy.STRICT,
-                CompatibilityPolicyRepository.DefaultPolicy.HEURISTIC -> {
+                DefaultPolicy.STRICT,
+                DefaultPolicy.HEURISTIC -> {
                     // 严格/启发式：保持 probablyVision/Tools/Reasoning 的默认值不变（RC62d 语义）。
                     Triple(base.supportsVision, base.supportsTools, base.supportsReasoning)
                 }
-                CompatibilityPolicyRepository.DefaultPolicy.LAX -> {
+                DefaultPolicy.LAX -> {
                     // 宽松：INFERRED 一律三能力 true（RC62e 行为），用户手动开启。
                     Triple(true, true, true)
                 }
-                CompatibilityPolicyRepository.DefaultPolicy.MANUAL -> {
+                DefaultPolicy.MANUAL -> {
                     // 完全手动：三能力一律 false，只等用户在单模型复选框（④）手动覆盖开启。
                     Triple(false, false, false)
                 }

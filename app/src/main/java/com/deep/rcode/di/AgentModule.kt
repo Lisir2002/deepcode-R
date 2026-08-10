@@ -402,6 +402,7 @@ object AgentModule {
             modelMetadataService,
             visionModelSettingsRepository,
             compactionModelSettingsRepository,
+            compatibilityPolicyRepository,
             sessionUseCase,
             messagePersistenceUseCase,
             checkpointManager

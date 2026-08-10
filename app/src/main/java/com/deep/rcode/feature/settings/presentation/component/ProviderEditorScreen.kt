@@ -42,22 +42,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenu
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.*
 import androidx.compose.ui.platform.LocalClipboard
 import android.content.ClipData
 import androidx.compose.ui.platform.ClipEntry
@@ -161,7 +146,7 @@ fun ProviderEditorScreen(
         }) { pairs ->
             pairs.filter { it.second != null }.associate { it.first to it.second!! }
         }
-    }.collectAsStateWithLifecycle(initial = emptyMap())
+    }.collectAsState(initial = emptyMap())
 
     DisposableEffect(Unit) {
         viewModel.resetFetchState()

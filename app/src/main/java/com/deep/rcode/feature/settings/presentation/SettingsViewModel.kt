@@ -21,6 +21,8 @@ import com.deep.rcode.feature.settings.data.remote.ModelMetadataService
 import com.deep.rcode.feature.settings.data.remote.ModelTestResult
 import com.deep.rcode.feature.settings.data.repository.AppThemeMode
 import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
+import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository.DefaultPolicy
+import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy
 import com.deep.rcode.feature.settings.data.repository.ContainerSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.ExecutionMode
 import com.deep.rcode.feature.settings.data.repository.CompactionModelSettingsRepository
@@ -217,9 +219,9 @@ class SettingsViewModel @Inject constructor(
     val modelMetadata: StateFlow<Map<String, ModelMetadata>> = _modelMetadata.asStateFlow()
 
     /** RC63 备选方案③：兼容端点「默认策略」流 + 快照（ProviderEditorScreen Tab0 下拉选择 + 选项卡小角标用）。 */
-    val compatibilityDefaultPolicyFlow: StateFlow<CompatibilityPolicyRepository.DefaultPolicy>
+    val compatibilityDefaultPolicyFlow: StateFlow<DefaultPolicy>
         get() = compatibilityPolicyRepository.defaultPolicyFlow.stateIn(
-            viewModelScope, SharingStarted.Eagerly, CompatibilityPolicyRepository.DefaultPolicy.STRICT
+            viewModelScope, SharingStarted.Eagerly, DefaultPolicy.STRICT
         )
 
     /** RC63 备选方案②「发送失败自动降级」总开关。 */
@@ -229,10 +231,10 @@ class SettingsViewModel @Inject constructor(
         )
 
     /** RC63 viewImage 守卫策略（FALLBACK_VISION_MODEL vs FAIL_FAST）。 */
-    val viewImageUnknownGuardPolicyFlow: StateFlow<CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy>
+    val viewImageUnknownGuardPolicyFlow: StateFlow<ViewImageUnknownGuardPolicy>
         get() = compatibilityPolicyRepository.viewImageUnknownGuardPolicyFlow.stateIn(
             viewModelScope, SharingStarted.Eagerly,
-            CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL
+            ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL
         )
 
     private val _testing = MutableStateFlow<Set<String>>(emptySet())
@@ -1084,7 +1086,7 @@ class SettingsViewModel @Inject constructor(
     // RC63 备选方案③：兼容端点全局策略设置（ProviderEditorScreen Tab0 调用）
     // ────────────────────────────────────────────────────────────────
 
-    fun setCompatibilityDefaultPolicy(policy: CompatibilityPolicyRepository.DefaultPolicy) {
+    fun setCompatibilityDefaultPolicy(policy: DefaultPolicy) {
         viewModelScope.launch { compatibilityPolicyRepository.setDefaultPolicy(policy) }
     }
 
@@ -1092,7 +1094,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { compatibilityPolicyRepository.setAutoDowngradeOnSendFailure(enabled) }
     }
 
-    fun setViewImageUnknownGuardPolicy(policy: CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy) {
+    fun setViewImageUnknownGuardPolicy(policy: ViewImageUnknownGuardPolicy) {
         viewModelScope.launch { compatibilityPolicyRepository.setViewImageUnknownGuardPolicy(policy) }
     }
 
