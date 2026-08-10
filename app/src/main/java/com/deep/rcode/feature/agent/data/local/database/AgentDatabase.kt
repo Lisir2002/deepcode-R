@@ -15,12 +15,16 @@ import com.deep.rcode.feature.credentials.data.local.dao.GitCredentialDao
 import com.deep.rcode.feature.credentials.data.local.entity.GitCredentialEntity
 import com.deep.rcode.feature.settings.data.local.dao.AIProviderDao
 import com.deep.rcode.feature.settings.data.local.entity.AIProviderEntity
+import com.deep.rcode.feature.workspace.data.local.dao.CredentialEncryptionStateDao
+import com.deep.rcode.feature.workspace.data.local.dao.RemoteAuditLogDao
 import com.deep.rcode.feature.workspace.data.local.dao.RemoteConnectionDao
+import com.deep.rcode.feature.workspace.data.local.entity.CredentialEncryptionStateEntity
+import com.deep.rcode.feature.workspace.data.local.entity.RemoteAuditLogEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteMountEntity
 
 @Database(
-    entities = [AgentMessageEntity::class, ChatSessionEntity::class, AIProviderEntity::class, RemoteConnectionEntity::class, RemoteMountEntity::class, TodoItemEntity::class, GitCredentialEntity::class, CheckpointEntity::class, CheckpointFileSnapshotEntity::class],
+    entities = [AgentMessageEntity::class, ChatSessionEntity::class, AIProviderEntity::class, RemoteConnectionEntity::class, RemoteMountEntity::class, TodoItemEntity::class, GitCredentialEntity::class, CheckpointEntity::class, CheckpointFileSnapshotEntity::class, CredentialEncryptionStateEntity::class, RemoteAuditLogEntity::class],
     version = AgentDatabase.SCHEMA_VERSION,
     exportSchema = false
 )
@@ -32,8 +36,10 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun todoItemDao(): TodoItemDao
     abstract fun gitCredentialDao(): GitCredentialDao
     abstract fun checkpointDao(): CheckpointDao
+    abstract fun credentialEncryptionStateDao(): CredentialEncryptionStateDao
+    abstract fun remoteAuditLogDao(): RemoteAuditLogDao
 
     companion object {
-        const val SCHEMA_VERSION = 31
+        const val SCHEMA_VERSION = 32
     }
 }

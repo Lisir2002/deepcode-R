@@ -58,7 +58,7 @@ class CredentialRepositoryImpl @Inject constructor(
     /**
      * 优先从 [encryptedToken] 解密获取 token，回退到明文 [token] 字段。
      */
-    private fun GitCredentialEntity.resolveToken(): String {
+    private suspend fun GitCredentialEntity.resolveToken(): String {
         if (encryptedToken.isNotEmpty()) {
             return try {
                 encryptor.decrypt(encryptedToken)
@@ -70,7 +70,7 @@ class CredentialRepositoryImpl @Inject constructor(
         return token
     }
 
-    private fun GitCredentialEntity.toDomain(): GitCredential = GitCredential(
+    private suspend fun GitCredentialEntity.toDomain(): GitCredential = GitCredential(
         id = id,
         host = host,
         username = username,
@@ -84,7 +84,7 @@ class CredentialRepositoryImpl @Inject constructor(
     /**
      * 加密 token 存储到 [encryptedToken]，同时清空明文 [token] 字段完成迁移。
      */
-    private fun GitCredential.toEntity(): GitCredentialEntity {
+    private suspend fun GitCredential.toEntity(): GitCredentialEntity {
         val encrypted = try {
             encryptor.encrypt(token)
         } catch (e: Exception) {

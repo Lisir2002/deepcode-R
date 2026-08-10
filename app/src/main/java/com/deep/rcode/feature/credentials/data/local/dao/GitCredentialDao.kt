@@ -37,4 +37,7 @@ interface GitCredentialDao {
 
     @Query("UPDATE git_credentials SET isDefault = :isDefault WHERE id = :id")
     suspend fun setDefault(id: String, isDefault: Boolean)
+
+    @Query("UPDATE git_credentials SET encryptedToken = :newEncrypted WHERE id = :id")
+    suspend fun updateEncryptedToken(id: String, newEncrypted: String)
 }

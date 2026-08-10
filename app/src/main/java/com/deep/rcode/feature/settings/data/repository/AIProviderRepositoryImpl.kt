@@ -88,7 +88,7 @@ class AIProviderRepositoryImpl @Inject constructor(
     /**
      * 优先从 [encryptedApiKey] 解密获取 apiKey，回退到明文 [apiKey] 字段。
      */
-    private fun AIProviderEntity.resolveApiKey(): String {
+    private suspend fun AIProviderEntity.resolveApiKey(): String {
         if (encryptedApiKey.isNotEmpty()) {
             return try {
                 encryptor.decrypt(encryptedApiKey)
@@ -100,7 +100,7 @@ class AIProviderRepositoryImpl @Inject constructor(
         return apiKey
     }
 
-    private fun AIProviderEntity.toDomainModel(): AIProviderConfig {
+    private suspend fun AIProviderEntity.toDomainModel(): AIProviderConfig {
         val modelList = models.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         return AIProviderConfig(
             id = id,
@@ -121,7 +121,7 @@ class AIProviderRepositoryImpl @Inject constructor(
     /**
      * 加密 apiKey 存储到 [encryptedApiKey]，同时清空明文 [apiKey] 字段完成迁移。
      */
-    private fun AIProviderConfig.toEntity(): AIProviderEntity {
+    private suspend fun AIProviderConfig.toEntity(): AIProviderEntity {
         val encrypted = try {
             encryptor.encrypt(apiKey)
         } catch (e: Exception) {

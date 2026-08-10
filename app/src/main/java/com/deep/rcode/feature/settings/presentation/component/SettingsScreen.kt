@@ -60,7 +60,10 @@ import com.deep.rcode.feature.backup.presentation.BackupSection
 import com.deep.rcode.feature.settings.data.repository.AppThemeMode
 import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
 import com.deep.rcode.feature.settings.domain.model.ModelMetadata
+import com.deep.rcode.feature.settings.presentation.SecuritySettingsViewModel
 import com.deep.rcode.feature.settings.presentation.SettingsViewModel
+import com.deep.rcode.feature.settings.presentation.components.RemoteAuditLogsScreen
+import com.deep.rcode.feature.settings.presentation.components.SecuritySettingsScreen
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Box
@@ -91,6 +94,8 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     Permissions(R.string.settings_permissions),
     RemoteServers(R.string.settings_remote_servers),
     Backup(R.string.settings_backup),
+    Security(R.string.settings_security),
+    RemoteAuditLogs(R.string.settings_remote_audit_logs),
     About(R.string.settings_about)
 }
 
@@ -333,6 +338,14 @@ fun SettingsScreen(
                         androidx.hilt.navigation.compose.hiltViewModel()
                     BackupSection(viewModel = backupViewModel)
                 }
+                SettingsSection.Security -> {
+                    val securityViewModel: SecuritySettingsViewModel =
+                        androidx.hilt.navigation.compose.hiltViewModel()
+                    SecuritySettingsScreen(viewModel = securityViewModel)
+                }
+                SettingsSection.RemoteAuditLogs -> {
+                    RemoteAuditLogsScreen(auditLogRepo = viewModel.auditLogRepository)
+                }
                 SettingsSection.ProviderEditor -> {} // 已在上方 early return 处理
                 SettingsSection.RemoteServers -> {} // 已在上方 early return 处理
                 SettingsSection.About -> AboutSection()
@@ -533,6 +546,20 @@ internal fun SettingsMenu(
                 title = stringResource(SettingsSection.Backup.titleRes),
                 subtitle = stringResource(R.string.settings_backup_subtitle),
                 onClick = { onOpen(SettingsSection.Backup) },
+                showDivider = true
+            )
+            GroupMenuRow(
+                icon = FeatherIcons.Lock,
+                title = stringResource(SettingsSection.Security.titleRes),
+                subtitle = "凭据加密 · 生物识别 · 紧急通道",
+                onClick = { onOpen(SettingsSection.Security) },
+                showDivider = true
+            )
+            GroupMenuRow(
+                icon = FeatherIcons.FileText,
+                title = stringResource(SettingsSection.RemoteAuditLogs.titleRes),
+                subtitle = "SSH 连接 · 凭据操作 · 备份事件",
+                onClick = { onOpen(SettingsSection.RemoteAuditLogs) },
                 showDivider = true
             )
             GroupMenuRow(

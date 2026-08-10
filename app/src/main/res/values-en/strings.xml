@@ -18,6 +18,8 @@
     <string name="settings_permissions">Tool Permissions</string>
     <string name="settings_remote_servers">Remote Workspace</string>
     <string name="settings_backup">Backup &amp; Restore</string>
+    <string name="settings_security">Security</string>
+    <string name="settings_remote_audit_logs">Remote Audit Logs</string>
     <string name="settings_about">About</string>
     <string name="settings_language">Language</string>
 

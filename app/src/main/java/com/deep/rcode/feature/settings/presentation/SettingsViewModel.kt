@@ -33,6 +33,7 @@ import com.deep.rcode.feature.settings.data.repository.LogSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.ThemeSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.VisionModelSettingsRepository
 import com.deep.rcode.feature.workspace.domain.model.RemoteConnection
+import com.deep.rcode.feature.workspace.domain.repository.RemoteAuditLogRepository
 import com.deep.rcode.feature.workspace.domain.repository.RemoteRepository
 import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
 import com.deep.rcode.feature.settings.domain.model.ModelMetadata
@@ -109,7 +110,8 @@ class SettingsViewModel @Inject constructor(
     private val executionModeRepository: ExecutionModeRepository,
     private val executionModeHolder: ExecutionModeHolder,
     private val remoteSshConnection: RemoteSshConnection,
-    private val remoteRepository: RemoteRepository
+    private val remoteRepository: RemoteRepository,
+    val auditLogRepository: RemoteAuditLogRepository
 ) : ViewModel() {
     private companion object {
         const val MAX_LOG_LINES = 1200

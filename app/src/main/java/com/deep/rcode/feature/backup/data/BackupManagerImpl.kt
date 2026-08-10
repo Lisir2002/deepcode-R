@@ -461,7 +461,7 @@ class BackupManagerImpl @Inject constructor(
 
     // ── Entity ↔ DTO 转换 ──────────────────────────────────────
 
-    private fun AIProviderEntity.toDto(): ProviderDto {
+    private suspend fun AIProviderEntity.toDto(): ProviderDto {
         // 优先从 encryptedApiKey 解密获取明文，用于备份导出
         val resolvedKey = if (encryptedApiKey.isNotEmpty()) {
             try { encryptor.decrypt(encryptedApiKey) } catch (e: Exception) { apiKey }
@@ -471,7 +471,7 @@ class BackupManagerImpl @Inject constructor(
         )
     }
 
-    private fun ProviderDto.toEntity() = AIProviderEntity(
+    private suspend fun ProviderDto.toEntity() = AIProviderEntity(
         id = id,
         name = name,
         type = type,
@@ -487,14 +487,14 @@ class BackupManagerImpl @Inject constructor(
         useResponseApi = useResponseApi
     )
 
-    private fun GitCredentialEntity.toDto(): GitCredentialDto {
+    private suspend fun GitCredentialEntity.toDto(): GitCredentialDto {
         // 优先从 encryptedToken 解密获取明文，用于备份导出
         val resolvedToken = if (encryptedToken.isNotEmpty()) {
             try { encryptor.decrypt(encryptedToken) } catch (e: Exception) { token }
         } else { token }
         return GitCredentialDto(id, host, username, resolvedToken, label, isDefault, createdAt, updatedAt)
     }
-    private fun GitCredentialDto.toEntity() = GitCredentialEntity(
+    private suspend fun GitCredentialDto.toEntity() = GitCredentialEntity(
         id = id,
         host = host,
         username = username,
@@ -506,7 +506,7 @@ class BackupManagerImpl @Inject constructor(
         updatedAt = updatedAt
     )
 
-    private fun RemoteConnectionEntity.toDto(): RemoteConnectionDto {
+    private suspend fun RemoteConnectionEntity.toDto(): RemoteConnectionDto {
         // 备份导出明文：跨设备迁移时备份用户自己保管，恢复时用新设备的 Keystore 重新加密。
         // 规则：
         //  - PASSWORD 类型：authData = 加密后的密码 → 解密后导出明文密码
@@ -537,7 +537,7 @@ class BackupManagerImpl @Inject constructor(
         )
     }
 
-    private fun RemoteConnectionDto.toEntity(): RemoteConnectionEntity {
+    private suspend fun RemoteConnectionDto.toEntity(): RemoteConnectionEntity {
         // 恢复入库：用当前设备的 CredentialEncryptor 重新加密敏感字段
         //  - PASSWORD 类型：authData = 明文密码 → 加密存储
         //  - PRIVATE_KEY 类型：authData = 私钥路径（明文保持），passphrase 非空则加密

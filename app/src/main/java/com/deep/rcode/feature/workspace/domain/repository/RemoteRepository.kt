@@ -73,13 +73,17 @@ class RemoteRepository @Inject constructor(
      * 原样返回。这样老用户升级到加密版本后，所有已保存的旧明文密码/私钥 passphrase
      * 都不会失效，仍可正常登录，只是下次 save/update 时会被重新加密写入。
      */
-    private fun decryptCredential(raw: String?): String {
+    private suspend fun decryptCredential(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
-        return runCatching { encryptor.decrypt(raw) }.getOrElse { raw }
+        return try {
+            encryptor.decrypt(raw)
+        } catch (e: Exception) {
+            raw // 兼容旧数据：解密失败当作明文
+        }
     }
 
     /** 密码和私钥 passphrase 存库前一律用 Android Keystore AES-256-GCM 加密。 */
-    private fun encryptCredential(plain: String?): String {
+    private suspend fun encryptCredential(plain: String?): String {
         if (plain.isNullOrBlank()) return ""
         return encryptor.encrypt(plain)
     }
@@ -269,7 +273,7 @@ class RemoteRepository @Inject constructor(
      *
      * authType 兼容：新大写 PASSWORD/PRIVATE_KEY 与 旧小写 password/key 都认。
      */
-    private fun RemoteConnectionEntity.toDomainModel() = RemoteConnection(
+    private suspend fun RemoteConnectionEntity.toDomainModel() = RemoteConnection(
         id = id,
         name = name,
         protocol = protocol,
@@ -312,7 +316,7 @@ class RemoteRepository @Inject constructor(
      * 密码 & passphrase 走 CredentialEncryptor 解密，decrypt 失败回退旧明文。
      * authType 未知时默认当 Password 处理（兜底：至少让用户能看到密码字段再决定）。
      */
-    private fun resolveAuth(
+    private suspend fun resolveAuth(
         authType: String,
         authData: String,
         passphrase: String?

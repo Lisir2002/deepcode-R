@@ -51,4 +51,7 @@ interface AIProviderDao {
 
     @Query("UPDATE ai_providers SET isEnabled = :isEnabled WHERE id = :id")
     suspend fun setProviderEnabled(id: String, isEnabled: Boolean)
+
+    @Query("UPDATE ai_providers SET encryptedApiKey = :newEncrypted WHERE id = :id")
+    suspend fun updateEncryptedApiKey(id: String, newEncrypted: String)
 }

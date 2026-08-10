@@ -35,6 +35,9 @@ interface RemoteConnectionDao {
     @Delete
     suspend fun deleteConnection(connection: RemoteConnectionEntity)
 
+    @Query("UPDATE remote_connections SET authData = :newAuthData, passphrase = :newPassphrase WHERE id = :id")
+    suspend fun updateCredentials(id: String, newAuthData: String, newPassphrase: String?)
+
     // Mount operations
     @Query("SELECT * FROM remote_mounts")
     fun getAllMounts(): Flow<List<RemoteMountEntity>>

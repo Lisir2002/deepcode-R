@@ -8,6 +8,7 @@ import com.deep.rcode.core.security.CredentialEncryptor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -106,12 +107,12 @@ class ExecutionModeRepository @Inject constructor(
      * - null → v1 fallback 模式，host/port/username/password 已从 legacy 字段填好。
      */
     val remoteConnectionFlow: Flow<RemoteConnectionSettings?> =
-        context.executionModeDataStore.data.map { prefs ->
+        context.executionModeDataStore.data.mapLatest { prefs ->
             val activeConnId = prefs[SSH_ACTIVE_CONN_ID_KEY]
             val workspacePath = prefs[REMOTE_PATH_KEY]
             // v2 分支：已存 active connection id，返回占位配置（host 等由调用方从 Room 填）
             if (!activeConnId.isNullOrBlank()) {
-                return@map RemoteConnectionSettings(
+                return@mapLatest RemoteConnectionSettings(
                     host = "",
                     port = 22,
                     username = "",
@@ -121,7 +122,7 @@ class ExecutionModeRepository @Inject constructor(
                 )
             }
             // v1 fallback：读 legacy HOST/PORT/USERNAME/PASSWORD，兼容老用户
-            val host = prefs[HOST_KEY]?.takeIf { it.isNotBlank() } ?: return@map null
+            val host = prefs[HOST_KEY]?.takeIf { it.isNotBlank() } ?: return@mapLatest null
             RemoteConnectionSettings(
                 host = host,
                 port = prefs[PORT_KEY]?.toIntOrNull() ?: 22,
@@ -139,7 +140,7 @@ class ExecutionModeRepository @Inject constructor(
      *  - rc60 之前的：字段是明文，decrypt 会抛异常 → 回退原样返回
      *  - 空/空白：直接 ""
      */
-    private fun decryptCredentialCompat(raw: String?): String {
+    private suspend fun decryptCredentialCompat(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
         return runCatching { encryptor.decrypt(raw) }.getOrElse { raw }
     }
