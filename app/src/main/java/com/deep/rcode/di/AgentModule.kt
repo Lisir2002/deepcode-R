@@ -383,6 +383,7 @@ object AgentModule {
         modelMetadataService: ModelMetadataService,
         visionModelSettingsRepository: com.deep.rcode.feature.settings.data.repository.VisionModelSettingsRepository,
         compactionModelSettingsRepository: com.deep.rcode.feature.settings.data.repository.CompactionModelSettingsRepository,
+        compatibilityPolicyRepository: com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository,
         sessionUseCase: com.deep.rcode.feature.agent.domain.session.SessionUseCase,
         messagePersistenceUseCase: com.deep.rcode.feature.agent.domain.session.MessagePersistenceUseCase,
         checkpointManager: com.deep.rcode.feature.agent.domain.checkpoint.CheckpointManager

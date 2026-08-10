@@ -5,7 +5,7 @@ import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
-import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository.DefaultPolicy
+import com.deep.rcode.feature.settings.data.repository.DefaultPolicy
 import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.domain.model.ProviderType
 import dagger.hilt.android.qualifiers.ApplicationContext

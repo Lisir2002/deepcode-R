@@ -21,8 +21,8 @@ import com.deep.rcode.feature.settings.data.remote.ModelMetadataService
 import com.deep.rcode.feature.settings.data.remote.ModelTestResult
 import com.deep.rcode.feature.settings.data.repository.AppThemeMode
 import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
-import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository.DefaultPolicy
-import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy
+import com.deep.rcode.feature.settings.data.repository.DefaultPolicy
+import com.deep.rcode.feature.settings.data.repository.ViewImageUnknownGuardPolicy
 import com.deep.rcode.feature.settings.data.repository.ContainerSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.ExecutionMode
 import com.deep.rcode.feature.settings.data.repository.CompactionModelSettingsRepository

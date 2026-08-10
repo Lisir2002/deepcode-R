@@ -30,6 +30,7 @@ import com.deep.rcode.feature.agent.domain.tool.toTransportString
 import com.deep.rcode.feature.agent.presentation.AgentAttachment
 import com.deep.rcode.feature.settings.data.remote.ModelMetadataService
 import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
+import com.deep.rcode.feature.settings.data.repository.ViewImageUnknownGuardPolicy
 import com.deep.rcode.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.VisionModelSettingsRepository
 import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
@@ -736,7 +737,7 @@ class StatefulAgentWorkflow @Inject constructor(
                 // RC63 备选方案③：viewImage 守卫策略（默认自动回退识图模型，FAIL_FAST 则直接报错提示用户）
                 val guardPolicy = compatibilityPolicyRepository.getViewImageUnknownGuardPolicy()
                 val fallbackReady = visionFallbackReady()
-                if (guardPolicy == CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FAIL_FAST || !fallbackReady) {
+                if (guardPolicy == ViewImageUnknownGuardPolicy.FAIL_FAST || !fallbackReady) {
                     return ToolRunResult(
                         ToolResult.Error(
                             "当前聊天模型不支持「多模态识图（Vision）」能力，且未配置专用的「多模态识图（Vision）」兜底模型。请在【设置 → 默认模型 → 识图模型】中指定一个支持「多模态识图（Vision）」能力的模型后再查看图片。\n" +

@@ -85,6 +85,8 @@ import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.deep.rcode.feature.settings.data.remote.ModelTestResult
 import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
+import com.deep.rcode.feature.settings.data.repository.DefaultPolicy
+import com.deep.rcode.feature.settings.data.repository.ViewImageUnknownGuardPolicy
 import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
 import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.domain.model.ProviderType
@@ -727,25 +729,25 @@ internal fun defaultProviderBaseUrl(type: ProviderType): String = when (type) {
 // RC63 ③：兼容端点策略 & viewImage 守卫 两个下拉选择器
 // ————————————————————————————————————————————————————————————
 
-private fun policyDisplayName(p: CompatibilityPolicyRepository.DefaultPolicy): String = when (p) {
-    CompatibilityPolicyRepository.DefaultPolicy.STRICT -> "严格模式（推荐·默认）—— 和官方收录模型走同一规则，避免 RC62e 那种「全部模型都支持多模态」的副作用"
-    CompatibilityPolicyRepository.DefaultPolicy.HEURISTIC -> "启发式模式（=RC62d）—— 按 probablyVision / probablyTools / probablyReasoning 的名字匹配自动判定"
-    CompatibilityPolicyRepository.DefaultPolicy.LAX -> "宽松模式（=RC62e）—— 所有未收录模型一律三能力开，小白拿不准先试试这个，不行再切回来"
-    CompatibilityPolicyRepository.DefaultPolicy.MANUAL -> "完全手动—— 三能力默认全关，必须在单模型齿轮按钮里手动勾选你要的能力"
+private fun policyDisplayName(p: DefaultPolicy): String = when (p) {
+    DefaultPolicy.STRICT -> "严格模式（推荐·默认）—— 和官方收录模型走同一规则，避免 RC62e 那种「全部模型都支持多模态」的副作用"
+    DefaultPolicy.HEURISTIC -> "启发式模式（=RC62d）—— 按 probablyVision / probablyTools / probablyReasoning 的名字匹配自动判定"
+    DefaultPolicy.LAX -> "宽松模式（=RC62e）—— 所有未收录模型一律三能力开，小白拿不准先试试这个，不行再切回来"
+    DefaultPolicy.MANUAL -> "完全手动—— 三能力默认全关，必须在单模型齿轮按钮里手动勾选你要的能力"
 }
 
-private fun viewImageGuardDisplayName(p: CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy): String = when (p) {
-    CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL -> "自动兜底识图模型（推荐·默认）—— 聊天模型不能识图时，自动用设置里的「识图专用模型」理解图片再把文本送回去"
-    CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FAIL_FAST -> "立即报错并提醒配置 —— 聊天模型不能识图时，直接提示用户去设置里配置专用识图模型或手动覆盖，方便排查"
+private fun viewImageGuardDisplayName(p: ViewImageUnknownGuardPolicy): String = when (p) {
+    ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL -> "自动兜底识图模型（推荐·默认）—— 聊天模型不能识图时，自动用设置里的「识图专用模型」理解图片再把文本送回去"
+    ViewImageUnknownGuardPolicy.FAIL_FAST -> "立即报错并提醒配置 —— 聊天模型不能识图时，直接提示用户去设置里配置专用识图模型或手动覆盖，方便排查"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CompatibilityPolicyDropdown(
-    currentPolicy: CompatibilityPolicyRepository.DefaultPolicy,
-    onPolicySelected: (CompatibilityPolicyRepository.DefaultPolicy) -> Unit
+    currentPolicy: DefaultPolicy,
+    onPolicySelected: (DefaultPolicy) -> Unit
 ) {
-    val allPolicies = CompatibilityPolicyRepository.DefaultPolicy.values()
+    val allPolicies = DefaultPolicy.values()
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -790,10 +792,10 @@ private fun CompatibilityPolicyDropdown(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ViewImageGuardDropdown(
-    current: CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy,
-    onChange: (CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy) -> Unit
+    current: ViewImageUnknownGuardPolicy,
+    onChange: (ViewImageUnknownGuardPolicy) -> Unit
 ) {
-    val all = CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.values()
+    val all = ViewImageUnknownGuardPolicy.values()
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -817,7 +819,7 @@ private fun ViewImageGuardDropdown(
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Text(if (g == CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL) "自动兜底识图模型（推荐）" else "立即报错", fontWeight = FontWeight.SemiBold)
+                            Text(if (g == ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL) "自动兜底识图模型（推荐）" else "立即报错", fontWeight = FontWeight.SemiBold)
                             Text(
                                 viewImageGuardDisplayName(g).substringAfter("—— ").trim(),
                                 style = MaterialTheme.typography.bodySmall,
