@@ -94,8 +94,9 @@ class ParallelPrefetchManager(
      *   - cancel 所有 inflight jobs（curl/wget streamShell 会收 CancellationException 停掉 Socket）
      *   - cancel scope（所有 downloadSingle 子协程立刻停，不再占线程）
      *   - 把所有 slot 立刻置 FAILED（释放 Permit 语义等价：sem.withPermit 退出后自动释放 permit）
-     *   - 发一次 Finished 事件，让 Aggregator 立刻进入 INSTALL phase 或结束，避免 UI 永远
-     *     显示「X 槽并行 · Y KB/s」好像还在继续下载占网。
+     *   - 发一次 Finished 事件，让 Aggregator 立刻结束，避免 UI 永远显示「X 槽并行 · Y KB/s」。
+     *   - RC61f：最后 cleanupPartial() 清理 /var/cache/apk/*.part 半截下载垃圾，
+     *     防止 rootfs 里越积越多占用户手机存储。
      *
      * 幂等：多次调用安全。
      */
@@ -129,8 +130,49 @@ class ParallelPrefetchManager(
             )
             scope.launch { _events.emit(fin) }
         }
-        FileLogger.i(TAG, "shutdown(reason=$reason) 执行完成，inflight 已释放")
+        // RC61f：4) 无论成功/失败，shutdown 时统一清理所有 .part 半截文件（用户反馈：失败不删垃圾、占存储）
+        runCatching { cleanupPartialCache(timeoutMs = 1500) }
+        FileLogger.i(TAG, "shutdown(reason=$reason) 执行完成，inflight 已释放 + 已清理 .part 垃圾")
     }
+
+    // ─── RC61f：下载垃圾清理 / 续传 / 中间文件（原子 mv）管理 ───
+
+    /**
+     * 清理 /var/cache/apk 下的 .part 半截下载 + 可选清已安装的 apk 实体（成功后释放空间）。
+     *
+     * 为什么要做？
+     *  用户反馈：FAIELD 后不删失败下载的东西，反复重试多次，手机存储里越积越多半截
+     *  `python3-xxx.apk.part`（每张几 MB~几十 MB）→ 严重占用手机存储空间 + 扫盘 I/O 开销。
+     *
+     *  失败/成功会话结束都跑：
+     *   - `.part`：永远是「写到一半」的不完整 apk，安全删除。
+     *   - 如果 cleanupInstalledApks=true（成功安装后传 true），再额外删 /var/cache/apk/*.apk
+     *     （apk --no-cache 默认不写 cache，但我们预取写到了 cache 目录，apk add 不会自动清理。
+     *      成功安装完后若要更省空间，可把本参数传 true；缺省 false 为了「断点续传+命中缓存」。）
+     */
+    suspend fun cleanupPartialCache(
+        cleanupInstalledApks: Boolean = false,
+        timeoutMs: Long = 3000,
+    ) {
+        val what = buildString {
+            append("rm -f /var/cache/apk/*.part 2>/dev/null; ")
+            if (cleanupInstalledApks) append("rm -f /var/cache/apk/*.apk 2>/dev/null; ")
+            append("sync >/dev/null 2>&1; echo OK")
+        }
+        val (o, c) = runSync("mkdir -p /var/cache/apk && $what", timeoutMs)
+        FileLogger.i(
+            TAG,
+            "cleanupPartialCache(installed=$cleanupInstalledApks) exit=$c " +
+                "${if (c == 0 && o.contains("OK")) "OK" else "timeout/fail: $o"}"
+        )
+    }
+
+    /**
+     * 启动时一次性清理历史遗留垃圾（proot crash/kill -9 没跑 shutdown 就会留下 .part）。
+     * 放在 ContainerInstaller.provisionIfNeed 里异步调一次，不阻塞首屏。
+     */
+    suspend fun cleanupLeftoversFromLastRun(timeoutMs: Long = 3000) =
+        cleanupPartialCache(cleanupInstalledApks = false, timeoutMs = timeoutMs)
 
     // ────────────────────────────────────────────────────────────────────────
 
@@ -405,10 +447,13 @@ class ParallelPrefetchManager(
     }
 
     /**
-     * 单个包下载：
-     *  1. 先查 /var/cache/apk/$pkg.apk 是否存在且非空；若存在 → 直接 DONE（cache hit）。
-     *  2. 否则按 main → community 两个目录顺序 curl 下载；200 OK 大小>0 才算成功。
-     *  [hasCurl]/[hasWget] 来自 prefetch 入口的一次性探测（Fix B），避免每个包都跑 `which`。
+     * 单个包下载（RC61f 大改：中间文件 + 失败即删 + 断点续传）：
+     *  0. cache hit：/var/cache/apk/$pkg.apk 已存在且非空 → 直接 DONE。
+     *  1. 否则先准备临时文件 /var/cache/apk/$pkg.apk.part：
+     *     - 若 .part 已存在且非空（上次下载到一半）→ 作为续传起点，curl -C - / wget -c 断点续传。
+     *     - 成功：原子 `mv .part .apk`，写入 slot=DONE；apk --cache-dir 可后续命中。
+     *     - 失败（main+community 都 404/超时/半关闭）：`rm -f .part` 立刻删除半截垃圾，不留占盘。
+     *  2. shutdownRequested：在 repo 循环里/续传开始前都检查 → 抛 CancellationException（释放 sem）。
      */
     private suspend fun downloadSingle(
         slotIdx: Int,
@@ -425,53 +470,90 @@ class ParallelPrefetchManager(
             s.copy(pkgName = pkg, status = SlotStatus.DLING, bytesGot = 0L, bytesTotal = null, speedBps = 0f)
         }
 
+        val finalPath = "/var/cache/apk/$pkg.apk"
+        val partPath = "$finalPath.part"
+
         // 0. cache hit 探测（apk cache 目录和 apk --cache-dir 对齐）
-        val cachePath = "/var/cache/apk/$pkg.apk"
-        val (sizeOut, sizeCode) = runSync(
-            "if [ -s $cachePath ]; then stat -c%s $cachePath 2>/dev/null || wc -c < $cachePath; fi",
-            3000,
-        )
-        if (sizeCode == 0) {
-            val sz = sizeOut.trim().toLongOrNull()
-            if (sz != null && sz > 0) {
-                updateSlot(slotIdx) { s ->
-                    s.copy(
-                        bytesTotal = sz, bytesGot = sz,
-                        speedBps = 0f, status = SlotStatus.DONE,
-                    )
+        run {
+            val (sizeOut, sizeCode) = runSync(
+                "if [ -s $finalPath ]; then stat -c%s $finalPath 2>/dev/null || wc -c < $finalPath; fi",
+                3000,
+            )
+            if (sizeCode == 0) {
+                val sz = sizeOut.trim().toLongOrNull()
+                if (sz != null && sz > 0) {
+                    updateSlot(slotIdx) { s ->
+                        s.copy(
+                            bytesTotal = sz, bytesGot = sz,
+                            speedBps = 0f, status = SlotStatus.DONE,
+                        )
+                    }
+                    return
                 }
-                return
             }
         }
 
-        // 1. 工具探测已在 prefetch() 入口做过（Fix B）；这里双负保险避免 NPE
+        // 1. 工具探测已在 prefetch() 入口做过；这里双负保险
         if (!hasCurl && !hasWget) {
             error("容器内没有 curl/wget，跳过预取（apk add 会自己 fetch）")
         }
 
+        // RC61f：.part 如果上次写到一半且有字节数，算「已有字节」，传给 curl/wget 做续传
+        val alreadyBytes: Long = runSync(
+            "if [ -s $partPath ]; then stat -c%s $partPath 2>/dev/null || wc -c < $partPath; fi",
+            3000,
+        ).let { (o, c) ->
+            if (c == 0) o.trim().toLongOrNull() ?: 0L else 0L
+        }.coerceAtLeast(0L)
+
         val repos = listOf("main", "community")
         var lastErr: String? = null
+        var success = false
         for (repo in repos) {
-            // RC61c S3：curl/wget 拉 main/community 中间如果 shutdown 被调用 → 立刻中断不占网
             if (shutdownRequested) {
                 lastErr = "shutdown requested"
                 break
             }
             val url = "$mirror/$branch/$repo/$arch/$pkg.apk"
             val ok = if (hasCurl) {
-                runCurl(url = url, out = cachePath, slotIdx = slotIdx, timeoutMs = perPkgTimeoutMs)
+                runCurl(
+                    url = url,
+                    outPart = partPath,
+                    resumeOffset = alreadyBytes,
+                    slotIdx = slotIdx,
+                    timeoutMs = perPkgTimeoutMs,
+                )
             } else {
-                runWget(url = url, out = cachePath, timeoutMs = perPkgTimeoutMs)
+                runWget(
+                    url = url,
+                    outPart = partPath,
+                    resume = alreadyBytes > 0,
+                    timeoutMs = perPkgTimeoutMs,
+                )
             }
-            if (ok) {
+            if (ok) { success = true; break }
+            lastErr = "repo $repo 4xx/5xx or too small"
+        }
+
+        // RC61f：分支善后（原子 mv / 失败 rm）
+        if (success) {
+            // 成功：原子 mv → finalPath（apk --cache-dir 能识别）
+            val (mvO, mvC) = runSync(
+                "mv -f $partPath $finalPath 2>/dev/null && [ -s $finalPath ] && echo OK",
+                4000,
+            )
+            if (mvC == 0 && mvO.trim() == "OK") {
                 updateSlot(slotIdx) { s -> s.copy(status = SlotStatus.DONE) }
                 return
             }
-            lastErr = "repo $repo 4xx/5xx or too small"
+            // mv 失败（少见）：退化为「认为预取失败」，让 apk add 自己 fetch；但也要清 part
+            lastErr = "mv .part → .apk 失败 ($mvO)"
+            runSync("rm -f $partPath 2>/dev/null", 2000)
+        } else {
+            // 明确失败：立即 rm -f part，不留半截垃圾占手机存储
+            runSync("rm -f $partPath 2>/dev/null", 2000)
         }
-        // RC61c S4：main/community 全失败 fail-open，不再用 error() 抛穿透
-        // （上游 catch 会把该包放入 failed map，apk add 会自己从镜像 fetch 真正的 URL 并做正确重试）。
-        // shutdownRequested 情况直接抛 CancellationException（释放 semaphore）。
+        // shutdownRequested 情况直接抛 CancellationException（释放 semaphore）
         if (shutdownRequested) {
             throw CancellationException("downloadSingle cancelled during repos loop ($lastErr)")
         }
@@ -481,25 +563,29 @@ class ParallelPrefetchManager(
     }
 
     /**
-     * curl：用 `-L -o out -w '%{size_download} %{http_code} %{time_total}'` 拉尾信息。
-     * Alpine busybox curl 不支持 `-#` 进度回调，所以我们这里只能把下载当成黑盒：
-     * 结束时一次性把 size 写入 slot。后续如果要做字节级进度，需要把 curl 输出拉到 Flow。
+     * curl（RC61f：改写到 .part + -C - 续传 + -w 解析）
+     *
+     * - -f：http!=2xx 算失败；-sSL：静默跟随重定向；
+     * - -C -：自动按 outPart 的当前大小续传；alreadyBytes=0 时 -C - 等价全新下载
+     *   （curl 见 out 不存在也会静默回退为从 0 开始，安全）
+     * - -w：尾部写 size_download http_code（Alpine busybox curl 仍支持 -w）
      */
     private suspend fun runCurl(
         url: String,
-        out: String,
+        outPart: String,
+        resumeOffset: Long,
         slotIdx: Int,
         timeoutMs: Long,
     ): Boolean {
+        val resume = if (resumeOffset > 0) "-C -" else ""
         val script =
-            "mkdir -p /var/cache/apk && curl -fsSL -o '$out' " +
+            "mkdir -p /var/cache/apk && curl -fsSL $resume -o '$outPart' " +
                 "-w '\n%{size_download} %{http_code}\n' '$url' 2>&1 || true"
         var sizeGot = 0L
         var http = 0
         streamShell(script, timeoutMs).collect { ev ->
             when (ev) {
                 is CommandEvent.Line -> {
-                    // 最后一行：size_download http_code
                     val parts = ev.text.trim().split(' ').filterNot(String::isEmpty)
                     if (parts.size == 2) {
                         val s = parts[0].toLongOrNull()
@@ -508,30 +594,37 @@ class ParallelPrefetchManager(
                         if (h != null) http = h
                     }
                 }
-                is CommandEvent.Exit -> {
-                    if (ev.code == null) {
-                        http = 0
-                    }
-                }
+                is CommandEvent.Exit -> { if (ev.code == null) http = 0 }
             }
         }
-        if (http in 200..299 && sizeGot > 0) {
+        // 2xx 且（这次下载字节数>0 或 断点续传下 part 本身就有字节数算有数据）
+        val hasData = runSync("if [ -s '$outPart' ]; then echo YES; fi", 2000).let { (o, c) ->
+            c == 0 && o.trim() == "YES"
+        }
+        if (http in 200..299 && hasData) {
+            val total = (resumeOffset + sizeGot).coerceAtLeast(sizeGot)
             updateSlot(slotIdx) { s ->
-                s.copy(
-                    bytesGot = sizeGot, bytesTotal = sizeGot,
-                    speedBps = 0f,
-                )
+                s.copy(bytesGot = total, bytesTotal = total, speedBps = 0f)
             }
             return true
         }
         return false
     }
 
-    /** busybox wget：功能更弱，只要下载成功 size > 0 就算 OK。 */
-    private suspend fun runWget(url: String, out: String, timeoutMs: Long): Boolean {
+    /**
+     * busybox wget（RC61f：改写到 .part + -c 续传）
+     * - -O 固定写 part；-c 表示 continue 从已存在的 part 追加。
+     */
+    private suspend fun runWget(
+        url: String,
+        outPart: String,
+        resume: Boolean,
+        timeoutMs: Long,
+    ): Boolean {
+        val cont = if (resume) "-c" else ""
         val script =
-            "mkdir -p /var/cache/apk && wget -q -O '$out' '$url' >/dev/null 2>&1; " +
-                "if [ -s '$out' ]; then echo OK_$(wc -c < '$out'); else echo FAIL; fi"
+            "mkdir -p /var/cache/apk && wget -q $cont -O '$outPart' '$url' >/dev/null 2>&1; " +
+                "if [ -s '$outPart' ]; then echo OK_$(wc -c < '$outPart'); else echo FAIL; fi"
         val (o, c) = runSync(script, timeoutMs)
         if (c == 0 && o.startsWith("OK_")) {
             val sz = o.removePrefix("OK_").trim().toLongOrNull() ?: 0L

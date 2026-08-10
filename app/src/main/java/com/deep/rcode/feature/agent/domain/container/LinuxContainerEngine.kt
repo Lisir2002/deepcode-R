@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.atomic.AtomicBoolean
@@ -548,7 +549,19 @@ class LinuxContainerEngine @Inject constructor(
             } finally {
                 // RC61c S3：finally 最后兜底 cancel + shutdown（成功/失败/异常 三分支都要释放）
                 runCatching { prefetchJob?.cancel("installBundle finally") }
-                runCatching { prefetch.shutdown("installBundle finally") }
+                // RC61f：finally 时 cleanupPartialCache → 无论成功/失败，.part 半截文件一定删除；
+                // 只有 exit==0 且未失败，我们才清理 /var/cache/apk/*.apk（已装完，释放手机存储）
+                val ok = (exitCode == 0 && failedReason == null)
+                runCatching {
+                    initScope.launch {
+                        // cleanup 包在 initScope(SupervisorIO)：避免阻塞主线程；超时设 3s 防止卡住结束流程
+                        kotlinx.coroutines.withTimeoutOrNull(3500) {
+                            prefetch.cleanupPartialCache(cleanupInstalledApks = ok, timeoutMs = 2500)
+                        }
+                    }
+                }
+                // 原来的 shutdown 放后面（内部再跑一次 cleanupPartialCache，幂等）
+                runCatching { prefetch.shutdown("installBundle finally (ok=$ok)") }
                 slotsCollectJob.cancel()
                 progressAggregator.endSession(
                     // RC61c S3：若 exit 非 0 或 catch 进了 failedReason → 强制以 FAILED 快照结束会话，
@@ -1016,6 +1029,19 @@ class LinuxContainerEngine @Inject constructor(
     private suspend fun doInit(profile: ContainerProfile) {
         // installRootfsIfNeed 在真正解压/部署时回调更新进度（已安装则快路径不回调）
         containerInstaller.installRootfsIfNeed(profile) { _initProgress.value = it }
+        // RC61f：rootfs 装好后，异步清理上一次 APP crash/kill 遗留下来的 /var/cache/apk/*.part 半截文件
+        // （用户反馈：安装失败不删垃圾，点按钮重试 N 次，手机存储里越堆越多几 MB 的 .apk.part 占空间）
+        runCatching {
+            val garbageCleaner = ParallelPrefetchManager(
+                slotsCount = 1,
+                streamShell = { cmd, to -> streamExecNoInstall(cmd, projectPath = null, timeoutMs = to) },
+                runSync = { cmd, to ->
+                    val r = execCaptured(cmd, projectPath = null, timeoutMs = to)
+                    r.output to (r.exitCode ?: (if (r.output.isEmpty()) -1 else 0))
+                },
+            )
+            garbageCleaner.cleanupLeftoversFromLastRun(timeoutMs = 2500)
+        }.onFailure { t -> FileLogger.d(TAG, "首次启动清理 .part 垃圾失败（不阻塞启动）：${t.message}") }
     }
 
     /** 查容器内 $HOME 并缓存到 [WorkspacePathMapper]，供文件工具展开 ~。 */
