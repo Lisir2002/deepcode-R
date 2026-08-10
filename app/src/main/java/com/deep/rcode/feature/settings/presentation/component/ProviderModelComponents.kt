@@ -11,19 +11,31 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -36,6 +48,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
@@ -47,19 +60,23 @@ import androidx.compose.ui.unit.sp
 import com.deep.rcode.R
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
+import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.deep.rcode.feature.settings.data.remote.ModelTestResult
 import com.deep.rcode.feature.settings.domain.model.ModelMetadata
+import com.deep.rcode.feature.settings.domain.model.ProviderType
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.AlertCircle
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Plus
+import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.Settings
 import compose.icons.feathericons.X
 import kotlinx.coroutines.launch
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun ModelMetadataTags(metadata: ModelMetadata?) {
+private fun ModelMetadataTags(metadata: ModelMetadata?, hasOverride: Boolean = false) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -67,12 +84,10 @@ private fun ModelMetadataTags(metadata: ModelMetadata?) {
         ModelTag(text = "Chat")
         metadata?.let {
             if (it.supportsVision) {
-                // 小白友好：把英文 Image 换成「识图（Vision）」
-                ModelTag(text = "识图（Vision）")
+                OverlayBadgeTag(label = "识图（Vision）", enabled = it.supportsVision, overridden = hasOverride && it.inferenceReason?.overrideVision != null)
             }
             if (it.supportsTools) {
-                // 同理：Tools → 「工具（Tools）」
-                ModelTag(text = "工具（Tools）")
+                OverlayBadgeTag(label = "工具（Tools）", enabled = it.supportsTools, overridden = hasOverride && it.inferenceReason?.overrideTools != null)
             }
             val input = it.inputTokens?.takeIf { tokens -> tokens > 0 }
                 ?: it.contextTokens.takeIf { tokens -> tokens > 0 }
@@ -83,10 +98,37 @@ private fun ModelMetadataTags(metadata: ModelMetadata?) {
                 ModelTag(text = "Output ${formatTokenLimit(output)}")
             }
             if (it.supportsReasoning) {
-                // 小白友好：加「思考（Reasoning）」徽章，中英文同时显示
-                ModelTag(text = "思考（Reasoning）")
+                OverlayBadgeTag(label = "思考（Reasoning）", enabled = it.supportsReasoning, overridden = hasOverride && it.inferenceReason?.overrideReasoning != null)
+            }
+            if (hasOverride) {
+                ModelTag(text = "已覆盖（Manual）", icon = FeatherIcons.Settings)
             }
         }
+    }
+}
+
+/**
+ * 三复选框其中之一的展示 Tag：右上角有小红点，小白一眼就能认出「这个能力是我手动覆盖过的」，
+ * 不是系统自动推荐。未覆盖时红点隐藏。
+ */
+@Composable
+private fun OverlayBadgeTag(label: String, enabled: Boolean, overridden: Boolean) {
+    Box {
+        ModelTag(text = label)
+        if (overridden) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 2.dp, y = (-2).dp)
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+        }
+    }
+    // 「关」的场景（被用户手动覆盖成 false）也要露个小徽章，免得小白以为显示丢了
+    if (!enabled && overridden) {
+        ModelTag(text = "禁用$label（Manual Off）", icon = FeatherIcons.X)
     }
 }
 
@@ -125,10 +167,12 @@ private fun ModelTag(text: String? = null, icon: androidx.compose.ui.graphics.ve
 internal fun ProviderModelRow(
     model: String,
     metadata: ModelMetadata?,
+    hasOverride: Boolean,
     testing: Boolean,
     result: ModelTestResult?,
     onTest: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onOpenCapabilityOverride: () -> Unit
 ) {
     var showErrorDetail by remember { mutableStateOf(false) }
 
@@ -143,18 +187,33 @@ internal fun ProviderModelRow(
 
             // Center Content (Name & Tags)
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    model,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        model,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
-                ModelMetadataTags(metadata)
+                ModelMetadataTags(metadata = metadata, hasOverride = hasOverride)
             }
 
             Spacer(Modifier.width(Spacing.sm))
+
+            // RC63 ④ 能力覆盖齿轮按钮
+            IconButton(
+                onClick = onOpenCapabilityOverride,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    FeatherIcons.Settings,
+                    contentDescription = "手动覆盖模型能力（识图Vision/工具Tools/思考Reasoning）",
+                    tint = if (hasOverride) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
 
             // Right Actions
             Box(
@@ -308,10 +367,273 @@ internal fun FetchModelRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(model, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(4.dp))
-            ModelMetadataTags(metadata)
+            ModelMetadataTags(metadata = metadata, hasOverride = false)
         }
         IconButton(onClick = onAdd, modifier = Modifier.size(32.dp)) {
             Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+// ————————————————————————————————————————————————————————————
+// RC63 ④：单模型「三能力复选框手动覆盖」底部面板
+// ————————————————————————————————————————————————————————————
+
+/**
+ * 三级复选框（Indeterminate）：每一条的状态都可能是：
+ *  - null（未覆盖：跟随系统自动推荐）
+ *  - true（手动覆盖为开）
+ *  - false（手动覆盖为关）
+ *
+ *  控件实现：文字「点击 null→true→false→null」循环，同时左边 FilterChip 三态切换
+ *  （选中=开/不选=关/中间=不覆盖）。小白可直观看到「被覆盖的是哪一个」。
+ */
+@Composable
+private fun TriStateCapabilityRow(
+    label: String,
+    englishTag: String,
+    description: String,
+    autoValue: Boolean,    // 系统自动判定的期望值（显示在副标题「自动推荐」里）
+    overrideValue: Boolean?,  // null=未覆盖；true/false=覆盖
+    onChange: (Boolean?) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                val next = when (overrideValue) {
+                    null -> true
+                    true -> false
+                    false -> null
+                }
+                onChange(next)
+            }
+            .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+    ) {
+        FilterChip(
+            selected = overrideValue == true,
+            onClick = {
+                val next = when (overrideValue) {
+                    null -> true
+                    true -> false
+                    false -> null
+                }
+                onChange(next)
+            },
+            label = {
+                Text(
+                    text = when (overrideValue) {
+                        true -> "✅ 已手动开启"
+                        false -> "❌ 已手动关闭"
+                        null -> "跟随自动推荐"
+                    }
+                )
+            },
+            leadingIcon = if (overrideValue != null) {
+                { Icon(FeatherIcons.Settings, contentDescription = null, modifier = Modifier.size(14.dp)) }
+            } else null
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "$label（$englishTag）",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = buildString {
+                    append(description)
+                    append(" · 自动推荐：")
+                    append(if (autoValue) "✅ 开启" else "❌ 关闭")
+                    append(
+                        when (overrideValue) {
+                            true -> " · 你手动覆盖为：✅ 开启"
+                            false -> " · 你手动覆盖为：❌ 关闭"
+                            null -> ""
+                        }
+                    )
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CapabilityOverrideSheet(
+    viewModel: com.deep.rcode.feature.settings.presentation.SettingsViewModel,
+    providerType: ProviderType,
+    modelId: String,
+    metadata: ModelMetadata?,
+    overrideFlow: kotlinx.coroutines.flow.Flow<ModelCapabilityOverrideEntity?>,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val override by overrideFlow.collectAsStateWithLifecycleCompat(initial = null)
+
+    // 本地三态（UI 编辑的草稿）：初始值从 overrideFlow 读，避免打开面板时丢失已有的覆盖。
+    var draftVision by remember(override) { mutableStateOf(override?.overrideVision) }
+    var draftTools by remember(override) { mutableStateOf(override?.overrideTools) }
+    var draftReasoning by remember(override) { mutableStateOf(override?.overrideReasoning) }
+    var dirty by remember(override) { mutableStateOf(false) }
+    fun markDirty() { dirty = true }
+
+    val autoVision = metadata?.supportsVision == true && metadata.inferenceReason?.overrideVision == null
+    val autoVisionStrict = (metadata?.inferenceReason?.byProbablyVision ?: false) || metadata?.supportsVision == true
+    val autoTools = metadata?.supportsTools == true
+    val autoReasoning = metadata?.supportsReasoning == true
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = null
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(Spacing.lg)
+                .padding(bottom = Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                Text(
+                    text = "模型能力覆盖（手动）",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = {
+                        viewModel.clearCapabilityOverride(providerType, modelId)
+                        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+                    }
+                ) {
+                    Icon(FeatherIcons.RefreshCw, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text("恢复自动推荐")
+                }
+            }
+
+            Text(
+                text = buildString {
+                    append("模型：$modelId")
+                    append(if (metadata?.source == ModelMetadata.Source.MODELS_DEV) "（官方收录）" else "（启发式/兼容端点）")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            metadata?.inferenceReason?.let { reason ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.md))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(Spacing.sm)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        Text(
+                            text = "🧭 判定链路审计（小白解释）：",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = buildString {
+                                append("· 启发式匹配：")
+                                append("识图=${if (reason.byProbablyVision) "✅" else "❌"} ")
+                                append("工具=${if (reason.byProbablyTools) "✅" else "❌"} ")
+                                append("思考=${if (reason.byProbablyReasoning) "✅" else "❌"}")
+                                appendLine()
+                                append("· 兼容端点策略：${reason.appliedPolicy ?: "（收录模型，跳过）"}")
+                                appendLine()
+                                append("· 你的手动覆盖：")
+                                append("识图=${reason.overrideVision?.let { if (it) "✅开" else "❌关" } ?: "未覆盖"} ")
+                                append("工具=${reason.overrideTools?.let { if (it) "✅开" else "❌关" } ?: "未覆盖"} ")
+                                append("思考=${reason.overrideReasoning?.let { if (it) "✅开" else "❌关" } ?: "未覆盖"}")
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider()
+
+            TriStateCapabilityRow(
+                label = "多模态识图",
+                englishTag = "Vision",
+                description = "模型是否能接收图片/截图并理解内容；step-3.7-flash 官方文档=支持。",
+                autoValue = autoVisionStrict,
+                overrideValue = draftVision,
+                onChange = { draftVision = it; markDirty() }
+            )
+            TriStateCapabilityRow(
+                label = "工具调用",
+                englishTag = "Tools / Function Calling",
+                description = "模型是否能调用外部工具（查文件/跑命令/查知识库）。",
+                autoValue = autoTools,
+                overrideValue = draftTools,
+                onChange = { draftTools = it; markDirty() }
+            )
+            TriStateCapabilityRow(
+                label = "深度思考",
+                englishTag = "Reasoning",
+                description = "模型是否支持 extended thinking / reasoning effort（长推理链）。",
+                autoValue = autoReasoning,
+                overrideValue = draftReasoning,
+                onChange = { draftReasoning = it; markDirty() }
+            )
+
+            Spacer(Modifier.height(Spacing.sm))
+
+            Row(
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+                Spacer(Modifier.width(Spacing.sm))
+                TextButton(
+                    onClick = {
+                        viewModel.saveCapabilityOverride(
+                            type = providerType,
+                            modelId = modelId,
+                            vision = draftVision,
+                            tools = draftTools,
+                            reasoning = draftReasoning
+                        )
+                        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+                    }
+                ) {
+                    Icon(FeatherIcons.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text(
+                        if (!dirty) "保持现状"
+                        else if (draftVision == null && draftTools == null && draftReasoning == null) "不覆盖任何项"
+                        else "保存覆盖"
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 兼容 collectAsStateWithLifecycle 在非 androidx.lifecycle:lifecycle-runtime-compose 场景下的兜底实现（直接用 viewModel 的 flow + null 初值）。 */
+@Composable
+private fun <T> kotlinx.coroutines.flow.Flow<T>.collectAsStateWithLifecycleCompat(initial: T): androidx.compose.runtime.State<T> {
+    return androidx.lifecycle.compose.collectAsStateWithLifecycle(initialValue = initial)
 }

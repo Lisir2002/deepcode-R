@@ -51,8 +51,13 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.ui.platform.LocalClipboard
 import android.content.ClipData
 import androidx.compose.ui.platform.ClipEntry
@@ -92,7 +97,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
+import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.deep.rcode.feature.settings.data.remote.ModelTestResult
+import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
 import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
 import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.domain.model.ProviderType
@@ -132,12 +139,29 @@ fun ProviderEditorScreen(
     var showFetchDialog by remember { mutableStateOf(false) }
     var fetchDialogKey by remember { mutableIntStateOf(0) }
     var selectedTab by remember { mutableIntStateOf(0) }
+    // RC63 ④：当前「能力覆盖」面板正在编辑哪一个模型；null=关闭。
+    var capabilityOverrideModel by remember { mutableStateOf<String?>(null) }
 
     val fetchState by viewModel.fetchState.collectAsStateWithLifecycle()
     val testResults by viewModel.testResults.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val modelMetadata by viewModel.modelMetadata.collectAsStateWithLifecycle()
+    /** RC63 ③ 兼容端点全局策略（下拉 + 两个 Switch）。 */
+    val defaultPolicy by viewModel.compatibilityDefaultPolicyFlow.collectAsStateWithLifecycle()
+    val autoDowngrade by viewModel.autoDowngradeOnSendFailureFlow.collectAsStateWithLifecycle()
+    val viewImageGuard by viewModel.viewImageUnknownGuardPolicyFlow.collectAsStateWithLifecycle()
     val modelSnapshot = models.toList()
+
+    /** RC63 ④ 单模型覆盖：ProviderModelRow 每个模型 hasOverride 的即时快照（Flow -> State）。 */
+    val overridesMap: Map<String, ModelCapabilityOverrideEntity> by remember(type, models) {
+        val flows = models.associateWith { modelId -> viewModel.observeCapabilityOverride(type, modelId) }
+        // 把各单模型 Flow 合并成 Map<String, Entity>（null 视为未覆盖）：
+        kotlinx.coroutines.flow.combine(flows.entries.map { (m, f) ->
+            f.map { v -> m to v }
+        }) { pairs ->
+            pairs.filter { it.second != null }.associate { it.first to it.second!! }
+        }
+    }.collectAsStateWithLifecycle(initial = emptyMap())
 
     DisposableEffect(Unit) {
         viewModel.resetFetchState()
@@ -345,6 +369,43 @@ fun ProviderEditorScreen(
                             )
                         }
                     }
+
+                    // ───────────────────────────────────────────────────────
+                    // RC63 ③ 兼容端点策略区块（下拉 + 两个开关）
+                    // ───────────────────────────────────────────────────────
+                    HorizontalDivider(modifier = Modifier.padding(vertical = Spacing.sm))
+                    Text(
+                        text = "兼容端点/未收录模型 · 能力判定策略",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    CompatibilityPolicyDropdown(
+                        currentPolicy = defaultPolicy,
+                        onPolicySelected = { viewModel.setCompatibilityDefaultPolicy(it) }
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("发送失败自动降级（识图兜底）", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "若当前聊天模型返回「不支持 image_url」，自动用识图模型生成文字摘要再重试。关闭后遇到此类错误将直接抛给用户（用于排查）。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoDowngrade,
+                            onCheckedChange = { viewModel.setAutoDowngradeOnSendFailure(it) }
+                        )
+                    }
+                    ViewImageGuardDropdown(
+                        current = viewImageGuard,
+                        onChange = { viewModel.setViewImageUnknownGuardPolicy(it) }
+                    )
                 }
             } else {
                 Column(
@@ -386,13 +447,15 @@ fun ProviderEditorScreen(
                             ProviderModelRow(
                                 model = model,
                                 metadata = modelMetadata[model],
+                                hasOverride = overridesMap.containsKey(model),
                                 testing = model in testing,
                                 result = testResults[model],
                                 onTest = { viewModel.testModel(currentConfig(), model) },
                                 onRemove = {
                                     models.remove(model)
                                     saveCurrent()
-                                }
+                                },
+                                onOpenCapabilityOverride = { capabilityOverrideModel = model }
                             )
                         }
                     }
@@ -411,6 +474,19 @@ fun ProviderEditorScreen(
                 }
             },
             onDismiss = { showAddModelSheet = false }
+        )
+    }
+
+    // RC63 ④ 单模型「三能力覆盖」底部面板：点击齿轮按钮时打开。
+    val overrideModel = capabilityOverrideModel
+    if (overrideModel != null) {
+        CapabilityOverrideSheet(
+            viewModel = viewModel,
+            providerType = type,
+            modelId = overrideModel,
+            metadata = modelMetadata[overrideModel],
+            overrideFlow = viewModel.observeCapabilityOverride(type, overrideModel),
+            onDismiss = { capabilityOverrideModel = null }
         )
     }
 
@@ -660,4 +736,116 @@ internal fun defaultProviderBaseUrl(type: ProviderType): String = when (type) {
     ProviderType.ANTHROPIC -> "https://api.anthropic.com/"
     ProviderType.GEMINI -> "https://generativelanguage.googleapis.com/"
     else -> "https://api.openai.com/"
+}
+
+// ————————————————————————————————————————————————————————————
+// RC63 ③：兼容端点策略 & viewImage 守卫 两个下拉选择器
+// ————————————————————————————————————————————————————————————
+
+private fun policyDisplayName(p: CompatibilityPolicyRepository.DefaultPolicy): String = when (p) {
+    CompatibilityPolicyRepository.DefaultPolicy.STRICT -> "严格模式（推荐·默认）—— 和官方收录模型走同一规则，避免 RC62e 那种「全部模型都支持多模态」的副作用"
+    CompatibilityPolicyRepository.DefaultPolicy.HEURISTIC -> "启发式模式（=RC62d）—— 按 probablyVision / probablyTools / probablyReasoning 的名字匹配自动判定"
+    CompatibilityPolicyRepository.DefaultPolicy.LAX -> "宽松模式（=RC62e）—— 所有未收录模型一律三能力开，小白拿不准先试试这个，不行再切回来"
+    CompatibilityPolicyRepository.DefaultPolicy.MANUAL -> "完全手动—— 三能力默认全关，必须在单模型齿轮按钮里手动勾选你要的能力"
+}
+
+private fun viewImageGuardDisplayName(p: CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy): String = when (p) {
+    CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL -> "自动兜底识图模型（推荐·默认）—— 聊天模型不能识图时，自动用设置里的「识图专用模型」理解图片再把文本送回去"
+    CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FAIL_FAST -> "立即报错并提醒配置 —— 聊天模型不能识图时，直接提示用户去设置里配置专用识图模型或手动覆盖，方便排查"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompatibilityPolicyDropdown(
+    currentPolicy: CompatibilityPolicyRepository.DefaultPolicy,
+    onPolicySelected: (CompatibilityPolicyRepository.DefaultPolicy) -> Unit
+) {
+    val allPolicies = CompatibilityPolicyRepository.DefaultPolicy.values()
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
+    ) {
+        OutlinedTextField(
+            value = policyDisplayName(currentPolicy),
+            onValueChange = { },
+            readOnly = true,
+            label = { Text("兼容端点 · 能力判定默认策略") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            allPolicies.forEach { p ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(p.name, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                policyDisplayName(p).substringAfter("—— ").trim(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    onClick = {
+                        onPolicySelected(p)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ViewImageGuardDropdown(
+    current: CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy,
+    onChange: (CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy) -> Unit
+) {
+    val all = CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.values()
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
+    ) {
+        OutlinedTextField(
+            value = viewImageGuardDisplayName(current),
+            onValueChange = { },
+            readOnly = true,
+            label = { Text("viewImage 识图工具守卫策略") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            all.forEach { g ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(if (g == CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL) "自动兜底识图模型（推荐）" else "立即报错", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                viewImageGuardDisplayName(g).substringAfter("—— ").trim(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    onClick = {
+                        onChange(g)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
 }

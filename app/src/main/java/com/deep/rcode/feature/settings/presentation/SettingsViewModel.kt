@@ -20,6 +20,7 @@ import com.deep.rcode.feature.settings.data.remote.ModelApiService
 import com.deep.rcode.feature.settings.data.remote.ModelMetadataService
 import com.deep.rcode.feature.settings.data.remote.ModelTestResult
 import com.deep.rcode.feature.settings.data.repository.AppThemeMode
+import com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository
 import com.deep.rcode.feature.settings.data.repository.ContainerSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.ExecutionMode
 import com.deep.rcode.feature.settings.data.repository.CompactionModelSettingsRepository
@@ -112,7 +113,9 @@ class SettingsViewModel @Inject constructor(
     private val executionModeHolder: ExecutionModeHolder,
     private val remoteSshConnection: RemoteSshConnection,
     private val remoteRepository: RemoteRepository,
-    val auditLogRepository: RemoteAuditLogRepository
+    val auditLogRepository: RemoteAuditLogRepository,
+    /** RC63 备选方案③：兼容端点全局策略（STRICT/HEURISTIC/LAX/MANUAL + 自动降级 + viewImage 守卫）。 */
+    private val compatibilityPolicyRepository: CompatibilityPolicyRepository
 ) : ViewModel() {
     private companion object {
         const val MAX_LOG_LINES = 1200
@@ -212,6 +215,25 @@ class SettingsViewModel @Inject constructor(
 
     private val _modelMetadata = MutableStateFlow<Map<String, ModelMetadata>>(emptyMap())
     val modelMetadata: StateFlow<Map<String, ModelMetadata>> = _modelMetadata.asStateFlow()
+
+    /** RC63 备选方案③：兼容端点「默认策略」流 + 快照（ProviderEditorScreen Tab0 下拉选择 + 选项卡小角标用）。 */
+    val compatibilityDefaultPolicyFlow: StateFlow<CompatibilityPolicyRepository.DefaultPolicy>
+        get() = compatibilityPolicyRepository.defaultPolicyFlow.stateIn(
+            viewModelScope, SharingStarted.Eagerly, CompatibilityPolicyRepository.DefaultPolicy.STRICT
+        )
+
+    /** RC63 备选方案②「发送失败自动降级」总开关。 */
+    val autoDowngradeOnSendFailureFlow: StateFlow<Boolean>
+        get() = compatibilityPolicyRepository.autoDowngradeOnSendFailureFlow.stateIn(
+            viewModelScope, SharingStarted.Eagerly, true
+        )
+
+    /** RC63 viewImage 守卫策略（FALLBACK_VISION_MODEL vs FAIL_FAST）。 */
+    val viewImageUnknownGuardPolicyFlow: StateFlow<CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy>
+        get() = compatibilityPolicyRepository.viewImageUnknownGuardPolicyFlow.stateIn(
+            viewModelScope, SharingStarted.Eagerly,
+            CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL
+        )
 
     private val _testing = MutableStateFlow<Set<String>>(emptySet())
     val testing: StateFlow<Set<String>> = _testing.asStateFlow()
@@ -1056,5 +1078,61 @@ class SettingsViewModel @Inject constructor(
     fun promoteRuleToGlobal(rule: PermissionRule) {
         val name = currentProjectName.value ?: return
         viewModelScope.launch { permissionRulesRepository.promoteToGlobal(name, rule) }
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // RC63 备选方案③：兼容端点全局策略设置（ProviderEditorScreen Tab0 调用）
+    // ────────────────────────────────────────────────────────────────
+
+    fun setCompatibilityDefaultPolicy(policy: CompatibilityPolicyRepository.DefaultPolicy) {
+        viewModelScope.launch { compatibilityPolicyRepository.setDefaultPolicy(policy) }
+    }
+
+    fun setAutoDowngradeOnSendFailure(enabled: Boolean) {
+        viewModelScope.launch { compatibilityPolicyRepository.setAutoDowngradeOnSendFailure(enabled) }
+    }
+
+    fun setViewImageUnknownGuardPolicy(policy: CompatibilityPolicyRepository.ViewImageUnknownGuardPolicy) {
+        viewModelScope.launch { compatibilityPolicyRepository.setViewImageUnknownGuardPolicy(policy) }
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // RC63 备选方案④：单模型能力复选框覆盖（ProviderEditorScreen Tab1 调用）
+    // ────────────────────────────────────────────────────────────────
+
+    /** 观察某模型的手动覆盖（用于 CapabilityOverrideSheet 实时回显勾选状态）。 */
+    fun observeCapabilityOverride(type: ProviderType, modelId: String) =
+        modelMetadataService.observeOverride(type, modelId)
+
+    /** 保存某模型的手动覆盖；不想覆盖的字段传 null（保持自动决策）。 */
+    fun saveCapabilityOverride(
+        type: ProviderType,
+        modelId: String,
+        vision: Boolean?,
+        tools: Boolean?,
+        reasoning: Boolean?
+    ) {
+        viewModelScope.launch {
+            modelMetadataService.saveOverride(type, modelId, vision, tools, reasoning)
+            // 立即重算该 provider 全部模型元数据（以便 CapabilityOverrideSheet 返回后
+            // ProviderModelRow 的「识图/工具/思考」徽章立即刷新，用户看不到过期值）。
+            val typeProviderModels = _providers.value
+                .filter { it.type == type && it.models.isNotEmpty() }
+                .flatMap { it.models.map(String::trim).filter(String::isNotEmpty).distinct() }
+                .plus(modelId)
+                .distinct()
+            if (typeProviderModels.isEmpty()) return@launch
+            val refreshed = modelMetadataService.resolveAll(type, typeProviderModels)
+            _modelMetadata.update { it + refreshed }
+        }
+    }
+
+    /** 清除某模型覆盖（恢复自动推荐）。 */
+    fun clearCapabilityOverride(type: ProviderType, modelId: String) {
+        viewModelScope.launch {
+            modelMetadataService.clearOverride(type, modelId)
+            val refreshed = modelMetadataService.resolveAll(type, listOf(modelId))
+            _modelMetadata.update { it + refreshed }
+        }
     }
 }
