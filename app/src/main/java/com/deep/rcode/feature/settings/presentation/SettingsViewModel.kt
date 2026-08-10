@@ -40,6 +40,7 @@ import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.domain.model.ProviderType
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,10 +51,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import com.deep.rcode.feature.settings.presentation.component.SettingsSection
 
 sealed class FetchState {
     object Idle : FetchState()
@@ -124,20 +125,16 @@ class SettingsViewModel @Inject constructor(
     //        再把 SettingsScreen 内部的 section 切到 RemoteServers —— 但 SettingsScreen 内部
     //        section 是它自己的 remember mutableState，外部调不到）
     // - 解决方案：复用 Activity 级单例 SettingsViewModel（本来 MainActivity L388 就复用了），
-    //   加一条 Channel→StateFlow：外部调 openSection(Section)，SettingsScreen LaunchedEffect
-    //   收集到后立刻把本地 section 赋值，再 consume 掉。
-    // - 为什么不用 SavedStateHandle / Navigation Arguments：NavHost 没为 settings 路由设计
-    //   ?section= 参数；再加参数会让 SettingsScreen 的状态管理与其他二级页打开逻辑冲突。
-    //   SharedFlow 一次性 consume 是最小侵入。
-    private val _pendingOpenSection = kotlinx.coroutines.channels.Channel<SettingsSection>(
-        capacity = kotlinx.coroutines.channels.Channel.CONFLATED,
-    )
+    //   用 tick + lastRequestedSection 对比：外部 openSection(Section) 后 tick+1，
+    //   SettingsScreen LaunchedEffect(pendingTick, consumedTick) 看到有新 tick 就跳 section 并标记 consumed。
+    // - 为什么不用 SharedFlow replay=0：路由创建之前就发 openSection 的场景会丢事件，
+    //   tick 对比是纯状态机，100% 不漏也不重入。
     private val _pendingOpenSectionTick = MutableStateFlow(0L)
     private val _lastConsumedSectionTick = MutableStateFlow(-1L)
-    /** 最近一次请求打开的分区（null 表示没有）。SettingsScreen LaunchedEffect 会 collect 它。 */
-    val pendingOpenSection: kotlinx.coroutines.flow.SharedFlow<SettingsSection> =
-        _pendingOpenSection.receiveAsFlow()
-            .shareIn(viewModelScope, SharingStarted.Eagerly, replay = 0)
+    private val _lastRequestedSection: MutableStateFlow<SettingsSection?> = MutableStateFlow(null)
+    val lastRequestedSection: StateFlow<SettingsSection?> = _lastRequestedSection.asStateFlow()
+    val pendingOpenSectionTick: StateFlow<Long> = _pendingOpenSectionTick.asStateFlow()
+    val lastConsumedSectionTick: StateFlow<Long> = _lastConsumedSectionTick.asStateFlow()
 
     /**
      * 请求 SettingsScreen 切到指定二级分区。
@@ -145,21 +142,14 @@ class SettingsViewModel @Inject constructor(
      * 先 popBackStack 回 settings，然后 SettingsScreen 自己在进入时收到信号 → 内部 section = Section。
      */
     fun openSection(section: SettingsSection) {
-        // 双保险：既发到 Channel（SharedFlow 会 replay 0，刚订阅的 LaunchedEffect 可能漏），
-        // 也递增 tick，让 SettingsScreen 初次进入时也能靠 tick 对比拿到「最新请求」。
-        _pendingOpenSection.trySend(section)
         _lastRequestedSection.value = section
         _pendingOpenSectionTick.value = (_pendingOpenSectionTick.value + 1) and Long.MAX_VALUE
     }
 
-    private val _lastRequestedSection = MutableStateFlow<SettingsSection?>(null)
-    val lastRequestedSection: StateFlow<SettingsSection?> = _lastRequestedSection.asStateFlow()
-    /** 配合上面 tick 机制：SettingsScreen 消费一次后必须通知我们，避免死循环跳同一个 section。 */
+    /** 消费一次 openSection 请求（由 SettingsScreen 调），避免 LaunchedEffect 重入时反复跳同一个 section。 */
     fun markPendingSectionConsumed(tick: Long) {
         _lastConsumedSectionTick.value = tick
     }
-    val pendingOpenSectionTick: StateFlow<Long> = _pendingOpenSectionTick.asStateFlow()
-    val lastConsumedSectionTick: StateFlow<Long> = _lastConsumedSectionTick.asStateFlow()
 
     // ── 缓存：所有已读入的行（供局部过滤使用，避免重复读文件） ──
     private var _cachedRawLines: List<String> = emptyList()

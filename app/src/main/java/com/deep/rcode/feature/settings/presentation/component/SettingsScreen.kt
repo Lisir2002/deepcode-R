@@ -39,6 +39,7 @@ import com.deep.rcode.core.theme.AppTopAppBar
 import com.deep.rcode.core.theme.AppSectionHeader
 import com.deep.rcode.core.theme.AppSectionGroup
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -130,8 +131,18 @@ fun SettingsScreen(
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
     val remoteConnections by viewModel.remoteConnections.collectAsStateWithLifecycle()
 
+    var section by remember { mutableStateOf(SettingsSection.Menu) }
+    var logReturnSection by remember { mutableStateOf(SettingsSection.Menu) }
+    var editingProvider by remember { mutableStateOf<AIProviderConfig?>(null) }
+    var showMcpDialog by remember { mutableStateOf(false) }
+    var editingMcp by remember { mutableStateOf<McpServerConfig?>(null) }
+    var showContainerAddSheet by remember { mutableStateOf(false) }
+    var showThemeSheet by remember { mutableStateOf(false) }
+    var showLanguageSheet by remember { mutableStateOf(false) }
+
     // RC62：跨屏跳转（terminal_settings → settings → RemoteServers）：接收来自 SettingsViewModel
     //   的 openSection 请求，切到 SettingsScreen 内部的 section。
+    // 注意：这段必须写在 `var section` remember 之后，否则 L142 会引用 section 报 Unresolved。
     val pendingTick by viewModel.pendingOpenSectionTick.collectAsStateWithLifecycle()
     val consumedTick by viewModel.lastConsumedSectionTick.collectAsStateWithLifecycle()
     val lastRequestedSection by viewModel.lastRequestedSection.collectAsStateWithLifecycle()
@@ -144,31 +155,6 @@ fun SettingsScreen(
             viewModel.markPendingSectionConsumed(pendingTick)
         }
     }
-    // 另外一条通路：pendingOpenSection SharedFlow（理论上能更快收到），不过上面 tick
-    // 已经 100% 覆盖「进入 settings 路由栈之前就发了请求」的情况，这条只做锦上添花。
-    LaunchedEffect(Unit) {
-        viewModel.pendingOpenSection.collect { sec ->
-            if (section != sec) {
-                section = sec
-            }
-        }
-    }
-
-    val currentLanguageDisplayName = if (languageTag.isNullOrBlank()) {
-        stringResource(R.string.language_follow_system)
-    } else {
-        com.deep.rcode.core.util.LanguageRegistry.languages.firstOrNull { it.tag == languageTag }?.displayName
-            ?: stringResource(R.string.language_follow_system)
-    }
-
-    var section by remember { mutableStateOf(SettingsSection.Menu) }
-    var logReturnSection by remember { mutableStateOf(SettingsSection.Menu) }
-    var editingProvider by remember { mutableStateOf<AIProviderConfig?>(null) }
-    var showMcpDialog by remember { mutableStateOf(false) }
-    var editingMcp by remember { mutableStateOf<McpServerConfig?>(null) }
-    var showContainerAddSheet by remember { mutableStateOf(false) }
-    var showThemeSheet by remember { mutableStateOf(false) }
-    var showLanguageSheet by remember { mutableStateOf(false) }
 
     // 处于二级页时，系统返回键先回到上一层；首页时交还给上层导航。
     BackHandler(enabled = section != SettingsSection.Menu) {
