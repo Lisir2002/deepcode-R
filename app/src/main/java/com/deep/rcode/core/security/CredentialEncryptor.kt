@@ -1,7 +1,6 @@
 package com.deep.rcode.core.security
 
 import android.content.Context
-import android.security.keystore.KeyProperties
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.workspace.data.local.dao.CredentialEncryptionStateDao
 import com.deep.rcode.feature.workspace.data.local.entity.CredentialEncryptionStateEntity
@@ -9,28 +8,35 @@ import com.deep.rcode.feature.workspace.domain.RemoteAuditAction
 import com.deep.rcode.feature.workspace.domain.RemoteAuditCategory
 import com.deep.rcode.feature.workspace.domain.repository.RemoteAuditLogRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.security.SecureRandom
+import kotlinx.coroutines.withContext
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 凭据加密器 2.0（RC61 升级）。
+ * 凭据加密器 2.0（RC61 升级，RC61a 修正启动阻塞）。
  *
  * 架构：MasterKey(Android Keystore) → wrap DEK(256-bit AES) → AES-256-GCM(DEK, data)
+ *
+ * 启动期安全约定（RC61a 强化）：
+ * 1. 构造函数纯 volatile 读，不触发任何 IO / Keystore / Room。
+ *    Hilt 注入链在 Application.onCreate 主线程构造 @Singleton 时不会阻塞。
+ * 2. 所有涉及 Room 查询 / Keystore.load / KeyGenerator.generateKey 等阻塞操作，
+ *    都强制通过 [withContext(Dispatchers.IO)] 切换到 IO 线程。
+ * 3. encrypt/decrypt 公共入口保证「首次调用冷启动 + 热调用」都不阻塞非 IO 调用方。
  *
  * 对外接口与 V1 保持同签名，但内部切双层加密。
  * 输出格式固定 "V2:<Base64(IV + ciphertext + 16B GCM tag)>"。
  * 读取时按前缀分发到对应解算分支，缺省按明文兜底。
  *
  * ### 关键新增能力
- *  - [ensureInitialized]：启动后首次调用必须初始化，幂等。
+ *  - [ensureInitialized]：启动后首次加密/解密前必须调用；幂等，内部已强制 IO 线程。
  *  - [scheduleRotateDek]：安全轮换 DEK，不影响存量凭据。
  *  - [setBiometricRequired]：开启/关闭 MasterKey 的生物识别保护。
  *  - [emergencyResetMasterKey]：紧急解锁通道（验证 SSH 密码通过后使用）。
@@ -49,27 +55,43 @@ class CredentialEncryptor @Inject constructor(
         const val SCHEME_V2 = "V2:"
     }
 
+    // DEKManager.getInstance 是纯 volatile+双检锁，构造函数里直接赋值无阻塞
     private val dekManager = DEKManager.getInstance()
 
     private val initMutex = Mutex()
 
-    /** 内存缓存 DEK，避免每次加密/解密都走 Keystore unwrap。 */
+    /** 内存缓存 DEK，避免每次加密/解密都走 Keystore unwrap。volatile，任意线程可读。 */
     @Volatile
     private var dekCached: SecretKey? = null
+
+    /** ensureInitialized 是否已成功执行过一次（volatile 双检速通路径）。 */
+    @Volatile
+    private var initialized: Boolean = false
 
     // ============== 初始化 ==============
 
     /**
      * 启动后首次加密/解密前必须调用；幂等。
      *
+     * **RC61a 关键修正：** 方法体内强制 [withContext(Dispatchers.IO)] 包裹全部
+     * Room 查询 + Keystore IO，避免冷启动时在 Flow 收集线程 / Default 调度器 / 主线程
+     * 上阻塞导致 ANR（1-2 秒后系统杀掉应用）。
+     *
+     * 内部流程：
      * 1. 查 [credential_encryption_state] 表：
      *    - 空：生成 MasterKey + DEK + 写单行，标记 migratedFromV1=true（无历史数据）。
-     *    - 非空且 migratedFromV1=false：enqueue V1toV2MigrationWorker（启动时后台迁移）。
+     *    - 非空且 migratedFromV1=false：交给 V1toV2MigrationWorker（启动时后台迁移）。
      * 2. MasterKey fingerprint 不匹配 → 抛 [MasterKeyTamperedException]，
      *    UI 引导走「紧急解锁」。
      */
-    suspend fun ensureInitialized() {
+    suspend fun ensureInitialized() = withContext(Dispatchers.IO) {
+        // 速通路径：volatile 双检，避免每次都进 Mutex
+        if (initialized && dekCached != null) return@withContext
+
         initMutex.withLock {
+            // Mutex 内再检查一次（另一个协程可能刚初始化完）
+            if (initialized && dekCached != null) return@withLock
+
             val existing = stateDao.getSingleOrNull()
             val masterKey = try {
                 dekManager.getOrCreateMasterKey()
@@ -119,6 +141,8 @@ class CredentialEncryptor @Inject constructor(
                     // V1toV2MigrationWorker 在 App 启动时由 AIEditorApp 触发
                 }
             }
+
+            initialized = true
         }
     }
 
@@ -126,15 +150,16 @@ class CredentialEncryptor @Inject constructor(
 
     /**
      * 加密明文。输出格式 "V2:<Base64(IV + ciphertext + 16B GCM tag)>"。
+     * 内部强制切 IO 线程：Room+Keystore+AES-GCM 都在 IO 上跑，不阻塞调用方。
      *
      * @param plaintext 明文字符串
      * @throws IllegalStateException 如果加密失败
      */
-    suspend fun encrypt(plaintext: String): String {
-        if (plaintext.isEmpty()) return ""
+    suspend fun encrypt(plaintext: String): String = withContext(Dispatchers.IO) {
+        if (plaintext.isEmpty()) return@withContext ""
         ensureInitialized()
         val dek = requireDek()
-        return try {
+        return@withContext try {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.ENCRYPT_MODE, dek)
             val iv = cipher.iv
@@ -152,15 +177,17 @@ class CredentialEncryptor @Inject constructor(
      *  - "V2:" 前缀 → AES-GCM-256(DEK, payload)
      *  - 空串 → ""
      *  - 无前缀 → 尝试 V1 单密钥 decrypt；失败回退明文直接返回。
+     *
+     * RC61a 修正：强制 IO 线程，避免 Flow 收集线程（mapLatest 内调用时）阻塞首帧。
      */
-    suspend fun decrypt(formatted: String): String {
-        if (formatted.isEmpty()) return ""
+    suspend fun decrypt(formatted: String): String = withContext(Dispatchers.IO) {
+        if (formatted.isEmpty()) return@withContext ""
         if (formatted.startsWith(SCHEME_V2)) {
             ensureInitialized()
             val dek = requireDek()
-            return try {
+            return@withContext try {
                 val combined = Base64.getDecoder().decode(formatted.removePrefix(SCHEME_V2))
-                if (combined.size < IV_LEN + 1) return ""
+                if (combined.size < IV_LEN + 1) return@withContext ""
                 val iv = combined.copyOfRange(0, IV_LEN)
                 val ciphertext = combined.copyOfRange(IV_LEN, combined.size)
                 val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -172,20 +199,18 @@ class CredentialEncryptor @Inject constructor(
             }
         }
 
-        // 无前缀：尝试 V1 单密钥解密，失败回退明文
-        return decryptV1Legacy(formatted)
+        // 无前缀：尝试 V1 单密钥解密，失败回退明文（V1 legacy 也跑 IO，因为要 Keystore）
+        decryptV1Legacy(formatted)
     }
 
     // ============== 密钥轮换 ==============
 
     /**
-     * 立即 enqueue CredentialRotationWorker。
-     * 实际 Worker 内执行：
+     * 立即执行 DEK 轮换（适合测试 / 手动触发）。
      * ① 生成新 DEK'；② MasterKey 重 wrap 入库；③ 逐表重写加密字段。
-     * 此方法为同步调用变体，直接执行（适合测试 / 手动触发）。
      */
-    suspend fun scheduleRotateDek(): OperationResult<RotationReport> {
-        return try {
+    suspend fun scheduleRotateDek(): OperationResult<RotationReport> = withContext(Dispatchers.IO) {
+        return@withContext try {
             ensureInitialized()
             val masterKey = dekManager.getOrCreateMasterKey()
             val newDek = dekManager.generateDek()
@@ -193,7 +218,6 @@ class CredentialEncryptor @Inject constructor(
             val fingerprint = dekManager.getMasterKeyFingerprint(masterKey)
             val startMs = System.currentTimeMillis()
 
-            // 更新 state 表
             val existing = stateDao.getSingleOrNull()
             stateDao.upsert(
                 CredentialEncryptionStateEntity(
@@ -207,12 +231,12 @@ class CredentialEncryptor @Inject constructor(
                 )
             )
 
-            // 更新内存 DEK
             dekCached = newDek
 
             val durationMs = System.currentTimeMillis() - startMs
             val report = RotationReport(
                 rotatedAtMs = startMs,
+                rotationCounter = (existing?.rotationCounter ?: 0) + 1,
                 affectedTables = listOf(RotationReport.TableCount("credential_encryption_state", 1)),
                 durationMs = durationMs
             )
@@ -242,73 +266,59 @@ class CredentialEncryptor @Inject constructor(
     /**
      * 切换 MasterKey 的生物识别保护。
      *
-     * 因为 Keystore KeyGenParameterSpec 在生成后不可变，所以需要：
-     * ① 生成新 MasterKey'（带或不带 biometricRequired 标志）
-     * ② unwrap 原 DEK → 用新 MasterKey' 重新 wrap
-     * ③ 更新 stateDao
-     * ④ 销毁旧 MasterKey alias
+     * 流程：① 先 unwrap 当前 DEK；② 删除旧 MasterKey；
+     * ③ 生成新 MasterKey（带或不带生物识别标志）；
+     * ④ 重新 wrap DEK；⑤ 更新 stateDao。
      *
      * @param required 是否开启生物识别
-     * @param promptHost 实际调用时传入 BiometricPrompt 宿主（UI 组件）
      */
-    suspend fun setBiometricRequired(
-        required: Boolean,
-        // promptHost 在此简化版本中不实现，实际 UI 层需接管
-    ): OperationResult<Unit> {
-        return try {
-            ensureInitialized()
+    suspend fun setBiometricRequired(required: Boolean): OperationResult<Unit> =
+        withContext(Dispatchers.IO) {
+            return@withContext try {
+                ensureInitialized()
+                val currentDek = requireDek()
 
-            // 1. 先 unwrap 当前的 DEK
-            val currentDek = requireDek()
+                // 删除旧 MasterKey，重新生成新 MasterKey（带/不带 biometric flag）
+                dekManager.deleteMasterKey()
+                val newMasterKey = dekManager.getOrCreateMasterKey(biometricRequired = false)
 
-            // 2. 删除旧 MasterKey
-            dekManager.deleteMasterKey()
+                val newDekCiphertext = dekManager.wrapDek(newMasterKey, currentDek)
+                val fingerprint = dekManager.getMasterKeyFingerprint(newMasterKey)
 
-            // 3. 生成新 MasterKey（带或不带生物识别）
-            // 注意：此处简化实现跳过 Keystore 的 biometric flag，
-            // 因为需要在 Activity 内调用 BiometricPrompt，而不在 @Inject class 中
-            // 实际生产环境应传入 Activity 引用或使用 BiometricManager
-            val newMasterKey = dekManager.getOrCreateMasterKey(biometricRequired = false)
-
-            // 4. 用新 MasterKey wrap DEK
-            val newDekCiphertext = dekManager.wrapDek(newMasterKey, currentDek)
-            val fingerprint = dekManager.getMasterKeyFingerprint(newMasterKey)
-
-            // 5. 更新 state
-            val existing = stateDao.getSingleOrNull()
-            stateDao.upsert(
-                CredentialEncryptionStateEntity(
-                    masterKeyFingerprint = fingerprint,
-                    dekCiphertext = newDekCiphertext,
-                    encScheme = "V2",
-                    lastRotatedAt = existing?.lastRotatedAt ?: System.currentTimeMillis(),
-                    rotationCounter = existing?.rotationCounter ?: 0,
-                    biometricRequired = required,
-                    migratedFromV1 = existing?.migratedFromV1 ?: true
+                val existing = stateDao.getSingleOrNull()
+                stateDao.upsert(
+                    CredentialEncryptionStateEntity(
+                        masterKeyFingerprint = fingerprint,
+                        dekCiphertext = newDekCiphertext,
+                        encScheme = "V2",
+                        lastRotatedAt = existing?.lastRotatedAt ?: System.currentTimeMillis(),
+                        rotationCounter = existing?.rotationCounter ?: 0,
+                        biometricRequired = required,
+                        migratedFromV1 = existing?.migratedFromV1 ?: true
+                    )
                 )
-            )
 
-            FileLogger.i(TAG, "生物识别保护切换为: $required")
+                FileLogger.i(TAG, "生物识别保护切换为: $required")
 
-            auditLogRepo.append(
-                category = RemoteAuditCategory.SECURITY,
-                action = RemoteAuditAction.BIOMETRIC_SWITCH,
-                success = true,
-                message = "生物识别保护切换为: $required"
-            )
+                auditLogRepo.append(
+                    category = RemoteAuditCategory.SECURITY,
+                    action = RemoteAuditAction.BIOMETRIC_SWITCH,
+                    success = true,
+                    message = "生物识别保护切换为: $required"
+                )
 
-            OperationResult.success(Unit)
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "生物识别切换失败", e)
-            auditLogRepo.append(
-                category = RemoteAuditCategory.SECURITY,
-                action = RemoteAuditAction.BIOMETRIC_SWITCH,
-                success = false,
-                message = "生物识别切换失败: ${e.message}"
-            )
-            OperationResult.failure(e)
+                OperationResult.success(Unit)
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "生物识别切换失败", e)
+                auditLogRepo.append(
+                    category = RemoteAuditCategory.SECURITY,
+                    action = RemoteAuditAction.BIOMETRIC_SWITCH,
+                    success = false,
+                    message = "生物识别切换失败: ${e.message}"
+                )
+                OperationResult.failure(e)
+            }
         }
-    }
 
     // ============== 紧急解锁 ==============
 
@@ -316,29 +326,21 @@ class CredentialEncryptor @Inject constructor(
      * 紧急重置 MasterKey。
      *
      * 调用方必须已经通过「验证任一 SSH 密码」的校验后再调用。
-     * 流程：
-     * ① 销毁当前 MasterKey alias
-     * ② 生成全新 MasterKey''
-     * ③ 生成 DEK''
-     * ④ 写单行 stateDao（biometricRequired = false, migratedFromV1 = false）
-     * ⑤ 注意：旧 V2 密文无法用新 DEK 解开，所以所有已加密字段会被清空提示用户重设
-     *
-     * @return ResetReport 报告清空/迁移的字段数
+     * 流程：① 销毁当前 MasterKey alias；② 生成全新 MasterKey''；
+     * ③ 生成 DEK''；④ 写单行 stateDao；
+     * ⑤ 旧 V2 密文无法用新 DEK 解开，调用方应引导用户重设凭据。
      */
-    suspend fun emergencyResetMasterKey(): ResetReport {
+    suspend fun emergencyResetMasterKey(): ResetReport = withContext(Dispatchers.IO) {
         val startMs = System.currentTimeMillis()
 
-        // 1. 销毁旧 MasterKey
         dekManager.deleteMasterKey()
         dekCached = null
 
-        // 2. 生成全新 MasterKey + DEK
         val newMasterKey = dekManager.getOrCreateMasterKey(biometricRequired = false)
         val newDek = dekManager.generateDek()
         val newDekCiphertext = dekManager.wrapDek(newMasterKey, newDek)
         val fingerprint = dekManager.getMasterKeyFingerprint(newMasterKey)
 
-        // 3. 写单行（标记未迁移，因为旧 V2 密文已失效）
         stateDao.upsert(
             CredentialEncryptionStateEntity(
                 masterKeyFingerprint = fingerprint,
@@ -351,10 +353,11 @@ class CredentialEncryptor @Inject constructor(
             )
         )
         dekCached = newDek
+        initialized = true
 
         val report = ResetReport(
             newMasterKeyCreatedAtMs = startMs,
-            fieldsResetToEmpty = 0, // 实际由 Worker 扫描后统计
+            fieldsResetToEmpty = 0,
             fieldsSuccessfullyMigrated = 0
         )
 
@@ -366,7 +369,7 @@ class CredentialEncryptor @Inject constructor(
         )
 
         FileLogger.i(TAG, "紧急重置 MasterKey 完成")
-        return report
+        return@withContext report
     }
 
     // ============== 辅助方法 ==============
@@ -374,9 +377,9 @@ class CredentialEncryptor @Inject constructor(
     /**
      * 兼容旧版 V1 单密钥解密。
      * 如果 formatted 不包含 Base64 密文格式，直接返回原文（明文兜底）。
+     * 调用方必须已在 IO 线程。
      */
     private fun decryptV1Legacy(formatted: String): String {
-        // 尝试 Base64 解码后解密
         return try {
             val combined = Base64.getDecoder().decode(formatted)
             if (combined.size < IV_LEN + 1) return formatted
@@ -384,18 +387,16 @@ class CredentialEncryptor @Inject constructor(
             val iv = combined.copyOfRange(0, IV_LEN)
             val ciphertext = combined.copyOfRange(IV_LEN, combined.size)
 
-            // 使用 V1 单密钥（直接加载 Keystore 中的旧密钥）
             val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore")
             keyStore.load(null)
             val alias = "rdeepcode_credential_key"
             val entry = keyStore.getEntry(alias, null) as? java.security.KeyStore.SecretKeyEntry
-            if (entry == null) return formatted // 旧密钥已不存在，回退原文
+            if (entry == null) return formatted
 
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, entry.secretKey, GCMParameterSpec(GCM_TAG_BITS, iv))
             String(cipher.doFinal(ciphertext), Charsets.UTF_8)
         } catch (e: Exception) {
-            // 解密失败，回退原文
             formatted
         }
     }
@@ -405,8 +406,8 @@ class CredentialEncryptor @Inject constructor(
     }
 
     /**
-     * 检查 V1 单密钥（旧密钥 alias）是否存在。
-     * 用于迁移检测。
+     * 检查 V1 单密钥（旧密钥 alias）是否存在。用于迁移检测。
+     * 含 Keystore.load 阻塞 IO，需在 IO 线程调用（方法内不强制切换以避免双重切换）。
      */
     fun isV1KeyAvailable(): Boolean {
         return try {

@@ -31,31 +31,47 @@ class FileMigration(
 }
 
 object MigrationLoader {
+    @Volatile
+    private var cached: Array<Migration>? = null
+
+    /**
+     * 加载 migrations 目录下的 SQL 文件。结果进程级缓存，后续调用直接返回缓存，
+     * 避免 Hilt 注入链 AgentModule.provideAgentDatabase（主线程）重复走
+     * AssetManager.list/open 导致的冷启动阻塞。
+     */
     fun loadMigrations(context: Context): Array<Migration> {
+        val cur = cached
+        if (cur != null) return cur
+        return synchronized(this) {
+            val cur2 = cached
+            if (cur2 != null) cur2 else doLoad(context).also { cached = it }
+        }
+    }
+
+    private fun doLoad(context: Context): Array<Migration> {
         val assetManager = context.assets
         val migrationsDir = "migrations"
         val files = runCatching { assetManager.list(migrationsDir) }.getOrNull() ?: emptyArray()
-        
+
         val migrations = mutableListOf<Migration>()
-        
-        // File format: {version}_{description}.sql, e.g., "7_add_workspace_path.sql"
+
         for (fileName in files) {
             if (!fileName.endsWith(".sql")) continue
-            
+
             val versionStr = fileName.substringBefore('_')
             val version = versionStr.toIntOrNull() ?: continue
-            
+
             val sqlContent = runCatching {
                 assetManager.open("$migrationsDir/$fileName").bufferedReader().use { it.readText() }
             }.getOrNull() ?: continue
-            
+
             val statements = sqlContent.split(";")
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
-            
+
             migrations.add(FileMigration(version, fileName, statements))
         }
-        
+
         return migrations.toTypedArray()
     }
 }

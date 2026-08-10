@@ -16,14 +16,17 @@ import com.deep.rcode.feature.settings.data.repository.LogSettingsRepository
 import com.deep.rcode.feature.settings.data.repository.resolveSshConfigOrNull
 import com.deep.rcode.feature.settings.data.remote.ModelMetadataService
 import com.deep.rcode.feature.terminal.domain.TerminalKeepaliveService
+import com.deep.rcode.core.security.CredentialEncryptor
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -108,6 +111,10 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var modelMetadataService: ModelMetadataService
 
+    /** 凭据加密器：后台异步预热，不阻塞首帧。 */
+    @Inject
+    lateinit var credentialEncryptor: CredentialEncryptor
+
     /** 长驻作用域：持续把持久化的日志等级同步到 FileLogger。 */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -140,12 +147,19 @@ class AIEditorApp : Application() {
         appScope.launch {
             logSettings.levelFlow.collectLatest { FileLogger.setMinLevel(it) }
         }
-        // 启动即同步从 DataStore 读首帧执行模式缓存到 ExecutionModeHolder，供 DI @Provides 同步读取。
-        // 异步读首帧模式写入 ExecutionModeHolder。委托层（DelegatingCommandEngine/DelegatingFileAccess）
-        // 每次方法调用时才按 holder.currentMode() 转发，不依赖注入时机，故 holder 晚几毫秒写入无妨——
-        // 首次命令/文件操作一定在 UI 启动之后，那时 holder 早已就绪。
-        // SSH 连接放后台，失败不阻塞 UI（连接失败时首次命令会触发 ensureInstalled 重试）。
-        appScope.launch {
+        // ============== RC61a 关键修正：首帧优先，延后重活 ==============
+        // 冷启动时把「加载执行模式 → 建立 SSH 连接」延后 500ms，
+        // 确保 MainActivity 先把首帧画出来（1-2 秒自动关闭通常是这一段阻塞了）。
+        // 同时在这段空闲窗口里后台预热 CredentialEncryptor（ensureInitialized 已强制 IO 线程）。
+        appScope.launch(NonCancellable + Dispatchers.Default) {
+            // 先预热加密子系统（纯后台 IO，不抢首帧资源）
+            runCatching {
+                credentialEncryptor.ensureInitialized()
+            }.onFailure {
+                FileLogger.w(TAG, "CredentialEncryptor 预热失败（将在首次加密/解密时重试）", it)
+            }
+            // 延后 500ms 再启动「执行模式 → SSH」这条链
+            delay(500L)
             val mode = executionModeRepository.executionModeFlow.first()
             executionModeHolder.setMode(mode)
             if (mode == com.deep.rcode.feature.settings.data.repository.ExecutionMode.REMOTE_SSH) {
@@ -157,11 +171,9 @@ class AIEditorApp : Application() {
                 if (cfg != null) {
                     runCatching {
                         remoteSshConnection.connect(cfg)
-                        // 连接成功后同步内置文档到远程 ~/.rdeepcode/docs/，供 AI 查阅。
                         syncDocsToRemote()
                     }.onFailure { FileLogger.e(TAG, "启动时 SSH 连接失败，将在首次命令时重试", it) }
                 }
-                // 启动 SSH 连接监督：定期探活、断线自动重连、重连成功后重新加载工作区与同步文档。
                 remoteSshConnection.startSupervisor(appScope) {
                     runCatching { workspaceRepository.initialize() }
                         .onFailure { FileLogger.w(TAG, "SSH 重连后重新加载工作区失败", it) }

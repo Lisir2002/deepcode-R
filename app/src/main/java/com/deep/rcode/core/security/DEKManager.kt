@@ -23,6 +23,11 @@ import javax.crypto.spec.SecretKeySpec
  *
  * MasterKey 支持可选的 [setUserAuthenticationRequired(true)] ，开启后 30 秒内
  * 首次解密需要指纹/面容验证。
+ *
+ * 线程安全约定：
+ *  - [getInstance]：无阻塞，纯 volatile+CAS，主线程/Hilt 注入安全。
+ *  - 其他所有方法均含 Keystore IO / 密码运算，必须在 Dispatchers.IO 调用。
+ *    调用方 CredentialEncryptor 通过 withContext(Dispatchers.IO) 保证。
  */
 class DEKManager private constructor() {
     companion object {
@@ -37,9 +42,13 @@ class DEKManager private constructor() {
         @Volatile
         private var instance: DEKManager? = null
 
+        /** 轻量无阻塞：仅 volatile + 双检锁，对象本身无任何 IO，构造函数体为空。 */
         fun getInstance(): DEKManager {
-            return instance ?: synchronized(this) {
-                instance ?: DEKManager().also { instance = it }
+            val cur = instance
+            if (cur != null) return cur
+            return synchronized(this) {
+                val cur2 = instance
+                if (cur2 != null) cur2 else DEKManager().also { instance = it }
             }
         }
     }
@@ -51,7 +60,8 @@ class DEKManager private constructor() {
     // ============== MasterKey 管理 ==============
 
     /**
-     * 获取或生成 MasterKey。
+     * 获取或生成 MasterKey（含 Keystore.load 与 KeyGenerator.generateKey IO）。
+     * 必须在 Dispatchers.IO 调用，否则会阻塞主线程导致 ANR。
      * @param biometricRequired 是否要求生物识别才能使用该密钥。
      */
     fun getOrCreateMasterKey(biometricRequired: Boolean = false): SecretKey {
@@ -70,7 +80,7 @@ class DEKManager private constructor() {
         )
         val specBuilder = KeyGenParameterSpec.Builder(
             MASTERKEY_ALIAS,
-            KeyProperties.PURPOSE_WRAP_KEY or 8 // PURPOSE_UNWRAP_KEY
+            KeyProperties.PURPOSE_WRAP_KEY or 8 // PURPOSE_UNWRAP_KEY (API 兼容常量)
         )
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
@@ -85,13 +95,13 @@ class DEKManager private constructor() {
         return keyGenerator.generateKey()
     }
 
-    /** 获取已存在的 MasterKey 指纹（SHA-256 of its encoded bytes）。 */
+    /** 获取已存在的 MasterKey 指纹（SHA-256 of its encoded bytes）。必须 IO 线程。 */
     fun getMasterKeyFingerprint(masterKey: SecretKey): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         return Base64.getEncoder().encodeToString(digest.digest(masterKey.encoded))
     }
 
-    /** 检查 MasterKey 是否在 Keystore 中存在。 */
+    /** 检查 MasterKey 是否在 Keystore 中存在。必须 IO 线程。 */
     fun isMasterKeyAvailable(): Boolean {
         return try {
             val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
@@ -102,7 +112,7 @@ class DEKManager private constructor() {
         }
     }
 
-    /** 删除 MasterKey（Keystore 中的密钥）。 */
+    /** 删除 MasterKey（Keystore 中的密钥）。必须 IO 线程。 */
     fun deleteMasterKey() {
         try {
             val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
@@ -115,9 +125,15 @@ class DEKManager private constructor() {
         }
     }
 
+    /** 重新生成并覆盖 MasterKey（紧急重置通道：生物识别锁死后使用）。必须 IO 线程。 */
+    fun regenerateMasterKey(biometricRequired: Boolean = false): SecretKey {
+        deleteMasterKey()
+        return getOrCreateMasterKey(biometricRequired)
+    }
+
     // ============== DEK 管理 ==============
 
-    /** 生成新的随机 DEK（256-bit AES）。 */
+    /** 生成新的随机 DEK（256-bit AES）。CPU-only，无 IO，任何线程都 OK。 */
     fun generateDek(): SecretKey {
         val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES)
         keyGenerator.init(DEK_LEN_BITS)
@@ -126,7 +142,7 @@ class DEKManager private constructor() {
 
     /**
      * 用 MasterKey wrap DEK → Base64 密文字符串。
-     * 结果持久化到 [CredentialEncryptionStateEntity.dekCiphertext]。
+     * 结果持久化到 [CredentialEncryptionStateEntity.dekCiphertext]。必须 IO 线程。
      */
     fun wrapDek(masterKey: SecretKey, dek: SecretKey): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -137,21 +153,23 @@ class DEKManager private constructor() {
 
     /**
      * 用 MasterKey unwrap DEK 密文 → 内存 SecretKey。
-     * 结果缓存到 [cachedDek]。
+     * 结果缓存到 [cachedDek]。必须 IO 线程。
      */
     fun unwrapDek(masterKey: SecretKey, dekCiphertextB64: String): SecretKey {
         val wrapped = Base64.getDecoder().decode(dekCiphertextB64)
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.UNWRAP_MODE, masterKey)
+        val iv = ByteArray(IV_LEN)
+        // GCM UNWRAP 不需要 IV（wrap 时用的随机 IV 已经在 wrapped 里由 cipher 解析）
         val dek = cipher.unwrap(wrapped, KeyProperties.KEY_ALGORITHM_AES, Cipher.SECRET_KEY)
         cachedDek = dek as SecretKey
         return cachedDek!!
     }
 
-    /** 获取内存缓存的 DEK（如果存在）。 */
+    /** 获取内存缓存的 DEK（如果存在）。volatile 读，任意线程。 */
     fun getCachedDek(): SecretKey? = cachedDek
 
-    /** 清除内存 DEK 缓存。 */
+    /** 清除内存 DEK 缓存。volatile 写，任意线程。 */
     fun clearDekCache() {
         cachedDek = null
     }

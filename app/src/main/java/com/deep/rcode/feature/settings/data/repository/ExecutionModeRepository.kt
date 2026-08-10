@@ -6,9 +6,11 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.deep.rcode.core.security.CredentialEncryptor
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -139,11 +141,15 @@ class ExecutionModeRepository @Inject constructor(
      *  - rc60 之后写入的：经 CredentialEncryptor 加密，decrypt 成功 → 返回明文
      *  - rc60 之前的：字段是明文，decrypt 会抛异常 → 回退原样返回
      *  - 空/空白：直接 ""
+     *
+     * RC61a 修正：强制切 IO 线程，避免在 DataStore Flow 收集线程上阻塞首帧，
+     * 造成 1-2 秒后系统杀掉启动卡住的应用。
      */
-    private suspend fun decryptCredentialCompat(raw: String?): String {
-        if (raw.isNullOrBlank()) return ""
-        return runCatching { encryptor.decrypt(raw) }.getOrElse { raw }
-    }
+    private suspend fun decryptCredentialCompat(raw: String?): String =
+        withContext(Dispatchers.IO) {
+            if (raw.isNullOrBlank()) return@withContext ""
+            runCatching { encryptor.decrypt(raw) }.getOrElse { raw }
+        }
 
     suspend fun setExecutionMode(mode: ExecutionMode) {
         context.executionModeDataStore.edit { it[MODE_KEY] = mode.name }
