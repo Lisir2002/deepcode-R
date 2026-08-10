@@ -130,6 +130,30 @@ fun SettingsScreen(
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
     val remoteConnections by viewModel.remoteConnections.collectAsStateWithLifecycle()
 
+    // RC62：跨屏跳转（terminal_settings → settings → RemoteServers）：接收来自 SettingsViewModel
+    //   的 openSection 请求，切到 SettingsScreen 内部的 section。
+    val pendingTick by viewModel.pendingOpenSectionTick.collectAsStateWithLifecycle()
+    val consumedTick by viewModel.lastConsumedSectionTick.collectAsStateWithLifecycle()
+    val lastRequestedSection by viewModel.lastRequestedSection.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingTick, consumedTick) {
+        if (pendingTick > consumedTick) {
+            val sec = lastRequestedSection
+            if (sec != null && section != sec) {
+                section = sec
+            }
+            viewModel.markPendingSectionConsumed(pendingTick)
+        }
+    }
+    // 另外一条通路：pendingOpenSection SharedFlow（理论上能更快收到），不过上面 tick
+    // 已经 100% 覆盖「进入 settings 路由栈之前就发了请求」的情况，这条只做锦上添花。
+    LaunchedEffect(Unit) {
+        viewModel.pendingOpenSection.collect { sec ->
+            if (section != sec) {
+                section = sec
+            }
+        }
+    }
+
     val currentLanguageDisplayName = if (languageTag.isNullOrBlank()) {
         stringResource(R.string.language_follow_system)
     } else {

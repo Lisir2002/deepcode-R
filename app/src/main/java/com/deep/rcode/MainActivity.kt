@@ -393,12 +393,15 @@ fun AppNavigation() {
                         scope.launch { drawerState.open() }
                     },
                     onNavigateToTerminalSettings = { navController.navigate("terminal_settings") },
+                    // RC62：用户点「管理 SSH 主机配置」不再是占位。
+                    // 从 SettingsScreen（本路由内部）点 → 直接让 SettingsScreen 的 section 切换 RemoteServers。
+                    // 实现方式：利用 SettingsScreen 内部已经消费的 SettingsViewModel.openSection() 机制，
+                    //   它内部 section 是 remember mutableState，但 LaunchedEffect(pendingTick) 会在 next frame
+                    //   把它赋值成 RemoteServers。
                     onNavigateToSshHosts = {
-                        // SSH 主机管理：目前还没独立页，先跳到设置页的 RemoteServers 入口，
-                        // 等 SSH 页补上后改成直接路由。
-                        if (!navController.popBackStack()) {
-                            navController.navigate("settings")
-                        }
+                        settingsViewModel.openSection(
+                            com.deep.rcode.feature.settings.presentation.component.SettingsSection.RemoteServers
+                        )
                     },
                     onStopAllAndCloseTerminal = { agentViewModel.stopAllAndCloseTerminal() }
                 )
@@ -416,9 +419,20 @@ fun AppNavigation() {
                 TerminalSettingsScreen(
                     viewModel = terminalSettingsVM,
                     onNavigateBack = { navController.popBackStack() },
+                    // RC62：TerminalSettings 里点「管理 SSH 主机配置」→ 跨路由栈切到 Settings 的 RemoteServers 分区。
+                    // 顺序必须是「先发 openSection（写入 SettingsViewModel 单例，CONFLATED Channel 只保留最新）
+                    // 再 pop 回 settings 路由」，因为 SettingsScreen 在 composable 首帧就会 consume pendingTick：
+                    //   tick(1) > consumed(-1) → 读 lastRequestedSection=RemoteServers → section=RemoteServers。
                     onNavigateToSshHosts = {
-                        // 同 RemoteServers 占位：先回 Settings 的对应分区。
-                        navController.popBackStack("settings", inclusive = false)
+                        settingsViewModel.openSection(
+                            com.deep.rcode.feature.settings.presentation.component.SettingsSection.RemoteServers
+                        )
+                        val popped = navController.popBackStack("settings", inclusive = false)
+                        if (!popped) {
+                            // 理论上不会发生，因为 terminal_settings 一定是从 settings 导航过来的；
+                            // 兜底直接 go settings，路由创建时 LaunchedEffect(pendingTick) 也会消费。
+                            navController.navigate("settings")
+                        }
                     },
                     onNavigateToBundleManager = { navController.navigate("terminal_bundle_manager") },
                     onNavigateToCustomPackages = { navController.navigate("terminal_custom_packages") }
