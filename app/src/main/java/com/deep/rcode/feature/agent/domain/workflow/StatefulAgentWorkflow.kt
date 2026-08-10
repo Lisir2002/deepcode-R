@@ -666,10 +666,33 @@ class StatefulAgentWorkflow @Inject constructor(
         }
     }
 
+    /**
+     * 当前聊天模型是否「有原生能力支持多模态」。
+     *
+     * 影响两条关键链路：
+     *  (1) `runToolSync(name=="viewImage")` L586 的守卫：
+     *      if (!activeModelSupportsVision(...)) → 直接抛「当前聊天模型不支持图片输入」
+     *      这条就是用户接入 step-3.7-flash 时截图里看到的错误文案。
+     *
+     *  (2) `pendingVisionRound` 是否启用独立识图模型 fallback 的判定入口。
+     *
+     * 语义必须与 `shouldSendImages` 一致宽松：
+     *  - catalog 明确 supportsVision=true → 支持；
+     *  - catalog 明确 supportsVision=false（MODELS_DEV 收录的纯文本模型）→ 不支持；
+     *  - **source=INFERRED（模型不在 catalog，包括用户的兼容端点/自建服务/新命名）
+     *    → 一律视为支持多模态**。
+     *
+     *  理由：即便是 INFERRED 的文本模型真的不支持 vision，最多也就是上游 API 报 400，
+     *  错误会正常走 AgentEvent.Failed 显示在 UI 上，用户秒懂并改正。
+     *  远好于这里把它误判成「不支持」，直接回退到独立识图模型/或报错（step-3.7-flash
+     *  官方文档明明写了原生多模态，但白名单没写它，就被这里守卫错拦到那条可怕的
+     *  「设置→默认模型→识图模型」提示里，用户以为自己的模型配置错了）。
+     */
     private suspend fun activeModelSupportsVision(sessionId: String?): Boolean {
         val config = resolveProviderConfig(sessionId) ?: return false
         val metadata = modelMetadataService.resolve(config.type, config.effectiveModel)
-        return metadata.supportsVision
+        if (metadata.supportsVision) return true
+        return metadata.source == ModelMetadata.Source.INFERRED
     }
 
     /**

@@ -153,7 +153,13 @@ class ModelMetadataService @Inject constructor(
             idLower.contains("qwen3-vl") || idLower.contains("doubao") && idLower.contains("vision") ||
             idLower.contains("ministral-3b") || idLower.contains("pixtral") ||
             idLower.contains("claude-3-5-sonnet") || idLower.contains("claude-3-opus") ||
-            idLower.contains("claude-3-haiku") || idLower.contains("claude-3.7")
+            idLower.contains("claude-3-haiku") || idLower.contains("claude-3.7") ||
+            // 阶跃星辰 StepFun 家族：step-3.7-flash 官方文档明确「原生多模态（图+视频+工具调用）」
+            // step-3.5-flash 官方文档明确纯文本不含多模态，排除。
+            (idLower.startsWith("step-") && !idLower.contains("step-3.5")) ||
+            idLower.startsWith("step1v") || idLower.startsWith("step2v") ||
+            idLower.startsWith("step-1v") || idLower.startsWith("step-2v") ||
+            idLower.startsWith("step-1.5v")
         val probablyReasoning =
             idLower.contains("reasoning") || idLower.contains("o1") || idLower.contains("o3") ||
             idLower.contains("deepseek-r") || idLower.contains("rwkv") && idLower.contains("-r") ||
