@@ -11,6 +11,12 @@ import com.deep.rcode.feature.agent.data.local.dao.ChatSessionDao
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointDao
 import com.deep.rcode.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.deep.rcode.feature.agent.data.local.dao.TodoItemDao
+import com.deep.rcode.feature.agent.data.local.dao.UserConfirmedSentinelDao
+import com.deep.rcode.feature.agent.data.local.dao.HallucinationFuseDao
+import com.deep.rcode.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
+import com.deep.rcode.feature.agent.data.local.dao.HardConstraintDeleteAuditDao
+import com.deep.rcode.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
+import com.deep.rcode.feature.agent.data.local.dao.ZthTelemetryEventDao
 import com.deep.rcode.feature.settings.data.local.dao.AIProviderDao
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
 import com.deep.rcode.feature.agent.data.local.database.AgentDatabase
@@ -226,6 +232,43 @@ object AgentModule {
     @Singleton
     fun provideModelCapabilityOverrideDao(database: AgentDatabase): ModelCapabilityOverrideDao {
         return database.modelCapabilityOverrideDao()
+    }
+
+    // ── ZTH Phase 1/4 新增 6 个 DAO（AgentDatabase L75-L80 已声明，此处必须 @Provides 否则 Hilt MissingBinding） ──
+    @Provides
+    @Singleton
+    fun provideUserConfirmedSentinelDao(database: AgentDatabase): UserConfirmedSentinelDao {
+        return database.userConfirmedSentinelDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideHallucinationFuseDao(database: AgentDatabase): HallucinationFuseDao {
+        return database.hallucinationFuseDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideSentinelPlanRejectionAuditDao(database: AgentDatabase): SentinelPlanRejectionAuditDao {
+        return database.sentinelPlanRejectionAuditDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideHardConstraintDeleteAuditDao(database: AgentDatabase): HardConstraintDeleteAuditDao {
+        return database.hardConstraintDeleteAuditDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideL0SoftCompactRestoreLogDao(database: AgentDatabase): L0SoftCompactRestoreLogDao {
+        return database.l0SoftCompactRestoreLogDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideZthTelemetryEventDao(database: AgentDatabase): ZthTelemetryEventDao {
+        return database.zthTelemetryEventDao()
     }
 
     @Provides
