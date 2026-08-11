@@ -116,9 +116,9 @@ class GenerateImageTool @Inject constructor(
 
     override fun executeStream(
         args: Map<String, JsonElement>,
-        context: AgentContext
+        agentCtx: AgentContext
     ): Flow<ToolStreamEvent> = flow {
-        val sessionId = context.sessionId ?: "UNKNOWN_SESSION"
+        val sessionId = agentCtx.sessionId ?: "UNKNOWN_SESSION"
         val taskId = "t2i_${UUID.randomUUID().toString().replace("-", "")}"
 
         emit(ToolStreamEvent.Progress("解析参数..."))
