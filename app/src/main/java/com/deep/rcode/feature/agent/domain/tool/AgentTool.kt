@@ -65,7 +65,13 @@ enum class ToolCapability {
     USER_INTERACTION,
     MODIFY_SESSION_STATE,
     MODIFY_TODO_STATE,
-    EXTERNAL_TOOL
+    EXTERNAL_TOOL,
+    /** C.4.4 ZTH：加载 MCP 第三方服务（install 动态 server）。 */
+    LOAD_MCP_SERVER,
+    /** C.4.4 ZTH：加载 Skill 文件（执行 .md/.skill 外部规则）。 */
+    LOAD_SKILL_BUNDLE,
+    /** C.4.8 ZTH：修改用户已确认 sentinel / 保留策略 / 硬约束。 */
+    MODIFY_USER_CONFIRMED_STATE
 }
 
 data class PendingToolPermission(

@@ -313,6 +313,21 @@ class StatefulAgentWorkflow @Inject constructor(
                     if (remaining.isNotEmpty()) {
                         effects.add(AgentSideEffect.RequestPermission(remaining.first()))
                     } else {
+                        // ════════════════════════════════════════════════════════════
+                        // ZTH 接入点 B（hookPreToolAudit）：Phase 5 C.5 四方联动第 2 站
+                        // 插入位置：PermissionEvaluated reducer 所有 toolCall 已批准（approved
+                        //   集合已满 + remaining.isEmpty），effects.add(ExecuteToolBatch) 之前。
+                        // 接入代码（示例，不改状态树只做挂起审查）：
+                        //   val auditBundle = zthWorkflowHooks.hookPreToolAudit(
+                        //       sessionId = currentContext.sessionId,
+                        //       toolCalls = approved,
+                        //       capabilityResolver = { tc -> resolveCapabilities(tc.name) },
+                        //       mode = AgentMode.BUILD,
+                        //       executionMode = ExecutionMode.LOCAL_PROOT,
+                        //       onlineValidated = true
+                        //   )
+                        //   // auditBundle.anyBlockedByGlobalDeny → 整批拒绝写 ToolBatchResult
+                        // ════════════════════════════════════════════════════════════
                         effects.add(AgentSideEffect.ExecuteToolBatch(approved))
                     }
                 } else {
@@ -362,11 +377,30 @@ class StatefulAgentWorkflow @Inject constructor(
                     if (remaining.isNotEmpty()) {
                         effects.add(AgentSideEffect.RequestPermission(remaining.first()))
                     } else {
+                        // ════════════════════════════════════════════════════════════
+                        // ZTH 接入点 B 分支 2（hookPreToolAudit）：PermissionEvaluated deny
+                        //   分支，remaining 清空后也要跑 preTool（不挂 CC 但写遥测）。
+                        // ════════════════════════════════════════════════════════════
                         effects.add(AgentSideEffect.ExecuteToolBatch(newState.approvedToolCalls))
                     }
                 }
             }
             is AgentAction.ToolBatchFinished -> {
+                // ════════════════════════════════════════════════════════════
+                // ZTH 接入点 C（hookPostToolAudit）：Phase 5 C.5 四方联动第 3 站
+                // 插入位置：ToolBatchFinished reducer 入口（已进入 reducer，action.results
+                //   可用），在组装 appendedMessages 之前。
+                // 接入代码（示例，每个 tool result 逐一挂 postTool 幻觉扫）：
+                //   action.results.forEach { r ->
+                //       zthWorkflowHooks.hookPostToolAudit(
+                //           sessionId = currentContext.sessionId,
+                //           callId = r.id, toolName = r.toolName,
+                //           outputText = r.result,
+                //           modifiedFilesHint = extractModifiedFiles(r.toolName, argsMap)
+                //       )
+                //       // hallucinationFlag=true → FailureClassifier(E7) + 弹卡
+                //   }
+                // ════════════════════════════════════════════════════════════
                 // 本批工具全部执行完，按 batchToolCalls 原始顺序组装 tool 响应：
                 // 优先取策略拒绝结果，其次取并行执行结果，保证与 assistant(toolCalls) 顺序一致。
                 val resultsById = action.results.associateBy { it.id }
@@ -608,6 +642,22 @@ class StatefulAgentWorkflow @Inject constructor(
                                 // 流式被中断时也要落库已收到的思考：否则下方 finally 会清空流式思考气泡，
                                 // 而落库的接力消息又没产生，表现为「思考显示后凭空消失且无报错」。
                                 // 有正文或有思考其一即落库；两者皆空则不写空消息。
+                                // ════════════════════════════════════════════════════════════
+                                // ZTH 接入点 D（hookOnThrowable）：Phase 5 C.5 四方联动第 4 站
+                                // 插入位置：CallLlm catch(e: Exception) 分支，备选方案② visionFallback
+                                //   已尝试完毕但未命中（进入本 else 分支，准备走 LlmError 原逻辑）之前。
+                                // 接入代码（示例，不改 state 结构，把 hook 返回 banner 注入 errorMessage）：
+                                //   val classifyBundle = zthWorkflowHooks.hookOnThrowable(
+                                //       sessionId = currentContext.sessionId,
+                                //       throwable = e,
+                                //       mode = AgentMode.BUILD,
+                                //       executionMode = ExecutionMode.LOCAL_PROOT,
+                                //       onlineValidated = true,
+                                //       httpStatusCode = extractHttpStatusCode(e)
+                                //   )
+                                //   // classifyBundle.suspendForCard=true → 挂 CC 等用户确认再继续
+                                //   // classifyBundle.autoRecoveryHint → 拼到 LlmError message 显示
+                                // ════════════════════════════════════════════════════════════
                                 if (partial.isNotEmpty() || reasoning.isNotBlank()) {
                                     send(AgentEvent.AssistantText(partial, emptyList(), reasoning))
                                 }
@@ -694,6 +744,23 @@ class StatefulAgentWorkflow @Inject constructor(
 
                                 // PLAN→BUILD 时挂起 workflow，等待用户在计划审查面板批准后才继续
                                 if (newCtx.mode == AgentMode.BUILD) {
+                                    // ════════════════════════════════════════════════════════════
+                                    // ZTH 接入点 A（hookPrePlanAudit）：Phase 5 C.5 四方联动第 1 站
+                                    // 插入位置：SwitchModeTool(PLAN→BUILD) 完成上下文切换计算后，
+                                    //           planApprovalManager.awaitApproval() 调用之前。
+                                    // 接入代码（示例，保持 HOOK-INV 不破坏 reducer 不变性）：
+                                    //   val (zthChoice, structuredPlan) = zthWorkflowHooks.hookPrePlanAudit(
+                                    //       sessionId = currentContext.sessionId,
+                                    //       originalPlanReason = reason,
+                                    //       planText = reason,
+                                    //       affectedFiles = emptyList(),  // 后续从 SwitchModeTool 参数传
+                                    //       estimatedToolCalls = 0,
+                                    //       mode = AgentMode.PLAN,
+                                    //       executionMode = ExecutionMode.LOCAL_PROOT,
+                                    //       onlineValidated = true
+                                    //   )
+                                    //   // 若 zthChoice == REFINE → 直接走 REFINE 分支（不调原生 awaitApproval）
+                                    // ════════════════════════════════════════════════════════════
                                     val choice = planApprovalManager.awaitApproval(reason, currentContext.sessionId)
                                     if (choice == PlanApprovalChoice.APPROVE) {
                                         currentContext = newCtx
