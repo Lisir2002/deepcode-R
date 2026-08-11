@@ -341,12 +341,13 @@ object LightweightSchemaRescue {
         // 如果 checkpoint 失败（极端情况：Room 崩溃前 DB 正处于不可打开状态），退化为「一起 copy wal/shm」，
         // 保证用户最近聊天/设置不落空（默认 API 28+ Room 都启用 WAL）。
         runCatching {
-            val config = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperConfiguration.Builder(
-                context, name = dbFile.name, callback = object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(1) {
+            val config = androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbFile.absolutePath)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(1) {
                     override fun onCreate(db: SupportSQLiteDatabase) {}
                     override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
-                }
-            ).build()
+                })
+                .build()
             val helper = FrameworkSQLiteOpenHelperFactory().create(config)
             try {
                 helper.writableDatabase.use { db ->

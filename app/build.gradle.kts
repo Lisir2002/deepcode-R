@@ -232,6 +232,11 @@ android {
 
     buildFeatures {
         compose = true
+        // RC67a 新增：Android Gradle Plugin 8+ 默认不生成 BuildConfig.java（仅 buildConfig=true 时才生成）。
+        // P0-2 assertContinuity 需要 BuildConfig.DEBUG 来区分 Debug/Release：
+        //   Debug 构建发现 SCHEMA_GAP 直接抛异常 → 开发者/CI 立刻看见坏版本；
+        //   Release 构建只写日志 → 保持启动安全语义（永不阻断启动）。
+        buildConfig = true
     }
 
 
