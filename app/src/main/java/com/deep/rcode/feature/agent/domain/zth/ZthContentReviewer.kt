@@ -28,7 +28,7 @@ class ZthContentReviewer @Inject constructor() {
         // ── 8 HIGH（Step 1 light scan 只查这些）── C.4.4 E8 1 级危险
         Rule("e8_curl_pipe_sh", Regex("""(curl|wget)\s+(-[A-Za-z0-9\-]+\s+)*[^\s|;&`]+(\.sh|\.bash|\.zsh)?\s*\|\s*(sudo\s+)?(sh|bash|ash|zsh|ksh|dash)\b"""), 2.0f, Severity.HIGH),
         Rule("e8_chmod_777_or_recursive_root", Regex("""chmod\s+(-R\s+)?(777|a\+rwx)\s+(/|/root|/etc|/usr|/var|/home|~)"""), 2.0f, Severity.HIGH),
-        Rule("e8_rm_rf_slash", Regex("""rm\s+(-[rfR]+\s*|-\S*[rfR]\S*\s+)(/\*?|/\s*$|~|/root|/home|\$HOME)\b"""), 2.0f, Severity.HIGH),
+        Rule("e8_rm_rf_slash", Regex("""rm\s+(-[rfR]+\s*|-\S*[rfR]\S*\s+)(/\*?|/\s*$|~|/root|/home|${'$'}HOME)\b"""), 2.0f, Severity.HIGH),
         Rule("e8_sudo_prefix_without_confirm", Regex("""(^|[\n;&|`])\s*sudo\s+(chmod|chown|rm|shutdown|reboot|mkfs|dd|iptables|passwd\s+\-|useradd|usermod)"""), 2.0f, Severity.HIGH),
         Rule("e8_eval_base64_decode_exec", Regex("""(base64\s*-d\b|python3?\s+-c\s+['\"][^'\"]*base64[^'\"]*['\"]|echo\s+['\"]?[A-Za-z0-9+/=\s]{80,}['\"]?\s*\|\s*sh)"""), 2.0f, Severity.HIGH),
         Rule("e8_cryptsetup_or_dm_crypt", Regex("""\b(cryptsetup|dmsetup\s+create\s+.*--readonly|gpg\s+--batch\s+--passphrase-fd|openssl\s+enc\s+-aes-256-cbc\s+-k)"""), 2.0f, Severity.HIGH),

@@ -109,7 +109,7 @@ class ZthCapabilityGuard @Inject constructor() {
         // E5：rm -rf /* 或 rm /root/.* （破坏性删除，C.4.4）
         "skill_rm_recursive_dangerous" to {
             (it.skillBundleKey != null || it.mcpServerName != null)
-                    && it.argsPreviewText.contains(Regex("""rm\s+(-[rfR]+\s+|-\S*[rfR]\S*\s+)(/|/\*|/root|/home|\$HOME|~)\b"""))
+                    && it.argsPreviewText.contains(Regex("""rm\s+(-[rfR]+\s+|-\S*[rfR]\S*\s+)(/|/\*|/root|/home|${'$'}HOME|~)\b"""))
         },
         // E6：LOAD_SKILL_BUNDLE + 参数预览里没 .skill 文件 extension（可疑脚本伪装，C.4.4）
         "mcp_skill_skillbundle_without_extension" to {

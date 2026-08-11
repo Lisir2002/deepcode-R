@@ -42,6 +42,7 @@ data class ZthToolCallPlanItem(
 enum class ZthCapabilityVerdict {
     PASS_ZERO_RISK_HEURISTIC,
     PASS_LOCAL_HEURISTIC,
+    PASS_HEURISTIC_SKIP_LLM,
     NEED_USER_CONFIRM,
     NEED_LLM_FINAL_REVIEW,
     BLOCKED_BY_GLOBAL_DENY

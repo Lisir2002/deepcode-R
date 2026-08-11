@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.deep.rcode.core.theme.Spacing
+import com.deep.rcode.feature.agent.domain.zth.ZthConfirmationCardStateMachine
 import com.deep.rcode.feature.agent.presentation.ZthConfirmationCardViewModel
 
 /**
