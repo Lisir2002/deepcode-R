@@ -198,7 +198,7 @@ class DbSCHIELDPreflightTest {
     // 5) SQL-SEMICOLON-TEST: SQL 字符串字面量内不允许出现 ';'，防止 MigrationLoader.split(';') 把语句切两半
     // ─────────────────────────────────────────────────────────────
     @Test
-    fun `SQL-SEMICOLON-TEST - 迁移 SQL 字符串字面量内不得包含分号字符（防 split(';') 错切）`() {
+    fun `SQL-SEMICOLON-TEST - 迁移 SQL 字符串字面量不得包含分号字符（防 split半角分号 错切语句）`() {
         val migrations = listMigrationFiles()
         val bad = mutableListOf<Pair<String, Int>>()
         for (mf in migrations) {
