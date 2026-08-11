@@ -203,31 +203,45 @@ class DbSCHIELDPreflightTest {
         val bad = mutableListOf<Pair<String, Int>>()
         for (mf in migrations) {
             val txt = mf.file.readText()
-            // 简易解析 SQL 字符串字面量：以 ' 开头直到下一个非转义 '
-            // 规则：遇到单引号开启字符串；字符串内 '' 是 SQLite 转义的单引号；遇到单独的 ' 结束
+            // 先按行处理：SQL 行注释 -- 后面的内容整段跳过（注释里的单引号/分号不进扫描），
+            // 然后合并非注释内容做字符串字面量解析（保留 \n 用于行号对齐）。
+            val lineCleaned = buildString {
+                var inStr = false
+                var j = 0
+                var lineStart = 0
+                while (j < txt.length) {
+                    val c = txt[j]
+                    if (c == '\n') {
+                        append('\n'); inStr = false; lineStart = j + 1; j++; continue
+                    }
+                    // 行注释：-- 只在字符串外生效
+                    if (!inStr && c == '-' && j + 1 < txt.length && txt[j + 1] == '-') {
+                        // 跳到行尾，但保留换行
+                        while (j < txt.length && txt[j] != '\n') j++
+                        continue
+                    }
+                    if (!inStr && c == '\'') { inStr = true; append(c); j++; continue }
+                    if (inStr && c == '\'') {
+                        if (j + 1 < txt.length && txt[j + 1] == '\'') { append("''"); j += 2; continue }
+                        else { inStr = false; append(c); j++; continue }
+                    }
+                    append(c); j++
+                }
+            }
             var inString = false
             var line = 1
             var j = 0
-            while (j < txt.length) {
-                val c = txt[j]
-                if (c == '\n') {
-                    line++; j++; continue
-                }
-                if (!inString && c == '\'') {
-                    inString = true; j++; continue
-                }
+            while (j < lineCleaned.length) {
+                val c = lineCleaned[j]
+                if (c == '\n') { line++; j++; continue }
+                if (!inString && c == '\'') { inString = true; j++; continue }
                 if (inString) {
                     if (c == '\'') {
-                        // 看 j+1 是不是也是 ' → SQLite '' 转义
-                        if (j + 1 < txt.length && txt[j + 1] == '\'') {
-                            j += 2; continue
-                        } else {
-                            inString = false; j++; continue
-                        }
+                        if (j + 1 < lineCleaned.length && lineCleaned[j + 1] == '\'') { j += 2; continue }
+                        else { inString = false; j++; continue }
                     }
                     if (c == ';') {
                         bad.add(mf.fileName to line)
-                        // 一个文件命中一次就够，跳过这个文件
                         break
                     }
                 }
