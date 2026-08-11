@@ -782,4 +782,26 @@
     <string name="about_download_complete">下载完成</string>
     <string name="about_install_apk">安装 APK</string>
     <string name="about_open_releases_page">网页版下载</string>
+
+    <!-- About - New Fields for Rewrite -->
+    <string name="about_slogan">AI 驱动 · 口袋里的代码编辑器</string>
+    <string name="about_active_days">活跃天数</string>
+    <string name="about_download_progress_detail">%1$s / %2$s</string>
+    <string name="about_download_speed">%1$s/s</string>
+    <string name="about_action_share">分享</string>
+    <string name="about_action_star">Star</string>
+    <string name="about_action_feedback">反馈</string>
+    <string name="about_action_community">加群</string>
+
+    <!-- About - Open Source Credits -->
+    <string name="about_credits">Powered by Open Source</string>
+    <string name="about_credits_subtitle">致敬每一位开源贡献者</string>
+    <string name="about_credit_room">Room</string>
+    <string name="about_credit_hilt">Hilt</string>
+    <string name="about_credit_okhttp">OkHttp</string>
+    <string name="about_credit_compose">Jetpack Compose</string>
+    <string name="about_credit_kotlin">Kotlin</string>
+    <string name="about_credit_coroutines">Coroutines</string>
+    <string name="about_credit_material">Material 3</string>
+    <string name="about_credit_ktor">Ktor</string>
 </resources>

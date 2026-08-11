@@ -21,7 +21,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
@@ -31,6 +37,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +47,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -60,8 +68,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,6 +81,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -77,9 +90,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.deep.rcode.R
 import com.deep.rcode.core.theme.Brand
+import com.deep.rcode.core.theme.CyberColors
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
+import com.deep.rcode.core.theme.CyberCard
+import com.deep.rcode.core.theme.CyberSectionHeader
+import com.deep.rcode.core.theme.CyberMenuRow
 import com.deep.rcode.feature.settings.presentation.AboutStatsViewModel
+import com.deep.rcode.feature.settings.presentation.UsageStats
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Book
 import compose.icons.feathericons.ChevronDown
@@ -89,175 +107,26 @@ import compose.icons.feathericons.Github
 import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Hash
 import compose.icons.feathericons.MessageSquare
+import compose.icons.feathericons.Send
 import compose.icons.feathericons.Share2
 import compose.icons.feathericons.Star
 import compose.icons.feathericons.Tag
 import compose.icons.feathericons.UploadCloud
+import compose.icons.feathericons.Users
+import compose.icons.feathericons.Calendar
 
-private val cyberGradient: Brush
-    @Composable
-    get() = Brush.linearGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.secondary,
-            MaterialTheme.colorScheme.primary
-        ),
-        start = Offset.Zero,
-        end = Offset.Infinite
+// ============================================================
+// Internal theme helpers for About page
+// ============================================================
+
+private val primaryGradient: Brush
+    @Composable get() = Brush.horizontalGradient(
+        listOf(CyberColors.Cyan, CyberColors.LineBlue)
     )
 
-private val cyberBorderGradient: Brush
-    @Composable
-    get() = Brush.horizontalGradient(
-        colors = listOf(
-            Brand.Sky,
-            MaterialTheme.colorScheme.primary
-        )
-    )
-
-@Composable
-private fun CyberCard(
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    val gradient = remember { Brush.horizontalGradient(listOf(Brand.Sky, Brand.Blue)) }
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(Radius.lg))
-            .background(gradient.copy(alpha = 0.15f))
-            .padding(1.5.dp)
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(Radius.lg - 1.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-private fun CyberSectionHeader(text: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = Spacing.xs),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .width(4.dp)
-                .height(18.dp)
-                .clip(RoundedCornerShape(Radius.xs))
-                .background(cyberBorderGradient)
-        )
-        Spacer(Modifier.width(Spacing.sm))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-    }
-}
-
-@Composable
-private fun CyberMenuRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String? = null,
-    value: String? = null,
-    onClick: () -> Unit
-) {
-    CyberCard {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onClick() }
-                .padding(Spacing.lg),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(Radius.md))
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Spacer(Modifier.width(Spacing.md))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (subtitle != null) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            if (value != null) {
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.width(Spacing.sm))
-            }
-            Icon(
-                imageVector = FeatherIcons.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun CyberProgressIndicator(progressPct: Int, modifier: Modifier = Modifier) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = (progressPct.coerceIn(0, 100) / 100f),
-        animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
-        label = "progress"
-    )
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        Text(
-            text = stringResource(R.string.about_downloading, progressPct),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        LinearProgressIndicator(
-            progress = { animatedProgress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(Radius.pill)),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            drawStopIndicator = {}
-        )
-    }
-}
+// ============================================================
+// Entry point
+// ============================================================
 
 @Composable
 internal fun AboutSection() {
@@ -287,31 +156,39 @@ internal fun AboutSection() {
                 packageName = context.packageName,
                 minSdk = minSdk
             )
-        }.getOrDefault(AppInfo("unknown", 0L, context.packageName, Build.VERSION.SDK_INT))
+        }.getOrDefault(AppInfo("unknown", 0L, context.packageName, Build.VERSION_CODES.P))
     }
 
     val appIcon = remember { loadAppIconBitmap(context) }
-
     var updateDialog by remember { mutableStateOf<UpdateDialogState?>(null) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(CyberColors.DarkBg)
             .verticalScroll(rememberScrollState())
-            .padding(Spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+            .padding(vertical = Spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(Spacing.lg)
     ) {
-        HeroSection(appName = stringResource(R.string.app_name), appIcon = appIcon, appInfo = appInfo)
+        HeroSection(
+            appName = stringResource(R.string.app_name),
+            appIcon = appIcon,
+            appInfo = appInfo
+        )
 
         UsageStatsSection(stats = stats)
 
         FaqSection()
 
-        CyberSectionHeader(stringResource(R.string.about_share))
-        ShareAndFeedbackSection(context)
+        CyberSectionHeader(text = stringResource(R.string.about_share))
+        ActionButtonsRow(
+            onShare = { shareApp(context) },
+            onStar = { openUrl(context, GITHUB_REPO_URL) },
+            onFeedback = { openUrl(context, ISSUES_URL) },
+            onCommunity = { openUrl(context, COMMUNITY_URL) }
+        )
 
-        CyberSectionHeader(stringResource(R.string.about_version))
+        CyberSectionHeader(text = stringResource(R.string.about_version))
         LinksSection(
             context = context,
             appInfo = appInfo,
@@ -324,6 +201,10 @@ internal fun AboutSection() {
                 }
             }
         )
+
+        OpenSourceCreditsSection()
+
+        Spacer(Modifier.height(Spacing.lg))
     }
 
     updateDialog?.let { state ->
@@ -337,8 +218,14 @@ internal fun AboutSection() {
                         context = context,
                         tag = releaseInfo.latestTag,
                         downloadUrl = releaseInfo.downloadUrl,
-                        onProgress = { pct, path ->
-                            updateDialog = UpdateDialogState.Downloading(pct, path)
+                        onProgress = { pct, downloaded, total, speed, path ->
+                            updateDialog = UpdateDialogState.Downloading(
+                                progressPct = pct,
+                                downloadedBytes = downloaded,
+                                totalBytes = total,
+                                speedBytesPerSec = speed,
+                                filePath = path
+                            )
                         },
                         onComplete = { path ->
                             updateDialog = UpdateDialogState.Downloaded(path)
@@ -360,252 +247,395 @@ internal fun AboutSection() {
     }
 }
 
+// ============================================================
+// 1. Hero Section - Left Icon + Right Details with Neon Top Bar
+// ============================================================
+
 @Composable
 private fun HeroSection(
     appName: String,
     appIcon: ImageBitmap?,
     appInfo: AppInfo
 ) {
-    CyberCard {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.lg),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(cyberBorderGradient)
-                    .padding(4.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.surface),
-                contentAlignment = Alignment.Center
-            ) {
-                if (appIcon != null) {
-                    Image(
-                        bitmap = appIcon,
-                        contentDescription = null,
-                        modifier = Modifier.size(88.dp)
-                    )
-                }
-            }
+    // Neon glow decoration brush
+    val neonTopBrush = remember {
+        Brush.horizontalGradient(
+            colors = listOf(
+                CyberColors.Cyan.copy(alpha = 0f),
+                CyberColors.Cyan.copy(alpha = 0.8f),
+                CyberColors.LineBlue.copy(alpha = 0.8f),
+                CyberColors.Cyan.copy(alpha = 0f)
+            )
+        )
+    }
 
-            Spacer(Modifier.width(Spacing.lg))
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg)
+    ) {
+        CyberCard {
+            Column {
+                // Neon glow top bar decoration
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp)
+                        .background(brush = neonTopBrush)
+                )
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-            ) {
-                Text(
-                    text = buildAnnotatedString {
-                        withStyle(
-                            SpanStyle(
-                                brush = cyberGradient,
-                                fontWeight = FontWeight.Bold
+                Spacer(Modifier.height(Spacing.lg))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Left: Big App Icon with double gradient border
+                    Box(
+                        modifier = Modifier
+                            .size(108.dp)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(primaryGradient)
+                            .padding(3.5.dp)
+                            .clip(RoundedCornerShape(24.5.dp))
+                            .background(
+                                brush = Brush.radialGradient(
+                                    listOf(
+                                        CyberColors.Cyan.copy(alpha = 0.22f),
+                                        CyberColors.CardBg
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (appIcon != null) {
+                            Image(
+                                bitmap = appIcon,
+                                contentDescription = null,
+                                modifier = Modifier.size(96.dp)
                             )
-                        ) {
-                            append(appName)
                         }
-                    },
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    text = stringResource(R.string.about_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.xs))
-                InfoLine(
-                    label = stringResource(R.string.about_version),
-                    value = "v${appInfo.name}"
-                )
-                InfoLine(
-                    label = stringResource(R.string.about_build_no),
-                    value = appInfo.code.toString()
-                )
-                InfoLine(
-                    label = stringResource(R.string.about_package),
-                    value = appInfo.packageName
-                )
-                InfoLine(
-                    label = stringResource(R.string.about_sdk_min),
-                    value = "Android API ${appInfo.minSdk}"
-                )
-            }
+                    }
 
-            Spacer(Modifier.width(Spacing.md))
+                    Spacer(Modifier.width(Spacing.lg))
 
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-            ) {
-                Text(
-                    text = stringResource(R.string.about_author_title),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = stringResource(R.string.about_author),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Brand.Sky
-                )
-                Icon(
-                    imageVector = FeatherIcons.Github,
-                    contentDescription = null,
-                    tint = Brand.Sky,
-                    modifier = Modifier.size(22.dp)
-                )
+                    // Right: App Name + Slogan + Info Grid
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    ) {
+                        // Gradient App Name
+                        Text(
+                            text = buildAnnotatedString {
+                                withStyle(
+                                    SpanStyle(
+                                        brush = primaryGradient,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                ) {
+                                    append(appName)
+                                }
+                            },
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+
+                        // Slogan
+                        Text(
+                            text = stringResource(R.string.about_slogan),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = CyberColors.Cyan.copy(alpha = 0.8f),
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        Spacer(Modifier.height(Spacing.xs))
+
+                        // Version info grid (2 columns)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.md)
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                            ) {
+                                HeroInfoChip(
+                                    label = stringResource(R.string.about_version),
+                                    value = "v${appInfo.name}"
+                                )
+                                HeroInfoChip(
+                                    label = stringResource(R.string.about_sdk_min),
+                                    value = "API ${appInfo.minSdk}"
+                                )
+                            }
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                            ) {
+                                HeroInfoChip(
+                                    label = stringResource(R.string.about_build_no),
+                                    value = "#${appInfo.code}"
+                                )
+                                HeroInfoChip(
+                                    label = stringResource(R.string.about_author_title),
+                                    value = stringResource(R.string.about_author),
+                                    isAccent = true
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(Spacing.md))
             }
         }
     }
 }
 
 @Composable
-private fun InfoLine(label: String, value: String) {
+private fun HeroInfoChip(
+    label: String,
+    value: String,
+    isAccent: Boolean = false
+) {
+    val valueColor = if (isAccent) CyberColors.Cyan else MaterialTheme.colorScheme.onSurface
     Row(
-        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.sm))
+            .background(CyberColors.Cyan.copy(alpha = 0.05f))
+            .border(
+                border = BorderStroke(0.8.dp, CyberColors.Cyan.copy(alpha = 0.15f)),
+                shape = RoundedCornerShape(Radius.sm)
+            )
+            .padding(horizontal = Spacing.sm, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
         Text(
             text = "$label:",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            modifier = Modifier.width(64.dp)
+            fontWeight = FontWeight.Medium
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface
+            fontWeight = FontWeight.SemiBold,
+            color = valueColor
         )
     }
 }
 
+// ============================================================
+// 2. Usage Stats - 6 cell Cyber Dashboard Grid (3x2)
+// ============================================================
+
 @Composable
-private fun UsageStatsSection(stats: com.deep.rcode.feature.settings.presentation.UsageStats) {
-    CyberSectionHeader(stringResource(R.string.about_stats))
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+private fun UsageStatsSection(stats: UsageStats) {
+    CyberSectionHeader(text = stringResource(R.string.about_stats))
+
+    Column(
+        modifier = Modifier.padding(horizontal = Spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+    ) {
+        // Row 1: Sessions + Messages + Active Days
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Spacing.md)
         ) {
-            StatCard(
+            DashboardStatCell(
                 icon = FeatherIcons.MessageSquare,
-                title = stringResource(R.string.about_sessions),
+                label = stringResource(R.string.about_sessions),
                 value = stats.totalSessions.toString(),
+                unit = "次",
                 modifier = Modifier.weight(1f)
             )
-            StatCard(
+            DashboardStatCell(
                 icon = FeatherIcons.Hash,
-                title = stringResource(R.string.about_messages),
+                label = stringResource(R.string.about_messages),
                 value = stats.totalMessages.toString(),
+                unit = "条",
                 modifier = Modifier.weight(1f)
+            )
+            DashboardStatCell(
+                icon = FeatherIcons.Calendar,
+                label = stringResource(R.string.about_active_days),
+                value = stats.activeDays.toString(),
+                unit = "天",
+                modifier = Modifier.weight(1f),
+                pulseAccent = true
             )
         }
+
+        // Row 2: Input Tokens + Output Tokens + First Used
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Spacing.md)
         ) {
-            StatCard(
+            DashboardStatCell(
                 icon = FeatherIcons.UploadCloud,
-                title = stringResource(R.string.about_input_tokens),
-                value = "%1$,d".format(stats.totalInputTokens),
+                label = stringResource(R.string.about_input_tokens),
+                value = compactNumber(stats.totalInputTokens),
+                unit = "Tok",
                 modifier = Modifier.weight(1f)
             )
-            StatCard(
+            DashboardStatCell(
                 icon = FeatherIcons.DownloadCloud,
-                title = stringResource(R.string.about_output_tokens),
-                value = "%1$,d".format(stats.totalOutputTokens),
+                label = stringResource(R.string.about_output_tokens),
+                value = compactNumber(stats.totalOutputTokens),
+                unit = "Tok",
                 modifier = Modifier.weight(1f)
             )
-        }
-        CyberCard {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.lg),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.about_first_used),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = if (stats.firstUsedMs > 0L) {
-                            formatDate(stats.firstUsedMs)
-                        } else "--",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = " ",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = stringResource(R.string.about_days_active, stats.activeDays),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Brand.Sky
-                    )
-                }
-            }
+            DashboardStatCell(
+                icon = FeatherIcons.Tag,
+                label = stringResource(R.string.about_first_used),
+                value = if (stats.firstUsedMs > 0L) formatShortDate(stats.firstUsedMs) else "--",
+                unit = if (stats.firstUsedMs > 0L) "起" else "",
+                modifier = Modifier.weight(1f),
+                compactValue = true
+            )
         }
     }
 }
 
 @Composable
-private fun StatCard(
+private fun DashboardStatCell(
     icon: ImageVector,
-    title: String,
+    label: String,
     value: String,
-    modifier: Modifier = Modifier
+    unit: String,
+    modifier: Modifier = Modifier,
+    pulseAccent: Boolean = false,
+    compactValue: Boolean = false
 ) {
-    CyberCard(modifier = modifier) {
-        Column(
+    val gradient = primaryGradient
+    val infiniteTransition = rememberInfiniteTransition(label = "stat_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.1f,
+        targetValue = 0.28f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_alpha"
+    )
+
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(Radius.lg),
+        colors = CardDefaults.cardColors(containerColor = CyberColors.CardBg),
+        border = BorderStroke(
+            1.dp,
+            Brush.horizontalGradient(
+                listOf(
+                    CyberColors.Cyan.copy(alpha = if (pulseAccent) 0.6f else 0.35f),
+                    CyberColors.LineBlue.copy(alpha = if (pulseAccent) 0.6f else 0.35f)
+                )
+            )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                .then(
+                    if (pulseAccent) {
+                        Modifier.drawBehind {
+                            drawRect(
+                                brush = Brush.radialGradient(
+                                    listOf(
+                                        CyberColors.Cyan.copy(alpha = pulseAlpha),
+                                        Color.Transparent
+                                    )
+                                ),
+                                topLeft = Offset.Zero,
+                                size = size
+                            )
+                        }
+                    } else Modifier
                 )
+                .padding(horizontal = Spacing.sm, vertical = Spacing.md)
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+            ) {
+                // Icon + Label Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = CyberColors.Cyan,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
+                    )
+                }
+
+                Spacer(Modifier.height(2.dp))
+
+                // Big gradient value
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = buildAnnotatedString {
+                        withStyle(SpanStyle(brush = gradient, fontWeight = FontWeight.ExtraBold)) {
+                            append(value)
+                        }
+                        if (unit.isNotEmpty()) {
+                            withStyle(
+                                SpanStyle(
+                                    color = CyberColors.CyanDim,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            ) {
+                                append(" $unit")
+                            }
+                        }
+                    },
+                    style = if (compactValue) {
+                        MaterialTheme.typography.titleMedium
+                    } else {
+                        MaterialTheme.typography.headlineSmall
+                    },
+                    maxLines = 1
                 )
             }
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
         }
     }
 }
+
+private fun compactNumber(n: Long): String = when {
+    n >= 1_000_000_000 -> "%.1fB".format(n / 1_000_000_000.0)
+    n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)
+    n >= 10_000 -> "%.1fK".format(n / 1_000.0)
+    else -> "%,d".format(n)
+}
+
+private fun formatShortDate(ms: Long): String {
+    val fmt = SimpleDateFormat("yy/MM/dd", Locale.getDefault())
+    return fmt.format(Date(ms))
+}
+
+// ============================================================
+// 3. FAQ Section - Accordion Cyber Cards with Gradient Inner BG
+// ============================================================
 
 @Composable
 private fun FaqSection() {
-    CyberSectionHeader(stringResource(R.string.about_faq))
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+    CyberSectionHeader(text = stringResource(R.string.about_faq))
+
+    Column(
+        modifier = Modifier.padding(horizontal = Spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+    ) {
         val faqs = listOf(
             R.string.about_faq_q1 to R.string.about_faq_a1,
             R.string.about_faq_q2 to R.string.about_faq_a2,
@@ -613,7 +643,7 @@ private fun FaqSection() {
             R.string.about_faq_q4 to R.string.about_faq_a4
         )
         faqs.forEach { (qRes, aRes) ->
-            FaqItem(
+            FaqAccordionItem(
                 question = stringResource(qRes),
                 answer = stringResource(aRes)
             )
@@ -622,20 +652,46 @@ private fun FaqSection() {
 }
 
 @Composable
-private fun FaqItem(question: String, answer: String) {
+private fun FaqAccordionItem(question: String, answer: String) {
     var expanded by remember { mutableStateOf(false) }
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        label = "chevron_rot"
+    )
+
     CyberCard {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { expanded = !expanded }
         ) {
+            // Question row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.lg),
+                    .padding(Spacing.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Q prefix badge
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(
+                            brush = Brush.horizontalGradient(
+                                listOf(CyberColors.Cyan, CyberColors.LineBlue)
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Q",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = CyberColors.Black
+                    )
+                }
+                Spacer(Modifier.width(Spacing.sm))
                 Text(
                     text = question,
                     style = MaterialTheme.typography.titleMedium,
@@ -647,58 +703,176 @@ private fun FaqItem(question: String, answer: String) {
                 Icon(
                     imageVector = FeatherIcons.ChevronDown,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    tint = CyberColors.Cyan,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .rotate(chevronRotation)
                 )
             }
+
+            // Expandable answer area with gradient inner background
             AnimatedVisibility(
                 visible = expanded,
                 enter = expandVertically(),
                 exit = shrinkVertically()
             ) {
-                Text(
-                    text = answer,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 22.sp,
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.lg)
-                )
+                        .padding(
+                            start = Spacing.md,
+                            end = Spacing.md,
+                            bottom = Spacing.md
+                        )
+                        .clip(RoundedCornerShape(Radius.md))
+                        .background(
+                            brush = Brush.verticalGradient(
+                                listOf(
+                                    CyberColors.Cyan.copy(alpha = 0.10f),
+                                    CyberColors.LineBlue.copy(alpha = 0.04f)
+                                )
+                            )
+                        )
+                        .border(
+                            border = BorderStroke(
+                                0.8.dp,
+                                CyberColors.Cyan.copy(alpha = 0.2f)
+                            ),
+                            shape = RoundedCornerShape(Radius.md)
+                        )
+                        .padding(Spacing.md)
+                ) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(CyberColors.Cyan.copy(alpha = 0.15f))
+                                .border(
+                                    border = BorderStroke(0.8.dp, CyberColors.Cyan.copy(alpha = 0.4f)),
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "A",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = CyberColors.Cyan
+                            )
+                        }
+                        Spacer(Modifier.width(Spacing.sm))
+                        Text(
+                            text = answer,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 22.sp
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+// ============================================================
+// 4. Action Buttons Row - 4 circular icon buttons
+// ============================================================
+
 @Composable
-private fun ShareAndFeedbackSection(context: Context) {
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-        CyberMenuRow(
+private fun ActionButtonsRow(
+    onShare: () -> Unit,
+    onStar: () -> Unit,
+    onFeedback: () -> Unit,
+    onCommunity: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.md)
+    ) {
+        ActionCircleButton(
             icon = FeatherIcons.Share2,
-            title = stringResource(R.string.about_share),
-            subtitle = stringResource(R.string.about_share_subtitle),
-            onClick = { shareApp(context) }
+            label = stringResource(R.string.about_action_share),
+            onClick = onShare,
+            modifier = Modifier.weight(1f)
         )
-        CyberMenuRow(
+        ActionCircleButton(
             icon = FeatherIcons.Star,
-            title = stringResource(R.string.about_rate),
-            subtitle = stringResource(R.string.about_rate_subtitle),
-            onClick = { openUrl(context, GITHUB_REPO_URL) }
+            label = stringResource(R.string.about_action_star),
+            onClick = onStar,
+            modifier = Modifier.weight(1f),
+            accent = true
         )
-        CyberMenuRow(
+        ActionCircleButton(
             icon = FeatherIcons.MessageSquare,
-            title = stringResource(R.string.about_feedback),
-            subtitle = stringResource(R.string.about_feedback_subtitle),
-            onClick = { openUrl(context, ISSUES_URL) }
+            label = stringResource(R.string.about_action_feedback),
+            onClick = onFeedback,
+            modifier = Modifier.weight(1f)
         )
-        CyberMenuRow(
-            icon = FeatherIcons.Globe,
-            title = stringResource(R.string.about_community),
-            subtitle = stringResource(R.string.about_community_subtitle),
-            onClick = { openUrl(context, COMMUNITY_URL) }
+        ActionCircleButton(
+            icon = FeatherIcons.Users,
+            label = stringResource(R.string.about_action_community),
+            onClick = onCommunity,
+            modifier = Modifier.weight(1f)
         )
     }
 }
+
+@Composable
+private fun ActionCircleButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Boolean = false
+) {
+    val gradient = Brush.horizontalGradient(
+        listOf(
+            if (accent) Color(0xFFFFCC00) else CyberColors.Cyan,
+            CyberColors.LineBlue
+        )
+    )
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(Radius.md))
+            .clickable(onClick = onClick)
+            .padding(vertical = Spacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(CyberColors.Cyan.copy(alpha = 0.08f))
+                .border(
+                    border = BorderStroke(1.2.dp, gradient),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (accent) Color(0xFFFFCC00) else CyberColors.Cyan,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+// ============================================================
+// 5. Links Section (Version / GitHub / License)
+// ============================================================
 
 @Composable
 private fun LinksSection(
@@ -706,25 +880,125 @@ private fun LinksSection(
     appInfo: AppInfo,
     onCheckUpdate: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-        CyberMenuRow(
-            icon = FeatherIcons.Tag,
-            title = stringResource(R.string.about_version),
-            value = "v${appInfo.name}",
-            onClick = onCheckUpdate
+    Column(
+        modifier = Modifier.padding(horizontal = Spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+    ) {
+        CyberCard {
+            Column {
+                CyberMenuRow(
+                    icon = FeatherIcons.Tag,
+                    title = stringResource(R.string.about_check_update),
+                    subtitle = "当前 v${appInfo.name} · 点击查询 GitHub",
+                    onClick = onCheckUpdate,
+                    showDivider = true
+                )
+                CyberMenuRow(
+                    icon = FeatherIcons.Github,
+                    title = stringResource(R.string.about_github_repo),
+                    subtitle = GITHUB_REPO_URL.removePrefix("https://"),
+                    onClick = { openUrl(context, GITHUB_REPO_URL) },
+                    showDivider = true
+                )
+                CyberMenuRow(
+                    icon = FeatherIcons.Book,
+                    title = stringResource(R.string.about_license),
+                    subtitle = "MIT License",
+                    onClick = { openUrl(context, LICENSE_URL) },
+                    showDivider = false
+                )
+            }
+        }
+    }
+}
+
+// ============================================================
+// 6. Open Source Credits Section
+// ============================================================
+
+@Composable
+private fun OpenSourceCreditsSection() {
+    CyberSectionHeader(text = stringResource(R.string.about_credits))
+
+    Column(
+        modifier = Modifier.padding(horizontal = Spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+    ) {
+        Text(
+            text = stringResource(R.string.about_credits_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp)
         )
-        CyberMenuRow(
-            icon = FeatherIcons.Github,
-            title = stringResource(R.string.about_github_repo),
-            onClick = { openUrl(context, GITHUB_REPO_URL) }
+
+        val credits = listOf(
+            R.string.about_credit_kotlin to "JetBrains",
+            R.string.about_credit_compose to "Google",
+            R.string.about_credit_coroutines to "JetBrains",
+            R.string.about_credit_hilt to "Google",
+            R.string.about_credit_room to "Google",
+            R.string.about_credit_material to "Google",
+            R.string.about_credit_okhttp to "Square",
+            R.string.about_credit_ktor to "JetBrains"
         )
-        CyberMenuRow(
-            icon = FeatherIcons.Book,
-            title = stringResource(R.string.about_license),
-            onClick = { openUrl(context, LICENSE_URL) }
+
+        CyberCard {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                credits.forEach { (nameRes, author) ->
+                    CreditChip(
+                        name = stringResource(nameRes),
+                        author = author
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreditChip(name: String, author: String) {
+    val gradient = Brush.horizontalGradient(
+        listOf(CyberColors.Cyan.copy(alpha = 0.6f), CyberColors.LineBlue.copy(alpha = 0.6f))
+    )
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(Radius.sm))
+            .background(CyberColors.Cyan.copy(alpha = 0.06f))
+            .border(
+                border = BorderStroke(0.8.dp, gradient),
+                shape = RoundedCornerShape(Radius.sm)
+            )
+            .padding(horizontal = Spacing.sm, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(brush = gradient)
+        )
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = "· $author",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
+
+// ============================================================
+// 7. Update Result Dialog (Enhanced: size + speed)
+// ============================================================
 
 @Composable
 private fun UpdateResultDialog(
@@ -780,14 +1054,22 @@ private fun UpdateResultDialog(
                                 .fillMaxWidth()
                                 .height(180.dp)
                                 .clip(RoundedCornerShape(Radius.md))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                .background(CyberColors.Cyan.copy(alpha = 0.05f))
+                                .border(
+                                    border = BorderStroke(
+                                        0.8.dp,
+                                        CyberColors.Cyan.copy(alpha = 0.2f)
+                                    ),
+                                    shape = RoundedCornerShape(Radius.md)
+                                )
                         ) {
                             val notes = state.releaseNotes?.takeIf { it.isNotBlank() }
                                 ?: "（该 Release 未填写更新说明）"
                             androidx.compose.foundation.text.BasicText(
                                 text = notes,
                                 style = MaterialTheme.typography.bodySmall.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontFamily = FontFamily.Monospace
                                 ),
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -824,29 +1106,49 @@ private fun UpdateResultDialog(
             )
         }
 
-        is UpdateDialogState.Downloading -> AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text(stringResource(R.string.about_download_apk)) },
-            text = {
-                CyberProgressIndicator(progressPct = state.progressPct)
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.common_cancel))
+        is UpdateDialogState.Downloading -> {
+            val progressPct = state.progressPct
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(stringResource(R.string.about_download_apk)) },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                    ) {
+                        CyberProgressIndicatorWithDetail(
+                            progressPct = progressPct,
+                            downloadedBytes = state.downloadedBytes,
+                            totalBytes = state.totalBytes,
+                            speedBytesPerSec = state.speedBytesPerSec
+                        )
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
                 }
-            }
-        )
+            )
+        }
 
         is UpdateDialogState.Downloaded -> AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text(stringResource(R.string.about_download_complete)) },
             text = {
-                Text(
-                    text = state.filePath.substringAfterLast('/'),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    Text(
+                        text = state.filePath.substringAfterLast('/'),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = formatFileSize(state.fileSizeBytes),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = CyberColors.Cyan
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = { onInstallApk(state.filePath) }) {
@@ -872,6 +1174,82 @@ private fun UpdateResultDialog(
         )
     }
 }
+
+@Composable
+private fun CyberProgressIndicatorWithDetail(
+    progressPct: Int,
+    downloadedBytes: Long,
+    totalBytes: Long,
+    speedBytesPerSec: Long
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = (progressPct.coerceIn(0, 100) / 100f),
+        animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
+        label = "progress"
+    )
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+    ) {
+        // Detail: downloaded / total
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.about_download_progress_detail,
+                    formatFileSize(downloadedBytes),
+                    if (totalBytes > 0) formatFileSize(totalBytes) else "?"
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (speedBytesPerSec > 0) {
+                Text(
+                    text = stringResource(
+                        R.string.about_download_speed,
+                        formatFileSize(speedBytesPerSec)
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = CyberColors.Cyan,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        LinearProgressIndicator(
+            progress = { animatedProgress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(Radius.pill)),
+            color = CyberColors.Cyan,
+            trackColor = CyberColors.Cyan.copy(alpha = 0.12f),
+            drawStopIndicator = {}
+        )
+
+        Text(
+            text = stringResource(R.string.about_downloading, progressPct),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes <= 0L -> "0 B"
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+    bytes < 1024L * 1024 * 1024 -> "%.2f MB".format(bytes / (1024.0 * 1024))
+    else -> "%.2f GB".format(bytes / (1024.0 * 1024 * 1024))
+}
+
+// ============================================================
+// External actions + Networking
+// ============================================================
 
 private fun openUrl(context: Context, url: String) {
     runCatching {
@@ -948,7 +1326,7 @@ private suspend fun downloadApk(
     context: Context,
     tag: String,
     downloadUrl: String,
-    onProgress: (Int, String?) -> Unit,
+    onProgress: (Int, Long, Long, Long, String?) -> Unit,
     onComplete: (String) -> Unit,
     onError: (String) -> Unit
 ) = withContext(Dispatchers.IO) {
@@ -975,6 +1353,9 @@ private suspend fun downloadApk(
             var totalRead = 0L
             val buffer = okio.Buffer()
             var lastPct = -1
+            var lastTickMs = System.currentTimeMillis()
+            var lastTickBytes = 0L
+            var currentSpeed: Long = 0
 
             while (true) {
                 val read = source.read(buffer, 8192L)
@@ -984,14 +1365,27 @@ private suspend fun downloadApk(
                 val pct = if (contentLength > 0) {
                     ((totalRead * 100) / contentLength).toInt()
                 } else 0
-                if (pct != lastPct) {
+
+                // Compute speed every ~200ms
+                val now = System.currentTimeMillis()
+                val elapsed = now - lastTickMs
+                if (elapsed >= 200L) {
+                    val deltaBytes = totalRead - lastTickBytes
+                    currentSpeed = if (elapsed > 0) {
+                        (deltaBytes * 1000L) / elapsed
+                    } else 0L
+                    lastTickMs = now
+                    lastTickBytes = totalRead
+                }
+
+                if (pct != lastPct || currentSpeed >= 0) {
                     lastPct = pct
-                    onProgress(pct, filePath)
+                    onProgress(pct, totalRead, contentLength, currentSpeed, filePath)
                 }
             }
             sink.close()
             source.close()
-            if (contentLength > 0) onProgress(100, filePath)
+            if (contentLength > 0) onProgress(100, contentLength, contentLength, 0L, filePath)
             onComplete(filePath)
         }
     }.onFailure {
@@ -1049,6 +1443,10 @@ internal fun splitVersion(v: String): Pair<String, String> {
     return base to pre
 }
 
+// ============================================================
+// Data classes + constants
+// ============================================================
+
 private data class AppInfo(
     val name: String,
     val code: Long,
@@ -1069,11 +1467,20 @@ private sealed interface UpdateDialogState {
         val releaseNotes: String?,
         val downloadUrl: String
     ) : UpdateDialogState
+
     data class Downloading(
         val progressPct: Int,
+        val downloadedBytes: Long,
+        val totalBytes: Long,
+        val speedBytesPerSec: Long,
         val filePath: String?
     ) : UpdateDialogState
-    data class Downloaded(val filePath: String) : UpdateDialogState
+
+    data class Downloaded(
+        val filePath: String,
+        val fileSizeBytes: Long = runCatching { File(filePath).length() }.getOrDefault(0L)
+    ) : UpdateDialogState
+
     data class Error(val message: String) : UpdateDialogState
 }
 
