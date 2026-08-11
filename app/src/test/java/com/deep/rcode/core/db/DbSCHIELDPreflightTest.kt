@@ -56,9 +56,9 @@ class DbSCHIELDPreflightTest {
         .orEmpty()
         .map { f ->
             val prefix: String = f.name.substringBefore('_')
-            val v: Int = prefix.toIntOrNull()
-                ?: fail("迁移文件名无法解析版本号前缀: ${f.name}（格式应为 <version>_xxx.sql）")
-            MigrationFile(fileName = f.name, version = v, file = f)
+            val parsed: Int = prefix.toIntOrNull()
+                ?: error("迁移文件名无法解析版本号前缀: ${f.name}（格式应为 <version>_xxx.sql）")
+            MigrationFile(fileName = f.name, version = parsed, file = f)
         }
 
     // ─────────────────────────────────────────────────────────────
