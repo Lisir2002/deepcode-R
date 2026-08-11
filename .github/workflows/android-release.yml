@@ -200,6 +200,17 @@ jobs:
           if-no-files-found: ignore
           retention-days: 90
 
+      # RC70 新增：独立上传 APK artifact（Rename → Release 创建之间的安全网）
+      # 即使 Create GitHub Release step 因 tag 竞态 / GITHUB_TOKEN 权限失败，APK 仍在 Run Artifacts 内 90 天可下载。
+      - name: Upload release APK (Run artifact safety net)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-${{ github.ref_name }}
+          path: dist/rdeepcode-arm64-*.apk
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Determine release name
         id: release
         run: |
@@ -260,11 +271,16 @@ jobs:
           name: Release ${{ steps.release.outputs.tag }}
           body: ${{ steps.changelog.outputs.body }}
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          fail_on_unmatched_files: true
+          generate_release_notes: false
           # 产物名约定 rdeepcode-arm64-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
           files: |
             dist/rdeepcode-arm64-*.apk
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # RC70 修复：softprops action 对 tag/release 写操作 + 附件 upload 用 GH_RELEASE_TOKEN (细粒度 PAT)，
+          # 避免默认 secrets.GITHUB_TOKEN 在 tag 已经存在 + repo 限制 Release write / tag push 时竞态失败。
+          # 回退：secrets.GH_RELEASE_TOKEN 未配置时自动回退为 GITHUB_TOKEN（保持原行为）。
+          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       # 把版本号、prerelease 标志、APK 下载链接、Release 页面写入 Run Summary，
       # 方便 AI / 维护者通过 GitHub API 或 Actions 页面一眼定位产物（与 AGENTS.md §云端构建与实时监控自动化 对齐）。
