@@ -42,6 +42,13 @@ class ZthCircuitBreakerManager @Inject constructor(
         const val HALF_OPEN_PROBE_SUCCESSES_TO_CLOSE = 1 // 半开成功 1 次回 CLOSED
     }
 
+    // 读取 Entity.state（String）→ FuseState；因为 Room 持久化存的是 .name（C.4.6 不变性）
+    private val HallucinationFuseEntity.fuseState: FuseState
+        get() = runCatching { FuseState.valueOf(state) }.getOrElse {
+            FileLogger.w(TAG, "Entity $id fuseState=$state 无法解析 FuseState，兜底 CLOSED（可能 schema 迁移中）")
+            FuseState.CLOSED
+        }
+
     // ── 外部入口 1：记录一次 FailureClassification → 若 triggersFuseCountIncrement=true 计数 ──
 
     suspend fun recordFailure(sessionId: String?, tier: ZthPresetTier, cls: FailureClassification) {
@@ -62,7 +69,7 @@ class ZthCircuitBreakerManager @Inject constructor(
         )
         // 冷却到期自动从 OPEN 切 HALF_OPEN（T_cool tier 分钟）
         val cooledGlobal = tryAutoCoolDown(global, tier)
-        if (sessionId == null) return mapState(cooledGlobal.state, "全局")
+        if (sessionId == null) return mapState(cooledGlobal.fuseState, "全局")
 
         val sessionEntity = loadOrCreateSession(sessionId)
         val cooledSession = tryAutoCoolDown(sessionEntity, tier)
@@ -71,10 +78,10 @@ class ZthCircuitBreakerManager @Inject constructor(
             cooledSession.killSwitch1Triggered -> AllowanceResult(false, FuseState.OPEN,
                 "会话级 kill-switch-1 已激活。"
             )
-            cooledSession.state == FuseState.OPEN || cooledSession.state == FuseState.TRANSITIONING ->
-                mapState(cooledSession.state, "会话级")
-            cooledGlobal.state == FuseState.OPEN || cooledGlobal.state == FuseState.TRANSITIONING ->
-                mapState(cooledGlobal.state, "全局")
+            cooledSession.fuseState == FuseState.OPEN || cooledSession.fuseState == FuseState.TRANSITIONING ->
+                mapState(cooledSession.fuseState, "会话级")
+            cooledGlobal.fuseState == FuseState.OPEN || cooledGlobal.fuseState == FuseState.TRANSITIONING ->
+                mapState(cooledGlobal.fuseState, "全局")
             else -> AllowanceResult.ALLOW
         }
     }
@@ -84,13 +91,13 @@ class ZthCircuitBreakerManager @Inject constructor(
     suspend fun recordHalfOpenProbeSuccess(sessionId: String?, tier: ZthPresetTier) {
         val threshold = HALF_OPEN_PROBE_SUCCESSES_TO_CLOSE
         val g = loadOrCreateGlobal()
-        if (g.state == FuseState.HALF_OPEN) {
+        if (g.fuseState == FuseState.HALF_OPEN) {
             // 这里简化：成功 1 次直接回 CLOSED（HALF_OPEN_PROBE_SUCCESSES_TO_CLOSE = 1）
             transitionTo(g, FuseState.CLOSED, TierContext(tier, sessionId), clearFailures = true)
         }
         if (sessionId != null) {
             val s = loadOrCreateSession(sessionId)
-            if (s.state == FuseState.HALF_OPEN) transitionTo(s, FuseState.CLOSED, TierContext(tier, sessionId), clearFailures = true)
+            if (s.fuseState == FuseState.HALF_OPEN) transitionTo(s, FuseState.CLOSED, TierContext(tier, sessionId), clearFailures = true)
         }
     }
 
@@ -98,11 +105,11 @@ class ZthCircuitBreakerManager @Inject constructor(
 
     suspend fun recordHalfOpenProbeFail(sessionId: String?, tier: ZthPresetTier, subClass: String) {
         val g = loadOrCreateGlobal()
-        if (g.state == FuseState.HALF_OPEN) transitionTo(g.copy(failureCount = g.failureCount + 1, lastTripSubclass = subClass),
+        if (g.fuseState == FuseState.HALF_OPEN) transitionTo(g.copy(failureCount = g.failureCount + 1, lastTripSubclass = subClass),
             FuseState.OPEN, TierContext(tier, sessionId))
         if (sessionId != null) {
             val s = loadOrCreateSession(sessionId)
-            if (s.state == FuseState.HALF_OPEN) transitionTo(s.copy(failureCount = s.failureCount + 1, lastTripSubclass = subClass),
+            if (s.fuseState == FuseState.HALF_OPEN) transitionTo(s.copy(failureCount = s.failureCount + 1, lastTripSubclass = subClass),
                 FuseState.OPEN, TierContext(tier, sessionId))
         }
     }
@@ -119,7 +126,7 @@ class ZthCircuitBreakerManager @Inject constructor(
                 allOk = false
                 continue // kill-switch-1 不能自动清（KILL-1 不变性）
             }
-            if (e.state == FuseState.OPEN || e.state == FuseState.TRANSITIONING) {
+            if (e.fuseState == FuseState.OPEN || e.fuseState == FuseState.TRANSITIONING) {
                 // 必经 TRANSITIONING → HALF_OPEN
                 val tOk = transitionTo(e, FuseState.TRANSITIONING, TierContext(tier, sessionId))
                 if (tOk) {
@@ -144,9 +151,9 @@ class ZthCircuitBreakerManager @Inject constructor(
             failureCount = newCount,
             lastTripSubclass = subClass
         )
-        if (entity.state == FuseState.CLOSED && newCount >= threshold) {
+        if (entity.fuseState == FuseState.CLOSED && newCount >= threshold) {
             // 超阈值 → 切 OPEN + 写 openSinceMs
-            val tripped = updated.copy(state = FuseState.OPEN, openSinceMs = System.currentTimeMillis())
+            val tripped = updated.copy(state = FuseState.OPEN.name, openSinceMs = System.currentTimeMillis())
             dao.upsert(tripped)
             FileLogger.i(TAG, "[$scopeLabel] 熔断 OPEN：failureCount=$newCount ≥ threshold=$threshold subClass=$subClass")
         } else {
@@ -203,7 +210,7 @@ class ZthCircuitBreakerManager @Inject constructor(
     // ── 内部工具：T_cool 到期自动从 OPEN → HALF_OPEN（必经 LINK-INV CAS） ──────
 
     private suspend fun tryAutoCoolDown(entity: HallucinationFuseEntity, tier: ZthPresetTier): HallucinationFuseEntity {
-        if (entity.state != FuseState.OPEN) return entity
+        if (entity.fuseState != FuseState.OPEN) return entity
         val tMin = T_COOL_MIN_BY_TIER[tier.tier.coerceIn(1, 3)] ?: return entity
         val needMs = tMin * 60_000L
         val since = entity.openSinceMs
@@ -212,7 +219,7 @@ class ZthCircuitBreakerManager @Inject constructor(
         val ctx = TierContext(tier, if (entity.scope == "SESSION") entity.scopeId else null)
         transitionTo(entity, FuseState.TRANSITIONING, ctx)
         val t = dao.getById(entity.id) ?: return entity
-        if (t.state == FuseState.TRANSITIONING) {
+        if (t.fuseState == FuseState.TRANSITIONING) {
             transitionTo(t, FuseState.HALF_OPEN, ctx, clearFailures = true)
         }
         return dao.getById(entity.id) ?: entity

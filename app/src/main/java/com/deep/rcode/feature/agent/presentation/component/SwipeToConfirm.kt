@@ -104,6 +104,10 @@ fun SwipeToConfirm(
             content = {}
         )
 
+        // 外层提前取 MaterialTheme 颜色（避免 DrawScope 内 @Composable 调用）
+        val mtPrimary = MaterialTheme.colorScheme.primary
+        val mtOutline = MaterialTheme.colorScheme.outline
+
         // Canvas：前景进度条 + 滑块
         Canvas(modifier = Modifier
             .fillMaxWidth()
@@ -155,7 +159,7 @@ fun SwipeToConfirm(
                 progress >= 0.92f -> Color(0xFF2E7D32)  // 深绿：已达阈值
                 progress >= 0.6f -> Color(0xFF558B2F)   // 草绿
                 progress >= 0.3f -> Color(0xFF827717)   // 橄榄
-                else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                else -> mtPrimary.copy(alpha = 0.85f)
             }
             drawRoundRect(
                 color = progressColor,
@@ -166,7 +170,7 @@ fun SwipeToConfirm(
             )
             // 2) 未填充部分边框描边
             drawRoundRect(
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                color = mtOutline.copy(alpha = 0.4f),
                 topLeft = Offset.Zero,
                 size = size,
                 cornerRadius = CornerRadius(cornerPx, cornerPx),

@@ -58,7 +58,10 @@ class ZthFailureClassifier @Inject constructor() {
                     ctx,
                     severityTier = 3,
                     requiresUserConfirmation = true,  // 离线+远程 SSH → 必须用户弹卡说明
+                    requiresLlmReview = false,
+                    triggersFuseCountIncrement = false,
                     requiresLinkageMigration = true,  // LINK-INV 重建 回滚 OPEN→TRANSITIONING
+                    telemetryRequired = true,
                     showOfflineBanner = true,
                     autoRecoveryHint = "请先恢复网络连接，或切换回本地 PRoot 模式（ZTH v1.0 不支持 REMOTE_SSH）。"
                 )
@@ -69,6 +72,10 @@ class ZthFailureClassifier @Inject constructor() {
                 ctx,
                 severityTier = ctx.tier.tier.coerceAtLeast(1),
                 requiresUserConfirmation = ctx.tier.tier >= 2,
+                requiresLlmReview = false,
+                triggersFuseCountIncrement = false,
+                requiresLinkageMigration = (ctx.tier.tier >= 2),
+                telemetryRequired = true,
                 showOfflineBanner = true,
                 autoRecoveryHint = "当前离线：LLM 终检/PlanApproval 模型已跳过，只保留本地启发扫+用户确认。"
             )
