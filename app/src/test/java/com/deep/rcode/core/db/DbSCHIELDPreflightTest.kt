@@ -368,17 +368,15 @@ class DbSCHIELDPreflightTest {
             val lines = ef.readLines()
             for ((lineIdx, line) in lines.withIndex()) {
                 // 只查 Entity 数据类 constructor 里的 val/var 声明（忽略注释里的提及）
-                if ("//" in line.substringBefore("//").let {
-                    // 在非注释段检查：匹配 `val apiKey` 或 `val token` 或 `val selectedModel` 这种
-                    // 只看 constructor 参数声明（val xxx: Type）
-                    val constructorParamPattern = Regex("""^\s*(?:val|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:""")
-                    val m = constructorParamPattern.find(line.substringBefore("//"))
-                    val fieldName = m?.groupValues?.get(1)
-                    if (fieldName != null && fieldName in sensitivePlaintextNames) {
-                        hits.add("${ef.name}:${lineIdx + 1} → 字段名=$fieldName")
-                    }
-                    false
-                }) { /* no-op */ }
+                val codePart = line.substringBefore("//")
+                // 匹配 `val apiKey` 或 `val token` 或 `val selectedModel` 这种
+                // 只看 constructor 参数声明（val xxx: Type）
+                val constructorParamPattern = Regex("""^\s*(?:val|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:""")
+                val m = constructorParamPattern.find(codePart)
+                val fieldName = m?.groupValues?.get(1)
+                if (fieldName != null && fieldName in sensitivePlaintextNames) {
+                    hits.add("${ef.name}:${lineIdx + 1} → 字段名=$fieldName")
+                }
             }
         }
         if (hits.isEmpty()) return
@@ -398,7 +396,7 @@ class DbSCHIELDPreflightTest {
     //    同时在 Entity.toDomain 里禁止 valueOf(..name.ordinal)。
     // ─────────────────────────────────────────────────────────────
     @Test
-    fun `ENUM-STABLE-NAME-TEST - 持久化枚举一律存 .name，禁止 ordinal 列`() {
+    fun `ENUM STABLE NAME TEST 持久化枚举一律存 name 禁止 ordinal 列`() {
         val entityDir = projectRoot.resolve("app/src/main/java")
         val candidates = mutableListOf<File>()
         fun walk(dir: File) {
@@ -456,7 +454,7 @@ class DbSCHIELDPreflightTest {
     //    防止 XxxDao 存 YyyEntity 的混淆，导致备份 / 抢救漏表或插入错表。
     // ─────────────────────────────────────────────────────────────
     @Test
-    fun `FILE-DAO-NAMING-CONSISTENCY-TEST - DAO 文件 = 接口名 = 关联 Entity/DTO tableName 对齐`() {
+    fun `FILE DAO NAMING CONSISTENCY TEST DAO 文件等于接口名等于关联 Entity DTO tableName 对齐`() {
         val daoDir = projectRoot.resolve("app/src/main/java")
         val daoFiles = mutableListOf<File>()
         fun walk(dir: File) {
