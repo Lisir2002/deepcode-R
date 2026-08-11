@@ -501,6 +501,14 @@ object AgentModule {
         return database.t2iTaskDao()
     }
 
+    // ══ RC69 T2I：ImageGenerator（interface）→ OpenAiCompatibleImageGenerator（实现）绑定
+    //   AgentModule 是 @Module object，不能用 @Binds，所以用 @Provides 包一层构造器注入的 impl。
+    @Provides
+    @Singleton
+    fun provideImageGenerator(impl: com.deep.rcode.feature.t2i.data.remote.OpenAiCompatibleImageGenerator): com.deep.rcode.feature.t2i.data.remote.ImageGenerator {
+        return impl
+    }
+
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {

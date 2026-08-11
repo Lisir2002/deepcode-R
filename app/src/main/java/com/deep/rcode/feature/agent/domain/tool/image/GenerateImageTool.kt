@@ -24,7 +24,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
@@ -38,20 +37,6 @@ import javax.inject.Singleton
  * T2I 文生图工具：AI 调用 `generateImage(prompt="...", width=1024, height=1024, ...)` →
  * 经过权限策略引擎 P1~P6 评估 → failover 选 provider → ImageGenerator 生成 →
  * 持久化任务行 + 图片到 filesDir/t2i_images → 返回 imagePath + 预览 Markdown。
- *
- * ### 与 ToolPermissionPolicyEngine 现有链路的协作
- * 本工具 [permissionPolicy] 默认 **ASK**（因为文生图每次扣额度 + 耗供应商 QPS +
- * 可能产生 NSFW 内容，必须在 AI 调用前先经过 ASK 环节）。
- *   - P1 强制确认 / P5 渐进阈值：属于 T2I 内部二次 ASK（即“用户点了 ToolPermission 的
- *     放行后，T2I 子系统还可能因为渐进阈值再次弹确认框”），由 GenerateImageTool
- *     内部抛 “NEED_CONFIRM_AGAIN” 的 ToolResult.Error，UI 解析后渲染二次确认 Sheet。
- *   - P2/P3/P4 额度耗尽：直接返回 ToolResult.Error(code=DAILY_QUOTA_EXCEEDED / ...)
- *     让 AI 在 prompt 中解释“额度不足，需用户到设置页调整或明天再试”。
- *
- * ### 崩溃恢复
- * 冷启动由独立的 T2ITaskRecoveryWorker（RC69 后续迭代追加 Worker）扫描
- * T2ITaskDao.getDanglingTasks(now - 30min) 处理。本工具是同步 Agent 路径，只负责“本次
- * 会话中发起一次生成 → 落任务 → 调 provider → 标记成功/失败”，不做后台恢复。
  */
 @Singleton
 class GenerateImageTool @Inject constructor(
@@ -114,18 +99,16 @@ class GenerateImageTool @Inject constructor(
         ),
     )
 
-    /**
-     * 默认策略 = ASK（文生图每次都要用户确认，避免幻觉疯狂调用打满额度；
-     * 若用户在设置页关掉「T2I 全局强制确认」（P1=false），且 P2/P3/P4/P5/P6 都通过，
-     * 本工具会被 ToolPermissionManager 放行，但 T2I 内部子策略仍可二次 ASK/DENY）。
-     */
     override val permissionPolicy: ToolPermissionPolicy = ToolPermissionPolicy.ASK
 
     override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
-        // StreamingAgentTool 工作流会优先走 executeStream；这里提供非流式兜底，
-        // 收集完 Flow 的最后一个 Completed 事件再返回 ToolResult。
         var last: ToolResult? = null
-        executeStream(args, AgentContext.EMPTY).collect { ev ->
+        // executeStream 需要 AgentContext；execute() 作为兜底，构造一个最小上下文
+        val fallbackCtx = AgentContext(
+            currentFile = null, selectedCode = null, projectRoot = "",
+            language = null, sessionId = null
+        )
+        executeStream(args, fallbackCtx).collect { ev ->
             if (ev is ToolStreamEvent.Completed) last = ev.result
         }
         return last ?: ToolResult.Error("Stream 没有产生 Completed 事件", code = "STREAM_INCOMPLETE")
@@ -135,25 +118,22 @@ class GenerateImageTool @Inject constructor(
         args: Map<String, JsonElement>,
         context: AgentContext
     ): Flow<ToolStreamEvent> = flow {
-        val sessionId = context.sessionId
-        val messageId = context.currentMessageId.orEmpty()
-        val now = System.currentTimeMillis()
-        val taskId = "t2i_${UUID.randomUUID().toString().replace("-","")}"
+        val sessionId = context.sessionId ?: "UNKNOWN_SESSION"
+        val taskId = "t2i_${UUID.randomUUID().toString().replace("-", "")}"
 
-        emit(ToolStreamEvent.Progress("🔍 解析参数..."))
+        emit(ToolStreamEvent.Progress("解析参数..."))
         val prompt = args["prompt"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
             ?: run {
                 emit(ToolStreamEvent.Completed(ToolResult.Error("参数 prompt 不能为空", "EMPTY_PROMPT"))); return@flow
             }
-        val negativePrompt = args["negative_prompt"]?.jsonPrimitive?.content.orEmpty()
+        val negativePrompt = args["negative_prompt"]?.asStringOrNull().orEmpty()
         val width = args["width"]?.asIntSafe()?.coerceIn(128, 2048) ?: 1024
         val height = args["height"]?.asIntSafe()?.coerceIn(128, 2048) ?: 1024
         val steps = args["steps"]?.asIntSafe()?.coerceIn(1, 150) ?: 30
-        val hd = args["hd"]?.jsonPrimitive?.contentOrNull()?.toBooleanStrictOrNull() ?: false
-        val desiredModel = args["model"]?.jsonPrimitive?.content.orEmpty()
+        val hd = args["hd"]?.asStringOrNull()?.toBooleanStrictOrNull() ?: false
+        val desiredModel = args["model"]?.asStringOrNull().orEmpty()
 
-        // ══ 1. 路由：选当前激活的 T2I Provider + 目标 model（没激活就拿第一个 enabled 的）══
-        emit(ToolStreamEvent.Progress("🎛️ 选择文生图 Provider..."))
+        emit(ToolStreamEvent.Progress("选择文生图 Provider..."))
         val activeProvider = providerDao.getActiveProviderSync()
             ?: providerDao.getEnabledProvidersOnce().sortedByDescending { it.priority }.firstOrNull()
             ?: run {
@@ -174,13 +154,15 @@ class GenerateImageTool @Inject constructor(
             ))); return@flow
         }
 
-        val targetModel = modelDao.getModel(activeProvider.id, desiredModel.takeIf { it.isNotBlank() }
-            ?: activeProvider.defaultModelId())
-            ?: modelDao.getModelsForProviderOnce(activeProvider.id).firstOrNull()
+        val firstModel = modelDao.getModelsForProviderOnce(activeProvider.id).firstOrNull()
+        val targetModel = if (desiredModel.isNotBlank()) {
+            modelDao.getModel(activeProvider.id, desiredModel) ?: firstModel
+        } else {
+            firstModel
+        }
         val costPerImage = targetModel?.costPerImageTokens ?: 100
 
-        // ══ 2. 权限策略引擎 P1~P6 ══
-        emit(ToolStreamEvent.Progress("📋 评估额度与安全策略..."))
+        emit(ToolStreamEvent.Progress("评估额度与安全策略..."))
         val perm = permission.evaluate(
             T2IPermissionPolicyEngine.Request(
                 sessionId = sessionId,
@@ -196,30 +178,24 @@ class GenerateImageTool @Inject constructor(
                 ))); return@flow
             }
             T2IPermissionPolicyEngine.Verdict.ASK -> {
-                // 透传“需要二次确认”的机器信号：ToolPermissionManager 已经放行了第一轮（ASK），
-                // 这里是 T2I 子策略的第二轮 ASK。UI 上解析 error.code = "T2I_NEED_SECOND_CONFIRM"
-                // 弹出 Sheet 显示 askReason，用户点“确认”后再调本工具（带 allow_t2i_second_confirm=true）。
-                val confirmAgain = args["allow_t2i_second_confirm"]?.jsonPrimitive?.contentOrNull()
+                val confirmAgain = args["allow_t2i_second_confirm"]?.asStringOrNull()
                     ?.toBooleanStrictOrNull() == true
                 if (!confirmAgain) {
-                    val detail = buildJsonObject {
-                        put("reason", perm.askReason ?: "需要您确认是否继续生成")
-                        put("tokensToDeduct", perm.tokensToDeduct)
-                        put("prompt", prompt)
-                        put("size", "${width}x${height}")
-                        put("hd", hd)
+                    val detailMsg = buildString {
+                        append(perm.askReason ?: "需要您确认是否继续生成")
+                        append("（本次成本 ").append(perm.tokensToDeduct).append(" tokens，")
+                        append("尺寸 ").append(width).append("x").append(height)
+                        if (hd) append(" HD")
+                        append("）")
                     }
-                    emit(ToolStreamEvent.Completed(ToolResult.Error(
-                        message = (perm.askReason ?: "需要二次确认"),
-                        code = "T2I_NEED_SECOND_CONFIRM",
-                        // TODO: partial 带 detail 给 UI 渲染确认卡
-                    ))); return@flow
+                    emit(ToolStreamEvent.Completed(ToolResult.Error(detailMsg, "T2I_NEED_SECOND_CONFIRM")))
+                    return@flow
                 }
             }
             T2IPermissionPolicyEngine.Verdict.ALLOW -> Unit
         }
 
-        // ══ 3. 落 PENDING 任务行 + 预扣额度（写 permissionDecision / quotaDeductedTokens）══
+        val now = System.currentTimeMillis()
         val outputDir = File(context.filesDir, OUTPUT_DIR_NAME)
         val endpointModeRef = EnumSafe.valueOf(
             activeProvider.endpointMode, ImageGenerator.EndpointMode.AUTO,
@@ -228,7 +204,7 @@ class GenerateImageTool @Inject constructor(
         val pending = T2ITaskEntity(
             id = taskId,
             sessionId = sessionId,
-            messageId = messageId,
+            messageId = "",
             prompt = prompt,
             negativePrompt = negativePrompt,
             width = width, height = height, steps = steps, hd = hd,
@@ -243,8 +219,12 @@ class GenerateImageTool @Inject constructor(
         )
         taskDao.insertTask(pending)
 
-        // ══ 4. 构造 runtime + 调用 ImageGenerator ══
-        emit(ToolStreamEvent.Progress("🖌️ 正在生成（$width×$height steps=$steps${if (hd) " hd" else ""}）..."))
+        emit(ToolStreamEvent.Progress(buildString {
+            append("正在生成（").append(width).append("x").append(height)
+            append(" steps=").append(steps)
+            if (hd) append(" hd")
+            append("）...")
+        }))
         var refundable = true
         try {
             if (imageGenerator is com.deep.rcode.feature.t2i.data.remote.OpenAiCompatibleImageGenerator) {
@@ -259,13 +239,11 @@ class GenerateImageTool @Inject constructor(
                 )
             )
             taskDao.markSuccess(taskId, res.imagePath, res.thumbnailPath, System.currentTimeMillis())
-            // AUTO 探测结果：如果 endpointModeRef=AUTO 但 provider 保存的仍是 AUTO，
-            // 这里把探测出来的 modeUsed 持久化回写（减少后续每次探测成本）。
             if (activeProvider.endpointMode == "AUTO" && res.modeUsed != ImageGenerator.EndpointMode.AUTO) {
                 runCatching { providerDao.updateEndpointMode(activeProvider.id, res.modeUsed.name) }
                     .onFailure { FileLogger.w(TAG, "写回 endpointMode 失败: ${it.message}") }
             }
-            refundable = false // 成功 = 不用退款
+            refundable = false
 
             val mdPreview = buildPreviewMarkdown(res.imagePath, prompt)
             emit(ToolStreamEvent.Completed(ToolResult.Success(buildJsonObject {
@@ -287,9 +265,6 @@ class GenerateImageTool @Inject constructor(
                 t.message?.take(200) ?: "未知错误", maxRetries = 3)
             emit(ToolStreamEvent.Completed(ToolResult.Error(t.message?.take(200) ?: "未知错误", "UNEXPECTED")))
         } finally {
-            // 非 refundable 的失败：不回加额度（例如用户 prompt 违规被供应商拦截，
-            // 但供应商仍记一次 QPS 消耗，额度照扣）。refundable=true 的失败 → 把
-            // quotaDeductedTokens 置 0，sum 查询时就不再统计这单（相当于退款）。
             if (refundable && perm.tokensToDeduct > 0) {
                 runCatching {
                     taskDao.setPermissionDecision(
@@ -303,9 +278,6 @@ class GenerateImageTool @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    // ══════════════════════════════════════════════════════════
-    // 私有辅助：失败状态机 + 重试次数更新
-    // ══════════════════════════════════════════════════════════
     private suspend fun handleFailure(
         taskId: String, pending: T2ITaskEntity,
         tokensDeducted: Int, code: String, msg: String,
@@ -328,19 +300,10 @@ class GenerateImageTool @Inject constructor(
     }
 
     private fun JsonElement.asIntSafe(): Int? = runCatching { jsonPrimitive.int }.getOrNull()
-        ?: jsonPrimitive.contentOrNull()?.toIntOrNull()
+        ?: jsonPrimitive.contentOrNullSafe()?.toIntOrNull()
 
-    private fun JsonElement.contentOrNull(): String? =
+    private fun JsonElement.asStringOrNull(): String? = jsonPrimitive.contentOrNullSafe()
+
+    private fun JsonElement.contentOrNullSafe(): String? =
         runCatching { jsonPrimitive.content }.getOrNull()
-
-    /** 兜底：activeProvider 没有 defaultModel 列（T2IProviderEntity 保留该列给 RC70 UI 扩展），
-     *  这里用空字符串（= 让上层取 modelDao.firstOrNull 兜底）。 */
-    private fun com.deep.rcode.feature.t2i.data.local.entity.T2IProviderEntity.defaultModelId(): String = ""
 }
-
-/** 缺省 AgentContext（流式兜底 execute 调用时）。避免对 AgentContext 的具体实现细节产生强依赖。 */
-private val AgentContext.Companion.EMPTY: AgentContext
-    get() = object : AgentContext {
-        override val sessionId: String get() = "UNKNOWN"
-        override val currentMessageId: String? get() = null
-    }
