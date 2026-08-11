@@ -38,6 +38,12 @@ import com.deep.rcode.feature.workspace.data.local.dao.RemoteMountDao
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteAuditLogEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteMountEntity
+import com.deep.rcode.feature.t2i.data.local.dao.T2IProviderDao
+import com.deep.rcode.feature.t2i.data.local.dao.T2IProviderModelDao
+import com.deep.rcode.feature.t2i.data.local.dao.T2ITaskDao
+import com.deep.rcode.feature.t2i.data.local.entity.T2IProviderEntity
+import com.deep.rcode.feature.t2i.data.local.entity.T2IProviderModelEntity
+import com.deep.rcode.feature.t2i.data.local.entity.T2ITaskEntity
 
 @Database(
     entities = [
@@ -58,9 +64,12 @@ import com.deep.rcode.feature.workspace.data.local.entity.RemoteMountEntity
         SentinelPlanRejectionAuditEntity::class,
         HardConstraintDeleteAuditEntity::class,
         L0SoftCompactRestoreLogEntity::class,
-        ZthTelemetryEventEntity::class
+        ZthTelemetryEventEntity::class,
+        T2IProviderEntity::class,
+        T2IProviderModelEntity::class,
+        T2ITaskEntity::class
     ],
-    version = 38,
+    version = 39,
     exportSchema = false
 )
 abstract class AgentDatabase : RoomDatabase() {
@@ -82,8 +91,11 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun hardConstraintDeleteAuditDao(): HardConstraintDeleteAuditDao
     abstract fun l0SoftCompactRestoreLogDao(): L0SoftCompactRestoreLogDao
     abstract fun zthTelemetryEventDao(): ZthTelemetryEventDao
+    abstract fun t2iProviderDao(): T2IProviderDao
+    abstract fun t2iProviderModelDao(): T2IProviderModelDao
+    abstract fun t2iTaskDao(): T2ITaskDao
 
     companion object {
-        const val SCHEMA_VERSION = 38
+        const val SCHEMA_VERSION = 39
     }
 }

@@ -27,6 +27,9 @@ import com.deep.rcode.feature.workspace.data.local.dao.CredentialEncryptionState
 import com.deep.rcode.feature.workspace.data.local.dao.RemoteAuditLogDao
 import com.deep.rcode.feature.workspace.data.local.dao.RemoteConnectionDao
 import com.deep.rcode.feature.workspace.data.local.dao.RemoteMountDao
+import com.deep.rcode.feature.t2i.data.local.dao.T2IProviderDao
+import com.deep.rcode.feature.t2i.data.local.dao.T2IProviderModelDao
+import com.deep.rcode.feature.t2i.data.local.dao.T2ITaskDao
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
 import com.deep.rcode.feature.agent.data.local.database.AgentDatabase
 import com.deep.rcode.feature.agent.data.CodeChangeTracker
@@ -474,6 +477,28 @@ object AgentModule {
     @Singleton
     fun provideZthTelemetryEventDao(database: AgentDatabase): ZthTelemetryEventDao {
         return database.zthTelemetryEventDao()
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // RC69 T2I：3 个 DAO @Provides（AgentDatabase L94-L96 已声明 abstract fun）
+    //   必须有这三条，否则 Hilt 编译期 MissingBinding → KSP 雪崩连锁报错。
+    // ══════════════════════════════════════════════════════════
+    @Provides
+    @Singleton
+    fun provideT2IProviderDao(database: AgentDatabase): T2IProviderDao {
+        return database.t2iProviderDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideT2IProviderModelDao(database: AgentDatabase): T2IProviderModelDao {
+        return database.t2iProviderModelDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideT2ITaskDao(database: AgentDatabase): T2ITaskDao {
+        return database.t2iTaskDao()
     }
 
     @Provides

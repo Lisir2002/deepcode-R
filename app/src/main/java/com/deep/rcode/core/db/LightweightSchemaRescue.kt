@@ -25,6 +25,9 @@ import com.deep.rcode.feature.settings.data.local.entity.AIProviderEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteAuditLogEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteMountEntity
+import com.deep.rcode.feature.t2i.data.local.entity.T2IProviderEntity
+import com.deep.rcode.feature.t2i.data.local.entity.T2IProviderModelEntity
+import com.deep.rcode.feature.t2i.data.local.entity.T2ITaskEntity
 import java.io.File
 import java.lang.reflect.Field
 import java.lang.reflect.Modifier
@@ -89,7 +92,11 @@ object LightweightSchemaRescue {
         SentinelPlanRejectionAuditEntity::class.java,
         HardConstraintDeleteAuditEntity::class.java,
         L0SoftCompactRestoreLogEntity::class.java,
-        ZthTelemetryEventEntity::class.java
+        ZthTelemetryEventEntity::class.java,
+        // ══ RC69 T2I 新增：同步 AgentDatabase.kt @Database entities[18..20] ══
+        T2IProviderEntity::class.java,
+        T2IProviderModelEntity::class.java,
+        T2ITaskEntity::class.java
     )
 
     fun rescue(context: Context, dbFile: File, dbVersion: Int): RescueReport {
