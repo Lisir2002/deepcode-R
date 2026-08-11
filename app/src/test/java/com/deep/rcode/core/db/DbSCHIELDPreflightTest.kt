@@ -11,7 +11,8 @@ import java.io.FileFilter
 /**
  * DB-SHIELD Phase C 闸门测试（Unit Test，不依赖 Android 真机）：
  *
- * 1) GAP-TEST：assets/migrations/*.sql 的版本号必须连续覆盖
+ * 1) GAP-TEST：assets/migrations 目录下所有版本化 SQL（例如 08_xxx.sql / 33_xxx.sql）
+ *    的版本号必须连续覆盖
  *    MigrationLoader.MIN_REQUIRED_START_VERSION .. AgentDatabase.SCHEMA_VERSION
  *    且无重复、无悬空（version > SCHEMA_VERSION）
  *
@@ -19,7 +20,7 @@ import java.io.FileFilter
  *    必须与 AgentDatabase.kt 里 @Database(entities=[...]) 数组 size 一致。
  *    不一致 → 说明"将来加表时忘了同步 ALL_ENTITY_CLASSES"，轻量抢救会漏掉新表。
  *
- * 3) FILE-ORDERING-TEST：所有 assets/migrations/*.sql 文件名前缀补零（08/09/10...），
+ * 3) FILE-ORDERING-TEST：所有 assets/migrations 目录下 SQL 文件名前缀补零（08/09/10...），
  *    保证 ASCII 排序 = 数字升序，日志顺序和诊断结果永远对齐。
  */
 class DbSCHIELDPreflightTest {
