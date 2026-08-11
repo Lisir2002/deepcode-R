@@ -719,6 +719,7 @@ class BackupManagerImpl @Inject constructor(
     )
 
     private companion object {
+        const val TAG = "BackupManagerImpl"
         const val PAGE_SIZE = 500
         const val FILE_METADATA = "metadata.json"
         const val FILE_SESSIONS = "chatSessions.jsonl"

@@ -2,6 +2,7 @@ package com.deep.rcode.feature.agent.domain.checkpoint
 
 import android.content.Context
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointDao
+import com.deep.rcode.feature.agent.data.local.dao.CheckpointFileSnapshotDao
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
 import com.deep.rcode.feature.workspace.domain.FileAccessProvider
@@ -17,6 +18,7 @@ import javax.inject.Singleton
 class CheckpointManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val checkpointDao: CheckpointDao,
+    private val snapshotDao: CheckpointFileSnapshotDao,
     private val fileAccess: FileAccessProvider
 ) {
     // 检查点备份根路径: <filesDir>/checkpoints/<sessionId>/<checkpointId>/
@@ -41,7 +43,7 @@ class CheckpointManager @Inject constructor(
             sessionId = sessionId,
             userMessageId = userMessageId,
             promptSnippet = snippet,
-            createdAt = System.currentTimeMillis()
+            createdAtMs = System.currentTimeMillis()
         )
         checkpointDao.insertCheckpoint(entity)
         activeCheckpointId = checkpointId
@@ -64,7 +66,7 @@ class CheckpointManager @Inject constructor(
         val targetFile = File(filePath)
 
         // 查重：同一个 checkpointId 内对同一文件只保留最原始的一次快照
-        if (checkpointDao.countSnapshot(checkpointId, filePath) > 0) {
+        if (snapshotDao.countSnapshot(checkpointId, filePath) > 0) {
             return@withContext
         }
 
@@ -92,7 +94,7 @@ class CheckpointManager @Inject constructor(
             snapshotRelativePath = "$sessionId/$checkpointId/$snapshotFileName",
             changeType = changeType
         )
-        checkpointDao.insertFileSnapshot(snapshotEntity)
+        snapshotDao.insertFileSnapshot(snapshotEntity)
     }
 
     /**
@@ -111,7 +113,7 @@ class CheckpointManager @Inject constructor(
         var restoredFileCount = 0
 
         for (cp in checkpointsToRollback) {
-            val snapshots = checkpointDao.getFileSnapshotsForCheckpoint(cp.id)
+            val snapshots = snapshotDao.getFileSnapshotsForCheckpoint(cp.id)
             for (snapshot in snapshots) {
                 val snapshotFile = File(baseCheckpointDir, snapshot.snapshotRelativePath)
 
@@ -137,7 +139,7 @@ class CheckpointManager @Inject constructor(
      * 删除 Session 关联的所有 Checkpoint 快照与记录
      */
     suspend fun clearSessionCheckpoints(sessionId: String) = withContext(Dispatchers.IO) {
-        checkpointDao.deleteFileSnapshotsForSession(sessionId)
+        snapshotDao.deleteFileSnapshotsForSession(sessionId)
         checkpointDao.deleteCheckpointsForSession(sessionId)
         val sessionDir = File(baseCheckpointDir, sessionId)
         if (sessionDir.exists()) {

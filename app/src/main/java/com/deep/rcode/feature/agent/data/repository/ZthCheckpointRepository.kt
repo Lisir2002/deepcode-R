@@ -1,6 +1,7 @@
 package com.deep.rcode.feature.agent.data.repository
 
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointDao
+import com.deep.rcode.feature.agent.data.local.dao.CheckpointFileSnapshotDao
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
 import javax.inject.Inject
@@ -21,7 +22,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthCheckpointRepository @Inject constructor(
-    private val dao: CheckpointDao
+    private val dao: CheckpointDao,
+    private val snapshotDao: CheckpointFileSnapshotDao
 ) {
 
     /** prePlan：新建 checkpoint（若该 messageId 已有则复用）。 */
@@ -47,9 +49,9 @@ class ZthCheckpointRepository @Inject constructor(
         snapshotId: String, checkpointId: String,
         filePath: String, snapshotRelativePath: String, changeType: String
     ) {
-        val exists = dao.countSnapshot(checkpointId, filePath) > 0
+        val exists = snapshotDao.countSnapshot(checkpointId, filePath) > 0
         if (exists) return
-        dao.insertFileSnapshot(
+        snapshotDao.insertFileSnapshot(
             CheckpointFileSnapshotEntity(
                 id = snapshotId, checkpointId = checkpointId, filePath = filePath,
                 snapshotRelativePath = snapshotRelativePath, changeType = changeType
@@ -61,7 +63,7 @@ class ZthCheckpointRepository @Inject constructor(
     suspend fun getCheckpointWithSnapshots(checkpointId: String):
             Pair<CheckpointEntity, List<CheckpointFileSnapshotEntity>>? {
         val ck = dao.getCheckpointById(checkpointId) ?: return null
-        val snaps = dao.getFileSnapshotsForCheckpoint(checkpointId)
+        val snaps = snapshotDao.getFileSnapshotsForCheckpoint(checkpointId)
         return ck to snaps
     }
 
@@ -73,7 +75,7 @@ class ZthCheckpointRepository @Inject constructor(
 
     /** 会话关闭 / 用户手动：清空 session 所有 checkpoint + 快照。 */
     suspend fun clearSession(sessionId: String) {
-        dao.deleteFileSnapshotsForSession(sessionId)
+        snapshotDao.deleteFileSnapshotsForSession(sessionId)
         dao.deleteCheckpointsForSession(sessionId)
     }
 
@@ -86,7 +88,7 @@ class ZthCheckpointRepository @Inject constructor(
 
     fun checkpointToDto(e: CheckpointEntity): Map<String, Any?> = mapOf(
         "id" to e.id, "sessionId" to e.sessionId, "userMessageId" to e.userMessageId,
-        "promptSnippet" to e.promptSnippet.take(200), "createdAt" to e.createdAt,
+        "promptSnippet" to e.promptSnippet.take(200), "createdAt" to e.createdAtMs,
         "_lwwMs" to System.currentTimeMillis()
     )
 
@@ -95,7 +97,7 @@ class ZthCheckpointRepository @Inject constructor(
         sessionId = m["sessionId"] as? String ?: "",
         userMessageId = m["userMessageId"] as? String ?: "",
         promptSnippet = m["promptSnippet"] as? String ?: "",
-        createdAt = (m["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+        createdAtMs = (m["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
     )
 
     fun snapshotToDto(e: CheckpointFileSnapshotEntity): Map<String, Any?> = mapOf(

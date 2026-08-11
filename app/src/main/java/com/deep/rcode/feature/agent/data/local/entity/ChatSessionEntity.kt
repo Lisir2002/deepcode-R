@@ -2,6 +2,7 @@ package com.deep.rcode.feature.agent.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.deep.rcode.core.util.EnumSafe
 import com.deep.rcode.feature.agent.domain.model.AgentMode
 import com.deep.rcode.feature.agent.domain.model.ChatSession
 import com.deep.rcode.feature.agent.domain.model.ReasoningEffort

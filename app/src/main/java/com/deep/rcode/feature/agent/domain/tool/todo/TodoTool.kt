@@ -118,8 +118,8 @@ class TodoTool @Inject constructor(
                 status = draft.status.name,
                 priority = draft.priority,
                 order = idx,
-                createdAt = previous?.createdAt ?: now,
-                updatedAt = now
+                createdAtMs = previous?.createdAtMs ?: now,
+                updatedAtMs = now
             ))
         }
 

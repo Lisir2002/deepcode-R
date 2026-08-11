@@ -8,6 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import com.deep.rcode.core.db.entity.CredentialEncryptionStateEntity
 import com.deep.rcode.core.util.FileLogger
+import com.deep.rcode.feature.agent.data.local.entity.AgentMessageEntity
 import com.deep.rcode.feature.agent.data.local.entity.ChatSessionEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
