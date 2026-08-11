@@ -46,8 +46,8 @@ class SessionUseCase @Inject constructor(
             id = UUID.randomUUID().toString(),
             title = "新会话",
             workspacePath = workspacePath,
-            createdAt = now,
-            updatedAt = now
+            createdAtMs = now,
+            updatedAtMs = now
         )
     }
 
