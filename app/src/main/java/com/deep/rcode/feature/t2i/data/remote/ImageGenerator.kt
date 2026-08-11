@@ -2,6 +2,7 @@ package com.deep.rcode.feature.t2i.data.remote
 
 import android.content.Context
 import com.deep.rcode.core.util.FileLogger
+import com.deep.rcode.feature.agent.domain.provider.joinUrl
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -129,11 +130,12 @@ class OpenAiCompatibleImageGenerator @Inject constructor(
                 if (request.seed != 0) put("seed", request.seed)
             }
 
-            FileLogger.d(TAG, "POST $baseUrl/v1/images/generations model=$effectiveModel size=$size")
+            val endpoint = joinUrl(baseUrl, "v1/images/generations")
+            FileLogger.d(TAG, "POST $endpoint model=$effectiveModel size=$size")
 
             val reqBody = payload.toString().toRequestBody("application/json".toMediaType())
             val httpReq = Request.Builder()
-                .url(normalize(baseUrl) + "/v1/images/generations")
+                .url(endpoint)
                 .header("Authorization", "Bearer $apiKey")
                 .header("Content-Type", "application/json")
                 .post(reqBody)

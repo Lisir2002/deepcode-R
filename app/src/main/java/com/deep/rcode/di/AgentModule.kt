@@ -509,6 +509,13 @@ object AgentModule {
         return impl
     }
 
+    // T2I 专用探测服务：构造函数是 @Inject 所以 Hilt 本身会实例化，这里声明一个 @Provides
+    //   只是保证 Module 对象里能显式声明为单例（与 ModelApiService 同生命周期），供后续 ViewModel/Repo 直接取。
+    @Provides
+    @Singleton
+    fun provideT2IModelProbeService(impl: com.deep.rcode.feature.t2i.data.remote.T2IModelProbeService):
+            com.deep.rcode.feature.t2i.data.remote.T2IModelProbeService = impl
+
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
