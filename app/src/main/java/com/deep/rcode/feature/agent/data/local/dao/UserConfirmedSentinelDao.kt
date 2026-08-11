@@ -29,7 +29,7 @@ interface UserConfirmedSentinelDao {
     fun observeBySession(sessionId: String): Flow<List<UserConfirmedSentinelEntity>>
 
     /** C.4.3 崩溃恢复：会话下所有未过期 sentinel。 */
-    @Query("SELECT * FROM zth_user_confirmed_sentinels WHERE sessionId = :sessionId AND (expireAtMs = -1L OR expireAtMs > :nowMs) ORDER BY createdAtMs ASC")
+    @Query("SELECT * FROM zth_user_confirmed_sentinels WHERE sessionId = :sessionId AND (expireAtMs = -1 OR expireAtMs > :nowMs) ORDER BY createdAtMs ASC")
     suspend fun getUnexpiredBySession(sessionId: String, nowMs: Long): List<UserConfirmedSentinelEntity>
 
     /** C.4.2 一键回滚：某会话所有 sentinel 打 rollbackFlag=true。 */
