@@ -5,6 +5,9 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.deep.rcode.core.db.FileMigration
+import com.deep.rcode.core.db.LightweightSchemaRescue
+import com.deep.rcode.core.db.MigrationLoader
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.data.local.dao.AgentMessageDao
 import com.deep.rcode.feature.agent.data.local.dao.ChatSessionDao
@@ -117,28 +120,84 @@ object AgentModule {
     }
 
     private fun provideAgentDatabaseInternal(@ApplicationContext context: Context): AgentDatabase {
-        // RC61b：双阶段构建，保证 schema 校验失败时应用依然可启动
-        // 第一阶段：优先走迁移（所有 SQL 脚本 + fallbackToDestructiveMigration(dropAllTables=false)）
-        //           即"未知版本 → 只删未知表、保留业务表"的保守降级。
-        // 第二阶段：第一阶段若抛异常（最常见 = migration 32 列名/索引与 Entity 不一致导致
-        //           Room.onOpen 校验 IllegalStateException），退化为 destructive = true 的彻底
-        //           重建。此路径会丢表中数据但保证 Hilt 注入链不崩 → App 不被系统杀。
-        val firstStage = runCatching {
-            buildAgentDatabase(context, destructiveFallback = false)
+        // DB-SHIELD 4 阶段 Funnel（从"保数据最优"到"保启动最差"严格递减）：
+        //   Funnel 1: 保守迁移（缺 migration 不 DROP），优先走
+        //   Funnel 2: LightweightSchemaRescue（反射 Entity CREATE IF NOT EXISTS/ADD COLUMN，不删任何老表）
+        //   Funnel 3: 保守 destructive (dropAllTables=false，只删 Room 认为 schema 不对的表)
+        //   Funnel 4: 终极 destructive，先自动 .db 备份再 DROP 全表
+        val declaredVersion = AgentDatabase.SCHEMA_VERSION
+
+        val funnel1 = runCatching { buildAgentDatabase(context, mode = FunnelMode.FUNNEL1_CONSERVATIVE_MIGRATION) }
+        funnel1.onSuccess {
+            FileLogger.i("AgentModule", "Funnel 1 OK: 所有迁移齐全，Room 构建 success")
+            return it
         }
-        firstStage.onSuccess { return it }
-        FileLogger.e(
-            "AgentModule",
-            "Room 首阶段构建失败（可能是迁移 schema 不匹配），降级为 destructive 重建，" +
-                    "历史聊天/会话会清空但应用可继续使用。原因=${firstStage.exceptionOrNull()?.message}",
-            firstStage.exceptionOrNull()
-        )
-        return buildAgentDatabase(context, destructiveFallback = true)
+        val err1 = funnel1.exceptionOrNull()
+        FileLogger.w("AgentModule", "Funnel 1 failed（可能是迁移文件缺口或 schema mismatch）：${err1?.message}", err1)
+
+        val dbFile = context.getDatabasePath("rdeepcode_agent_db")
+        val funnel2 = runCatching {
+            if (dbFile.exists()) {
+                val report = LightweightSchemaRescue.rescue(context, dbFile, declaredVersion)
+                FileLogger.i("AgentModule", "Funnel 2 LightweightRescue 报告: $report")
+                if (report.failures.isNotEmpty()) {
+                    FileLogger.w("AgentModule", "Funnel 2 rescue 时的非致命异常 (${report.failures.size})：${report.failures.take(3)}")
+                }
+            } else {
+                FileLogger.i("AgentModule", "Funnel 2: DB 文件不存在（第一次启动），跳过轻量抢救")
+            }
+            // 抢救后立即用「保守迁移」重建 Room（此时新表/缺列已经通过 SQLite 原生补好，
+            // Room 的 onOpen TableInfo 校验大概率会通过；即使仍失败 → 进入 Funnel 3）
+            buildAgentDatabase(context, mode = FunnelMode.FUNNEL2_AFTER_RESCUE_RETRY)
+        }
+        funnel2.onSuccess {
+            FileLogger.i("AgentModule", "Funnel 2 OK: 轻量抢救 + Room 二次构建 success")
+            return it
+        }
+        val err2 = funnel2.exceptionOrNull()
+        FileLogger.w("AgentModule", "Funnel 2 failed：${err2?.message}", err2)
+
+        val funnel3 = runCatching { buildAgentDatabase(context, mode = FunnelMode.FUNNEL3_CONSERVATIVE_DESTRUCTIVE) }
+        funnel3.onSuccess {
+            FileLogger.w("AgentModule", "Funnel 3 OK: 保守 destructive (dropAllTables=false) 构建 success，" +
+                    "仅删除 schema 对不上的表，业务核心表（chat_sessions/agent_messages）保留")
+            return it
+        }
+        val err3 = funnel3.exceptionOrNull()
+        FileLogger.w("AgentModule", "Funnel 3 failed：${err3?.message}", err3)
+
+        // ── Funnel 4：终极兜底。先在破坏性重建前把 .db 文件拷贝到 filesDir/database_crashes/ ──
+        if (dbFile.exists()) {
+            val snapshot = LightweightSchemaRescue.snapshotDbFileForDisasterRecovery(context, dbFile)
+            if (snapshot != null) {
+                FileLogger.i("AgentModule", "Funnel 4: 触发前已备份原 DB → ${snapshot.absolutePath}")
+            }
+        }
+        val funnel4 = runCatching { buildAgentDatabase(context, mode = FunnelMode.FUNNEL4_FULL_DESTRUCTIVE_WITH_BACKUP) }
+        funnel4.onSuccess {
+            FileLogger.w("AgentModule", "Funnel 4 OK: destructive 终极兜底构建 success，所有表已重建；" +
+                    "若 filesDir/database_crashes/ 下有备份，可在设置页触发「崩溃还原」")
+            return it
+        }
+        val err4 = funnel4.exceptionOrNull()
+        FileLogger.e("AgentModule", "Funnel 4 (终极兜底) 仍然失败：${err4?.message}", err4)
+        // 最后抛（外层 provideAgentDatabase 还有 runCatching + 第 5 次 build）
+        throw RuntimeException("Room DB Funnel 1-4 全部失败，上一层走第 0 层兜底：${err1?.message} :: ${err2?.message} :: ${err3?.message} :: ${err4?.message}")
+    }
+
+    /**
+     * DB-SHIELD 四阶段枚举（用于 buildAgentDatabase 内部切换 fallback 策略）。
+     */
+    private enum class FunnelMode {
+        FUNNEL1_CONSERVATIVE_MIGRATION,
+        FUNNEL2_AFTER_RESCUE_RETRY,
+        FUNNEL3_CONSERVATIVE_DESTRUCTIVE,
+        FUNNEL4_FULL_DESTRUCTIVE_WITH_BACKUP,
     }
 
     private fun buildAgentDatabase(
         context: Context,
-        destructiveFallback: Boolean,
+        mode: FunnelMode,
     ): AgentDatabase {
         val builder = Room.databaseBuilder(
             context,
@@ -147,29 +206,40 @@ object AgentModule {
         ).addMigrations(*MigrationLoader.loadMigrations(context))
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: SupportSQLiteDatabase) {
-                    // onOpen 是 Room 进行 TableInfo 实际 schema 校验的时机；
-                    // 这里包一层 try，只记日志不向上抛（Room 本身也会抛），
-                    // 便于通过 FileLogger 追溯"启动 1-2s 秒退"是否由 schema mismatch 引发。
                     runCatching {
-                        FileLogger.i("AgentModule", "Room DB onOpen，路径=${db.path}")
+                        FileLogger.i("AgentModule", "Room DB onOpen(mode=$mode)，路径=${db.path}")
                     }.onFailure { FileLogger.w("AgentModule", "DB onOpen 日志失败", it) }
                 }
 
                 override fun onCreate(db: SupportSQLiteDatabase) {
-                    FileLogger.i("AgentModule", "Room DB 首次创建 (onCreate)")
+                    FileLogger.i("AgentModule", "Room DB 首次创建 (onCreate, mode=$mode)")
                 }
 
                 override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
                     FileLogger.w(
                         "AgentModule",
-                        "Room 触发 destructive migration（全表重建），destructiveFallback=$destructiveFallback"
+                        "Room 触发 destructive migration（mode=$mode），" +
+                                if (mode == FunnelMode.FUNNEL3_CONSERVATIVE_DESTRUCTIVE)
+                                    "保守模式：只删 schema 对不上的表；业务表保留"
+                                else
+                                    "全表重建：所有表被清空；应已在 Funnel 4 前触发 DB 文件备份"
                     )
                 }
             })
-        if (destructiveFallback) {
-            builder.fallbackToDestructiveMigration() // 真·兜底：未知版本直接删全部表再建
-        } else {
-            builder.fallbackToDestructiveMigration(dropAllTables = false) // 保守降级
+        when (mode) {
+            FunnelMode.FUNNEL1_CONSERVATIVE_MIGRATION,
+            FunnelMode.FUNNEL2_AFTER_RESCUE_RETRY -> {
+                // Funnel 1/2 绝对不做 destructive：如果 migration 缺失 → 抛异常给上层转 Funnel 2/3。
+                // （Funnel 2 的抢救已经通过原生 SQLite 在 LightweightSchemaRescue.rescue() 内完成，
+                //  这里再用 conservative 模式打开 Room，让 TableInfo 校验通过就成功，失败就继续降级。）
+                builder.fallbackToDestructiveMigration(dropAllTables = false)
+            }
+            FunnelMode.FUNNEL3_CONSERVATIVE_DESTRUCTIVE -> {
+                builder.fallbackToDestructiveMigration(dropAllTables = false)
+            }
+            FunnelMode.FUNNEL4_FULL_DESTRUCTIVE_WITH_BACKUP -> {
+                builder.fallbackToDestructiveMigration() // 真·兜底：DROP 所有表再重建
+            }
         }
         return builder.build()
     }

@@ -35,6 +35,13 @@ object MigrationLoader {
     private var cached: Array<Migration>? = null
 
     /**
+     * 目前资产目录中最早可用的 SQL 版本（08_add_remote_servers.sql）。
+     * 当用户从比 v7 更早的 APK 升级上来时，v8 以下无 SQL → 视为「旧库全重建」场景，
+     * LightweightSchemaRescue 会单独处理（见 AgentModule Funnel 2）。
+     */
+    const val MIN_REQUIRED_START_VERSION = 8
+
+    /**
      * 加载 migrations 目录下的 SQL 文件。结果进程级缓存，后续调用直接返回缓存，
      * 避免 Hilt 注入链 AgentModule.provideAgentDatabase（主线程）重复走
      * AssetManager.list/open 导致的冷启动阻塞。
@@ -46,6 +53,37 @@ object MigrationLoader {
             val cur2 = cached
             if (cur2 != null) cur2 else doLoad(context).also { cached = it }
         }
+    }
+
+    /**
+     * DB-SHIELD-1 (SCHEMA_GAP) 连续性校验：
+     *   - 传入所有 FileMigration 的 version 值（按 Int 升序）
+     *   - 必须是 [MIN_REQUIRED_START_VERSION .. declaredDbVersion] 的连续整数
+     *   - 缺版本 / 重复版本 → 用 FileLogger.e 写 FATAL 级日志（CrashHandler 会同步落盘）
+     *   - 不抛 RuntimeException（保持启动链 RC61b hotfix3 安全语义）
+     */
+    fun assertContinuity(
+        loadedVersionsSorted: List<Int>,
+        declaredDbVersion: Int,
+        onWarn: (String) -> Unit = { msg -> FileLogger.e("MigrationLoader", msg) }
+    ): List<Int> {
+        val missing = mutableListOf<Int>()
+        val duplicates = loadedVersionsSorted.groupingBy { it }.eachCount().filter { it.value > 1 }.keys.toList()
+        if (duplicates.isNotEmpty()) {
+            onWarn("SCHEMA_GAP[DUPLICATE]: 重复迁移版本号：$duplicates")
+        }
+        val have = loadedVersionsSorted.toSet()
+        for (v in MIN_REQUIRED_START_VERSION .. declaredDbVersion) {
+            if (!have.contains(v)) missing.add(v)
+        }
+        if (missing.isNotEmpty()) {
+            onWarn("SCHEMA_GAP[MISSING]: 期望覆盖 v${MIN_REQUIRED_START_VERSION}..v${declaredDbVersion}，缺失版本：$missing")
+        }
+        val dangling = loadedVersionsSorted.filter { it > declaredDbVersion }
+        if (dangling.isNotEmpty()) {
+            onWarn("SCHEMA_GAP[DANGLING]: 迁移版本号高于 @Database(version=$declaredDbVersion)：$dangling")
+        }
+        return missing
     }
 
     private fun doLoad(context: Context): Array<Migration> {
@@ -85,6 +123,15 @@ object MigrationLoader {
                     )
                 }
             }
+
+            // DB-SHIELD-1: 连续性闸门（不抛异常，但写 FATAL 级日志供 CrashHandler 同步落盘 + 下次诊断用）
+            val declaredDbVersion = com.deep.rcode.feature.agent.data.local.database.AgentDatabase.SCHEMA_VERSION
+            val versionsSorted = migrations
+                .mapNotNull { (it as? FileMigration)?.version }
+                .distinct()
+                .sorted()
+            assertContinuity(versionsSorted, declaredDbVersion)
+
             migrations.toTypedArray()
         }.getOrElse {
             FileLogger.e(
