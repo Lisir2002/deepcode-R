@@ -155,7 +155,7 @@ class ZthCapabilityGuard @Inject constructor() {
         "getToolDefinitions", "askUserQuestion", "switchMode", "viewImage"
     )
 
-    private val SAFE_MCP_SERVER_WHITELIST = setOf(
+    private val SAFE_MCP_SERVER_WHITELIST = setOf<String>(
         // C.4.4 Phase 4 设置页手工维护白名单（v1.0 默认空，用户不添加即「严格」符合 ZTH-1 零幻觉假设）
     )
 
