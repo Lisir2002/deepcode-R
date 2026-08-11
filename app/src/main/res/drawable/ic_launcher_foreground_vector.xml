@@ -14,7 +14,7 @@
 
     <!-- 对话气泡主体（圆角矩形 + 左下尾巴），渐变填充 -->
     <path
-        android:name="bubble">
+        android:pathData="M33,24 L75,24 A11,11 0 0 1 86,35 L86,65 A11,11 0 0 1 75,76 L42,76 L36,86 L33,76 L33,35 A11,11 0 0 1 33,24 Z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
@@ -25,24 +25,9 @@
                 android:startColor="#FF165DFF"
                 android:endColor="#FF7B61FF" />
         </aapt:attr>
-        <!-- 气泡路径：圆角矩形(22,24 → 86,76) + 左下尾巴 -->
-        <aapt:attr name="android:pathData">
-            <!-- 圆角矩形：left=22 top=24 right=86 bottom=76, r=11 -->
-            M33,24
-            L75,24
-            A11,11 0 0 1 86,35
-            L86,65
-            A11,11 0 0 1 75,76
-            L42,76
-            L36,86
-            L33,76
-            L33,35
-            A11,11 0 0 1 33,24
-            Z
-        </aapt:attr>
     </path>
 
-    <!-- 代码符号 </> ：白色，3 个部分（< / >），居中在气泡内 -->
+    <!-- 代码符号 </> ：白色 -->
     <!-- < 左尖括号 -->
     <path
         android:fillColor="#FFFFFFFF"
