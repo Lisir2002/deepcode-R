@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DB-SHIELD-PERSIST-1 RC68：Android 9..11 fullBackupContent 规则（与 data_extraction_rules 语义对齐）。
+  ensure 系统级「更新 APK / 换机克隆 / 开发者 adb backup」保留 Room DB + 崩溃备份 + ZTH 加密元数据 + 共享偏好。
+-->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="file" path="database_crashes" />
+    <include domain="file" path="zth_security" />
+    <include domain="sharedpref" path="." />
+    <exclude domain="cache" path="." />
+    <exclude domain="code_cache" path="." />
+    <exclude domain="no_backup" path="." />
+</full-backup-content>

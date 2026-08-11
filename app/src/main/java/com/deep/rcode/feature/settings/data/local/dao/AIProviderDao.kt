@@ -43,7 +43,20 @@ interface AIProviderDao {
     @Query("UPDATE ai_providers SET isActive = 1 WHERE id = :id")
     suspend fun activateProvider(id: String)
 
-    @Query("UPDATE ai_providers SET selectedModel = :model WHERE id = :id")
+    /**
+     * RC68 SCHEMA 38：selectedModel 冗余列已删除，该字段合并到 defaultModel。
+     * 为减少调用方改动，保留原方法名 setSelectedModel，内部更新的就是 defaultModel 列；
+     * 同时新增语义更清晰的 setDefaultModel 方法。
+     */
+    @Query("UPDATE ai_providers SET defaultModel = :model WHERE id = :id")
+    suspend fun setDefaultModel(id: String, model: String)
+
+    /** @deprecated 请改用 setDefaultModel。名字保留以减少 RC68 过渡期改动，底层已重定向 defaultModel 列。 */
+    @Deprecated(
+        "列 selectedModel 已合并进 defaultModel，直接用 setDefaultModel",
+        ReplaceWith("setDefaultModel(id, model)")
+    )
+    @Query("UPDATE ai_providers SET defaultModel = :model WHERE id = :id")
     suspend fun setSelectedModel(id: String, model: String)
 
     @Query("UPDATE ai_providers SET models = :models WHERE id = :id")

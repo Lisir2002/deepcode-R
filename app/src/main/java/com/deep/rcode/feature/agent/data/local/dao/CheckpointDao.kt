@@ -5,7 +5,6 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointEntity
-import com.deep.rcode.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
 
 @Dao
 interface CheckpointDao {
@@ -13,10 +12,7 @@ interface CheckpointDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCheckpoint(checkpoint: CheckpointEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertFileSnapshot(snapshot: CheckpointFileSnapshotEntity)
-
-    @Query("SELECT * FROM session_checkpoints WHERE sessionId = :sessionId ORDER BY createdAt ASC")
+    @Query("SELECT * FROM session_checkpoints WHERE sessionId = :sessionId ORDER BY createdAtMs ASC")
     suspend fun getCheckpointsForSession(sessionId: String): List<CheckpointEntity>
 
     @Query("SELECT * FROM session_checkpoints WHERE userMessageId = :messageId LIMIT 1")
@@ -25,18 +21,9 @@ interface CheckpointDao {
     @Query("SELECT * FROM session_checkpoints WHERE id = :checkpointId LIMIT 1")
     suspend fun getCheckpointById(checkpointId: String): CheckpointEntity?
 
-    @Query("SELECT * FROM checkpoint_file_snapshots WHERE checkpointId = :checkpointId")
-    suspend fun getFileSnapshotsForCheckpoint(checkpointId: String): List<CheckpointFileSnapshotEntity>
-
-    @Query("SELECT COUNT(*) FROM checkpoint_file_snapshots WHERE checkpointId = :checkpointId AND filePath = :filePath")
-    suspend fun countSnapshot(checkpointId: String, filePath: String): Int
-
     @Query("DELETE FROM session_checkpoints WHERE sessionId = :sessionId")
     suspend fun deleteCheckpointsForSession(sessionId: String)
 
-    @Query("DELETE FROM checkpoint_file_snapshots WHERE checkpointId IN (SELECT id FROM session_checkpoints WHERE sessionId = :sessionId)")
-    suspend fun deleteFileSnapshotsForSession(sessionId: String)
-
-    @Query("DELETE FROM session_checkpoints WHERE createdAt < :cutoffTimestamp")
+    @Query("DELETE FROM session_checkpoints WHERE createdAtMs < :cutoffTimestamp")
     suspend fun deleteCheckpointsBefore(cutoffTimestamp: Long)
 }

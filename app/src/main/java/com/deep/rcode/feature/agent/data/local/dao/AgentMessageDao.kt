@@ -28,6 +28,12 @@ interface AgentMessageDao {
     @Query("DELETE FROM agent_messages WHERE sessionId = :sessionId")
     suspend fun deleteBySession(sessionId: String)
 
+    /**
+     * DB-SHIELD-RC68 P0-2 边界语义明确化：<cutoff 之前（严格早于 cutoff）的消息删除。
+     * 原方法名 deleteMessagesBeforeTimestamp 虽然语义正确，但之前有 deleteMessagesFromTimestamp(>=) / deleteMessagesAfterTimestamp(>) 一对
+     * 长得像、但边界分别是「含 / 不含」，很容易被调用方混淆 → 回放重建上下文时多删一条或少删一条。
+     * 保留旧方法名（@Deprecated）+ 新增严格命名的 Strict 版，过渡期一起存在，FUTURE 统一删 Deprecated。
+     */
     @Query("DELETE FROM agent_messages WHERE sessionId = :sessionId AND timestamp < :cutoffTimestamp")
     suspend fun deleteMessagesBeforeTimestamp(sessionId: String, cutoffTimestamp: Long)
 
@@ -47,11 +53,29 @@ interface AgentMessageDao {
     @Query("DELETE FROM agent_messages WHERE id = :id")
     suspend fun deleteMessageById(id: String)
 
+    /** @Deprecated 建议用 deleteMessagesInclusiveFrom (>=)。名字里的 "From" 边界（>=）与 After（>）容易搞混。 */
+    @Deprecated(
+        "边界歧义：请改用 deleteMessagesInclusiveFromTimestamp(>=) / deleteMessagesExclusiveAfterTimestamp(>)",
+        ReplaceWith("deleteMessagesInclusiveFromTimestamp(sessionId, cutoffTimestamp)")
+    )
     @Query("DELETE FROM agent_messages WHERE sessionId = :sessionId AND timestamp >= :cutoffTimestamp")
     suspend fun deleteMessagesFromTimestamp(sessionId: String, cutoffTimestamp: Long)
 
+    /** @Deprecated 建议用 deleteMessagesExclusiveAfterTimestamp (>). */
+    @Deprecated(
+        "边界歧义：请改用 deleteMessagesExclusiveAfterTimestamp(>)",
+        ReplaceWith("deleteMessagesExclusiveAfterTimestamp(sessionId, cutoffTimestamp)")
+    )
     @Query("DELETE FROM agent_messages WHERE sessionId = :sessionId AND timestamp > :cutoffTimestamp")
     suspend fun deleteMessagesAfterTimestamp(sessionId: String, cutoffTimestamp: Long)
+
+    /** RC68 严格命名版：时间戳「大于等于 cutoff」（含边界）的消息删除，用于「截断到某个用户点后重新生成」。 */
+    @Query("DELETE FROM agent_messages WHERE sessionId = :sessionId AND timestamp >= :cutoffTimestamp")
+    suspend fun deleteMessagesInclusiveFromTimestamp(sessionId: String, cutoffTimestamp: Long)
+
+    /** RC68 严格命名版：时间戳「严格大于 cutoff」（不含边界）的消息删除，用于「保留最后一条锚点」等场景。 */
+    @Query("DELETE FROM agent_messages WHERE sessionId = :sessionId AND timestamp > :cutoffTimestamp")
+    suspend fun deleteMessagesExclusiveAfterTimestamp(sessionId: String, cutoffTimestamp: Long)
 
     /**
      * 把残留的「执行中」工具行（content 以占位标记开头）批量收尾为「已中断」。

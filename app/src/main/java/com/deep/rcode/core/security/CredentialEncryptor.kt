@@ -1,9 +1,9 @@
 package com.deep.rcode.core.security
 
 import android.content.Context
+import com.deep.rcode.core.db.entity.CredentialEncryptionStateEntity
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.workspace.data.local.dao.CredentialEncryptionStateDao
-import com.deep.rcode.feature.workspace.data.local.entity.CredentialEncryptionStateEntity
 import com.deep.rcode.feature.workspace.domain.RemoteAuditAction
 import com.deep.rcode.feature.workspace.domain.RemoteAuditCategory
 import com.deep.rcode.feature.workspace.domain.repository.RemoteAuditLogRepository

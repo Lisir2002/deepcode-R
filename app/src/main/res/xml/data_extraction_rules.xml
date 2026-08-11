@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DB-SHIELD-PERSIST-1 RC68 P0-1：Android 12+ 自动备份细粒度规则（dataExtractionRules）。
+  升级 APK 时允许系统 / OEM 换机克隆 / 云备份 自动保存：
+    - databases/ 下的所有 Room SQLite（含 rdeepcode_agent.db .wal .shm）
+    - files/database_crashes/（Funnel4 崩溃备份）
+    - files/zth_*/（ZTH 加密相关元数据）
+    - shared_prefs/（设置项 DataStore 不在这里，语言/保活/日志等级走这个）
+  禁止备份：
+    - cache/（临时文件、APK 下载缓存）
+    - code_cache/（dex 编译缓存）
+    - no_backup/（将来放会话临时上下文压缩中间产物）
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="." />
+        <include domain="file" path="database_crashes" />
+        <include domain="file" path="zth_security" />
+        <include domain="sharedpref" path="." />
+        <exclude domain="cache" path="." />
+        <exclude domain="code_cache" path="." />
+        <exclude domain="no_backup" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="." />
+        <include domain="file" path="database_crashes" />
+        <include domain="file" path="zth_security" />
+        <include domain="sharedpref" path="." />
+        <exclude domain="cache" path="." />
+        <exclude domain="code_cache" path="." />
+        <exclude domain="no_backup" path="." />
+    </device-transfer>
+</data-extraction-rules>

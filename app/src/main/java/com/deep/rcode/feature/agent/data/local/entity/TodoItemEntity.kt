@@ -2,6 +2,7 @@ package com.deep.rcode.feature.agent.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.deep.rcode.core.util.EnumSafe
 import com.deep.rcode.feature.agent.domain.model.TodoItem
 import com.deep.rcode.feature.agent.domain.model.TodoStatus
 
@@ -14,19 +15,21 @@ data class TodoItemEntity(
     val status: String = "PENDING",
     val priority: Int = 0,
     val order: Int = 0,
-    val createdAt: Long,
-    val updatedAt: Long
+    /** 创建时间毫秒（RC68 统一 Ms 后缀）。 */
+    val createdAtMs: Long,
+    /** 最后一次更新时间毫秒。 */
+    val updatedAtMs: Long
 ) {
     fun toDomain(): TodoItem = TodoItem(
         id = id,
         sessionId = sessionId,
         subject = subject,
         description = description,
-        status = try { TodoStatus.valueOf(status) } catch (_: Exception) { TodoStatus.PENDING },
+        status = EnumSafe.valueOf(status, TodoStatus.PENDING, tag = "TodoItemEntity.status"),
         priority = priority,
         order = order,
-        createdAt = createdAt,
-        updatedAt = updatedAt
+        createdAt = createdAtMs,
+        updatedAt = updatedAtMs
     )
 
     companion object {
@@ -38,8 +41,8 @@ data class TodoItemEntity(
             status = item.status.name,
             priority = item.priority,
             order = item.order,
-            createdAt = item.createdAt,
-            updatedAt = item.updatedAt
+            createdAtMs = item.createdAt,
+            updatedAtMs = item.updatedAt
         )
     }
 }

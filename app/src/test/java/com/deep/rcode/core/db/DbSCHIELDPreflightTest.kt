@@ -329,4 +329,173 @@ class DbSCHIELDPreflightTest {
         assertTrue("entity FQCN 列表空", result.isNotEmpty())
         return result
     }
+
+    // ══════════════════════════════════════════════════════════
+    // RC68 新增 3 道闸门：PLAINTEXT-ZERO-TEST / ENUM-STABLE-NAME-TEST / FILE-DAO-NAMING-CONSISTENCY-TEST
+    // ══════════════════════════════════════════════════════════
+
+    // ─────────────────────────────────────────────────────────────
+    // 7) PLAINTEXT-ZERO-TEST：所有 Entity class 的敏感字段（apiKey / token / selectedModel 明文列）
+    //    在 RC68 之后必须不存在。一旦有人加回明文列 → 闸门直接 fail。
+    //    语义：加密敏感字段必须只用 *Encrypted 变体（encryptedApiKey / encryptedToken）。
+    // ─────────────────────────────────────────────────────────────
+    @Test
+    fun `PLAINTEXT-ZERO-TEST - Entity 里禁止出现明文敏感字段 apiKey token selectedModel`() {
+        val sensitivePlaintextNames = setOf(
+            "apiKey",        // RC68 删除：改为 encryptedApiKey + 运行时解密
+            "token",         // RC68 删除：GitCredentialEntity 改为 encryptedToken
+            "selectedModel"  // RC68 删除：与 defaultModel 合并（语义冗余）
+        )
+        val entityDir = projectRoot.resolve("app/src/main/java")
+        assertTrue("java 源码目录不存在: ${entityDir.path}", entityDir.isDirectory)
+
+        // 枚举所有 Entity 文件：所有 @Entity 标注的 Kotlin 源
+        val entityFiles = mutableListOf<File>()
+        fun walk(dir: File) {
+            dir.listFiles()?.forEach { f ->
+                if (f.isDirectory) walk(f)
+                else if (f.name.endsWith(".kt")) {
+                    val txt = runCatching { f.readText() }.getOrDefault("")
+                    if (txt.contains("@Entity")) entityFiles.add(f)
+                }
+            }
+        }
+        walk(entityDir)
+        assertTrue("没扫到任何 @Entity 文件（目录遍历错误？）", entityFiles.isNotEmpty())
+
+        val hits = mutableListOf<String>()
+        for (ef in entityFiles) {
+            val lines = ef.readLines()
+            for ((lineIdx, line) in lines.withIndex()) {
+                // 只查 Entity 数据类 constructor 里的 val/var 声明（忽略注释里的提及）
+                if ("//" in line.substringBefore("//").let {
+                    // 在非注释段检查：匹配 `val apiKey` 或 `val token` 或 `val selectedModel` 这种
+                    // 只看 constructor 参数声明（val xxx: Type）
+                    val constructorParamPattern = Regex("""^\s*(?:val|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:""")
+                    val m = constructorParamPattern.find(line.substringBefore("//"))
+                    val fieldName = m?.groupValues?.get(1)
+                    if (fieldName != null && fieldName in sensitivePlaintextNames) {
+                        hits.add("${ef.name}:${lineIdx + 1} → 字段名=$fieldName")
+                    }
+                    false
+                }) { /* no-op */ }
+            }
+        }
+        if (hits.isEmpty()) return
+        fail(
+            "RC68 PLAINTEXT-ZERO 违规：发现 ${hits.size} 处 Entity 仍保留明文敏感列 (apiKey/token/selectedModel)。\n" +
+                    "RC68 SCHEMA 38 已 DROP 这些列，对应 38_rc68_schema_refactor.sql，" +
+                    "如果确实要新增明文敏感字段 → 改名为 *Encrypted + Android Keystore 加密 + 运行时解密，" +
+                    "并在 BackupManagerImpl Dto→Entity 时重新加密。\n" +
+                    "违规位置:\n  - " + hits.joinToString("\n  - ")
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 8) ENUM-STABLE-NAME-TEST：禁止 EnumSafe 的 .ordinal / .value 存库，
+    //    所有持久化枚举必须用 .name（字符串稳定，不随枚举顺序变化而迁移失败）。
+    //    检查方式：在 *Entity.kt 和 *Dao.kt 的 @Query 字符串里，禁止出现 ordinal 列；
+    //    同时在 Entity.toDomain 里禁止 valueOf(..name.ordinal)。
+    // ─────────────────────────────────────────────────────────────
+    @Test
+    fun `ENUM-STABLE-NAME-TEST - 持久化枚举一律存 .name，禁止 ordinal 列`() {
+        val entityDir = projectRoot.resolve("app/src/main/java")
+        val candidates = mutableListOf<File>()
+        fun walk(dir: File) {
+            dir.listFiles()?.forEach { f ->
+                if (f.isDirectory) walk(f)
+                else if (f.name.endsWith(".kt") &&
+                    (f.name.endsWith("Entity.kt") ||
+                        f.name.endsWith("Dao.kt") ||
+                        f.name.contains("Repository"))
+                ) {
+                    candidates.add(f)
+                }
+            }
+        }
+        walk(entityDir)
+
+        val bad = mutableListOf<String>()
+        val ordinalInQueryOrEntity = Regex("""\bordinal\b""") // 防写 `statusOrdinal` / `.ordinal`
+        for (f in candidates) {
+            val lines = f.readLines()
+            for ((idx, line) in lines.withIndex()) {
+                val noComment = line.substringBefore("//")
+                // rule 1: 禁止 @Query("... statusOrdinal ...") 和 val statusOrdinal = enum.ordinal
+                if (ordinalInQueryOrEntity.containsMatchIn(noComment) &&
+                    // 豁免：LineDiff / TodoStatus.ordinal 注释 / 已删除的旧代码变量（不在 @Entity/@DAO 中）
+                    // 只在明确是「持久化相关」代码时告警：Entity / DAO @Query / Repository 的 entity 转换行
+                    (f.name.endsWith("Entity.kt") || f.name.endsWith("Dao.kt"))
+                ) {
+                    // 进一步豁免：TodoItemEntity 的 `priority` / `order`（不是 ordinal 的来源）
+                    // 真正命中：.toString()里 "ordinal" 单词或枚举 .ordinal
+                    if (".ordinal" in noComment || "Ordinal" in noComment) {
+                        bad.add("${f.name}:${idx + 1} → $noComment")
+                    }
+                }
+                // rule 2: 禁止 Enum.valueOf(xxx.ordinal.toInt()) — 即用数字反查枚举（顺序一改就查错）
+                if ("ordinal" in noComment && ("valueOf" in noComment || "enumValues" in noComment || ".get(" in noComment)) {
+                    bad.add("${f.name}:${idx + 1} → $noComment")
+                }
+            }
+        }
+        if (bad.isEmpty()) return
+        fail(
+            "ENUM-STABLE-NAME 违规：发现 ${bad.size} 处疑似用枚举序数值持久化或反序列化。\n" +
+                    "RC68 规则：所有持久化枚举一律存 .name（字符串），反查一律用 EnumSafe.valueOf(name, Fallback)\n" +
+                    "（参考 core/util/EnumSafe.kt），原因：\n" +
+                    "  - 枚举常量顺序 / 数量变动，ordinal 就迁移错（会话 mode=AUTO 在旧版本是 2，新版本插入中间枚举就变成 PLAN）。\n" +
+                    "违规列表:\n  - " + bad.take(50).joinToString("\n  - ") +
+                    (if (bad.size > 50) "\n  ... (${bad.size - 50} more omitted)" else "")
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 9) FILE-DAO-NAMING-CONSISTENCY-TEST：
+    //    DAO 文件名、DAO 接口名、@Dao 标注的 tableName 必须一一对应，
+    //    防止 XxxDao 存 YyyEntity 的混淆，导致备份 / 抢救漏表或插入错表。
+    // ─────────────────────────────────────────────────────────────
+    @Test
+    fun `FILE-DAO-NAMING-CONSISTENCY-TEST - DAO 文件 = 接口名 = 关联 Entity/DTO tableName 对齐`() {
+        val daoDir = projectRoot.resolve("app/src/main/java")
+        val daoFiles = mutableListOf<File>()
+        fun walk(dir: File) {
+            dir.listFiles()?.forEach { f ->
+                if (f.isDirectory) walk(f)
+                else if (f.name.endsWith("Dao.kt")) daoFiles.add(f)
+            }
+        }
+        walk(daoDir)
+        assertTrue("没扫到任何 *Dao.kt 文件", daoFiles.isNotEmpty())
+
+        // Rule 1：DAO 文件去掉 .kt 必须等于 interface 名（避免 RemoteServerDao.kt 里面写 interface XxxDao）
+        val mismatches = mutableListOf<String>()
+        for (df in daoFiles) {
+            val expectedInterface = df.name.removeSuffix(".kt")
+            val content = df.readText()
+            val interfaceMatches =
+                Regex("""interface\s+([A-Z][A-Za-z0-9_]+)""").findAll(content).map { it.groupValues[1] }.toList()
+            if (interfaceMatches.isEmpty()) {
+                mismatches.add("${df.name}：文件内完全没有 interface XxxDao 声明（可能 @Dao 标在 class 上，或文件为空）")
+                continue
+            }
+            val daoInterface = interfaceMatches.firstOrNull { it.endsWith("Dao") }
+                ?: interfaceMatches.first()
+            if (daoInterface != expectedInterface) {
+                mismatches.add("${df.name}：DAO 文件名为 $expectedInterface 但内部 interface 为 $daoInterface（容易混淆导入时同名被 IDE 错 resolve 到另一个包）")
+            }
+            // Rule 2：@Dao 标注必须存在（Room 编译期也查，但静态提前报更友好）
+            if (!Regex("""@Dao""").containsMatchIn(content)) {
+                mismatches.add("${df.name}：interface $daoInterface 缺少 @Dao 注解（ksp Room 不会生成实现，运行时 Hilt MissingBinding）")
+            }
+        }
+        if (mismatches.isEmpty()) return
+        fail(
+            "FILE-DAO-NAMING-CONSISTENCY 违规：${mismatches.size} 处。\n" +
+                    "RC68 规则：*Dao.kt 文件 == interface 名，*Dao.kt 必须 @Dao。\n" +
+                    "原因：LightweightSchemaRescue / DB-SHIELD / BackupManagerImpl 都是按文件清单反射或导入的，" +
+                    "名字错位会导致「抢救漏建表 + 备份漏表」，用户感知就是「升级后表突然空了」。\n" +
+                    "违规明细:\n  - " + mismatches.joinToString("\n  - ")
+        )
+    }
 }

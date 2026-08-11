@@ -2,6 +2,7 @@ package com.deep.rcode.feature.agent.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.deep.rcode.core.util.EnumSafe
 import com.deep.rcode.feature.agent.presentation.AgentAttachment
 import com.deep.rcode.feature.agent.presentation.BACKGROUND_NOTIFICATION_PREFIX
 import com.deep.rcode.feature.agent.presentation.MessageRole
@@ -15,6 +16,7 @@ data class AgentMessageEntity(
     val sessionId: String,
     val role: String,
     val content: String,
+    /** 消息生成时间毫秒（虽然这里是 ms 单位，但历史名字沿用 timestamp，避免迁移大规模重写）。 */
     val timestamp: Long,
     // 仅 ASSISTANT 行：结构化的 tool_calls（Json 编码的 List<ToolCall>），无工具调用时为 null。
     val toolCallsJson: String? = null,
@@ -42,7 +44,16 @@ data class AgentMessageEntity(
     val outputTokens: Int = 0
 ) {
     fun toUIMessage(): AgentUIMessage {
-        val roleEnum = MessageRole.valueOf(role)
+        val roleEnum: MessageRole = runCatching {
+            EnumSafe.valueOf(role, MessageRole.USER, tag = "AgentMessageEntity.role")
+        }.getOrElse {
+            // 终极兜底：未知角色一律按 USER（至少 UI 有气泡不崩），FileLogger 一条方便定位。
+            com.deep.rcode.core.util.FileLogger.w(
+                "AgentMessageEntity",
+                "toUIMessage: role=$role 未知且 EnumSafe 抛异常；fallback=MessageRole.USER 避免 UI 崩。messageId=$id"
+            )
+            MessageRole.USER
+        }
         return AgentUIMessage(
             id = id,
             role = roleEnum,

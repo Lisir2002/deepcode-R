@@ -166,16 +166,16 @@ class BackupManagerImpl @Inject constructor(
                                 }
                             }
                             writeJsonlFileEntry(tar, FILE_TODOS) { writer ->
-                                var lastTs = 0L
+                                var lastCreatedAtMs = 0L
                                 var lastId = ""
                                 while (true) {
                                     val batch = safeDaoSuspend(
                                         "getTodoPageAfter_$sessionId",
                                         emptyList()
-                                    ) { todoItemDao.getBySessionPageAfter(sessionId, lastTs, lastId, PAGE_SIZE) }
+                                    ) { todoItemDao.getBySessionPageAfter(sessionId, lastCreatedAtMs, lastId, PAGE_SIZE) }
                                     if (batch.isEmpty()) break
                                     batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
-                                    lastTs = batch.last().createdAt
+                                    lastCreatedAtMs = batch.last().createdAtMs
                                     lastId = batch.last().id
                                 }
                             }
@@ -240,16 +240,16 @@ class BackupManagerImpl @Inject constructor(
                     writeMetadataEntry(tar, buildMetadata(options))
                     if (options.chatHistory) {
                         writeJsonlFileEntry(tar, FILE_SESSIONS) { writer ->
-                            var lastTs = 0L
+                            var lastUpdatedAtMs = 0L
                             var lastId = ""
                             while (true) {
                                 val batch = safeDaoSuspend(
                                     "getSessionPageAfter",
                                     emptyList()
-                                ) { chatSessionDao.getPageAfter(lastTs, lastId, PAGE_SIZE) }
+                                ) { chatSessionDao.getPageAfter(lastUpdatedAtMs, lastId, PAGE_SIZE) }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(ChatSessionDto.serializer(), it.toDto())) }
-                                lastTs = batch.last().updatedAt
+                                lastUpdatedAtMs = batch.last().updatedAtMs
                                 lastId = batch.last().id
                             }
                         }
@@ -268,16 +268,16 @@ class BackupManagerImpl @Inject constructor(
                             }
                         }
                         writeJsonlFileEntry(tar, FILE_TODOS) { writer ->
-                            var lastTs = 0L
+                            var lastCreatedAtMs = 0L
                             var lastId = ""
                             while (true) {
                                 val batch = safeDaoSuspend(
                                     "getTodoPageAfter",
                                     emptyList()
-                                ) { todoItemDao.getPageAfter(lastTs, lastId, PAGE_SIZE) }
+                                ) { todoItemDao.getPageAfter(lastCreatedAtMs, lastId, PAGE_SIZE) }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
-                                lastTs = batch.last().createdAt
+                                lastCreatedAtMs = batch.last().createdAtMs
                                 lastId = batch.last().id
                             }
                         }
@@ -543,49 +543,91 @@ class BackupManagerImpl @Inject constructor(
     // ── Entity ↔ DTO 转换 ──────────────────────────────────────
 
     private suspend fun AIProviderEntity.toDto(): ProviderDto {
-        // 优先从 encryptedApiKey 解密获取明文，用于备份导出
+        // RC68 SCHEMA 38 后：Entity 中已无 apiKey/selectedModel 列。
+        //  - ProviderDto.apiKey（备份明文）：从 encryptedApiKey 解密
+        //  - ProviderDto.selectedModel（冗余语义，为旧备份格式兼容保留字段）：
+        //    当前 defaultModel 就等于「当前选中的模型」，所以 selectedModel 与 defaultModel 同值
         val resolvedKey = if (encryptedApiKey.isNotEmpty()) {
-            try { encryptor.decrypt(encryptedApiKey) } catch (e: Exception) { apiKey }
-        } else { apiKey }
+            runCatching { encryptor.decrypt(encryptedApiKey) }
+                .onFailure { FileLogger.w(TAG, "toDto 解密 encryptedApiKey 失败，导出空串: ${it.message}") }
+                .getOrDefault("")
+        } else ""
         return ProviderDto(
-            id, name, type, resolvedKey, baseUrl, defaultModel, isActive, models, selectedModel, isEnabled, useFullUrl, useResponseApi
+            id = id,
+            name = name,
+            type = type,
+            apiKey = resolvedKey,
+            baseUrl = baseUrl,
+            defaultModel = defaultModel,
+            isActive = isActive,
+            models = models,
+            selectedModel = defaultModel, // RC68 合并：与 defaultModel 语义一致
+            isEnabled = isEnabled,
+            useFullUrl = useFullUrl,
+            useResponseApi = useResponseApi
         )
     }
 
-    private suspend fun ProviderDto.toEntity() = AIProviderEntity(
-        id = id,
-        name = name,
-        type = type,
-        apiKey = apiKey,
-        encryptedApiKey = if (apiKey.isNotEmpty()) encryptor.encrypt(apiKey) else "",
-        baseUrl = baseUrl,
-        defaultModel = defaultModel,
-        isActive = isActive,
-        models = models,
-        selectedModel = selectedModel,
-        isEnabled = isEnabled,
-        useFullUrl = useFullUrl,
-        useResponseApi = useResponseApi
-    )
+    private suspend fun ProviderDto.toEntity(): AIProviderEntity {
+        // RC68 SCHEMA 38 后：Entity 只接受 encryptedApiKey，不写 apiKey/selectedModel。
+        val encrypted = if (apiKey.isNotEmpty()) {
+            runCatching { encryptor.encrypt(apiKey) }
+                .onFailure { FileLogger.w(TAG, "toEntity 加密 apiKey 失败：${it.message}（encryptedApiKey 落库为空串）") }
+                .getOrDefault("")
+        } else ""
+        // selectedModel 非空时它就是「用户当前选中的模型」，否则用 defaultModel。
+        val mergedModel = selectedModel.ifBlank { defaultModel }
+        return AIProviderEntity(
+            id = id,
+            name = name,
+            type = type,
+            encryptedApiKey = encrypted,
+            baseUrl = baseUrl,
+            defaultModel = mergedModel,
+            isActive = isActive,
+            models = models,
+            isEnabled = isEnabled,
+            useFullUrl = useFullUrl,
+            useResponseApi = useResponseApi
+        )
+    }
 
     private suspend fun GitCredentialEntity.toDto(): GitCredentialDto {
-        // 优先从 encryptedToken 解密获取明文，用于备份导出
+        // RC68 SCHEMA 38：Entity.token 已删除，只剩 encryptedToken；createdAt/updatedAt → Ms 后缀。
         val resolvedToken = if (encryptedToken.isNotEmpty()) {
-            try { encryptor.decrypt(encryptedToken) } catch (e: Exception) { token }
-        } else { token }
-        return GitCredentialDto(id, host, username, resolvedToken, label, isDefault, createdAt, updatedAt)
+            runCatching { encryptor.decrypt(encryptedToken) }
+                .onFailure { FileLogger.w(TAG, "toDto GitCredential 解密 encryptedToken 失败：${it.message}") }
+                .getOrDefault("")
+        } else ""
+        return GitCredentialDto(
+            id = id,
+            host = host,
+            username = username,
+            token = resolvedToken,
+            label = label,
+            isDefault = isDefault,
+            createdAt = createdAtMs,
+            updatedAt = updatedAtMs
+        )
     }
-    private suspend fun GitCredentialDto.toEntity() = GitCredentialEntity(
-        id = id,
-        host = host,
-        username = username,
-        token = token,
-        encryptedToken = if (token.isNotEmpty()) encryptor.encrypt(token) else "",
-        label = label,
-        isDefault = isDefault,
-        createdAt = createdAt,
-        updatedAt = updatedAt
-    )
+
+    private suspend fun GitCredentialDto.toEntity(): GitCredentialEntity {
+        val encrypted = if (token.isNotEmpty()) {
+            runCatching { encryptor.encrypt(token) }
+                .onFailure { FileLogger.w(TAG, "toEntity GitCredential 加密 token 失败：${it.message}") }
+                .getOrDefault("")
+        } else ""
+        return GitCredentialEntity(
+            id = id,
+            host = host,
+            username = username,
+            encryptedToken = encrypted,
+            label = label,
+            isDefault = isDefault,
+            createdAtMs = createdAt,
+            updatedAtMs = updatedAt
+        )
+    }
 
     private suspend fun RemoteConnectionEntity.toDto(): RemoteConnectionDto {
         // 备份导出明文：跨设备迁移时备份用户自己保管，恢复时用新设备的 Keystore 重新加密。
@@ -642,8 +684,18 @@ class BackupManagerImpl @Inject constructor(
     private fun RemoteMountEntity.toDto() = RemoteMountDto(id, connectionId, remotePath, localMountPath, isActive, autoConnect)
     private fun RemoteMountDto.toEntity() = RemoteMountEntity(id, connectionId, remotePath, localMountPath, isActive, autoConnect)
 
-    private fun ChatSessionEntity.toDto() = ChatSessionDto(id, title, createdAt, updatedAt, workspacePath, mode, reasoningEffort, providerId, model)
-    private fun ChatSessionDto.toEntity() = ChatSessionEntity(id, title, createdAt, updatedAt, workspacePath, mode, reasoningEffort, providerId, model)
+    private fun ChatSessionEntity.toDto() = ChatSessionDto(
+        id = id, title = title,
+        createdAt = createdAtMs, updatedAt = updatedAtMs,
+        workspacePath = workspacePath, mode = mode, reasoningEffort = reasoningEffort,
+        providerId = providerId, model = model
+    )
+    private fun ChatSessionDto.toEntity() = ChatSessionEntity(
+        id = id, title = title,
+        createdAtMs = createdAt, updatedAtMs = updatedAt,
+        workspacePath = workspacePath, mode = mode, reasoningEffort = reasoningEffort,
+        providerId = providerId, model = model
+    )
 
     private fun AgentMessageEntity.toDto() = AgentMessageDto(
         id, sessionId, role, content, timestamp, toolCallsJson, toolCallId, toolName, toolArgs,
@@ -655,8 +707,16 @@ class BackupManagerImpl @Inject constructor(
         isError, reasoning, signature, attachmentsJson, isCompacted, isContextSummary, isCompactionMarker
     )
 
-    private fun TodoItemEntity.toDto() = TodoItemDto(id, sessionId, subject, description, status, priority, order, createdAt, updatedAt)
-    private fun TodoItemDto.toEntity() = TodoItemEntity(id, sessionId, subject, description, status, priority, order, createdAt, updatedAt)
+    private fun TodoItemEntity.toDto() = TodoItemDto(
+        id = id, sessionId = sessionId, subject = subject, description = description,
+        status = status, priority = priority, order = order,
+        createdAt = createdAtMs, updatedAt = updatedAtMs
+    )
+    private fun TodoItemDto.toEntity() = TodoItemEntity(
+        id = id, sessionId = sessionId, subject = subject, description = description,
+        status = status, priority = priority, order = order,
+        createdAtMs = createdAt, updatedAtMs = updatedAt
+    )
 
     private companion object {
         const val PAGE_SIZE = 500

@@ -2,24 +2,23 @@ package com.deep.rcode.feature.agent.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.Index
-import androidx.room.PrimaryKey
 
 /**
- * ZTH HallucinationCircuitBreaker 持久化状态机（C.4.3/C.4.6）。
- * 两条记录规则：
- * 1) scope=GLOBAL scopeId=GLOBAL_SCOPE_ID → 全局熔断（Phase 3 C.4.6 AtomicReference 乐观锁读写）
- * 2) scope=SESSION scopeId=sessionId → 会话级熔断（session 级独立 fuse，C.4.6 PHASE-INV-1 隔离）
+ * ZTH HallucinationCircuitBreaker 持久化状态机。
+ * RC68 SCHEMA 38：改为原生复合主键 (scope, scopeId)，之前用 id 做拼接字符串主键 + (scope, scopeId) 独立唯一索引，冗余。
+ * Room 实体保留单独的 id 字段（为了兼容 Funnel2 LightweightSchemaRescue 的单主键反射解析分支 + 其他 @Query 用 id 定位的旧代码），
+ * 但 DDL 层是复合主键（UNIQUE 约束 + @Entity primaryKeys=[...]），应用侧 INSERT 同 (scope, scopeId) 两次直接冲突（SQLite 报错 ON CONFLICT REPLACE）。
  */
 @Entity(
     tableName = "zth_hallucination_fuses",
+    primaryKeys = ["scope", "scopeId"],
     indices = [
-        Index(value = ["scope", "scopeId"], unique = true),
         Index(value = ["state"]),
         Index(value = ["updatedAtMs"])
     ]
 )
 data class HallucinationFuseEntity(
-    @PrimaryKey(autoGenerate = false)
+    /** 兼容旧 id（UI/DAO 仍用它定位）。值保持 `composeGlobalId()` / `composeSessionId()` 的产物即可。 */
     val id: String,
     /** "GLOBAL" 或 "SESSION"。 */
     val scope: String,
@@ -35,13 +34,12 @@ data class HallucinationFuseEntity(
     val openSinceMs: Long = 0L,
     /** HALF_OPEN → 最近一次 probe 尝试时间 ms（冷却计算用）。 */
     val lastProbeAtMs: Long = 0L,
-    /** C.4.2 Double kill-switch：killSwitch1 单向置位；true → 强制 OPEN，UI 弹 Red Banner。 */
+    /** Double kill-switch：killSwitch1 单向置位；true → 强制 OPEN，UI 弹 Red Banner。 */
     val killSwitch1Triggered: Boolean = false,
-    /** C.4.2 kill-switch-2：DataStore 软标志镜像（用于 DB 级查询过滤）。 */
+    /** kill-switch-2：DataStore 软标志镜像（用于 DB 级查询过滤）。 */
     val killSwitch2SoftDisabled: Boolean = false,
     /** 最近一次触发熔断的 FailureSubClass.name（审计横幅用）。 */
     val lastTripSubclass: String? = null,
-
     val updatedAtMs: Long = System.currentTimeMillis()
 ) {
     companion object {

@@ -7,6 +7,7 @@ import com.deep.rcode.feature.settings.data.local.entity.AIProviderEntity
 import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
 import com.deep.rcode.feature.settings.domain.model.ProviderType
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
+import com.deep.rcode.core.util.EnumSafe
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -42,8 +43,16 @@ class AIProviderRepositoryImpl @Inject constructor(
     }
 
     override suspend fun saveProvider(provider: AIProviderConfig) {
-        FileLogger.i(TAG, "保存提供商 id=${provider.id} name=${provider.name} active=${provider.isActive}")
+        FileLogger.i(TAG, "保存提供商 id=${provider.id} name=${provider.name} active=${provider.isActive} enabled=${provider.isEnabled}")
         val entity = provider.toEntity()
+        // DB-SHIELD-RC68 P0-1 invariant 修复：
+        //   saveProvider 传入 isActive=true 的行时，先把所有行的 isActive 清 0（deactivateAllProviders）
+        //   再 insert = 这一行。保证 DB 中 isActive=1 的行数永远最多 1 行（互斥 active）。
+        //   之前：setActiveProvider 正确做了「先 deactivateAllProviders + activateProvider」，
+        //         但 saveProvider 走的是另一条路径（首次添加 Provider 时直接 insert），
+        //         如果 UI 连点或者用户修改某条 Provider 时误把 active=true 一起传，
+        //         就会出现 2 条都 active 的脏数据 → getActiveProvider 返回第一条（不确定是哪条）
+        //         → 切换模型下拉偶尔回跳到旧 provider。
         if (provider.isActive) {
             aiProviderDao.deactivateAllProviders()
         }
@@ -63,7 +72,8 @@ class AIProviderRepositoryImpl @Inject constructor(
 
     override suspend fun setSelectedModel(id: String, model: String) {
         FileLogger.i(TAG, "切换模型 provider=$id model=$model")
-        aiProviderDao.setSelectedModel(id, model)
+        // RC68 SCHEMA 38：selectedModel 冗余列已删除，defaultModel 列就是「当前选中的模型」。
+        aiProviderDao.setDefaultModel(id, model)
     }
 
     override suspend fun updateModels(id: String, models: List<String>) {
@@ -72,12 +82,11 @@ class AIProviderRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setProviderEnabled(id: String, isEnabled: Boolean) {
-        FileLogger.i(TAG, "设置提供商状态 provider=$id isEnabled=$isEnabled")
+        FileLogger.i(TAG, "设置提供商显示启用开关 provider=$id isEnabled=$isEnabled")
         aiProviderDao.setProviderEnabled(id, isEnabled)
     }
 
     override suspend fun ensureActiveProvider() {
-        // 已有激活项则无需处理。
         if (aiProviderDao.getActiveProviderSync() != null) return
         val first = aiProviderDao.getAllProviders().first().firstOrNull() ?: return
         FileLogger.i(TAG, "无激活提供商，自动激活首个: ${first.id} (${first.name})")
@@ -86,32 +95,30 @@ class AIProviderRepositoryImpl @Inject constructor(
     }
 
     /**
-     * 优先从 [encryptedApiKey] 解密获取 apiKey，回退到明文 [apiKey] 字段。
+     * RC68 SCHEMA 38：明文 apiKey 列已 DROP，只从 encryptedApiKey 解密。
+     * 解密失败 → 空串（避免 UI 崩）+ FileLogger。
      */
     private suspend fun AIProviderEntity.resolveApiKey(): String {
-        if (encryptedApiKey.isNotEmpty()) {
-            return try {
-                encryptor.decrypt(encryptedApiKey)
-            } catch (e: Exception) {
-                FileLogger.w(TAG, "解密 apiKey 失败，回退到明文: ${e.message}")
-                apiKey
-            }
-        }
-        return apiKey
+        if (encryptedApiKey.isEmpty()) return ""
+        return runCatching { encryptor.decrypt(encryptedApiKey) }
+            .onFailure { FileLogger.w(TAG, "解密 apiKey 失败，返回空串: ${it.message}") }
+            .getOrDefault("")
     }
 
     private suspend fun AIProviderEntity.toDomainModel(): AIProviderConfig {
         val modelList = models.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        val currentModel = defaultModel
         return AIProviderConfig(
             id = id,
             name = name,
-            type = try { ProviderType.valueOf(type) } catch (e: Exception) { ProviderType.OPENAI },
+            type = EnumSafe.valueOf(type, ProviderType.OPENAI, tag = "AIProviderEntity.type"),
             apiKey = resolveApiKey(),
             baseUrl = baseUrl,
-            defaultModel = defaultModel,
+            defaultModel = currentModel,
             isActive = isActive,
             models = modelList,
-            selectedModel = selectedModel.ifBlank { defaultModel },
+            // RC68 SCHEMA 38：selectedModel 冗余列已删除，直接与 defaultModel 合并（UI 上同一语义）。
+            selectedModel = currentModel,
             isEnabled = isEnabled,
             useFullUrl = useFullUrl,
             useResponseApi = useResponseApi
@@ -119,28 +126,25 @@ class AIProviderRepositoryImpl @Inject constructor(
     }
 
     /**
-     * 加密 apiKey 存储到 [encryptedApiKey]，同时清空明文 [apiKey] 字段完成迁移。
+     * RC68 SCHEMA 38：只写 encryptedApiKey（明文 apiKey 列已删除，Entity 无此字段）。
      */
     private suspend fun AIProviderConfig.toEntity(): AIProviderEntity {
-        val encrypted = try {
-            encryptor.encrypt(apiKey)
-        } catch (e: Exception) {
-            FileLogger.w(TAG, "加密 apiKey 失败，使用明文存储: ${e.message}")
-            ""
-        }
+        val encrypted = runCatching { encryptor.encrypt(apiKey) }
+            .onFailure { FileLogger.w(TAG, "加密 apiKey 失败：${it.message}（apiKey 落库为空串）") }
+            .getOrDefault("")
+        // RC68 selectedModel 合并：当 selectedModel 非 blank 时用它写入 defaultModel，否则用域里的 defaultModel。
+        val mergedModel = selectedModel.ifBlank { defaultModel }
         return AIProviderEntity(
             id = id,
             name = name,
             type = type.name,
-            apiKey = if (encrypted.isNotEmpty()) "" else apiKey, // 加密成功后清空明文
             encryptedApiKey = encrypted,
             baseUrl = baseUrl,
-            useFullUrl = useFullUrl,
-            defaultModel = defaultModel,
+            defaultModel = mergedModel,
             isActive = isActive,
             models = models.joinToString("\n"),
-            selectedModel = selectedModel,
             isEnabled = isEnabled,
+            useFullUrl = useFullUrl,
             useResponseApi = useResponseApi
         )
     }

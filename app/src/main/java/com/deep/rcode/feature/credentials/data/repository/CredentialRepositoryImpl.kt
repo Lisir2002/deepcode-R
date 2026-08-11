@@ -38,7 +38,6 @@ class CredentialRepositoryImpl @Inject constructor(
             createdAt = if (credential.createdAt == 0L) now else credential.createdAt,
             updatedAt = now
         ).toEntity()
-        // 设为默认需先清同 host 其它条默认，保证 host 内唯一。
         if (entity.isDefault) dao.clearDefaultForHost(entity.host)
         dao.upsert(entity)
     }
@@ -56,18 +55,14 @@ class CredentialRepositoryImpl @Inject constructor(
     }
 
     /**
-     * 优先从 [encryptedToken] 解密获取 token，回退到明文 [token] 字段。
+     * RC68 SCHEMA 38 迁移后：明文 token 列已 DROP，唯一持久化 encryptedToken。
+     * 若解密失败（极少），直接返回空串（避免 UI 崩），同时 FileLogger 一条。
      */
     private suspend fun GitCredentialEntity.resolveToken(): String {
-        if (encryptedToken.isNotEmpty()) {
-            return try {
-                encryptor.decrypt(encryptedToken)
-            } catch (e: Exception) {
-                FileLogger.w(TAG, "解密 token 失败，回退到明文: ${e.message}")
-                token
-            }
-        }
-        return token
+        if (encryptedToken.isEmpty()) return ""
+        return runCatching { encryptor.decrypt(encryptedToken) }
+            .onFailure { FileLogger.w(TAG, "解密 token 失败，返回空串: ${it.message}") }
+            .getOrDefault("")
     }
 
     private suspend fun GitCredentialEntity.toDomain(): GitCredential = GitCredential(
@@ -77,30 +72,26 @@ class CredentialRepositoryImpl @Inject constructor(
         token = resolveToken(),
         label = label,
         isDefault = isDefault,
-        createdAt = createdAt,
-        updatedAt = updatedAt
+        createdAt = createdAtMs,
+        updatedAt = updatedAtMs
     )
 
     /**
-     * 加密 token 存储到 [encryptedToken]，同时清空明文 [token] 字段完成迁移。
+     * RC68 SCHEMA 38：只写 encryptedToken。明文 token 列已删除，Entity 不再接收明文字段。
      */
     private suspend fun GitCredential.toEntity(): GitCredentialEntity {
-        val encrypted = try {
-            encryptor.encrypt(token)
-        } catch (e: Exception) {
-            FileLogger.w(TAG, "加密 token 失败，使用明文存储: ${e.message}")
-            ""
-        }
+        val encrypted = runCatching { encryptor.encrypt(token) }
+            .onFailure { FileLogger.w(TAG, "加密 token 失败：${it.message}（token 落库为空串）") }
+            .getOrDefault("")
         return GitCredentialEntity(
             id = id,
             host = host,
             username = username,
-            token = if (encrypted.isNotEmpty()) "" else token, // 加密成功后清空明文
             encryptedToken = encrypted,
             label = label,
             isDefault = isDefault,
-            createdAt = createdAt,
-            updatedAt = updatedAt
+            createdAtMs = createdAt,
+            updatedAtMs = updatedAt
         )
     }
 }

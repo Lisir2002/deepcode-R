@@ -10,8 +10,10 @@ import com.deep.rcode.feature.agent.domain.model.ReasoningEffort
 data class ChatSessionEntity(
     @PrimaryKey val id: String,
     val title: String,
-    val createdAt: Long,
-    val updatedAt: Long,
+    /** 创建时间毫秒（RC68 统一 Ms 后缀，避免“秒/毫秒”歧义）。 */
+    val createdAtMs: Long,
+    /** 最后一次更新时间毫秒。 */
+    val updatedAtMs: Long,
     val workspacePath: String = "",
     val mode: String = AgentMode.BUILD.name,
     val reasoningEffort: String = ReasoningEffort.MEDIUM.name,
@@ -24,11 +26,11 @@ data class ChatSessionEntity(
     fun toDomain(): ChatSession = ChatSession(
         id = id,
         title = title,
-        createdAt = createdAt,
-        updatedAt = updatedAt,
+        createdAt = createdAtMs,
+        updatedAt = updatedAtMs,
         workspacePath = workspacePath,
-        mode = runCatching { AgentMode.valueOf(mode) }.getOrDefault(AgentMode.BUILD),
-        reasoningEffort = runCatching { ReasoningEffort.valueOf(reasoningEffort) }.getOrDefault(ReasoningEffort.MEDIUM),
+        mode = EnumSafe.valueOf(mode, AgentMode.BUILD, tag = "ChatSessionEntity.mode"),
+        reasoningEffort = EnumSafe.valueOf(reasoningEffort, ReasoningEffort.MEDIUM, tag = "ChatSessionEntity.reasoningEffort"),
         providerId = providerId,
         model = model,
         totalInputTokens = totalInputTokens,
@@ -40,8 +42,8 @@ data class ChatSessionEntity(
         fun fromDomain(session: ChatSession): ChatSessionEntity = ChatSessionEntity(
             id = session.id,
             title = session.title,
-            createdAt = session.createdAt,
-            updatedAt = session.updatedAt,
+            createdAtMs = session.createdAt,
+            updatedAtMs = session.updatedAt,
             workspacePath = session.workspacePath,
             mode = session.mode.name,
             reasoningEffort = session.reasoningEffort.name,

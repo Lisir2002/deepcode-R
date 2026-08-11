@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GitCredentialDao {
-    @Query("SELECT * FROM git_credentials ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM git_credentials ORDER BY updatedAtMs DESC")
     fun getAll(): Flow<List<GitCredentialEntity>>
 
     @Query("SELECT * FROM git_credentials")

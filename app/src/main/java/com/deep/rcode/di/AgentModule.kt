@@ -80,6 +80,17 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideAgentDatabase(@ApplicationContext context: Context): AgentDatabase {
+        // ══════════════════════════════════════════════════════════
+        // DB-SHIELD-RC68 持久化护盾 · Funnel 0（先于任何构建尝试）：
+        //   · 三态分流器：
+        //     ① DB 文件正常存在 → 直接走 Funnel 1-4（什么都不做，最快冷启动路径）。
+        //     ② DB 文件不存在，但 database_crashes/ 下有最近崩溃备份 → 静默「侧拷贝」恢复
+        //       .db + 同组 .wal/.shm → 再走 Funnel 1-4。用户历史对话在不知不觉中还原。
+        //     ③ DB 文件不存在 + 没有备份 → 第一次安装新用户，什么都不做。
+        // ══════════════════════════════════════════════════════════
+        runCatching { funnel0AutoRestoreFromCrashBackupIfNeeded(context) }
+            .onFailure { FileLogger.w("AgentModule", "Funnel 0 恢复逻辑内异常（忽略，继续正常构建）: ${it.message}", it) }
+
         // RC61b hotfix3：再增加第 0 层兜底。
         // provideAgentDatabase 本身是 Hilt 注入链上的 @Provides，若它抛任何 Throwable（包括
         // Room builder 过程中的 ExceptionInInitializerError / NoClassDefFoundError / Room 内部
@@ -114,6 +125,63 @@ object AgentModule {
                 )
                 throw RuntimeException("Room DB 终极兜底构建失败，上一层原因=${fatal.message}", fatal2)
             }
+        }
+    }
+
+    /**
+     * DB-SHIELD-RC68 持久化护盾 · Funnel 0：
+     * 「主 DB 文件缺失 + 有 database_crashes/ 备份」时，在任何 Room 构建前，静默把最近的
+     * 备份拷回主 DB 路径。这样 Funnel 1-4 在「已还原的 DB」上继续执行迁移，而不是直接
+     * fallbackToDestructiveMigration() 把聊天记录清空。
+     *
+     * 三态分流：
+     *   - STATE_A：主 DB 存在 → 直接返回（冷启动热路径无额外 I/O）
+     *   - STATE_B：主 DB 不存在 + crash 备份存在 → 恢复最近备份 → 返回
+     *   - STATE_C：主 DB 不存在 + 无备份 → 直接返回（首次安装用户，Room onCreate）
+     *
+     * 并发安全：在 provider 最开头同步执行一次（所有 Funnel 还没 helper openHelper），
+     * 因此不存在多 openHelper 抢文件的 SQLITE_BUSY 风险。
+     */
+    private fun funnel0AutoRestoreFromCrashBackupIfNeeded(context: Context) {
+        val mainDb = context.getDatabasePath("rdeepcode_agent_db")
+        val crashDir = java.io.File(context.filesDir, "database_crashes")
+
+        // ── STATE_A：热路径，99.9% 的正常启动直接 return ──
+        if (mainDb.exists()) return
+        if (!crashDir.isDirectory) return // STATE_C 分支（未崩溃过或 dir 不存在）
+
+        // 找最近一份「*.db」结尾的主备份文件，再把同组 .wal/.shm 一起拷
+        val candidates = crashDir.listFiles { f ->
+            f.name.startsWith("rdeepcode_agent_db_backup_") &&
+                    f.name.endsWith(".db") && f.isFile
+        }?.sortedByDescending { it.lastModified() }.orEmpty()
+        if (candidates.isEmpty()) return // STATE_C：啥也没
+
+        val chosen = candidates.first()
+        FileLogger.i(
+            "AgentModule",
+            "Funnel 0 命中 STATE_B：主 DB 不存在，但找到崩溃备份 ${chosen.name}，" +
+                    "启动前侧拷贝还原 → ${mainDb.absolutePath}"
+        )
+        runCatching {
+            // 父目录 databases/ 可能不存在（第一次安装后立即崩的极端情况），先 mkdirs
+            mainDb.parentFile?.takeIf { !it.exists() }?.mkdirs()
+            chosen.copyTo(mainDb, overwrite = true)
+            // 再把同组 .wal/.shm 拷回去；即使 checkpoint 过（通常不存在），存在就拷保证完整性
+            listOf("-wal", "-shm").forEach { suffix ->
+                val src = java.io.File(crashDir, "${chosen.name}$suffix").takeIf { it.exists() } ?: return@forEach
+                val dst = java.io.File(mainDb.parent, "${mainDb.name}$suffix")
+                src.copyTo(dst, overwrite = true)
+            }
+            FileLogger.i(
+                "AgentModule",
+                "Funnel 0 还原完成: mainDb=${mainDb.exists()} size=${mainDb.length()}, " +
+                        "wal=${java.io.File(mainDb.parent, "${mainDb.name}-wal").exists()}, " +
+                        "shm=${java.io.File(mainDb.parent, "${mainDb.name}-shm").exists()}"
+            )
+        }.onFailure {
+            // 恢复失败不抛——继续走原 Funnel 1-4 流程，Room onCreate 建空表也比崩强
+            FileLogger.w("AgentModule", "Funnel 0 还原时 I/O 异常，跳过：${it.message}", it)
         }
     }
 
@@ -209,11 +277,45 @@ object AgentModule {
             AgentDatabase::class.java,
             "rdeepcode_agent_db"
         ).addMigrations(*MigrationLoader.loadMigrations(context))
+            // DB-SHIELD-RC68 持久化护盾 P0-3：强制 WAL（Write-Ahead Logging）模式。
+            //   - Room 2.x 默认在 API 16+ 启用，但我们显式 setJournalMode(WAL) 以覆盖：
+            //     ① 自定义 SupportSQLiteOpenHelper.Factory 改过 journal_mode 的第三方 fork；
+            //     ② 未来 Room 3.x 可能改默认 TRUNCATE（可能引发「每次 commit 都 fsync 主 .db」冷启动慢 +
+            //        Funnel 4 崩溃备份时数据可能未落 WAL 就杀进程）。
+            //   - WAL 语义：writer 不阻塞 reader，同一 DB 连接多事务并发度高；
+            //     配合 Funnel 4 snapshotDbFileForDisasterRecovery 里的 PRAGMA wal_checkpoint(TRUNCATE)
+            //     在备份前强制合并回主 DB，导出的 .db 自包含（不依赖 .wal/.shm 可读）。
+            .setJournalMode(androidx.room.RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+            // DB-SHIELD-RC68 持久化护盾 P0-3 补充：多实例失效通知（防止 WorkManager / RemoteService
+            // 等子进程开了同一 DB 连接的另一个 RoomDatabase，两个进程各自的 in-memory cache 不同步）。
+            // multiInstanceInvalidation 会在 onOpen 时注册一个基于 .journal 文件的 fd fsync 监听器，
+            // 另一进程写完自动让本进程的 Flow/LiveData 刷新 → 用户看不到「进程 1 写入、进程 2 读历史」
+            // 造成的「聊天刚写完却突然清空」的假持久化 bug。
+            .enableMultiInstanceInvalidation()
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: SupportSQLiteDatabase) {
                     runCatching {
                         FileLogger.i("AgentModule", "Room DB onOpen(mode=$mode)，路径=${db.path}")
-                    }.onFailure { FileLogger.w("AgentModule", "DB onOpen 日志失败", it) }
+                        // DB-SHIELD-RC68 持久化护盾 P0-4：onOpen 做一次 WAL checkpoint(PASSIVE)。
+                        //   PASSIVE = 不阻塞事务、没 checkpoint 成功的块仍保留在 WAL 里；
+                        //   每次 onOpen 「顺手」合一次，避免 .wal 累积到几十 MB，
+                        //   使得：① 冷启动打开 DB 变慢（Room 要扫 WAL 回放未提交页）；
+                        //         ② Funnel 4 备份前 TRUNCATE checkpoint 执行时间长（更容易被系统杀）。
+                        val cur = db.query("PRAGMA wal_checkpoint(PASSIVE);")
+                        cur.use {
+                            if (it.moveToFirst()) {
+                                val busy = it.getInt(it.getColumnIndexOrThrow("busy"))
+                                val log = it.getInt(it.getColumnIndexOrThrow("log"))
+                                val checkpointed = it.getInt(it.getColumnIndexOrThrow("checkpointed"))
+                                if (checkpointed > 0 || busy != 0) {
+                                    FileLogger.i(
+                                        "AgentModule",
+                                        "onOpen PASSIVE checkpoint: busy=$busy log=$log checkpointed=$checkpointed"
+                                    )
+                                }
+                            }
+                        }
+                    }.onFailure { FileLogger.w("AgentModule", "DB onOpen 日志 / PASSIVE checkpoint 失败（非致命，忽略）", it) }
                 }
 
                 override fun onCreate(db: SupportSQLiteDatabase) {
@@ -259,6 +361,22 @@ object AgentModule {
     @Singleton
     fun provideCheckpointDao(database: AgentDatabase): CheckpointDao {
         return database.checkpointDao()
+    }
+
+    // DB-SHIELD-RC68 持久化护盾 P0-2：补上之前漏的两个 DAO @Provides
+    //   - CheckpointFileSnapshotDao（用于文件快照表的备份/恢复）
+    //   - RemoteMountDao（远程挂载，BackupManagerImpl 引用到 RemoteConnectionDao.getAllMountsOnce）
+    // 缺少这两条 → Hilt 编译期 MissingBinding error。
+    @Provides
+    @Singleton
+    fun provideCheckpointFileSnapshotDao(database: AgentDatabase): CheckpointFileSnapshotDao {
+        return database.checkpointFileSnapshotDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideRemoteMountDao(database: AgentDatabase): com.deep.rcode.feature.workspace.data.local.dao.RemoteMountDao {
+        return database.remoteMountDao()
     }
 
     @Provides

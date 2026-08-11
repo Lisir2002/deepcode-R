@@ -6,8 +6,8 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
+import com.deep.rcode.core.db.entity.CredentialEncryptionStateEntity
 import com.deep.rcode.core.util.FileLogger
-import com.deep.rcode.feature.agent.data.local.entity.AgentMessageEntity
 import com.deep.rcode.feature.agent.data.local.entity.ChatSessionEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
@@ -21,7 +21,6 @@ import com.deep.rcode.feature.agent.data.local.entity.UserConfirmedSentinelEntit
 import com.deep.rcode.feature.agent.data.local.entity.ZthTelemetryEventEntity
 import com.deep.rcode.feature.credentials.data.local.entity.GitCredentialEntity
 import com.deep.rcode.feature.settings.data.local.entity.AIProviderEntity
-import com.deep.rcode.feature.workspace.data.local.entity.CredentialEncryptionStateEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteAuditLogEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.deep.rcode.feature.workspace.data.local.entity.RemoteMountEntity
