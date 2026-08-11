@@ -610,7 +610,8 @@ object AgentModule {
         webFetchTool: com.deep.rcode.feature.agent.domain.tool.search.WebFetchTool,
         switchModeTool: com.deep.rcode.feature.agent.domain.tool.mode.SwitchModeTool,
         todoTool: TodoTool,
-        memoryTool: com.deep.rcode.feature.agent.domain.tool.memory.MemoryTool
+        memoryTool: com.deep.rcode.feature.agent.domain.tool.memory.MemoryTool,
+        generateImageTool: com.deep.rcode.feature.agent.domain.tool.image.GenerateImageTool
     ): ToolRegistry {
         return ToolRegistry().apply {
             register("readFile", readFileTool)
@@ -630,6 +631,8 @@ object AgentModule {
             register("switchMode", switchModeTool)
             register("todo", todoTool)
             register("memory", memoryTool)
+            // ══ RC69 T2I 文生图工具：generateImage(prompt="...", width, height, steps, hd, model)
+            register("generateImage", generateImageTool)
         }
     }
 
