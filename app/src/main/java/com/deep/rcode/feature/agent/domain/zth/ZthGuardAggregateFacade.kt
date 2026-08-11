@@ -10,6 +10,7 @@ import com.deep.rcode.feature.agent.domain.permission.FailureClassification
 import com.deep.rcode.feature.agent.domain.permission.FailureSubClass
 import com.deep.rcode.feature.agent.domain.tool.mode.PlanApprovalChoice
 import com.deep.rcode.feature.settings.data.repository.ExecutionMode
+import com.deep.rcode.feature.settings.data.repository.ZthTierRepository
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
