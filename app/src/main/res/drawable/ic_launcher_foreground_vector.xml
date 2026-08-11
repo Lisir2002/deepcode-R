@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  R-DeepCode Launcher Icon 前景矢量 (银 #C0C0C0 衬线 R)
+  viewBox = 108×108，和 adaptive-icon foreground 规范一致（内缩 18% safe zone = 108×108/108dp 画布,
+  文字主体高 ~72dp, 宽 ~48dp, 留 18dp 四周安全边距防 mask 切边）。
+
+  R 衬线字母拆解（fillColor = #FFC0C0C0，纯银哑光）：
+    - stroke-1 左竖 + 上下衬线
+    - stroke-2 右上半圆弧
+    - stroke-3 右斜腿 + 左下衬线
+  全用填充 path（非描边）保证最低 dpi mdpi 48×48 不模糊。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="#FFC0C0C0">
+
+    <path
+        android:fillColor="#FFC0C0C0"
+        android:pathData="
+            M39,17
+            m-8,0
+            h16
+            v4
+            h-10
+            v66
+            h10
+            v4
+            h-16
+            v-4
+            h10
+            v-66
+            h-10
+            Z
+
+            M55,17
+            c12,0 19,7 19,19
+            c0,9 -6,16 -16,17
+            v4
+            l20,40
+            v1
+            h-6
+            l-16,-34
+            h-10
+            v34
+            h-6
+            Z
+
+            M55,21
+            h-10
+            v30
+            h10
+            c7,0 12,-4 12,-13
+            c0,-10 -6,-17 -12,-17
+            Z
+        " />
+</vector>
