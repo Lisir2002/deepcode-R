@@ -59,7 +59,12 @@ import com.deep.rcode.feature.workspace.data.local.entity.RemoteMountEntity
         L0SoftCompactRestoreLogEntity::class,
         ZthTelemetryEventEntity::class
     ],
-    version = AgentDatabase.SCHEMA_VERSION,
+    // 注意：version 必须使用字面量，不能使用 companion 常量引用。
+    // 原因：AndroidX Room KSP 处理器 (2.7+) 在 forward reference companion const
+    //   时，XAnnotation.getAsInt("version") 可能抛 "No property named version
+    //   was found in annotation Database"（CI Kotlin 2.1.20 + KSP 2.1 复现）。
+    // 字面量 37 与下方 companion SCHEMA_VERSION 常量保持严格手动双写一致。
+    version = 37,
     exportSchema = false
 )
 abstract class AgentDatabase : RoomDatabase() {
