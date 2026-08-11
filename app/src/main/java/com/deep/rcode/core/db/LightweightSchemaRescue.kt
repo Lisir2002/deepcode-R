@@ -111,7 +111,15 @@ object LightweightSchemaRescue {
                 })
                 .build()
             val helper = FrameworkSQLiteOpenHelperFactory().create(config)
-            helper.writableDatabase.use { /* onOpen 回调里执行抢救 */ }        }.onFailure {
+            try {
+                // P1-1 修复：不能只 `.use { }` 关闭 writableDatabase，helper 本身也要 close，
+                // 否则 FrameworkSQLiteOpenHelper 内部持有系统 SQLiteOpenHelper 的连接缓存，
+                // 紧接着 Funnel2 retry Room build 同一份 dbName 可能触发 SQLITE_CANTOPEN / database is locked (code 5)
+                helper.writableDatabase.use { /* onOpen 回调里执行抢救 */ }
+            } finally {
+                helper.close()
+            }
+        }.onFailure {
             FileLogger.e(TAG, "LightweightSchemaRescue 轻量抢救阶段抛异常", it)
             reportBuilder.failures.add("LightweightSchemaRescue overall failed: ${it.message}")
         }
@@ -160,33 +168,52 @@ object LightweightSchemaRescue {
             .associateBy { it.name }
 
         // 2) 找主键列与 autoGenerate
-        val primaryKeyColumnAndAuto = findPrimaryKeySpec(allFields.values)
-        val pkColumnName = primaryKeyColumnAndAuto?.first
-        val pkAutoGenerate = primaryKeyColumnAndAuto?.second == true
+        // RC67 P1-6 修复：新增解析 @Entity(primaryKeys=[...]) 复合主键；
+        //   · 单主键字段 @PrimaryKey 继续正常支持
+        //   · @Entity(primaryKeys=[a,b]) 复合主键：我们无法在列上逐个声明 PRIMARY KEY（SQLite 每张表只能 1 次 PRIMARY KEY 约束），
+        //     所以退化成「建表时省略 PRIMARY KEY 约束，但把复合主键列在 ADD COLUMN 时标为 NOT NULL」，
+        //     并向 RescueReport.failures 写入告警 —— Room 仍会因为 PRIMARY KEY 缺失导致 TableInfo 校验失败，
+        //     但至少 Funnel 2/3 的保守 destructive 兜底还能继续，不会直接崩到 Funnel 4 全删。
+        val pkSpec = findPrimaryKeySpec(
+            entityAnn = entityAnn,
+            fields = allFields.values,
+            tableName = tableName,
+            report = report
+        )
+        val pkColumnName: String? = pkSpec.singlePkColumnName
+        val pkAutoGenerate: Boolean = pkSpec.singlePkAutoGenerate
+        val compositePkColumns: List<String> = pkSpec.compositePkColumns
 
         // 3) 生成 (sql fragment, columnName) 列表，按字段名稳定排序
         val columnSpecs: List<Pair<Pair<String, String>, Unit>> = allFields.keys.sorted().map { fieldName ->
             val f = allFields[fieldName]!!
             val cname = fieldName  // 当前项目所有 Entity 不使用 @ColumnInfo(name=...)，直接字段名=列名
             val ctype = sqlTypeFor(f.type)
-            val isPk = (cname == pkColumnName)
-            val nullable = !f.type.isPrimitive  // primitive: NOT NULL；其他一律 NULLABLE
+            val isSinglePk = (cname == pkColumnName)
+            val isCompositePkPart = (cname in compositePkColumns)
+            // RC67 P1-6 补充：复合主键列 SQLite 规定强制 NOT NULL（即使是 String 等非 primitive 类型也不能 NULL）
+            val primitiveForceNotNull = !f.type.isPrimitive
+            val nullable: Boolean = if (isCompositePkPart) false else primitiveForceNotNull
             val frag = buildString {
                 append("`$cname` ")
                 append(ctype)
-                if (isPk) {
+                if (isSinglePk) {
                     append(" PRIMARY KEY")
                     if (pkAutoGenerate && ctype == "INTEGER") append(" AUTOINCREMENT")
                 }
-                if (!nullable && !isPk) append(" NOT NULL")
+                if (!nullable && !isSinglePk) append(" NOT NULL")
             }
             (frag to cname) to Unit  // Pair 结构兼容旧循环取值 (it.first.first=frag, it.first.second=cname)
         }
 
-        // 4) CREATE TABLE IF NOT EXISTS（表不存在时，一次性建好所有列）
+        // 4) CREATE TABLE IF NOT EXISTS（表不存在时，一次性建好所有列 + 表级复合主键约束）
         if (existingCols.isEmpty()) {
-            val ddl = "CREATE TABLE IF NOT EXISTS `$tableName` (" +
-                    columnSpecs.joinToString(", ") { it.first.first } + ")"
+            val columnsClause = columnSpecs.joinToString(", ") { it.first.first }
+            // RC67 P1-6 复合主键：如果 @Entity(primaryKeys=[...])，在所有列定义后面追加 ", PRIMARY KEY (c1,c2,...)"
+            val pkClause: String = if (compositePkColumns.isNotEmpty()) {
+                ", PRIMARY KEY (" + compositePkColumns.joinToString(", ") { "`$it`" } + ")"
+            } else ""
+            val ddl = "CREATE TABLE IF NOT EXISTS `$tableName` ($columnsClause$pkClause)"
             db.execSQL(ddl)
             report.tablesCreated++
         } else {
@@ -196,7 +223,8 @@ object LightweightSchemaRescue {
                 if (existingCols.containsKey(cname)) continue
                 val f = allFields[cname]!!
                 val ctype = sqlTypeFor(f.type)
-                val nullable = !f.type.isPrimitive
+                val isCompositePkPart = (cname in compositePkColumns)
+                val nullable = if (isCompositePkPart) false else !f.type.isPrimitive
                 val alterPart = "`$cname` $ctype" + if (!nullable) " NOT NULL" else ""
                 runCatching {
                     db.execSQL("ALTER TABLE `$tableName` ADD COLUMN $alterPart")
@@ -244,13 +272,44 @@ object LightweightSchemaRescue {
         return out
     }
 
-    private fun findPrimaryKeySpec(fields: Collection<Field>): Pair<String, Boolean>? {
+    // RC67 P1-6: 主键解析的返回结构（单主键 / 复合主键互斥）
+    private data class PkSpec(
+        val singlePkColumnName: String?,   // 非 null 表示使用字段级 @PrimaryKey
+        val singlePkAutoGenerate: Boolean, // 仅当 singlePkColumnName != null 时有效
+        val compositePkColumns: List<String> // 非空表示使用 @Entity(primaryKeys=[...]) 复合主键
+    )
+
+    private fun findPrimaryKeySpec(
+        entityAnn: Entity,
+        fields: Collection<Field>,
+        tableName: String,
+        report: RescueReportBuilder
+    ): PkSpec {
+        // 1) 优先识别 @Entity(primaryKeys=[...]) 复合主键（Room 官方支持多列主键）
+        val composite: Array<String> = entityAnn.primaryKeys
+        if (composite.isNotEmpty()) {
+            val cols = composite.toList()
+            val msg = ("Composite PK on `$tableName` (${cols.joinToString()}): " +
+                    "Funnel2 会强制所有 PK 列 NOT NULL 并添加表级 PRIMARY KEY 约束；" +
+                    "但如果老表已存在且缺少这些 PK 列，SQLite ALTER TABLE ADD COLUMN 无法追加 PRIMARY KEY 约束，" +
+                    "Room TableInfo 校验可能仍失败 → 会进入 Funnel3 保守 destructive。")
+            FileLogger.w(TAG, msg)
+            report.failures.add(msg)
+            return PkSpec(singlePkColumnName = null, singlePkAutoGenerate = false, compositePkColumns = cols)
+        }
+        // 2) 退回字段级 @PrimaryKey（单主键）
         for (f in fields) {
             val a = f.getAnnotation(PrimaryKey::class.java) ?: continue
-            return f.name to a.autoGenerate
+            return PkSpec(
+                singlePkColumnName = f.name,
+                singlePkAutoGenerate = a.autoGenerate,
+                compositePkColumns = emptyList()
+            )
         }
-        // @Entity(primaryKeys=[...]) 当前项目未使用
-        return null
+        // 3) 都没有 → 理论上 Room 编译期就会报 @Entity 缺主键错误，
+        //    这里给个 warn，继续无主键走（最坏也是 Funnel3 兜底）
+        report.failures.add("Table `$tableName`: 既没有字段 @PrimaryKey，也没有 @Entity(primaryKeys=[...])，跳过主键抢救")
+        return PkSpec(null, false, emptyList())
     }
 
     private fun sqlTypeFor(javaType: Class<*>): String = when {
@@ -277,11 +336,52 @@ object LightweightSchemaRescue {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outFile = File(dir, "${dbFile.name}_backup_$stamp.db")
         if (!dbFile.exists()) return null
+
+        // ── P1-2 修复：备份前先 WAL checkpoint(TRUNCATE)，把 .wal/.shm 的最新写入合并入主 .db ──
+        // 如果 checkpoint 失败（极端情况：Room 崩溃前 DB 正处于不可打开状态），退化为「一起 copy wal/shm」，
+        // 保证用户最近聊天/设置不落空（默认 API 28+ Room 都启用 WAL）。
+        runCatching {
+            val config = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperConfiguration.Builder(
+                context, name = dbFile.name, callback = object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(1) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {}
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+                }
+            ).build()
+            val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+            try {
+                helper.writableDatabase.use { db ->
+                    val cursor = db.query("PRAGMA wal_checkpoint(TRUNCATE);")
+                    if (cursor.moveToFirst()) {
+                        val busy = cursor.getInt(cursor.getColumnIndexOrThrow("busy"))
+                        val log = cursor.getInt(cursor.getColumnIndexOrThrow("log"))
+                        val checkpointed = cursor.getInt(cursor.getColumnIndexOrThrow("checkpointed"))
+                        FileLogger.i(TAG, "备份前 WAL checkpoint(TRUNCATE): busy=$busy log=$log checkpointed=$checkpointed")
+                    }
+                }
+            } finally {
+                helper.close()
+            }
+        }.onFailure {
+            // checkpoint 失败 → 退而求其次拷贝 wal/shm：这样 Room 恢复时会自动加载它们
+            FileLogger.w(TAG, "备份前 WAL checkpoint 失败，退化策略：同时 copy .wal 和 .shm 文件：${it.message}")
+            val wal = File(dbFile.parent, "${dbFile.name}-wal")
+            val shm = File(dbFile.parent, "${dbFile.name}-shm")
+            if (wal.exists()) wal.copyTo(File(dir, "${outFile.name}-wal"), overwrite = true)
+            if (shm.exists()) shm.copyTo(File(dir, "${outFile.name}-shm"), overwrite = true)
+        }
+
         dbFile.copyTo(outFile, overwrite = true)
-        // 只保留最近 5 份备份
+        // 只保留最近 5 份备份（每份备份 = .db + 可能的 .wal/.shm，这里按 .db 主文件排序）
         val all = dir.listFiles { f -> f.name.startsWith(dbFile.name + "_backup_") && f.name.endsWith(".db") }
             ?.sortedByDescending { it.lastModified() }.orEmpty()
-        if (all.size > 5) all.drop(5).forEach { it.delete() }
+        if (all.size > 5) {
+            all.drop(5).forEach { backupDb ->
+                backupDb.delete()
+                // 主文件之外的同组 wal/shm 也一起删，避免留空壳垃圾文件
+                File(dir, "${backupDb.name}-wal").takeIf { it.exists() }?.delete()
+                File(dir, "${backupDb.name}-shm").takeIf { it.exists() }?.delete()
+            }
+        }
         FileLogger.i(TAG, "崩溃前 DB 备份 → ${outFile.absolutePath} (${outFile.length()} bytes)")
         outFile
     }.onFailure { FileLogger.w(TAG, "备份崩溃前 DB 失败：${it.message}", it) }.getOrNull()

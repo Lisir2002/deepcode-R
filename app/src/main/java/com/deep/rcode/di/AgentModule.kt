@@ -127,11 +127,13 @@ object AgentModule {
 
         val funnel1 = runCatching { buildAgentDatabase(context, mode = FunnelMode.FUNNEL1_CONSERVATIVE_MIGRATION) }
         funnel1.onSuccess {
-            FileLogger.i("AgentModule", "Funnel 1 OK: 所有迁移齐全，Room 构建 success")
+            // DB-SHIELD：Funnel 1 成功 = 所有迁移脚本齐全且 TableInfo 校验通过。
+            // （修复 P0-1：Funnel 1 不再设置任何 fallback，缺迁移必然抛异常 → onSuccess 只在真·迁移通过时出现）
+            FileLogger.i("AgentModule", "Funnel 1 OK: 所有迁移脚本齐全，Room 构建 & TableInfo 校验通过")
             return it
         }
         val err1 = funnel1.exceptionOrNull()
-        FileLogger.w("AgentModule", "Funnel 1 failed（可能是迁移文件缺口或 schema mismatch）：${err1?.message}", err1)
+        FileLogger.w("AgentModule", "Funnel 1 failed（迁移文件缺口 / schema mismatch）：${err1?.message}", err1)
 
         val dbFile = context.getDatabasePath("rdeepcode_agent_db")
         val funnel2 = runCatching {
@@ -144,12 +146,13 @@ object AgentModule {
             } else {
                 FileLogger.i("AgentModule", "Funnel 2: DB 文件不存在（第一次启动），跳过轻量抢救")
             }
-            // 抢救后立即用「保守迁移」重建 Room（此时新表/缺列已经通过 SQLite 原生补好，
-            // Room 的 onOpen TableInfo 校验大概率会通过；即使仍失败 → 进入 Funnel 3）
+            // 抢救后用「保守 destructive (dropAllTables=false)」再开 Room：
+            //   - 如果 Funnel 2 已经补完缺表缺列，这里 TableInfo 校验通过 → 成功
+            //   - 如果还是失败（比如列类型/约束就冲突了），Room 只删对不上的表 → 保留核心业务数据，进入 Funnel 3 诊断
             buildAgentDatabase(context, mode = FunnelMode.FUNNEL2_AFTER_RESCUE_RETRY)
         }
         funnel2.onSuccess {
-            FileLogger.i("AgentModule", "Funnel 2 OK: 轻量抢救 + Room 二次构建 success")
+            FileLogger.i("AgentModule", "Funnel 2 OK: 轻量抢救（+ retry with conservative destructive if needed）构建 success")
             return it
         }
         val err2 = funnel2.exceptionOrNull()
@@ -157,8 +160,12 @@ object AgentModule {
 
         val funnel3 = runCatching { buildAgentDatabase(context, mode = FunnelMode.FUNNEL3_CONSERVATIVE_DESTRUCTIVE) }
         funnel3.onSuccess {
+            // Funnel 3 与 Funnel 2 retry 虽然参数完全一样，但语义不同：
+            //   Funnel 2 = 「已执行过反射抢救 + 只尝试 retry」；Funnel 3 = 「抢救后仍失败，最终用保守 destructive 作为兜底尝试」
+            // 所以日志级别升到 warn（提醒排障：此时已经有表被 Room 删掉了）
             FileLogger.w("AgentModule", "Funnel 3 OK: 保守 destructive (dropAllTables=false) 构建 success，" +
-                    "仅删除 schema 对不上的表，业务核心表（chat_sessions/agent_messages）保留")
+                    "Room 已删除 schema 对不上的表；核心业务表（chat_sessions/agent_messages）应保留。" +
+                    "请检查 Funnel 2 RescueReport.failures，定位未被抢救的列/索引")
             return it
         }
         val err3 = funnel3.exceptionOrNull()
@@ -225,18 +232,24 @@ object AgentModule {
                 }
             })
         when (mode) {
-            FunnelMode.FUNNEL1_CONSERVATIVE_MIGRATION,
+            FunnelMode.FUNNEL1_CONSERVATIVE_MIGRATION -> {
+                // DB-SHIELD 修复 P0-1：Funnel 1 绝对不配置任何 fallbackToDestructiveMigration。
+                // 这样 Room 发现「有缺迁移 / 老版本 user_version 低于 MIN 但未被 LightweightSchemaRescue 覆盖」时，
+                // 会直接抛 IllegalStateException → 被外层 runCatching 接住 → 正确走 Funnel 2 反射抢救。
+                // 以前的写法错误地配置了 dropAllTables=false 的 fallback，缺迁移直接静默删部分表，
+                // 导致 onSuccess 返回、Funnel 2 永远不触发、整个 DB-SHIELD 架构失效。
+            }
             FunnelMode.FUNNEL2_AFTER_RESCUE_RETRY -> {
-                // Funnel 1/2 绝对不做 destructive：如果 migration 缺失 → 抛异常给上层转 Funnel 2/3。
-                // （Funnel 2 的抢救已经通过原生 SQLite 在 LightweightSchemaRescue.rescue() 内完成，
-                //  这里再用 conservative 模式打开 Room，让 TableInfo 校验通过就成功，失败就继续降级。）
+                // LightweightSchemaRescue 后重试：如果还对不上（列类型/索引 mismatch 等反射救不了的情况），
+                // 允许 Room 只删对不上的表（保留核心 chat_sessions/agent_messages），不 DROP 全表。
                 builder.fallbackToDestructiveMigration(dropAllTables = false)
             }
             FunnelMode.FUNNEL3_CONSERVATIVE_DESTRUCTIVE -> {
+                // 与 Funnel 2 参数相同，但语义层级 + 日志级别更高（warn），提醒排障已经到了「Room 会删一些表」的阶段。
                 builder.fallbackToDestructiveMigration(dropAllTables = false)
             }
             FunnelMode.FUNNEL4_FULL_DESTRUCTIVE_WITH_BACKUP -> {
-                builder.fallbackToDestructiveMigration() // 真·兜底：DROP 所有表再重建
+                builder.fallbackToDestructiveMigration() // 真·终极兜底：DROP 所有表再重建（Funnel4 前必须已经备份 .db/.wal/.shm）
             }
         }
         return builder.build()

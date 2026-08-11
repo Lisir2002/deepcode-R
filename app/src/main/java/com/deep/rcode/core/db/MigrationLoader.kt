@@ -3,6 +3,7 @@ package com.deep.rcode.core.db
 import android.content.Context
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.deep.rcode.BuildConfig
 import com.deep.rcode.core.util.FileLogger
 
 class FileMigration(
@@ -59,8 +60,9 @@ object MigrationLoader {
      * DB-SHIELD-1 (SCHEMA_GAP) 连续性校验：
      *   - 传入所有 FileMigration 的 version 值（按 Int 升序）
      *   - 必须是 [MIN_REQUIRED_START_VERSION .. declaredDbVersion] 的连续整数
-     *   - 缺版本 / 重复版本 → 用 FileLogger.e 写 FATAL 级日志（CrashHandler 会同步落盘）
-     *   - 不抛 RuntimeException（保持启动链 RC61b hotfix3 安全语义）
+     *   - 缺版本 / 重复版本 / 悬空版本：
+     *       · Debug 构建 → 抛 IllegalStateException（让开发者/CI 立刻看到坏版本，防止打包入 Release）
+     *       · Release 构建 → 仅 FileLogger.e 写 FATAL 级日志（保持启动链 RC61b hotfix3 安全语义：永不阻断启动）
      */
     fun assertContinuity(
         loadedVersionsSorted: List<Int>,
@@ -70,18 +72,24 @@ object MigrationLoader {
         val missing = mutableListOf<Int>()
         val duplicates = loadedVersionsSorted.groupingBy { it }.eachCount().filter { it.value > 1 }.keys.toList()
         if (duplicates.isNotEmpty()) {
-            onWarn("SCHEMA_GAP[DUPLICATE]: 重复迁移版本号：$duplicates")
+            val msg = "SCHEMA_GAP[DUPLICATE]: 重复迁移版本号：$duplicates"
+            onWarn(msg)
+            if (BuildConfig.DEBUG) error(msg)
         }
         val have = loadedVersionsSorted.toSet()
         for (v in MIN_REQUIRED_START_VERSION .. declaredDbVersion) {
             if (!have.contains(v)) missing.add(v)
         }
         if (missing.isNotEmpty()) {
-            onWarn("SCHEMA_GAP[MISSING]: 期望覆盖 v${MIN_REQUIRED_START_VERSION}..v${declaredDbVersion}，缺失版本：$missing")
+            val msg = "SCHEMA_GAP[MISSING]: 期望覆盖 v${MIN_REQUIRED_START_VERSION}..v${declaredDbVersion}，缺失版本：$missing"
+            onWarn(msg)
+            if (BuildConfig.DEBUG) error(msg)
         }
         val dangling = loadedVersionsSorted.filter { it > declaredDbVersion }
         if (dangling.isNotEmpty()) {
-            onWarn("SCHEMA_GAP[DANGLING]: 迁移版本号高于 @Database(version=$declaredDbVersion)：$dangling")
+            val msg = "SCHEMA_GAP[DANGLING]: 迁移版本号高于 @Database(version=$declaredDbVersion)：$dangling"
+            onWarn(msg)
+            if (BuildConfig.DEBUG) error(msg)
         }
         return missing
     }
