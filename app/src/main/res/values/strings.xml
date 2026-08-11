@@ -4,6 +4,7 @@
 
     <!-- 设置页菜单标题 -->
     <string name="settings_title">设置</string>
+    <string name="settings_search_hint">搜索设置项（如 provider、log、主题、远程…）</string>
     <string name="settings_providers">AI 提供商</string>
     <string name="settings_provider_editor">提供商</string>
     <string name="settings_default_models">默认模型</string>
@@ -736,4 +737,49 @@
     <string name="chat_action_delete">删除消息</string>
     <string name="chat_edit_dialog_title">编辑消息</string>
     <string name="chat_edit_dialog_hint">请输入消息内容</string>
+
+    <!-- About - Usage Stats -->
+    <string name="about_stats">使用统计</string>
+    <string name="about_sessions">总对话数</string>
+    <string name="about_messages">总消息数</string>
+    <string name="about_input_tokens">输入 Token</string>
+    <string name="about_output_tokens">输出 Token</string>
+    <string name="about_first_used">首次使用</string>
+    <string name="about_days_active">已陪伴 %1$d 天</string>
+
+    <!-- About - FAQ -->
+    <string name="about_faq">常见问题 FAQ</string>
+    <string name="about_faq_q1">R-DeepCode 是什么？</string>
+    <string name="about_faq_a1">R-DeepCode 是一款运行在 Android 设备上的 AI 驱动代码编辑器。内置完整终端环境、AI Agent 智能体、MCP 协议支持，让你随时随地用手机编写、调试和运行代码。</string>
+    <string name="about_faq_q2">支持哪些 AI 提供商？</string>
+    <string name="about_faq_a2">理论上兼容所有 OpenAI 格式的 API。内置豆包、智谱、通义千问等国内品牌的快捷配置，也支持自定义 Base URL 添加任意兼容提供商。</string>
+    <string name="about_faq_q3">容器环境是沙箱吗？会影响手机系统吗？</string>
+    <string name="about_faq_a3">容器基于 PRoot 技术实现，完全运行在应用私有目录内，不需要 Root，不会修改或影响手机系统分区。关闭应用即停止所有容器进程。</string>
+    <string name="about_faq_q4">代码和聊天数据会上传到云端吗？</string>
+    <string name="about_faq_a4">默认情况下，工作区代码、聊天历史、授权凭据仅保存在本地。仅在调用 AI API 时将必要的上下文发送到你配置的提供商服务器；应用本身不收集或上传任何用户数据。</string>
+
+    <!-- About - Share & Feedback -->
+    <string name="about_share">分享 App</string>
+    <string name="about_share_subtitle">发送 APK 给好友</string>
+    <string name="about_rate">给个好评</string>
+    <string name="about_rate_subtitle">在 GitHub 仓库打个 Star ⭐</string>
+    <string name="about_feedback">意见反馈</string>
+    <string name="about_feedback_subtitle">提 Issue / 联系作者</string>
+    <string name="about_community">加入交流群</string>
+    <string name="about_community_subtitle">Discord / Telegram 群</string>
+
+    <!-- About - Author & App Info -->
+    <string name="about_author_title">开发者</string>
+    <string name="about_author">@Lisir2002</string>
+    <string name="about_package">包名</string>
+    <string name="about_build_no">构建号</string>
+    <string name="about_sdk_min">最低 SDK</string>
+
+    <!-- About - Update & Release Notes -->
+    <string name="about_release_notes">更新说明</string>
+    <string name="about_download_apk">下载 APK</string>
+    <string name="about_downloading">正在下载… %1$d%%</string>
+    <string name="about_download_complete">下载完成</string>
+    <string name="about_install_apk">安装 APK</string>
+    <string name="about_open_releases_page">网页版下载</string>
 </resources>

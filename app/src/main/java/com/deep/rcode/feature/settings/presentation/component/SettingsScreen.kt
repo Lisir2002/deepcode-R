@@ -38,6 +38,12 @@ import androidx.compose.material3.Text
 import com.deep.rcode.core.theme.AppTopAppBar
 import com.deep.rcode.core.theme.AppSectionHeader
 import com.deep.rcode.core.theme.AppSectionGroup
+import com.deep.rcode.core.theme.CyberColors
+import com.deep.rcode.core.theme.CyberCard
+import com.deep.rcode.core.theme.CyberSectionHeader
+import com.deep.rcode.core.theme.CyberMenuRow
+import com.deep.rcode.core.theme.CyberSearchBar
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -414,6 +420,22 @@ fun SettingsScreen(
     }
 }
 
+internal data class MenuItem(
+    val section: SettingsSection?,
+    val group: String,
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val keywords: List<String>,
+    val action: () -> Unit,
+    val trailing: @Composable (() -> Unit)? = null
+)
+
+private const val GROUP_AI = "AI 配置 & Agent"
+private const val GROUP_ENV = "运行环境"
+private const val GROUP_DATA = "数据与安全"
+private const val GROUP_SYSTEM = "系统与应用"
+
 /** 设置首页：每个分区一个可点击的二级菜单入口。 */
 @Composable
 internal fun SettingsMenu(
@@ -437,158 +459,223 @@ internal fun SettingsMenu(
     onOpen: (SettingsSection) -> Unit,
     onNavigateToTerminalSettings: () -> Unit = {},
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+
+    val menuItems = remember(
+        providerCount, activeProviderName, activeContainerProfileName,
+        visionProviderName, visionModel, compactionProviderName, compactionModel,
+        mcpCount, mcpConnected, logLevel, permissionRuleCount,
+        themeMode, keepaliveEnabled, currentLanguageDisplayName
+    ) {
+        listOf(
+            MenuItem(
+                section = SettingsSection.Providers,
+                group = GROUP_AI,
+                title = "Providers",
+                subtitle = if (providerCount == 0) {
+                    "尚未配置模型提供商"
+                } else {
+                    "已配置 $providerCount 个" + (activeProviderName?.let { " · 当前：$it" } ?: "")
+                },
+                icon = FeatherIcons.Cloud,
+                keywords = listOf("provider", "模型", "api", "key", "providers", "提供商"),
+                action = { onOpen(SettingsSection.Providers) }
+            ),
+            MenuItem(
+                section = SettingsSection.DefaultModels,
+                group = GROUP_AI,
+                title = "DefaultModels",
+                subtitle = run {
+                    val parts = mutableListOf<String>()
+                    if (!visionProviderName.isNullOrBlank() && visionModel.isNotBlank()) {
+                        parts.add("识图: $visionProviderName · $visionModel")
+                    }
+                    if (!compactionProviderName.isNullOrBlank() && compactionModel.isNotBlank()) {
+                        parts.add("压缩: $compactionProviderName · $compactionModel")
+                    }
+                    if (parts.isEmpty()) "配置多模态默认模型" else parts.joinToString("\n")
+                },
+                icon = FeatherIcons.Cpu,
+                keywords = listOf("model", "default", "默认", "识图", "vision", "压缩", "compaction", "模型", "多模态"),
+                action = { onOpen(SettingsSection.DefaultModels) }
+            ),
+            MenuItem(
+                section = SettingsSection.Mcp,
+                group = GROUP_AI,
+                title = "Mcp",
+                subtitle = if (mcpCount == 0) "尚未配置 MCP 服务器" else "共 $mcpCount 个 · 在线 $mcpConnected",
+                icon = FeatherIcons.Box,
+                keywords = listOf("mcp", "server", "工具", "function", "协议", "服务器"),
+                action = { onOpen(SettingsSection.Mcp) }
+            ),
+            MenuItem(
+                section = SettingsSection.Permissions,
+                group = GROUP_AI,
+                title = "Permissions",
+                subtitle = if (permissionRuleCount == 0) "暂无授权规则" else "已配置 $permissionRuleCount 条规则",
+                icon = FeatherIcons.Lock,
+                keywords = listOf("perm", "授权", "规则", "permission", "allow", "工具", "tool"),
+                action = { onOpen(SettingsSection.Permissions) }
+            ),
+            MenuItem(
+                section = null,
+                group = GROUP_ENV,
+                title = "Terminal",
+                subtitle = "终端偏好 · 字体 · Shell · 快捷命令",
+                icon = FeatherIcons.Terminal,
+                keywords = listOf("terminal", "终端", "ssh", "shell", "bash", "命令"),
+                action = onNavigateToTerminalSettings
+            ),
+            MenuItem(
+                section = SettingsSection.Container,
+                group = GROUP_ENV,
+                title = "Container",
+                subtitle = "当前：${activeContainerProfileName ?: "Alpine 内置"}",
+                icon = FeatherIcons.HardDrive,
+                keywords = listOf("container", "docker", "镜像", "alpine", "容器", "proot", "环境"),
+                action = { onOpen(SettingsSection.Container) }
+            ),
+            MenuItem(
+                section = SettingsSection.RemoteServers,
+                group = GROUP_ENV,
+                title = "RemoteServers",
+                subtitle = "SSH/SFTP 服务器 · 工作区同步",
+                icon = FeatherIcons.Server,
+                keywords = listOf("remote", "ssh", "sftp", "服务器", "工作区", "同步", "远程"),
+                action = { onOpen(SettingsSection.RemoteServers) }
+            ),
+            MenuItem(
+                section = SettingsSection.Backup,
+                group = GROUP_DATA,
+                title = "Backup",
+                subtitle = "导出 · 导入 · 加密备份",
+                icon = FeatherIcons.Save,
+                keywords = listOf("backup", "备份", "还原", "export", "导出", "导入", "加密"),
+                action = { onOpen(SettingsSection.Backup) }
+            ),
+            MenuItem(
+                section = SettingsSection.Security,
+                group = GROUP_DATA,
+                title = "Security",
+                subtitle = "凭据加密 · 生物识别 · 紧急通道",
+                icon = FeatherIcons.Lock,
+                keywords = listOf("security", "加密", "生物识别", "凭据", "password", "安全", "pin"),
+                action = { onOpen(SettingsSection.Security) }
+            ),
+            MenuItem(
+                section = SettingsSection.RemoteAuditLogs,
+                group = GROUP_DATA,
+                title = "RemoteAuditLogs",
+                subtitle = "SSH 连接 · 凭据操作 · 备份事件",
+                icon = FeatherIcons.FileText,
+                keywords = listOf("audit", "审计", "log", "连接", "事件", "ssh", "备份"),
+                action = { onOpen(SettingsSection.RemoteAuditLogs) }
+            ),
+            MenuItem(
+                section = SettingsSection.Logs,
+                group = GROUP_DATA,
+                title = "Logs",
+                subtitle = "当前级别：${logLevel.name} · Debug/Trace/错误",
+                icon = FeatherIcons.FileText,
+                keywords = listOf("log", "日志", "debug", "trace", "错误", "bug", "filter"),
+                action = { onOpen(SettingsSection.Logs) }
+            ),
+            MenuItem(
+                section = null,
+                group = GROUP_SYSTEM,
+                title = "Theme",
+                subtitle = "当前：${themeMode.labelRes.let { stringResource(it) }}",
+                icon = FeatherIcons.Moon,
+                keywords = listOf("theme", "appearance", "外观", "深色", "浅色", "模式", "主题"),
+                action = onOpenThemeSheet
+            ),
+            MenuItem(
+                section = null,
+                group = GROUP_SYSTEM,
+                title = "Language",
+                subtitle = "当前：$currentLanguageDisplayName",
+                icon = FeatherIcons.Globe,
+                keywords = listOf("language", "语言", "i18n", "多语言", "locale", "localeConfig"),
+                action = onOpenLanguageSheet
+            ),
+            MenuItem(
+                section = null,
+                group = GROUP_SYSTEM,
+                title = "Keepalive",
+                subtitle = "前台保活 · 防进程杀死",
+                icon = FeatherIcons.RefreshCw,
+                keywords = listOf("keepalive", "保活", "后台", "foreground", "通知", "杀死", "进程"),
+                action = { onToggleKeepalive(!keepaliveEnabled) },
+                trailing = {
+                    Switch(
+                        checked = keepaliveEnabled,
+                        onCheckedChange = onToggleKeepalive,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = CyberColors.Cyan,
+                            checkedTrackColor = CyberColors.LineBlue.copy(alpha = 0.4f)
+                        )
+                    )
+                }
+            ),
+            MenuItem(
+                section = SettingsSection.About,
+                group = GROUP_SYSTEM,
+                title = "About",
+                subtitle = "版本 · 更新 · 许可证 · 作者",
+                icon = FeatherIcons.Info,
+                keywords = listOf("about", "关于", "version", "release", "更新", "许可证", "license", "作者"),
+                action = { onOpen(SettingsSection.About) }
+            )
+        )
+    }
+
+    val filteredGroups = remember(searchQuery, menuItems) {
+        val query = searchQuery.trim()
+        val filtered = if (query.isEmpty()) {
+            menuItems
+        } else {
+            menuItems.filter { item ->
+                val combined = (item.title + " " + item.subtitle + " " + item.keywords.joinToString(" "))
+                combined.contains(query, ignoreCase = true)
+            }
+        }
+        filtered.groupBy { it.group }.filter { it.value.isNotEmpty() }
+    }
+
+    val groupOrder = listOf(GROUP_AI, GROUP_ENV, GROUP_DATA, GROUP_SYSTEM)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(vertical = Spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(Spacing.lg)
+        verticalArrangement = Arrangement.spacedBy(Spacing.md)
     ) {
-        // ── AI 配置 ──
-        AppSectionHeader(text = stringResource(R.string.settings_category_ai))
-        AppSectionGroup {
-            GroupMenuRow(
-                icon = FeatherIcons.Cloud,
-                title = stringResource(SettingsSection.Providers.titleRes),
-                subtitle = if (providerCount == 0) {
-                    stringResource(R.string.settings_providers_empty)
-                } else {
-                    stringResource(R.string.settings_providers_count, providerCount) +
-                        (activeProviderName?.let { stringResource(R.string.settings_providers_active, it) } ?: "")
-                },
-                onClick = { onOpen(SettingsSection.Providers) },
-                showDivider = true
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.Cpu,
-                title = stringResource(SettingsSection.DefaultModels.titleRes),
-                subtitle = run {
-                    val parts = mutableListOf<String>()
-                    if (!visionProviderName.isNullOrBlank() && visionModel.isNotBlank()) {
-                        parts.add(stringResource(R.string.settings_vision_model) + ": " + (visionProviderName?.let { "$it · $visionModel" } ?: visionModel))
+        CyberSearchBar(
+            searchQuery,
+            { searchQuery = it },
+            stringResource(R.string.settings_search_hint)
+        )
+
+        for (groupName in groupOrder) {
+            val items = filteredGroups[groupName] ?: continue
+            CyberSectionHeader(text = groupName)
+            CyberCard {
+                Column {
+                    items.forEachIndexed { index, item ->
+                        CyberMenuRow(
+                            icon = item.icon,
+                            title = item.title,
+                            subtitle = item.subtitle,
+                            onClick = item.action,
+                            showDivider = index < items.size - 1,
+                            trailing = item.trailing
+                        )
                     }
-                    if (!compactionProviderName.isNullOrBlank() && compactionModel.isNotBlank()) {
-                        parts.add(stringResource(R.string.settings_compaction_model) + ": " + (compactionProviderName?.let { "$it · $compactionModel" } ?: compactionModel))
-                    }
-                    if (parts.isEmpty()) stringResource(R.string.settings_default_models_subtitle) else parts.joinToString("\n")
-                },
-                onClick = { onOpen(SettingsSection.DefaultModels) },
-                showDivider = true
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.Box,
-                title = stringResource(SettingsSection.Mcp.titleRes),
-                subtitle = if (mcpCount == 0) stringResource(R.string.settings_mcp_empty) else stringResource(R.string.settings_mcp_count_connected, mcpCount, mcpConnected),
-                onClick = { onOpen(SettingsSection.Mcp) },
-                showDivider = false
-            )
+                }
+            }
         }
 
-        // ── 运行环境 ──
-        AppSectionHeader(text = stringResource(R.string.settings_category_environment))
-        AppSectionGroup {
-            GroupMenuRow(
-                icon = FeatherIcons.Terminal,
-                title = stringResource(R.string.settings_terminal),
-                subtitle = stringResource(R.string.settings_terminal_subtitle),
-                onClick = onNavigateToTerminalSettings,
-                showDivider = true
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.HardDrive,
-                title = stringResource(SettingsSection.Container.titleRes),
-                subtitle = stringResource(R.string.settings_container_current, activeContainerProfileName ?: stringResource(R.string.settings_container_builtin_alpine)),
-                onClick = { onOpen(SettingsSection.Container) },
-                showDivider = true
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.Server,
-                title = stringResource(SettingsSection.RemoteServers.titleRes),
-                subtitle = stringResource(R.string.settings_remote_subtitle),
-                onClick = { onOpen(SettingsSection.RemoteServers) },
-                showDivider = false
-            )
-        }
-
-        // ── 工具与权限 ──
-        AppSectionHeader(text = stringResource(R.string.settings_category_tools))
-        AppSectionGroup {
-            GroupMenuRow(
-                icon = FeatherIcons.Lock,
-                title = stringResource(SettingsSection.Permissions.titleRes),
-                subtitle = if (permissionRuleCount == 0) stringResource(R.string.settings_permissions_empty) else stringResource(R.string.settings_permissions_count, permissionRuleCount),
-                onClick = { onOpen(SettingsSection.Permissions) },
-                showDivider = true
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.FileText,
-                title = stringResource(SettingsSection.Logs.titleRes),
-                subtitle = stringResource(R.string.settings_log_current, logLevel.name),
-                onClick = { onOpen(SettingsSection.Logs) },
-                showDivider = false
-            )
-        }
-
-        // ── 外观与语言 ──
-        AppSectionHeader(text = stringResource(R.string.settings_category_appearance))
-        AppSectionGroup {
-            GroupMenuRow(
-                icon = FeatherIcons.Moon,
-                title = stringResource(R.string.settings_theme_title),
-                subtitle = stringResource(themeMode.labelRes),
-                onClick = onOpenThemeSheet,
-                showDivider = true
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.Globe,
-                title = stringResource(R.string.settings_language),
-                subtitle = currentLanguageDisplayName,
-                onClick = onOpenLanguageSheet,
-                showDivider = false
-            )
-        }
-
-        // ── 其他 ──
-        AppSectionHeader(text = stringResource(R.string.settings_category_other))
-        AppSectionGroup {
-            GroupSwitchRow(
-                icon = FeatherIcons.RefreshCw,
-                title = stringResource(R.string.settings_keepalive_title),
-                subtitle = stringResource(R.string.settings_keepalive_subtitle),
-                checked = keepaliveEnabled,
-                onCheckedChange = onToggleKeepalive
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.Save,
-                title = stringResource(SettingsSection.Backup.titleRes),
-                subtitle = stringResource(R.string.settings_backup_subtitle),
-                onClick = { onOpen(SettingsSection.Backup) },
-                showDivider = true
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.Lock,
-                title = stringResource(SettingsSection.Security.titleRes),
-                subtitle = "凭据加密 · 生物识别 · 紧急通道",
-                onClick = { onOpen(SettingsSection.Security) },
-                showDivider = true
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.FileText,
-                title = stringResource(SettingsSection.RemoteAuditLogs.titleRes),
-                subtitle = "SSH 连接 · 凭据操作 · 备份事件",
-                onClick = { onOpen(SettingsSection.RemoteAuditLogs) },
-                showDivider = true
-            )
-            GroupMenuRow(
-                icon = FeatherIcons.Info,
-                title = stringResource(SettingsSection.About.titleRes),
-                subtitle = stringResource(R.string.settings_about_subtitle),
-                onClick = { onOpen(SettingsSection.About) },
-                showDivider = false
-            )
-        }
-
-        // 底部留白
         Spacer(Modifier.height(Spacing.md))
     }
 }
