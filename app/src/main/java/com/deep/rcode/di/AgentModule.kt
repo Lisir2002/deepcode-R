@@ -12,6 +12,7 @@ import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.data.local.dao.AgentMessageDao
 import com.deep.rcode.feature.agent.data.local.dao.ChatSessionDao
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointDao
+import com.deep.rcode.feature.agent.data.local.dao.CheckpointFileSnapshotDao
 import com.deep.rcode.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.deep.rcode.feature.agent.data.local.dao.TodoItemDao
 import com.deep.rcode.feature.agent.data.local.dao.UserConfirmedSentinelDao
@@ -20,7 +21,12 @@ import com.deep.rcode.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
 import com.deep.rcode.feature.agent.data.local.dao.HardConstraintDeleteAuditDao
 import com.deep.rcode.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
 import com.deep.rcode.feature.agent.data.local.dao.ZthTelemetryEventDao
+import com.deep.rcode.feature.credentials.data.local.dao.GitCredentialDao
 import com.deep.rcode.feature.settings.data.local.dao.AIProviderDao
+import com.deep.rcode.feature.workspace.data.local.dao.CredentialEncryptionStateDao
+import com.deep.rcode.feature.workspace.data.local.dao.RemoteAuditLogDao
+import com.deep.rcode.feature.workspace.data.local.dao.RemoteConnectionDao
+import com.deep.rcode.feature.workspace.data.local.dao.RemoteMountDao
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
 import com.deep.rcode.feature.agent.data.local.database.AgentDatabase
 import com.deep.rcode.feature.agent.data.CodeChangeTracker
@@ -375,7 +381,7 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideRemoteMountDao(database: AgentDatabase): com.deep.rcode.feature.workspace.data.local.dao.RemoteMountDao {
+    fun provideRemoteMountDao(database: AgentDatabase): RemoteMountDao {
         return database.remoteMountDao()
     }
 
@@ -399,7 +405,7 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideRemoteConnectionDao(database: AgentDatabase): com.deep.rcode.feature.workspace.data.local.dao.RemoteConnectionDao {
+    fun provideRemoteConnectionDao(database: AgentDatabase): RemoteConnectionDao {
         return database.remoteConnectionDao()
     }
 
@@ -411,19 +417,19 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideGitCredentialDao(database: AgentDatabase): com.deep.rcode.feature.credentials.data.local.dao.GitCredentialDao {
+    fun provideGitCredentialDao(database: AgentDatabase): GitCredentialDao {
         return database.gitCredentialDao()
     }
 
     @Provides
     @Singleton
-    fun provideCredentialEncryptionStateDao(database: AgentDatabase): com.deep.rcode.feature.workspace.data.local.dao.CredentialEncryptionStateDao {
+    fun provideCredentialEncryptionStateDao(database: AgentDatabase): CredentialEncryptionStateDao {
         return database.credentialEncryptionStateDao()
     }
 
     @Provides
     @Singleton
-    fun provideRemoteAuditLogDao(database: AgentDatabase): com.deep.rcode.feature.workspace.data.local.dao.RemoteAuditLogDao {
+    fun provideRemoteAuditLogDao(database: AgentDatabase): RemoteAuditLogDao {
         return database.remoteAuditLogDao()
     }
 
