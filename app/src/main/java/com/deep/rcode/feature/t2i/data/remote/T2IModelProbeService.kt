@@ -74,7 +74,7 @@ class T2IModelProbeService @Inject constructor(
         apiKey: String,
         /** 传模型名，不传用 "step-2x-large"（最常用）兜底，避免模型名本身报错。 */
         probeModel: String = "step-2x-large",
-        type: ProviderType = ProviderType.OPENAI_COMPATIBLE,
+        type: ProviderType = ProviderType.OPENAI,
     ): T2IProbeResult = withContext(Dispatchers.IO) {
         val startNano = System.nanoTime()
         runCatching {
@@ -144,7 +144,7 @@ class T2IModelProbeService @Inject constructor(
         baseUrl: String,
         apiKey: String,
         probeModel: String = "step-2x-large",
-        type: ProviderType = ProviderType.OPENAI_COMPATIBLE,
+        type: ProviderType = ProviderType.OPENAI,
     ): ImageGenerator.EndpointMode? = withContext(Dispatchers.IO) {
         runCatching {
             val payload = JSONObject().apply {
