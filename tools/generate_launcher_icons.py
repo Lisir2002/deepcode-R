@@ -11,7 +11,7 @@ import os
 ROOT = "/workspace/deepcode-R"
 RES_DIR = f"{ROOT}/app/src/main/res"
 DESIGN_DIR = f"{ROOT}/docs/design/brand_icons"
-MASTER_JPG = f"{DESIGN_DIR}/v4_ai_master_1024.jpg"
+MASTER_JPG = f"{DESIGN_DIR}/v5_ai_master_1024.jpg"
 
 DENS = [
     ("mdpi",     48),
