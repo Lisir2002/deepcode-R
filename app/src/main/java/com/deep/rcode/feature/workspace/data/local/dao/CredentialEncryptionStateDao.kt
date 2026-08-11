@@ -4,7 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import com.deep.rcode.feature.workspace.data.local.entity.CredentialEncryptionStateEntity
+import com.deep.rcode.core.db.entity.CredentialEncryptionStateEntity
 
 @Dao
 interface CredentialEncryptionStateDao {

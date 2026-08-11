@@ -1,5 +1,6 @@
 package com.deep.rcode.feature.agent.data.local.dao
 
+import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -10,6 +11,7 @@ import com.deep.rcode.feature.agent.data.local.entity.CheckpointFileSnapshotEnti
  * 原 CheckpointDao 一张管 session_checkpoints + checkpoint_file_snapshots 两张表 → 将来加审计闸门时
  * `getAllOnce()` 等方法语义模糊（checkpoint 还是 snapshot？）。
  */
+@Dao
 interface CheckpointFileSnapshotDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

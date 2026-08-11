@@ -154,28 +154,35 @@ CREATE INDEX IF NOT EXISTS index_todo_items_createdAtMs ON todo_items (createdAt
 
 -- ══════════════════════════════════════════════════════════
 -- 5/6 credential_encryption_state：
---   - 加表级 CHECK(id=1)：该表全局仅允许 1 行（单例语义），
---     此前 INSERT 靠 @PrimaryKey 常量约束，但 CHECK(id=1) 作为 DB 级兜底更明确，
---     防止 Funnel 2 反射抢救误插入多行导致状态机二义。
+--   - 仅增加「CREATE TABLE IF NOT EXISTS + INSERT OR IGNORE + DROP IF EXISTS」幂等；
+--   - 列结构与 32_add_credential_encryption_state.sql 及当前 Entity 完全一致（不做字段重命名），
+--     仅重复声明 CHECK(id=1) 作为 DB 级单例语义兜底；
+--     迁移 32 里本来就有 CHECK(id=1)，这里重建保留，消除「万一有人手改 32 文件删掉 CHECK」的风险。
 -- ══════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS credential_encryption_state_new (
     id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
-    kekVersion INTEGER NOT NULL DEFAULT 0,
-    dekEncryptedByKekV1 BLOB,
-    masterSalt BLOB,
-    isEnrolled INTEGER NOT NULL DEFAULT 0,
-    isRotating INTEGER NOT NULL DEFAULT 0,
-    lastRotateAttemptAtMs INTEGER,
-    lastSuccessRotateAtMs INTEGER
+    masterKeyFingerprint TEXT NOT NULL,
+    dekCiphertext TEXT NOT NULL,
+    encScheme TEXT NOT NULL,
+    lastRotatedAt INTEGER NOT NULL,
+    rotationCounter INTEGER NOT NULL,
+    biometricRequired INTEGER NOT NULL,
+    migratedFromV1 INTEGER NOT NULL
 );
 
 INSERT OR IGNORE INTO credential_encryption_state_new (
-    id, kekVersion, dekEncryptedByKekV1, masterSalt, isEnrolled, isRotating,
-    lastRotateAttemptAtMs, lastSuccessRotateAtMs
+    id, masterKeyFingerprint, dekCiphertext, encScheme,
+    lastRotatedAt, rotationCounter, biometricRequired, migratedFromV1
 )
 SELECT
-    id, kekVersion, dekEncryptedByKekV1, masterSalt, isEnrolled, isRotating,
-    lastRotateAttemptAtMs, lastSuccessRotateAtMs
+    id,
+    COALESCE(masterKeyFingerprint, ''),
+    COALESCE(dekCiphertext, ''),
+    COALESCE(encScheme, 'V2'),
+    COALESCE(lastRotatedAt, 0),
+    COALESCE(rotationCounter, 0),
+    COALESCE(biometricRequired, 0),
+    COALESCE(migratedFromV1, 0)
 FROM credential_encryption_state;
 
 DROP TABLE IF EXISTS credential_encryption_state;
