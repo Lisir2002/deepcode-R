@@ -143,8 +143,10 @@ class GenerateImageTool @Inject constructor(
                 ))); return@flow
             }
 
-        val apiKey = credentialEncryptor.decrypt(activeProvider.encryptedApiKey).getOrElse {
-            FileLogger.w(TAG, "解密 API Key 失败: ${it.message}")
+        val apiKey = try {
+            credentialEncryptor.decrypt(activeProvider.encryptedApiKey)
+        } catch (t: Throwable) {
+            FileLogger.w(TAG, "解密 API Key 失败: ${t.message}")
             ""
         }
         if (apiKey.isBlank()) {
