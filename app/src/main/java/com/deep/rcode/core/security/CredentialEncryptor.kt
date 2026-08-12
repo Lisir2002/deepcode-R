@@ -139,14 +139,39 @@ class CredentialEncryptor @Inject constructor(
                 // 旧实现先 getMasterKeyFingerprint(masterKey.encoded) 比对，但 Android Keystore
                 // 密钥不可导出（encoded 恒为 null）→ NPE → 初始化永远失败 → API Key 无法加密保存。
                 // 现在：unwrap 成功 = MasterKey 匹配；unwrap 失败（GCM tag 校验不过）=
-                // MasterKey 已被外部重置，引导走紧急解锁。
+                // MasterKey 已被外部重置 / 重装导致旧 DEK 无法恢复。
+                //
+                // RC71 增强：unwrap 失败时不再直接返回 TAMPERED 让初始化永久失败（那样后续所有
+                // encrypt/decrypt 都失败，API Key 永远无法保存）。改为重建 DEK 并重写 state，
+                // 让「新保存的凭据」立即可用；旧 V2 密文因旧 DEK 已不可恢复而无法解开（读取时
+                // 返回空串并记日志，属预期降级）。
                 if (dekCached == null) {
                     try {
                         dekCached = dekManager.unwrapDek(masterKey, existing.dekCiphertext)
                     } catch (e: Exception) {
-                        FileLogger.e(TAG, "DEK unwrap 失败：MasterKey 可能被外部重置（紧急解锁入口可用）", e)
-                        dekCached = null
-                        return@runCatching InitResult.TAMPERED
+                        FileLogger.e(
+                            TAG,
+                            "DEK unwrap 失败（MasterKey 被重置/重装），重建 DEK；旧 V2 密文将无法解开",
+                            e
+                        )
+                        val newDek = dekManager.generateDek()
+                        val newCiphertext = dekManager.wrapDek(masterKey, newDek)
+                        stateDao.upsert(
+                            existing.copy(
+                                dekCiphertext = newCiphertext,
+                                rotationCounter = (existing.rotationCounter ?: 0) + 1,
+                                lastRotatedAt = System.currentTimeMillis()
+                            )
+                        )
+                        dekCached = newDek
+                        runCatching {
+                            auditLogRepo.append(
+                                category = RemoteAuditCategory.CREDENTIAL,
+                                action = RemoteAuditAction.CRED_ROTATE_DEK,
+                                success = false,
+                                message = "DEK unwrap 失败，已重建 DEK（旧密文不可恢复）: ${e.message}"
+                            )
+                        }
                     }
                 }
 

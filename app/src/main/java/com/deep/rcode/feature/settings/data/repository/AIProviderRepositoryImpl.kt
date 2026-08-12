@@ -44,7 +44,11 @@ class AIProviderRepositoryImpl @Inject constructor(
 
     override suspend fun saveProvider(provider: AIProviderConfig) {
         FileLogger.i(TAG, "保存提供商 id=${provider.id} name=${provider.name} active=${provider.isActive} enabled=${provider.isEnabled}")
-        val entity = provider.toEntity()
+        // RC71：先取已存在的密文，供 toEntity 在「用户未改 API Key」时保留，避免空串覆盖。
+        val existingEncrypted = runCatching {
+            aiProviderDao.getProviderById(provider.id)?.encryptedApiKey ?: ""
+        }.getOrDefault("")
+        val entity = provider.toEntity(existingEncrypted)
         // DB-SHIELD-RC68 P0-1 invariant 修复：
         //   saveProvider 传入 isActive=true 的行时，先把所有行的 isActive 清 0（deactivateAllProviders）
         //   再 insert = 这一行。保证 DB 中 isActive=1 的行数永远最多 1 行（互斥 active）。
@@ -127,11 +131,32 @@ class AIProviderRepositoryImpl @Inject constructor(
 
     /**
      * RC68 SCHEMA 38：只写 encryptedApiKey（明文 apiKey 列已删除，Entity 无此字段）。
+     *
+     * RC71 严重 bug 修复（API Key 保存后退回即被清空）：
+     * 旧实现 `runCatching { encryptor.encrypt(apiKey) }.getOrDefault("")` 在加密失败时
+     * 会静默落成空串，而 insertProvider 用 OnConflictStrategy.REPLACE 覆盖整行 →
+     * 任何加密临时失败（如 ensureInitialized 未成功导致 requireDek 抛异常）都会把
+     * 用户输入/已保存的 API Key 永久清空，且无法恢复。
+     *
+     * 新逻辑：
+     *  - apiKey 非空（用户输入了新 key）→ 必须加密成功，失败则抛异常中止保存，
+     *    绝不把空串写入库覆盖已有密文；
+     *  - apiKey 为空但已有密文（编辑时未改 key）→ 保留已有密文不覆盖；
+     *  - apiKey 为空且无已有密文（新建未填）→ 空串。
      */
-    private suspend fun AIProviderConfig.toEntity(): AIProviderEntity {
-        val encrypted = runCatching { encryptor.encrypt(apiKey) }
-            .onFailure { FileLogger.w(TAG, "加密 apiKey 失败：${it.message}（apiKey 落库为空串）") }
-            .getOrDefault("")
+    private suspend fun AIProviderConfig.toEntity(existingEncrypted: String): AIProviderEntity {
+        val encrypted = when {
+            apiKey.isNotBlank() -> {
+                runCatching { encryptor.encrypt(apiKey) }
+                    .onFailure {
+                        FileLogger.e(TAG, "加密 apiKey 失败，中止保存（避免覆盖已有密文）: ${it.message}", it)
+                        throw IllegalStateException("API Key 加密失败，保存已中止: ${it.message}", it)
+                    }
+                    .getOrThrow()
+            }
+            existingEncrypted.isNotBlank() -> existingEncrypted // RC71：未改 key，保留已有密文
+            else -> ""
+        }
         // RC68 selectedModel 合并：当 selectedModel 非 blank 时用它写入 defaultModel，否则用域里的 defaultModel。
         val mergedModel = selectedModel.ifBlank { defaultModel }
         return AIProviderEntity(
