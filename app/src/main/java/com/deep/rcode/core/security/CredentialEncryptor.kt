@@ -135,21 +135,18 @@ class CredentialEncryptor @Inject constructor(
                     return@runCatching InitResult.OK
                 }
 
-                // 检查 fingerprint 是否匹配
-                val currentFingerprint = dekManager.getMasterKeyFingerprint(masterKey)
-                if (currentFingerprint != existing.masterKeyFingerprint) {
-                    FileLogger.e(TAG, "MasterKey 指纹不匹配：Keystore 可能被外部重置（紧急解锁入口可用）")
-                    dekCached = null
-                    return@runCatching InitResult.TAMPERED
-                }
-
-                // 加载 DEK 到内存
+                // RC70 修复：MasterKey 匹配校验改为「直接 unwrap DEK」。
+                // 旧实现先 getMasterKeyFingerprint(masterKey.encoded) 比对，但 Android Keystore
+                // 密钥不可导出（encoded 恒为 null）→ NPE → 初始化永远失败 → API Key 无法加密保存。
+                // 现在：unwrap 成功 = MasterKey 匹配；unwrap 失败（GCM tag 校验不过）=
+                // MasterKey 已被外部重置，引导走紧急解锁。
                 if (dekCached == null) {
                     try {
                         dekCached = dekManager.unwrapDek(masterKey, existing.dekCiphertext)
                     } catch (e: Exception) {
-                        FileLogger.e(TAG, "DEK unwrap 失败", e)
-                        return@runCatching InitResult.DEK_UNWRAP_FAIL
+                        FileLogger.e(TAG, "DEK unwrap 失败：MasterKey 可能被外部重置（紧急解锁入口可用）", e)
+                        dekCached = null
+                        return@runCatching InitResult.TAMPERED
                     }
                 }
 

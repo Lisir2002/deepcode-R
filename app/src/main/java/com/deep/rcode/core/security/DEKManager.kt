@@ -101,10 +101,22 @@ class DEKManager private constructor() {
         return keyGenerator.generateKey()
     }
 
-    /** 获取已存在的 MasterKey 指纹（SHA-256 of its encoded bytes）。必须 IO 线程。 */
+    /**
+     * 获取已存在的 MasterKey 指纹。必须 IO 线程。
+     *
+     * **RC70 修复（密钥无法保存的根因）：**
+     * MasterKey 由 Android Keystore 生成，密钥材料不可导出，`SecretKey.getEncoded()` 恒返回 `null`。
+     * 旧实现 `digest.digest(masterKey.encoded)` 会因传入 null 抛 NPE，导致
+     * `CredentialEncryptor.ensureInitialized()` 永远初始化失败 → DEK 未加载 →
+     * `encrypt()` 里 `requireDek()` 抛 IllegalStateException →
+     * `AIProviderRepositoryImpl.toEntity()` 捕获后将 API Key 静默落成空串（密钥无法保存）。
+     *
+     * 修复：不再取不可导出的 key 字节。返回一个基于 algorithm 的稳定标记，
+     * 真正的「MasterKey 是否被外部重置」校验交由 `CredentialEncryptor.ensureInitialized()`
+     * 通过 `unwrapDek()` 的成功性完成（GCM tag 不匹配即视为被重置）。
+     */
     fun getMasterKeyFingerprint(masterKey: SecretKey): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        return Base64.getEncoder().encodeToString(digest.digest(masterKey.encoded))
+        return "V2-kstore-" + masterKey.algorithm
     }
 
     /** 检查 MasterKey 是否在 Keystore 中存在。必须 IO 线程。 */
