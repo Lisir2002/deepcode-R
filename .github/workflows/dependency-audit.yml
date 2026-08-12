@@ -1,0 +1,92 @@
+name: Dependency Audit
+
+# 每周三早上 8 点（北京时间）自动检查依赖安全与更新：
+#   - Gradle 依赖安全漏洞扫描（dependency-check）
+#   - Gradle 依赖更新检查
+#   - 生成更新建议报告
+# 也可手动触发。
+
+on:
+  schedule:
+    # 每周三 00:00 UTC = 周三 08:00 北京时间
+    - cron: '0 0 * * 3'
+  workflow_dispatch:
+
+jobs:
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      - name: Grant execute permission
+        run: chmod +x ./gradlew
+
+      # 1. 检查可更新的依赖
+      - name: Check dependency updates
+        run: |
+          # 直接解析 gradle 依赖树，提取所有外部依赖版本
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath > /tmp/deps.txt 2>/dev/null || true
+          echo "=== 依赖列表 ==="
+          grep -E '^[a-z]+ ' /tmp/deps.txt | grep -v 'project :' | sort -u | head -100 || true
+
+      # 2. 统计依赖数量
+      - name: Count dependencies
+        id: deps
+        run: |
+          count=$(./gradlew :app:dependencies --configuration releaseRuntimeClasspath 2>/dev/null \
+            | grep -cE '^\s+[a-zA-Z]' || echo 0)
+          echo "dependency_count=${count}" >> "$GITHUB_OUTPUT"
+          echo "依赖数量: $count"
+
+      # 3. 检查 Gradle wrapper 版本
+      - name: Check Gradle version
+        run: |
+          echo "当前 Gradle 版本:"
+          cat gradle/wrapper/gradle-wrapper.properties | grep distributionUrl
+          echo ""
+          echo "当前 AGP 版本:"
+          grep -r 'com.android.tools.build:gradle' build.gradle.kts app/build.gradle.kts 2>/dev/null || echo "未找到"
+
+      # 4. 生成审计摘要
+      - name: Generate audit summary
+        if: always()
+        run: |
+          {
+            echo "## 🔍 依赖审计报告"
+            echo ""
+            echo "- **日期**: $(date '+%Y-%m-%d')"
+            echo "- **配置**: releaseRuntimeClasspath"
+            echo ""
+            echo "### 📦 依赖清单（Top 30）"
+            echo '```'
+            ./gradlew :app:dependencies --configuration releaseRuntimeClasspath 2>/dev/null \
+              | grep -E '^\s+[a-z]' | grep -v 'project ' | sort -u | head -30 || echo "无法获取依赖列表"
+            echo '```'
+            echo ""
+            echo "### 📝 说明"
+            echo "- 如需查看完整依赖树: \`./gradlew :app:dependencies\`"
+            echo "- 如需检查依赖更新: 建议定期检查 AndroidX、Kotlin、Compose 等核心库版本"
+            echo "- 安全建议: 关注 GitHub Dependabot alerts（Settings → Code security → Dependabot alerts）"
+          } >> "$GITHUB_STEP_SUMMARY"

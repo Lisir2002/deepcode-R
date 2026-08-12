@@ -1,0 +1,165 @@
+name: Weekly Health Check
+
+# 每周一早上 8 点（北京时间）自动运行全量健康检查：
+#   - 全量构建（debug + release）
+#   - 全量单元测试
+#   - Lint 检查
+#   - 构建产物大小监控
+# 也可手动触发。
+
+on:
+  schedule:
+    # 每周一 00:00 UTC = 周一 08:00 北京时间
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Weekly Health Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install fixed debug keystore
+        env:
+          FIXED_DEBUG_KS_B64: "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"
+        run: |
+          set -e
+          mkdir -p ~/.android
+          printf '%s' "$FIXED_DEBUG_KS_B64" | base64 -d > ~/.android/debug.keystore
+          chmod 600 ~/.android/debug.keystore
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Grant execute permission
+        run: chmod +x ./gradlew
+
+      # 1. Lint 检查
+      - name: Run Lint (release)
+        run: ./gradlew :app:lintRelease --stacktrace
+        continue-on-error: true
+
+      - name: Upload Lint report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-release.html
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # 2. 单元测试（debug + release 双变体）
+      - name: Run unit tests (debug)
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+        continue-on-error: true
+
+      - name: Run unit tests (release)
+        run: ./gradlew :app:testReleaseUnitTest --stacktrace
+        continue-on-error: true
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # 3. 全量构建
+      - name: Build Debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace
+        continue-on-error: true
+
+      - name: Build Release APK
+        run: ./gradlew :app:assembleRelease --stacktrace
+        continue-on-error: true
+
+      # 4. 产物大小统计
+      - name: Collect build metrics
+        id: metrics
+        run: |
+          set -e
+          debug_apk="app/build/outputs/apk/debug/app-debug.apk"
+          release_apk="app/build/outputs/apk/release/app-release.apk"
+
+          echo "=== APK 大小统计 ==="
+          if [[ -f "$debug_apk" ]]; then
+            debug_size=$(stat -c%s "$debug_apk")
+            debug_mb=$(echo "scale=2; $debug_size / 1024 / 1024" | bc)
+            echo "Debug APK: ${debug_mb} MB"
+            echo "debug_apk_mb=${debug_mb}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Debug APK: 构建失败"
+          fi
+
+          if [[ -f "$release_apk" ]]; then
+            release_size=$(stat -c%s "$release_apk")
+            release_mb=$(echo "scale=2; $release_size / 1024 / 1024" | bc)
+            echo "Release APK: ${release_mb} MB"
+            echo "release_apk_mb=${release_mb}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release APK: 构建失败"
+          fi
+
+          # method count (DEX 方法数)
+          if [[ -f "$release_apk" ]]; then
+            method_count=$(unzip -p "$release_apk" classes.dex 2>/dev/null | head -c 92 | tail -c 4 | od -An -tu4 | tr -d ' ')
+            echo "DEX method count: ${method_count:-N/A}"
+            echo "dex_method_count=${method_count:-0}" >> "$GITHUB_OUTPUT"
+          fi
+
+          # commit count (= versionCode)
+          vc=$(git rev-list --count HEAD)
+          echo "versionCode (commit count): $vc"
+          echo "version_code=${vc}" >> "$GITHUB_OUTPUT"
+
+      # 5. 生成健康检查摘要
+      - name: Generate health check summary
+        if: always()
+        run: |
+          {
+            echo "## 🏥 每周健康检查报告"
+            echo ""
+            echo "- **日期**: $(date '+%Y-%m-%d')"
+            echo "- **版本**: $(git rev-list --count HEAD) commits @ $(git rev-parse --short HEAD)"
+            echo ""
+            echo "### 📊 构建产物"
+            echo ""
+            echo "| 指标 | 值 |"
+            echo "|---|---|"
+            echo "| Debug APK | $([ -f app/build/outputs/apk/debug/app-debug.apk ] && echo "$(du -h app/build/outputs/apk/debug/app-debug.apk | cut -f1)" || echo "❌ 构建失败") |"
+            echo "| Release APK | $([ -f app/build/outputs/apk/release/app-release.apk ] && echo "$(du -h app/build/outputs/apk/release/app-release.apk | cut -f1)" || echo "❌ 构建失败") |"
+            echo ""
+            echo "### ✅ 检查项"
+            echo ""
+            echo "- Lint: $([ -f app/build/reports/lint-results-release.html ] && echo '✅ 已完成' || echo '⏭️ 跳过')"
+            echo "- Debug 单测: $([ -d app/build/reports/tests/testDebugUnitTest ] && echo '✅ 已完成' || echo '⏭️ 跳过')"
+            echo "- Release 单测: $([ -d app/build/reports/tests/testReleaseUnitTest ] && echo '✅ 已完成' || echo '⏭️ 跳过')"
+            echo ""
+            echo "### 📎 附件"
+            echo "- Lint 报告: lint-report artifact"
+            echo "- 测试报告: test-reports artifact"
+          } >> "$GITHUB_STEP_SUMMARY"

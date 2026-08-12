@@ -1,0 +1,112 @@
+name: CI Failure Alert
+
+# CI 构建失败时自动创建 Issue 追踪，避免失败被忽略。
+# 触发条件：ci.yml 或 android-release.yml 失败时通过 workflow_run 触发。
+
+on:
+  workflow_run:
+    workflows:
+      - "CI"
+      - "Android Release"
+      - "Weekly Health Check"
+    types:
+      - completed
+
+jobs:
+  alert-on-failure:
+    name: Create Failure Issue
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      actions: read
+
+    steps:
+      - name: Check if issue already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          WORKFLOW_NAME="${{ github.event.workflow_run.name }}"
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+
+          # 搜索是否已有同类型未关闭的 issue
+          existing=$(gh issue list \
+            --label "ci-failure" \
+            --state open \
+            --limit 10 \
+            --json title,number 2>/dev/null || echo "[]")
+
+          echo "现有同标签 issue:"
+          echo "$existing"
+
+          # 检查是否已有相同 workflow 的失败 issue
+          match=$(echo "$existing" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+workflow = '$WORKFLOW_NAME'
+branch = '$BRANCH'
+for issue in data:
+    if workflow in issue['title'] and branch in issue['title']:
+        print(issue['number'])
+        break
+" 2>/dev/null || echo "")
+
+          if [[ -n "$match" ]]; then
+            echo "已有同类型 issue #$match，不再新建"
+            echo "existing_issue=$match" >> "$GITHUB_OUTPUT"
+            echo "should_create=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_create=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create failure issue
+        if: steps.check.outputs.should_create == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          COMMIT_SHORT="${COMMIT:0:7}"
+
+          # 获取失败的 job 和 step
+          FAILURES=$(gh api \
+            -H "Accept: application/vnd.github.v3+json" \
+            "/repos/${{ github.repository }}/actions/runs/$RUN_ID/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure") | .name + " → " + (.steps[] | select(.conclusion == "failure") | .name)' 2>/dev/null || echo "无法获取失败详情")
+
+          cat > /tmp/issue_body.md << EOF
+          ## ❌ $WORKFLOW_NAME 构建失败
+
+          **分支**: \`$BRANCH\`
+          **Commit**: \`$COMMIT_SHORT\`
+          **Run ID**: #$RUN_ID
+          **日志链接**: $RUN_URL
+
+          ### 失败步骤
+
+          $FAILURES
+
+          ### 排查建议
+
+          1. 点击上方日志链接查看详细错误信息
+          2. 检查最近一次提交是否引入了问题
+          3. 本地复现: \`./gradlew :app:assembleRelease\`
+          4. 修复后提交到同一分支，CI 会自动重跑
+          5. 修复后手动关闭此 issue
+
+          ---
+          *自动生成 by CI Failure Alert*
+          EOF
+
+          gh issue create \
+            --title "🚨 [$WORKFLOW_NAME] 构建失败 - $BRANCH" \
+            --body-file /tmp/issue_body.md \
+            --label "ci-failure,bug" \
+            --assignee "${{ github.actor }}"
+
+          echo "已创建失败 Issue"
