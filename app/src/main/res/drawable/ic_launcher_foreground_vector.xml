@@ -1,43 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  R-DeepCode Launcher Icon 前景矢量 v2 — 对话气泡 + 代码符号 </> + 蓝紫渐变
+  R-DeepCode Launcher Icon 前景矢量 v3 — 白色圆角方块 + 黑色代码符号 >{ 
   viewBox = 108×108，自适应图标 foreground 规范。
-  构图：中央圆角对话气泡（左下尾巴），内嵌白色 </> 代码符号。
-  配色：气泡渐变 #165DFF → #7B61FF（135°），代码符号 #FFFFFF，背景透明。
+  构图：中央白色圆角方块（圆角 22%），内嵌黑色 >  + {  代码符号。
+  配色：方块 #FFFFFF，代码符号 #000000，背景透明。
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 对话气泡主体（圆角矩形 + 左下尾巴），渐变填充 -->
+    <!-- 白色圆角方块主体 -->
     <path
-        android:pathData="M33,24 L75,24 A11,11 0 0 1 86,35 L86,65 A11,11 0 0 1 75,76 L42,76 L36,86 L33,76 L33,35 A11,11 0 0 1 33,24 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="linear"
-                android:startX="22"
-                android:startY="24"
-                android:endX="86"
-                android:endY="84"
-                android:startColor="#FF165DFF"
-                android:endColor="#FF7B61FF" />
-        </aapt:attr>
-    </path>
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,10 L94,10 A4,4 0 0 1 98,14 L98,94 A4,4 0 0 1 94,98 L14,98 A4,4 0 0 1 10,94 L10,14 A4,4 0 0 1 14,10 Z" />
 
-    <!-- 代码符号 </> ：白色 -->
-    <!-- < 左尖括号 -->
+    <!-- 代码符号 > （左半，粗线条圆角） -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M44,36 L38,46 L44,56 L41,56 L36,46 L41,36 Z" />
-    <!-- > 右尖括号 -->
+        android:fillColor="#FF000000"
+        android:pathData="M24,32 L42,50 L24,68 L20,64 L34,50 L20,36 Z" />
+
+    <!-- 代码符号 { （右半，花括号风格） -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M64,36 L70,46 L64,56 L67,56 L72,46 L67,36 Z" />
-    <!-- / 中间斜线 -->
+        android:fillColor="#FF000000"
+        android:pathData="M66,24 C70,24 72,26 72,30 L72,40 C72,43 70,44 66,46 L62,48 C60,49 60,50 62,51 L66,53 C70,55 72,56 72,59 L72,78 C72,82 70,84 66,84 L62,84 C58,84 56,82 56,78 L56,59 C56,56 58,55 62,53 L62,51 C58,49 56,48 56,45 L56,30 C56,26 58,24 62,24 Z" />
+
+    <!-- 代码符号 _ （下划线，表示命令行） -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M56,34 L53,34 L48,58 L51,58 Z" />
+        android:fillColor="#FF000000"
+        android:pathData="M36,72 L60,72 L60,78 L36,78 Z" />
 </vector>
