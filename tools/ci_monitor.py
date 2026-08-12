@@ -283,11 +283,11 @@ def main():
         data = gh_get(f"/actions/runs?per_page={args.list}")
         for r in data.get("workflow_runs", []):
             icon = status_icon(r["status"], r.get("conclusion"))
-            name = r["name"]
-            num = r["run_number"]
-            branch = r.get("head_branch", "?")
-            conc = r.get("conclusion", r["status"])
-            t = r.get("created_at", "")[:16].replace("T", " ")
+            name = r.get("name") or "?"
+            num = r.get("run_number") or 0
+            branch = r.get("head_branch") or "?"
+            conc = r.get("conclusion") or r.get("status") or "?"
+            t = (r.get("created_at") or "")[:16].replace("T", " ")
             print(f"  {icon} {name:20s} #{num:<4d} {branch:15s} {conc:12s} {t}")
         return
 
