@@ -88,18 +88,12 @@ import com.deep.rcode.core.theme.CyberMenuRow
 import com.deep.rcode.feature.settings.presentation.AboutStatsViewModel
 import com.deep.rcode.feature.settings.presentation.UsageStats
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.Book
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.DownloadCloud
-import compose.icons.feathericons.Github
-import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Hash
 import compose.icons.feathericons.MessageSquare
 import compose.icons.feathericons.Send
-import compose.icons.feathericons.Share2
-import compose.icons.feathericons.Star
 import compose.icons.feathericons.Tag
-import compose.icons.feathericons.Users
 import compose.icons.feathericons.Calendar
 
 // ============================================================
@@ -159,15 +153,10 @@ internal fun AboutSection() {
         // ===== 模块 2：FAQ =====
         FaqSection()
 
-        // ===== 模块 3：运营入口 + 检查更新/链接 合并 =====
-        CyberSectionHeader(text = stringResource(R.string.about_share))
-        ActionAndLinksCombinedCard(
-            context = context,
+        // ===== 模块 3：只保留检查更新功能（独立卡片，无分享/无 GitHub/无 License） =====
+        CyberSectionHeader(text = stringResource(R.string.about_check_update))
+        CheckUpdateOnlyCard(
             appInfo = appInfo,
-            onShare = { shareApp(context) },
-            onStar = { openUrl(context, GITHUB_REPO_URL) },
-            onFeedback = { openUrl(context, ISSUES_URL) },
-            onCommunity = { openUrl(context, COMMUNITY_URL) },
             onCheckUpdate = {
                 if (updateDialog == null) {
                     updateDialog = UpdateDialogState.Checking
@@ -694,17 +683,12 @@ private fun FaqAccordionItem(question: String, answer: String) {
 }
 
 // ============================================================
-// 3. Action Buttons + Links Section 合并（紧凑布局）
+// 3. 独立检查更新卡片（只保留这一项，无分享/无 GitHub/无 License）
 // ============================================================
 
 @Composable
-private fun ActionAndLinksCombinedCard(
-    context: Context,
+private fun CheckUpdateOnlyCard(
     appInfo: AppInfo,
-    onShare: () -> Unit,
-    onStar: () -> Unit,
-    onFeedback: () -> Unit,
-    onCommunity: () -> Unit,
     onCheckUpdate: () -> Unit
 ) {
     Column(
@@ -712,130 +696,14 @@ private fun ActionAndLinksCombinedCard(
         verticalArrangement = Arrangement.spacedBy(Spacing.md)
     ) {
         CyberCard {
-            Column {
-                Spacer(Modifier.height(Spacing.md))
-                // ===== 4 个运营入口按钮 =====
-                ActionButtonsRow(
-                    onShare = onShare,
-                    onStar = onStar,
-                    onFeedback = onFeedback,
-                    onCommunity = onCommunity
-                )
-                Spacer(Modifier.height(Spacing.md))
-
-                HorizontalDivider(
-                    thickness = 0.8.dp,
-                    color = CyberColors.Divider,
-                    modifier = Modifier.padding(horizontal = Spacing.md)
-                )
-
-                // ===== 3 个链接菜单（检查更新/GitHub/License） =====
-                CyberMenuRow(
-                    icon = FeatherIcons.Tag,
-                    title = stringResource(R.string.about_check_update),
-                    subtitle = stringResource(R.string.about_check_update_subtitle, appInfo.name),
-                    onClick = onCheckUpdate,
-                    showDivider = true
-                )
-                CyberMenuRow(
-                    icon = FeatherIcons.Github,
-                    title = stringResource(R.string.about_github_repo),
-                    subtitle = GITHUB_REPO_URL.removePrefix("https://"),
-                    onClick = { openUrl(context, GITHUB_REPO_URL) },
-                    showDivider = true
-                )
-                CyberMenuRow(
-                    icon = FeatherIcons.Book,
-                    title = stringResource(R.string.about_license),
-                    subtitle = stringResource(R.string.about_license_name),
-                    onClick = { openUrl(context, LICENSE_URL) },
-                    showDivider = false
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ActionButtonsRow(
-    onShare: () -> Unit,
-    onStar: () -> Unit,
-    onFeedback: () -> Unit,
-    onCommunity: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = Spacing.sm),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-    ) {
-        ActionCircleButton(
-            icon = FeatherIcons.Share2,
-            label = stringResource(R.string.about_action_share),
-            onClick = onShare,
-            modifier = Modifier.weight(1f)
-        )
-        ActionCircleButton(
-            icon = FeatherIcons.Star,
-            label = stringResource(R.string.about_action_star),
-            onClick = onStar,
-            modifier = Modifier.weight(1f)
-        )
-        ActionCircleButton(
-            icon = FeatherIcons.MessageSquare,
-            label = stringResource(R.string.about_action_feedback),
-            onClick = onFeedback,
-            modifier = Modifier.weight(1f)
-        )
-        ActionCircleButton(
-            icon = FeatherIcons.Users,
-            label = stringResource(R.string.about_action_community),
-            onClick = onCommunity,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun ActionCircleButton(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(Radius.md))
-            .clickable(onClick = onClick)
-            .padding(vertical = Spacing.sm),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-    ) {
-        // 纸感圆形按钮：浅灰底 + 深灰细描边
-        Box(
-            modifier = Modifier
-                .size(50.dp)
-                .clip(CircleShape)
-                .background(CyberColors.IconBg)
-                .border(
-                    border = BorderStroke(0.8.dp, CyberColors.CardStroke),
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = Color(0xFF344054),
-                modifier = Modifier.size(22.dp)
+            CyberMenuRow(
+                icon = FeatherIcons.Tag,
+                title = stringResource(R.string.about_check_update),
+                subtitle = stringResource(R.string.about_check_update_subtitle, appInfo.name),
+                onClick = onCheckUpdate,
+                showDivider = false
             )
         }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Medium,
-            color = Color(0xFF475467)
-        )
     }
 }
 
@@ -1183,26 +1051,7 @@ private fun openUrl(context: Context, url: String) {
     }
 }
 
-private fun shareApp(context: Context) {
-    runCatching {
-        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(
-                Intent.EXTRA_TEXT,
-                context.getString(R.string.about_share_text, RELEASES_URL)
-            )
-            putExtra(Intent.EXTRA_TITLE, context.getString(R.string.about_share_title))
-        }
-        val chooser = Intent.createChooser(sendIntent, null)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(chooser)
-    }
-}
-
-private fun formatDate(ms: Long): String {
-    val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    return fmt.format(Date(ms))
-}
+// shareApp 已移除（分享卡片已删除）
 
 private suspend fun checkUpdate(
     context: Context,
@@ -1439,10 +1288,10 @@ private val SHARED_CLIENT: OkHttpClient = OkHttpClient.Builder()
     .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
     .build()
 
+// GITHUB_REPO_URL 保留（被 RELEASES_URL 依赖）
+// ISSUES_URL / COMMUNITY_URL / LICENSE_URL 已移除（原来只在分享卡片的 GitHub/License/反馈/加群入口用）
+
 private const val GITHUB_REPO_URL = "https://github.com/Lisir2002/deepcode-R"
 private const val GITHUB_LATEST_API =
     "https://api.github.com/repos/Lisir2002/deepcode-R/releases/latest"
 private const val RELEASES_URL = "$GITHUB_REPO_URL/releases"
-private const val ISSUES_URL = "$GITHUB_REPO_URL/issues"
-private const val COMMUNITY_URL = "$GITHUB_REPO_URL/discussions"
-private const val LICENSE_URL = "$GITHUB_REPO_URL/blob/main/LICENSE"
