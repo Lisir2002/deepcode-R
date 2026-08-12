@@ -16,6 +16,17 @@
     <string name="settings_logs">日志</string>
     <string name="settings_log_viewer">日志查看</string>
     <string name="settings_log">日志等级</string>
+    <string name="settings_log_subtitle">当前级别：%1$s · Debug/Trace/错误</string>
+    <string name="log_level_verbose">VERBOSE 全部</string>
+    <string name="log_level_debug">DEBUG</string>
+    <string name="log_level_info">INFO</string>
+    <string name="log_level_warn">WARN 警告</string>
+    <string name="log_level_error">ERROR 错误</string>
+    <string name="log_level_assert">ASSERT</string>
+    <string name="log_level_none">NONE 关闭</string>
+    <string name="settings_default_models_empty">配置多模态默认模型</string>
+    <string name="settings_default_models_vision_dedicated">识图: %1$s · %2$s</string>
+    <string name="settings_default_models_compaction_dedicated">压缩: %1$s · %2$s</string>
     <string name="settings_permissions">工具授权</string>
     <string name="settings_remote_servers">远程工作区</string>
     <string name="settings_terminal">终端设置</string>
@@ -63,10 +74,15 @@
 
     <!-- Settings category titles -->
     <string name="settings_category_ai">AI 配置</string>
+    <string name="settings_category_ai_agent">AI 配置 &amp; Agent</string>
     <string name="settings_category_environment">运行环境</string>
+    <string name="settings_category_data_security">数据与安全</string>
+    <string name="settings_category_system_app">系统与应用</string>
     <string name="settings_category_tools">工具与权限（工具调用 Tools / Function Calling）</string>
     <string name="settings_category_appearance">外观与语言</string>
     <string name="settings_category_other">其他</string>
+    <string name="settings_security_subtitle">凭据加密 · 生物识别 · 紧急通道</string>
+    <string name="settings_remote_audit_subtitle">SSH 连接 · 凭据操作 · 备份事件</string>
 
     <!-- i18n: UI 文案 -->
     <!-- Common -->

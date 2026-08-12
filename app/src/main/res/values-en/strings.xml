@@ -15,6 +15,17 @@
     <string name="settings_logs">Logs</string>
     <string name="settings_log_viewer">Log Viewer</string>
     <string name="settings_log">Log Level</string>
+    <string name="settings_log_subtitle">Level: %1$s · Debug/Trace/Error</string>
+    <string name="log_level_verbose">VERBOSE</string>
+    <string name="log_level_debug">DEBUG</string>
+    <string name="log_level_info">INFO</string>
+    <string name="log_level_warn">WARN</string>
+    <string name="log_level_error">ERROR</string>
+    <string name="log_level_assert">ASSERT</string>
+    <string name="log_level_none">NONE (off)</string>
+    <string name="settings_default_models_empty">Configure default multimodal models</string>
+    <string name="settings_default_models_vision_dedicated">Vision: %1$s · %2$s</string>
+    <string name="settings_default_models_compaction_dedicated">Compaction: %1$s · %2$s</string>
     <string name="settings_permissions">Tool Permissions</string>
     <string name="settings_remote_servers">Remote Workspace</string>
     <string name="settings_backup">Backup &amp; Restore</string>
@@ -60,10 +71,15 @@
 
     <!-- Settings category titles -->
     <string name="settings_category_ai">AI Configuration</string>
+    <string name="settings_category_ai_agent">AI Configuration &amp; Agent</string>
     <string name="settings_category_environment">Environment</string>
+    <string name="settings_category_data_security">Data &amp; Security</string>
+    <string name="settings_category_system_app">System &amp; App</string>
     <string name="settings_category_tools">Tools (Function Calling) &amp; Permissions</string>
     <string name="settings_category_appearance">Appearance  &amp; Language</string>
     <string name="settings_category_other">Other</string>
+    <string name="settings_security_subtitle">Credential encryption · Biometrics · Emergency channel</string>
+    <string name="settings_remote_audit_subtitle">SSH connections · Credential operations · Backup events</string>
 
     <!-- i18n: UI strings -->
     <!-- Common -->
