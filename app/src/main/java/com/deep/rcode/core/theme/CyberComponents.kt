@@ -268,8 +268,7 @@ internal fun CyberSearchBar(
             focusedTextColor = MaterialTheme.colorScheme.onSurface,
             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
             cursorColor = CyberColors.Cyan
-        ),
-        borderThickness = 1.2.dp
+        )
     )
 }
 
