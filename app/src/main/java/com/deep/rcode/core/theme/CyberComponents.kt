@@ -53,7 +53,6 @@ import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Search
-import compose.icons.feathericons.XCircle
 import kotlin.math.roundToInt
 
 object CyberColors {
@@ -290,11 +289,10 @@ internal fun CyberSearchBar(
                     onClick = onClear,
                     modifier = Modifier.size(24.dp)
                 ) {
-                    Icon(
-                        imageVector = XCircle,
-                        contentDescription = null,
-                        tint = Color(0xFF667085),
-                        modifier = Modifier.size(16.dp)
+                    Text(
+                        text = "✕",
+                        color = Color(0xFF667085),
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
