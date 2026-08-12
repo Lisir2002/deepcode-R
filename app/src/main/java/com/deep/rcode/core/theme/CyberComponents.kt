@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,11 +45,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Search
+import compose.icons.feathericons.X
 import kotlin.math.roundToInt
 
 object CyberColors {
@@ -118,6 +122,7 @@ internal fun CyberMenuRow(
     subtitle: String,
     onClick: () -> Unit,
     showDivider: Boolean = true,
+    highlightQuery: String = "",
     trailing: @Composable () -> Unit = {
         Icon(
             imageVector = FeatherIcons.ChevronRight,
@@ -126,6 +131,62 @@ internal fun CyberMenuRow(
         )
     }
 ) {
+    val highlightColor = Color(0x330984E3) // 浅蓝高亮
+
+    val highlightedTitle = remember(title, highlightQuery) {
+        if (highlightQuery.isBlank()) {
+            AnnotatedString(title)
+        } else {
+            buildAnnotatedString {
+                append(title)
+                val lower = title.lowercase()
+                val tokens = highlightQuery.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                for (token in tokens) {
+                    val lowerToken = token.lowercase()
+                    var startIndex = lower.indexOf(lowerToken)
+                    while (startIndex >= 0) {
+                        addStyle(
+                            MaterialTheme.typography.bodyLarge.toSpanStyle().copy(
+                                background = highlightColor,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            startIndex,
+                            startIndex + lowerToken.length
+                        )
+                        startIndex = lower.indexOf(lowerToken, startIndex + 1)
+                    }
+                }
+            }
+        }
+    }
+
+    val highlightedSubtitle = remember(subtitle, highlightQuery) {
+        if (highlightQuery.isBlank() || subtitle.isEmpty()) {
+            AnnotatedString(subtitle)
+        } else {
+            buildAnnotatedString {
+                append(subtitle)
+                val lower = subtitle.lowercase()
+                val tokens = highlightQuery.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                for (token in tokens) {
+                    val lowerToken = token.lowercase()
+                    var startIndex = lower.indexOf(lowerToken)
+                    while (startIndex >= 0) {
+                        addStyle(
+                            MaterialTheme.typography.bodyMedium.toSpanStyle().copy(
+                                background = highlightColor,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            startIndex,
+                            startIndex + lowerToken.length
+                        )
+                        startIndex = lower.indexOf(lowerToken, startIndex + 1)
+                    }
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -156,7 +217,7 @@ internal fun CyberMenuRow(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = title,
+                    text = highlightedTitle,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = FontWeight.SemiBold
                     ),
@@ -165,7 +226,7 @@ internal fun CyberMenuRow(
                 if (subtitle.isNotEmpty()) {
                     Spacer(Modifier.height(3.dp))
                     Text(
-                        text = subtitle,
+                        text = highlightedSubtitle,
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color(0xFF475467)
                     )
@@ -191,7 +252,9 @@ internal fun CyberMenuRow(
 internal fun CyberSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
-    placeholder: String
+    placeholder: String,
+    resultCount: Int? = null,
+    onClear: (() -> Unit)? = null
 ) {
     OutlinedTextField(
         value = query,
@@ -202,11 +265,36 @@ internal fun CyberSearchBar(
         singleLine = true,
         shape = RoundedCornerShape(12.dp),
         leadingIcon = {
-            Icon(
-                imageVector = FeatherIcons.Search,
-                contentDescription = null,
-                tint = Color(0xFF667085)
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = FeatherIcons.Search,
+                    contentDescription = null,
+                    tint = Color(0xFF667085)
+                )
+                if (resultCount != null && query.isNotEmpty()) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "$resultCount",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                        color = Color(0xFF98A2B3)
+                    )
+                }
+            }
+        },
+        trailingIcon = {
+            if (query.isNotEmpty() && onClear != null) {
+                IconButton(
+                    onClick = onClear,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = compose.icons.feathericons.X,
+                        contentDescription = null,
+                        tint = Color(0xFF667085),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
         },
         placeholder = {
             Text(

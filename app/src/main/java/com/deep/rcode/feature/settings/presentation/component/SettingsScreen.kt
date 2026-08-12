@@ -88,6 +88,7 @@ import compose.icons.feathericons.Moon
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Save
+import compose.icons.feathericons.Search
 import compose.icons.feathericons.Server
 import compose.icons.feathericons.Terminal
 
@@ -658,54 +659,109 @@ internal fun SettingsMenu(
         val filtered = if (query.isEmpty()) {
             menuItems
         } else {
-            menuItems.filter { item ->
-                val combined = (item.title + " " + item.subtitle + " " + item.keywords.joinToString(" "))
-                combined.contains(query, ignoreCase = true)
+            // 使用 SearchUtils 打分排序
+            menuItems.map { item ->
+                item to SearchUtils.score(item, query)
             }
+                .filter { (_, score) -> score > 0.0 }
+                .sortedByDescending { (_, score) -> score }
+                .map { (item, _) -> item }
         }
         filtered.groupBy { it.group }.filter { it.value.isNotEmpty() }
     }
+
+    val searchResultCount = remember(searchQuery, filteredGroups) {
+        if (searchQuery.isBlank()) null else filteredGroups.values.sumOf { it.size }
+    }
+
+    val hasSearchQuery = searchQuery.isNotBlank()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
-            .verticalScroll(rememberScrollState())
-            .padding(vertical = Spacing.md),
-        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
+        // 搜索栏固定在顶部（不随滚动消失）
         CyberSearchBar(
-            searchQuery,
-            { searchQuery = it },
-            stringResource(R.string.settings_search_hint)
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            placeholder = stringResource(R.string.settings_search_hint),
+            resultCount = searchResultCount,
+            onClear = { searchQuery = "" }
         )
 
-        for (groupName in groupOrder) {
-            val items = filteredGroups[groupName] ?: continue
-            CyberSectionHeader(text = groupName)
-            CyberCard {
-                Column {
-                    items.forEachIndexed { index, item ->
-                        CyberMenuRow(
-                            icon = item.icon,
-                            title = item.title,
-                            subtitle = item.subtitle,
-                            onClick = item.action,
-                            showDivider = index < items.size - 1,
-                            trailing = item.trailing ?: {
-                                Icon(
-                                    imageVector = FeatherIcons.ChevronRight,
-                                    contentDescription = null,
-                                    tint = CyberColors.CyanDim
+        Spacer(Modifier.height(Spacing.sm))
+
+        // 搜索结果区域（可滚动）
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            if (hasSearchQuery && searchResultCount == 0) {
+                // 空结果提示
+                EmptySearchResult(query = searchQuery)
+            } else {
+                for (groupName in groupOrder) {
+                    val items = filteredGroups[groupName] ?: continue
+                    CyberSectionHeader(text = groupName)
+                    CyberCard {
+                        Column {
+                            items.forEachIndexed { index, item ->
+                                CyberMenuRow(
+                                    icon = item.icon,
+                                    title = item.title,
+                                    subtitle = item.subtitle,
+                                    onClick = item.action,
+                                    showDivider = index < items.size - 1,
+                                    highlightQuery = searchQuery,
+                                    trailing = item.trailing ?: {
+                                        Icon(
+                                            imageVector = FeatherIcons.ChevronRight,
+                                            contentDescription = null,
+                                            tint = CyberColors.CyanDim
+                                        )
+                                    }
                                 )
                             }
-                        )
+                        }
                     }
                 }
             }
-        }
 
-        Spacer(Modifier.height(Spacing.md))
+            Spacer(Modifier.height(Spacing.md))
+        }
+    }
+}
+
+@Composable
+private fun EmptySearchResult(query: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg, vertical = 60.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = FeatherIcons.Search,
+            contentDescription = null,
+            tint = Color(0xFFD0D5DD),
+            modifier = Modifier.size(48.dp)
+        )
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = stringResource(R.string.settings_search_empty_title),
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = Color(0xFF475467)
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.settings_search_empty_subtitle, query),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF98A2B3)
+        )
     }
 }
 

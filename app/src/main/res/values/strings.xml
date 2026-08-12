@@ -5,6 +5,8 @@
     <!-- 设置页菜单标题 -->
     <string name="settings_title">设置</string>
     <string name="settings_search_hint">搜索设置项（如 provider、log、主题、远程…）</string>
+    <string name="settings_search_empty_title">未找到匹配的设置项</string>
+    <string name="settings_search_empty_subtitle">未找到包含「%s」的设置项，试试其他关键词</string>
     <string name="settings_providers">AI 提供商</string>
     <string name="settings_provider_editor">提供商</string>
     <string name="settings_default_models">默认模型</string>
