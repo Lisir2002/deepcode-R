@@ -52,13 +52,17 @@ import compose.icons.feathericons.Search
 import kotlin.math.roundToInt
 
 object CyberColors {
-    val Cyan = Color(0xFF00FFCC)
-    val Blue = Color(0xFF0066FF)
+    val Cyan = Color(0xFF00B894)
+    val Blue = Color(0xFF0984E3)
     val Black = Color(0xFF000000)
     val DarkBg = Color(0xFF050810)
-    val CardBg = Color(0xFF0A1020)
-    val LineBlue = Color(0xFF0099FF)
-    val CyanDim = Color(0xFF009999)
+    val CardBg = Color(0xFFFFFFFF)
+    val LineBlue = Color(0xFF0984E3)
+    val CyanDim = Color(0xFF636E72)
+    val CardStroke = Color(0xFFE4E7EC)
+    val IconBg = Color(0xFFF2F3F5)
+    val Divider = Color(0xFFEEF0F2)
+    val HeaderText = Color(0xFF1D2939)
 }
 
 @Composable
@@ -66,49 +70,17 @@ internal fun CyberCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    val shape = RoundedCornerShape(16.dp)
-    val borderBrush = Brush.horizontalGradient(
-        colors = listOf(CyberColors.Cyan, CyberColors.LineBlue)
-    )
-
-    Box(
-        modifier = modifier.fillMaxWidth()
+    val shape = RoundedCornerShape(14.dp)
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = CyberColors.CardBg,
+        shape = shape,
+        shadowElevation = 0.5.dp,
+        tonalElevation = 0.dp,
+        border = BorderStroke(0.8.dp, CyberColors.CardStroke)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(2.dp)
-                .clip(shape)
-                .background(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            CyberColors.Cyan.copy(alpha = 0.08f),
-                            CyberColors.Cyan.copy(alpha = 0.02f)
-                        )
-                    )
-                )
-        )
-
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(
-                    border = BorderStroke(1.2.dp, borderBrush),
-                    shape = shape
-                )
-                .clip(shape),
-            color = CyberColors.CardBg,
-            shape = shape,
-            shadowElevation = 4.dp,
-            tonalElevation = 0.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                content()
-            }
+        Column(modifier = Modifier.fillMaxWidth()) {
+            content()
         }
     }
 }
@@ -117,37 +89,24 @@ internal fun CyberCard(
 internal fun CyberSectionHeader(
     text: String
 ) {
-    val verticalGradient = Brush.verticalGradient(
-        colors = listOf(CyberColors.Cyan, CyberColors.Blue)
-    )
-    val horizontalGradient = Brush.horizontalGradient(
-        colors = listOf(CyberColors.Cyan, CyberColors.LineBlue)
-    )
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                start = Spacing.lg,
-                top = Spacing.lg,
+                start = Spacing.lg + 4.dp,
+                end = Spacing.lg,
+                top = Spacing.md + 4.dp,
                 bottom = Spacing.sm
             ),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .width(3.dp)
-                .height(32.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(brush = verticalGradient)
-        )
-        Spacer(Modifier.width(Spacing.md))
         Text(
             text = text,
             style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = FontWeight.ExtraBold,
-                brush = horizontalGradient
-            )
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = TextStyle.Default.letterSpacing
+            ),
+            color = CyberColors.HeaderText
         )
     }
 }
@@ -163,7 +122,7 @@ internal fun CyberMenuRow(
         Icon(
             imageVector = FeatherIcons.ChevronRight,
             contentDescription = null,
-            tint = CyberColors.Cyan
+            tint = CyberColors.CyanDim
         )
     }
 ) {
@@ -175,57 +134,53 @@ internal fun CyberMenuRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(color = CyberColors.Cyan.copy(alpha = 0.08f))
-                    .border(
-                        border = BorderStroke(1.dp, CyberColors.Cyan.copy(alpha = 0.2f)),
-                        shape = RoundedCornerShape(10.dp)
-                    ),
+                    .background(color = CyberColors.IconBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = CyberColors.Cyan,
+                    tint = Color(0xFF344054),
                     modifier = Modifier.size(20.dp)
                 )
             }
 
             Spacer(Modifier.width(12.dp))
 
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.bodyMedium.copy(
+                    style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = FontWeight.SemiBold
                     ),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = Color(0xFF101828)
                 )
                 if (subtitle.isNotEmpty()) {
-                    Spacer(Modifier.height(2.dp))
+                    Spacer(Modifier.height(3.dp))
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF475467)
                     )
                 }
             }
 
+            Spacer(Modifier.width(8.dp))
             trailing()
         }
 
         if (showDivider) {
             HorizontalDivider(
-                color = CyberColors.Cyan.copy(alpha = 0.12f),
-                modifier = Modifier.padding(start = 72.dp)
+                color = CyberColors.Divider,
+                thickness = 0.7.dp,
+                modifier = Modifier.padding(start = 68.dp)
             )
         }
     }
@@ -250,24 +205,27 @@ internal fun CyberSearchBar(
             Icon(
                 imageVector = FeatherIcons.Search,
                 contentDescription = null,
-                tint = CyberColors.Cyan
+                tint = Color(0xFF667085)
             )
         },
         placeholder = {
             Text(
                 text = placeholder,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color(0xFF667085),
                 style = MaterialTheme.typography.bodyMedium
             )
         },
+        textStyle = MaterialTheme.typography.bodyMedium,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = CyberColors.CardBg,
-            unfocusedContainerColor = CyberColors.CardBg,
-            focusedBorderColor = CyberColors.Cyan,
-            unfocusedBorderColor = CyberColors.LineBlue.copy(alpha = 0.8f),
-            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-            cursorColor = CyberColors.Cyan
+            focusedContainerColor = Color.White,
+            unfocusedContainerColor = Color.White,
+            focusedBorderColor = Color(0xFFD0D5DD),
+            unfocusedBorderColor = Color(0xFFE4E7EC),
+            focusedTextColor = Color(0xFF101828),
+            unfocusedTextColor = Color(0xFF101828),
+            cursorColor = Color(0xFF101828),
+            focusedPlaceholderColor = Color(0xFF98A2B3),
+            unfocusedPlaceholderColor = Color(0xFF98A2B3)
         )
     )
 }

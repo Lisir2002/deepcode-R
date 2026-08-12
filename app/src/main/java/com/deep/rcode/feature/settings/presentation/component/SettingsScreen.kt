@@ -52,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -203,7 +204,8 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.White,
+        contentColor = Color(0xFF101828),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             AppTopAppBar(
@@ -255,6 +257,7 @@ fun SettingsScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color.White)
                 .padding(padding)
         ) {
             when (section) {
@@ -612,8 +615,8 @@ internal fun SettingsMenu(
                         checked = keepaliveEnabled,
                         onCheckedChange = onToggleKeepalive,
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = CyberColors.Cyan,
-                            checkedTrackColor = CyberColors.LineBlue.copy(alpha = 0.4f)
+                            checkedThumbColor = Color(0xFFFFFFFF),
+                            checkedTrackColor = Color(0xFF0984E3).copy(alpha = 0.55f)
                         )
                     )
                 }
@@ -648,9 +651,10 @@ internal fun SettingsMenu(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(Color.White)
             .verticalScroll(rememberScrollState())
-            .padding(vertical = Spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+            .padding(vertical = Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         CyberSearchBar(
             searchQuery,
