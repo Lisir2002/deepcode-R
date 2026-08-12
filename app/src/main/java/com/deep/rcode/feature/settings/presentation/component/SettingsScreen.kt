@@ -477,7 +477,6 @@ internal fun SettingsMenu(
             LogLevel.INFO -> R.string.log_level_info
             LogLevel.WARN -> R.string.log_level_warn
             LogLevel.ERROR -> R.string.log_level_error
-            LogLevel.ASSERT -> R.string.log_level_assert
             LogLevel.NONE -> R.string.log_level_none
         }
     )
