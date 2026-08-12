@@ -765,14 +765,14 @@
 
     <!-- About - FAQ -->
     <string name="about_faq">常见问题 FAQ</string>
-    <string name="about_faq_q1">R-DeepCode 是什么？</string>
-    <string name="about_faq_a1">R-DeepCode 是一款运行在 Android 设备上的 AI 驱动代码编辑器。内置完整终端环境、AI Agent 智能体、MCP 协议支持，让你随时随地用手机编写、调试和运行代码。</string>
-    <string name="about_faq_q2">支持哪些 AI 提供商？</string>
-    <string name="about_faq_a2">理论上兼容所有 OpenAI 格式的 API。内置豆包、智谱、通义千问等国内品牌的快捷配置，也支持自定义 Base URL 添加任意兼容提供商。</string>
-    <string name="about_faq_q3">容器环境是沙箱吗？会影响手机系统吗？</string>
-    <string name="about_faq_a3">容器基于 PRoot 技术实现，完全运行在应用私有目录内，不需要 Root，不会修改或影响手机系统分区。关闭应用即停止所有容器进程。</string>
-    <string name="about_faq_q4">代码和聊天数据会上传到云端吗？</string>
-    <string name="about_faq_a4">默认情况下，工作区代码、聊天历史、授权凭据仅保存在本地。仅在调用 AI API 时将必要的上下文发送到你配置的提供商服务器；应用本身不收集或上传任何用户数据。</string>
+    <string name="about_faq_q1">容器环境需要初始化多久？为什么首次使用这么慢？</string>
+    <string name="about_faq_a1">首次运行需要下载 Alpine Linux rootfs 并安装 python3、git、node、npm 等开发工具，耗时约 1-3 分钟。之后启动只需数秒。容器基于 PRoot 技术，完全运行在应用私有目录内，不影响手机系统。</string>
+    <string name="about_faq_q2">如何配置 AI 提供商和模型？</string>
+    <string name="about_faq_a2">进入设置 → AI 提供商，点击右上角 + 添加。支持 OpenAI 格式的任意 API，内置豆包、智谱、通义千问等快捷配置。添加后可在「默认模型」中指定识图 / 上下文压缩模型的默认偏好。</string>
+    <string name="about_faq_q3">MCP 是什么？如何配置？</string>
+    <string name="about_faq_a3">MCP（Model Context Protocol）是让 AI 与外部工具交互的标准协议。在设置 → MCP 服务器中添加远程 HTTP 或本地 stdio 服务器，AI 即可获取网页搜索、GitHub 操作、数据库读写等扩展能力。</string>
+    <string name="about_faq_q4">远程工作区如何同步？</string>
+    <string name="about_faq_a4">支持通过 SSH/SFTP 协议连接远程服务器双向同步。先配置 SSH 连接通道，再创建远程工作区关联本地目录。支持自动连接、.gitignore 过滤、忽略列表和批量同步队列。</string>
 
     <!-- About - Share & Feedback -->
     <string name="about_share">分享 App</string>

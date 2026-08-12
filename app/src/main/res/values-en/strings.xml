@@ -771,14 +771,14 @@
 
     <!-- About - FAQ -->
     <string name="about_faq">FAQ</string>
-    <string name="about_faq_q1">What is R-DeepCode?</string>
-    <string name="about_faq_a1">R-DeepCode is an AI-powered code editor running on Android devices. It includes a full terminal environment, an AI Agent, and MCP protocol support, so you can write, debug, and run code on your phone anytime, anywhere.</string>
-    <string name="about_faq_q2">Which AI providers are supported?</string>
-    <string name="about_faq_a2">In theory any OpenAI-compatible API works. We provide quick presets for domestic providers like Doubao, Zhipu AI and Qwen, plus custom Base URLs for any compatible service.</string>
-    <string name="about_faq_q3">Is the container environment a sandbox? Will it affect my phone?</string>
-    <string name="about_faq_a3">The container is built on PRoot, fully contained within the app\'s private directory. No root is required, and no system partitions are modified. All container processes stop when you close the app.</string>
-    <string name="about_faq_q4">Is my code or chat data uploaded to the cloud?</string>
-    <string name="about_faq_a4">By default, workspace files, chat history and credentials are stored locally. Only the necessary context is sent to your configured AI provider during API calls; the app itself never collects or uploads any user data.</string>
+    <string name="about_faq_q1">How long does container initialization take? Why is the first run so slow?</string>
+    <string name="about_faq_a1">The first run downloads and extracts an Alpine Linux rootfs, then installs python3, git, node, npm and other dev tools — about 1–3 minutes. Subsequent starts take only seconds. The container runs in the app\'s private directory via PRoot, with no impact on your phone system.</string>
+    <string name="about_faq_q2">How do I configure AI providers and models?</string>
+    <string name="about_faq_a2">Go to Settings → AI Providers, tap + to add. Any OpenAI-compatible API works. Quick presets for Doubao, Zhipu AI, Qwen and more are built in. After adding, you can set default Vision and Compaction models in "Default Models".</string>
+    <string name="about_faq_q3">What is MCP? How do I set it up?</string>
+    <string name="about_faq_a3">MCP (Model Context Protocol) is a standard for AI-to-tool interaction. Add a remote HTTP or local stdio server in Settings → MCP Servers, and the AI can use web search, GitHub operations, database queries, and more.</string>
+    <string name="about_faq_q4">How does remote workspace sync work?</string>
+    <string name="about_faq_a4">Bidirectional sync via SSH/SFTP. First configure an SSH connection channel, then create a remote workspace linked to a local directory. Supports auto-connect, .gitignore filtering, ignore lists, and batched sync queues.</string>
 
     <!-- About - Share & Community -->
     <string name="about_share">Share App</string>
