@@ -25,7 +25,7 @@ internal data class UsageStats(
 )
 
 @HiltViewModel
-class AboutStatsViewModel @Inject constructor(
+internal class AboutStatsViewModel @Inject constructor(
     private val sessionDao: ChatSessionDao,
     private val messageDao: AgentMessageDao
 ) : ViewModel() {

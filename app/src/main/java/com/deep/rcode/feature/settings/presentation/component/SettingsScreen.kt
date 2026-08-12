@@ -460,12 +460,13 @@ internal fun SettingsMenu(
     onNavigateToTerminalSettings: () -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    val themeLabel = stringResource(themeMode.labelRes)
 
     val menuItems = remember(
         providerCount, activeProviderName, activeContainerProfileName,
         visionProviderName, visionModel, compactionProviderName, compactionModel,
         mcpCount, mcpConnected, logLevel, permissionRuleCount,
-        themeMode, keepaliveEnabled, currentLanguageDisplayName
+        themeMode, keepaliveEnabled, currentLanguageDisplayName, themeLabel
     ) {
         listOf(
             MenuItem(
@@ -584,7 +585,7 @@ internal fun SettingsMenu(
                 section = null,
                 group = GROUP_SYSTEM,
                 title = "Theme",
-                subtitle = "当前：${themeMode.labelRes.let { stringResource(it) }}",
+                subtitle = "当前：$themeLabel",
                 icon = FeatherIcons.Moon,
                 keywords = listOf("theme", "appearance", "外观", "深色", "浅色", "模式", "主题"),
                 action = onOpenThemeSheet
@@ -669,7 +670,13 @@ internal fun SettingsMenu(
                             subtitle = item.subtitle,
                             onClick = item.action,
                             showDivider = index < items.size - 1,
-                            trailing = item.trailing
+                            trailing = item.trailing ?: {
+                                Icon(
+                                    imageVector = FeatherIcons.ChevronRight,
+                                    contentDescription = null,
+                                    tint = CyberColors.CyanDim
+                                )
+                            }
                         )
                     }
                 }
