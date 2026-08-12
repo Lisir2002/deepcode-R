@@ -21,13 +21,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
@@ -54,10 +48,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProgressIndicatorDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -69,28 +65,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.deep.rcode.R
-import com.deep.rcode.core.theme.Brand
 import com.deep.rcode.core.theme.CyberColors
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
@@ -102,7 +90,6 @@ import com.deep.rcode.feature.settings.presentation.UsageStats
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Book
 import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.DownloadCloud
 import compose.icons.feathericons.Github
 import compose.icons.feathericons.Globe
@@ -112,18 +99,8 @@ import compose.icons.feathericons.Send
 import compose.icons.feathericons.Share2
 import compose.icons.feathericons.Star
 import compose.icons.feathericons.Tag
-import compose.icons.feathericons.UploadCloud
 import compose.icons.feathericons.Users
 import compose.icons.feathericons.Calendar
-
-// ============================================================
-// Internal theme helpers for About page
-// ============================================================
-
-private val primaryGradient: Brush
-    @Composable get() = Brush.horizontalGradient(
-        listOf(CyberColors.Cyan, CyberColors.LineBlue)
-    )
 
 // ============================================================
 // Entry point
@@ -166,33 +143,31 @@ internal fun AboutSection() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(CyberColors.DarkBg)
+            .background(Color.White)
             .verticalScroll(rememberScrollState())
             .padding(vertical = Spacing.lg),
         verticalArrangement = Arrangement.spacedBy(Spacing.lg)
     ) {
-        HeroSection(
+        // ===== 模块 1：Hero + 使用统计 合并 =====
+        HeroWithStatsCard(
             appName = stringResource(R.string.app_name),
             appIcon = appIcon,
-            appInfo = appInfo
+            appInfo = appInfo,
+            stats = stats
         )
 
-        UsageStatsSection(stats = stats)
-
+        // ===== 模块 2：FAQ =====
         FaqSection()
 
+        // ===== 模块 3：运营入口 + 检查更新/链接 合并 =====
         CyberSectionHeader(text = stringResource(R.string.about_share))
-        ActionButtonsRow(
+        ActionAndLinksCombinedCard(
+            context = context,
+            appInfo = appInfo,
             onShare = { shareApp(context) },
             onStar = { openUrl(context, GITHUB_REPO_URL) },
             onFeedback = { openUrl(context, ISSUES_URL) },
-            onCommunity = { openUrl(context, COMMUNITY_URL) }
-        )
-
-        CyberSectionHeader(text = stringResource(R.string.about_version))
-        LinksSection(
-            context = context,
-            appInfo = appInfo,
+            onCommunity = { openUrl(context, COMMUNITY_URL) },
             onCheckUpdate = {
                 if (updateDialog == null) {
                     updateDialog = UpdateDialogState.Checking
@@ -203,7 +178,18 @@ internal fun AboutSection() {
             }
         )
 
+        // ===== 模块 4：开源致谢 =====
         OpenSourceCreditsSection()
+
+        // 版权底栏
+        Text(
+            text = stringResource(R.string.about_copyright),
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF98A2B3),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg, vertical = Spacing.md)
+        )
 
         Spacer(Modifier.height(Spacing.lg))
     }
@@ -249,27 +235,16 @@ internal fun AboutSection() {
 }
 
 // ============================================================
-// 1. Hero Section - Left Icon + Right Details with Neon Top Bar
+// 1. Hero + Stats 合并卡片（去掉霓虹装饰 → 纸感）
 // ============================================================
 
 @Composable
-private fun HeroSection(
+private fun HeroWithStatsCard(
     appName: String,
     appIcon: ImageBitmap?,
-    appInfo: AppInfo
+    appInfo: AppInfo,
+    stats: UsageStats
 ) {
-    // Neon glow decoration brush
-    val neonTopBrush = remember {
-        Brush.horizontalGradient(
-            colors = listOf(
-                CyberColors.Cyan.copy(alpha = 0f),
-                CyberColors.Cyan.copy(alpha = 0.8f),
-                CyberColors.LineBlue.copy(alpha = 0.8f),
-                CyberColors.Cyan.copy(alpha = 0f)
-            )
-        )
-    }
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -277,82 +252,62 @@ private fun HeroSection(
     ) {
         CyberCard {
             Column {
-                // Neon glow top bar decoration
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.5.dp)
-                        .background(brush = neonTopBrush)
-                )
-
                 Spacer(Modifier.height(Spacing.lg))
 
+                // ===== Hero Row：左图标 + 右信息 =====
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left: Big App Icon with double gradient border
+                    // 左：App Icon（纸感：浅灰描边，不发光）
                     Box(
                         modifier = Modifier
-                            .size(108.dp)
-                            .clip(RoundedCornerShape(28.dp))
-                            .background(primaryGradient)
-                            .padding(3.5.dp)
-                            .clip(RoundedCornerShape(24.5.dp))
-                            .background(
-                                brush = Brush.radialGradient(
-                                    listOf(
-                                        CyberColors.Cyan.copy(alpha = 0.22f),
-                                        CyberColors.CardBg
-                                    )
-                                )
-                            ),
+                            .size(96.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(CyberColors.IconBg)
+                            .border(
+                                border = BorderStroke(0.8.dp, CyberColors.CardStroke),
+                                shape = RoundedCornerShape(22.dp)
+                            )
+                            .padding(10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         if (appIcon != null) {
                             Image(
                                 bitmap = appIcon,
                                 contentDescription = null,
-                                modifier = Modifier.size(96.dp)
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                     }
 
                     Spacer(Modifier.width(Spacing.lg))
 
-                    // Right: App Name + Slogan + Info Grid
+                    // 右：App Name + Slogan + Info Grid
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                     ) {
-                        // Gradient App Name
+                        // 标题：纯深色粗体，不渐变
                         Text(
-                            text = buildAnnotatedString {
-                                withStyle(
-                                    SpanStyle(
-                                        brush = primaryGradient,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                ) {
-                                    append(appName)
-                                }
-                            },
-                            style = MaterialTheme.typography.headlineSmall
+                            text = appName,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF101828)
                         )
-
                         // Slogan
                         Text(
                             text = stringResource(R.string.about_slogan),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = CyberColors.Cyan.copy(alpha = 0.8f),
+                            color = Color(0xFF475467),
                             fontWeight = FontWeight.Medium
                         )
 
-                        Spacer(Modifier.height(Spacing.xs))
+                        Spacer(Modifier.height(2.dp))
 
-                        // Version info grid (2 columns)
+                        // 版本信息（2列，纸感：浅灰背景）
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(Spacing.md)
@@ -380,15 +335,26 @@ private fun HeroSection(
                                 )
                                 HeroInfoChip(
                                     label = stringResource(R.string.about_author_title),
-                                    value = stringResource(R.string.about_author),
-                                    isAccent = true
+                                    value = stringResource(R.string.about_author)
                                 )
                             }
                         }
                     }
                 }
 
+                Spacer(Modifier.height(Spacing.lg))
+
+                // 分割线（浅灰）
+                HorizontalDivider(
+                    thickness = 0.8.dp,
+                    color = CyberColors.Divider,
+                    modifier = Modifier.padding(horizontal = Spacing.md)
+                )
+
+                // ===== 使用统计（纸感：静态卡片，无脉冲无渐变） =====
                 Spacer(Modifier.height(Spacing.md))
+                PaperUsageStats(stats = stats)
+                Spacer(Modifier.height(Spacing.lg))
             }
         }
     }
@@ -397,103 +363,94 @@ private fun HeroSection(
 @Composable
 private fun HeroInfoChip(
     label: String,
-    value: String,
-    isAccent: Boolean = false
+    value: String
 ) {
-    val valueColor = if (isAccent) CyberColors.Cyan else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.sm))
-            .background(CyberColors.Cyan.copy(alpha = 0.05f))
+            .background(CyberColors.IconBg)
             .border(
-                border = BorderStroke(0.8.dp, CyberColors.Cyan.copy(alpha = 0.15f)),
+                border = BorderStroke(0.8.dp, CyberColors.CardStroke),
                 shape = RoundedCornerShape(Radius.sm)
             )
-            .padding(horizontal = Spacing.sm, vertical = 8.dp),
+            .padding(horizontal = Spacing.sm, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
         Text(
             text = "$label:",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            color = Color(0xFF667085),
             fontWeight = FontWeight.Medium
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
-            color = valueColor
+            color = Color(0xFF101828)
         )
     }
 }
 
-// ============================================================
-// 2. Usage Stats - 6 cell Cyber Dashboard Grid (3x2)
-// ============================================================
-
 @Composable
-private fun UsageStatsSection(stats: UsageStats) {
-    CyberSectionHeader(text = stringResource(R.string.about_stats))
-
+private fun PaperUsageStats(stats: UsageStats) {
     Column(
-        modifier = Modifier.padding(horizontal = Spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+        modifier = Modifier.padding(horizontal = Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        // Row 1: Sessions + Messages + Active Days
+        // 第一行
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.md)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
-            DashboardStatCell(
+            PaperStatCell(
                 icon = FeatherIcons.MessageSquare,
                 label = stringResource(R.string.about_sessions),
                 value = stats.totalSessions.toString(),
-                unit = "次",
+                unit = stringResource(R.string.about_stats_unit_sessions),
                 modifier = Modifier.weight(1f)
             )
-            DashboardStatCell(
+            PaperStatCell(
                 icon = FeatherIcons.Hash,
                 label = stringResource(R.string.about_messages),
                 value = stats.totalMessages.toString(),
-                unit = "条",
+                unit = stringResource(R.string.about_stats_unit_messages),
                 modifier = Modifier.weight(1f)
             )
-            DashboardStatCell(
+            PaperStatCell(
                 icon = FeatherIcons.Calendar,
                 label = stringResource(R.string.about_active_days),
                 value = stats.activeDays.toString(),
-                unit = "天",
-                modifier = Modifier.weight(1f),
-                pulseAccent = true
+                unit = stringResource(R.string.about_stats_unit_days),
+                modifier = Modifier.weight(1f)
             )
         }
 
-        // Row 2: Input Tokens + Output Tokens + First Used
+        // 第二行
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.md)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
-            DashboardStatCell(
-                icon = FeatherIcons.UploadCloud,
+            PaperStatCell(
+                icon = FeatherIcons.Send,
                 label = stringResource(R.string.about_input_tokens),
                 value = compactNumber(stats.totalInputTokens),
-                unit = "Tok",
+                unit = stringResource(R.string.about_stats_unit_tokens),
                 modifier = Modifier.weight(1f)
             )
-            DashboardStatCell(
+            PaperStatCell(
                 icon = FeatherIcons.DownloadCloud,
                 label = stringResource(R.string.about_output_tokens),
                 value = compactNumber(stats.totalOutputTokens),
-                unit = "Tok",
+                unit = stringResource(R.string.about_stats_unit_tokens),
                 modifier = Modifier.weight(1f)
             )
-            DashboardStatCell(
+            PaperStatCell(
                 icon = FeatherIcons.Tag,
                 label = stringResource(R.string.about_first_used),
                 value = if (stats.firstUsedMs > 0L) formatShortDate(stats.firstUsedMs) else "--",
-                unit = if (stats.firstUsedMs > 0L) "起" else "",
+                unit = if (stats.firstUsedMs > 0L) stringResource(R.string.about_stats_unit_since) else "",
                 modifier = Modifier.weight(1f),
                 compactValue = true
             )
@@ -502,112 +459,82 @@ private fun UsageStatsSection(stats: UsageStats) {
 }
 
 @Composable
-private fun DashboardStatCell(
+private fun PaperStatCell(
     icon: ImageVector,
     label: String,
     value: String,
     unit: String,
     modifier: Modifier = Modifier,
-    pulseAccent: Boolean = false,
     compactValue: Boolean = false
 ) {
-    val gradient = primaryGradient
-    val infiniteTransition = rememberInfiniteTransition(label = "stat_pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.1f,
-        targetValue = 0.28f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_alpha"
-    )
-
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(Radius.lg),
-        colors = CardDefaults.cardColors(containerColor = CyberColors.CardBg),
-        border = BorderStroke(
-            1.dp,
-            Brush.horizontalGradient(
-                listOf(
-                    CyberColors.Cyan.copy(alpha = if (pulseAccent) 0.6f else 0.35f),
-                    CyberColors.LineBlue.copy(alpha = if (pulseAccent) 0.6f else 0.35f)
-                )
-            )
-        ),
+        shape = RoundedCornerShape(Radius.md),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(0.8.dp, CyberColors.CardStroke),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(
-                    if (pulseAccent) {
-                        Modifier.drawBehind {
-                            drawRect(
-                                brush = Brush.radialGradient(
-                                    listOf(
-                                        CyberColors.Cyan.copy(alpha = pulseAlpha),
-                                        Color.Transparent
-                                    )
-                                ),
-                                topLeft = Offset.Zero,
-                                size = size
-                            )
-                        }
-                    } else Modifier
-                )
-                .padding(horizontal = Spacing.sm, vertical = Spacing.md)
+                .padding(horizontal = Spacing.sm, vertical = Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
         ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+            // Icon + Label
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Icon + Label Row
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(CyberColors.IconBg),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = CyberColors.Cyan,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1
+                        tint = Color(0xFF475467),
+                        modifier = Modifier.size(11.dp)
                     )
                 }
-
-                Spacer(Modifier.height(2.dp))
-
-                // Big gradient value
                 Text(
-                    text = buildAnnotatedString {
-                        withStyle(SpanStyle(brush = gradient, fontWeight = FontWeight.ExtraBold)) {
-                            append(value)
-                        }
-                        if (unit.isNotEmpty()) {
-                            withStyle(
-                                SpanStyle(
-                                    color = CyberColors.CyanDim,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            ) {
-                                append(" $unit")
-                            }
-                        }
-                    },
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF667085),
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1
+                )
+            }
+
+            Spacer(Modifier.height(2.dp))
+
+            // 数值 + 单位（纯深灰粗体，不渐变）
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    text = value,
                     style = if (compactValue) {
                         MaterialTheme.typography.titleMedium
                     } else {
                         MaterialTheme.typography.headlineSmall
                     },
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFF101828),
                     maxLines = 1
                 )
+                if (unit.isNotEmpty()) {
+                    Text(
+                        text = unit,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF667085),
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
+                }
             }
         }
     }
@@ -626,7 +553,7 @@ private fun formatShortDate(ms: Long): String {
 }
 
 // ============================================================
-// 3. FAQ Section - Accordion Cyber Cards with Gradient Inner BG
+// 2. FAQ Section（扁平无装饰，Q/A 徽章浅灰）
 // ============================================================
 
 @Composable
@@ -673,15 +600,15 @@ private fun FaqAccordionItem(question: String, answer: String) {
                     .padding(Spacing.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Q prefix badge
+                // Q 徽章：浅灰底，无渐变
                 Box(
                     modifier = Modifier
                         .size(26.dp)
                         .clip(CircleShape)
-                        .background(
-                            brush = Brush.horizontalGradient(
-                                listOf(CyberColors.Cyan, CyberColors.LineBlue)
-                            )
+                        .background(CyberColors.IconBg)
+                        .border(
+                            border = BorderStroke(0.8.dp, CyberColors.CardStroke),
+                            shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -689,7 +616,7 @@ private fun FaqAccordionItem(question: String, answer: String) {
                         text = "Q",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.ExtraBold,
-                        color = CyberColors.Black
+                        color = Color(0xFF344054)
                     )
                 }
                 Spacer(Modifier.width(Spacing.sm))
@@ -697,21 +624,21 @@ private fun FaqAccordionItem(question: String, answer: String) {
                     text = question,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Color(0xFF101828),
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(Spacing.sm))
                 Icon(
                     imageVector = FeatherIcons.ChevronDown,
                     contentDescription = null,
-                    tint = CyberColors.Cyan,
+                    tint = Color(0xFF667085),
                     modifier = Modifier
                         .size(20.dp)
                         .rotate(chevronRotation)
                 )
             }
 
-            // Expandable answer area with gradient inner background
+            // Expandable answer（纸感：浅灰底，无发光无渐变）
             AnimatedVisibility(
                 visible = expanded,
                 enter = expandVertically(),
@@ -726,19 +653,9 @@ private fun FaqAccordionItem(question: String, answer: String) {
                             bottom = Spacing.md
                         )
                         .clip(RoundedCornerShape(Radius.md))
-                        .background(
-                            brush = Brush.verticalGradient(
-                                listOf(
-                                    CyberColors.Cyan.copy(alpha = 0.10f),
-                                    CyberColors.LineBlue.copy(alpha = 0.04f)
-                                )
-                            )
-                        )
+                        .background(CyberColors.IconBg)
                         .border(
-                            border = BorderStroke(
-                                0.8.dp,
-                                CyberColors.Cyan.copy(alpha = 0.2f)
-                            ),
+                            border = BorderStroke(0.8.dp, CyberColors.CardStroke),
                             shape = RoundedCornerShape(Radius.md)
                         )
                         .padding(Spacing.md)
@@ -748,9 +665,9 @@ private fun FaqAccordionItem(question: String, answer: String) {
                             modifier = Modifier
                                 .size(22.dp)
                                 .clip(CircleShape)
-                                .background(CyberColors.Cyan.copy(alpha = 0.15f))
+                                .background(Color.White)
                                 .border(
-                                    border = BorderStroke(0.8.dp, CyberColors.Cyan.copy(alpha = 0.4f)),
+                                    border = BorderStroke(0.8.dp, CyberColors.CardStroke),
                                     shape = CircleShape
                                 ),
                             contentAlignment = Alignment.Center
@@ -759,14 +676,14 @@ private fun FaqAccordionItem(question: String, answer: String) {
                                 text = "A",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = CyberColors.Cyan
+                                color = Color(0xFF475467)
                             )
                         }
                         Spacer(Modifier.width(Spacing.sm))
                         Text(
                             text = answer,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color(0xFF475467),
                             lineHeight = 22.sp
                         )
                     }
@@ -777,8 +694,67 @@ private fun FaqAccordionItem(question: String, answer: String) {
 }
 
 // ============================================================
-// 4. Action Buttons Row - 4 circular icon buttons
+// 3. Action Buttons + Links Section 合并（紧凑布局）
 // ============================================================
+
+@Composable
+private fun ActionAndLinksCombinedCard(
+    context: Context,
+    appInfo: AppInfo,
+    onShare: () -> Unit,
+    onStar: () -> Unit,
+    onFeedback: () -> Unit,
+    onCommunity: () -> Unit,
+    onCheckUpdate: () -> Unit
+) {
+    Column(
+        modifier = Modifier.padding(horizontal = Spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+    ) {
+        CyberCard {
+            Column {
+                Spacer(Modifier.height(Spacing.md))
+                // ===== 4 个运营入口按钮 =====
+                ActionButtonsRow(
+                    onShare = onShare,
+                    onStar = onStar,
+                    onFeedback = onFeedback,
+                    onCommunity = onCommunity
+                )
+                Spacer(Modifier.height(Spacing.md))
+
+                HorizontalDivider(
+                    thickness = 0.8.dp,
+                    color = CyberColors.Divider,
+                    modifier = Modifier.padding(horizontal = Spacing.md)
+                )
+
+                // ===== 3 个链接菜单（检查更新/GitHub/License） =====
+                CyberMenuRow(
+                    icon = FeatherIcons.Tag,
+                    title = stringResource(R.string.about_check_update),
+                    subtitle = stringResource(R.string.about_check_update_subtitle, appInfo.name),
+                    onClick = onCheckUpdate,
+                    showDivider = true
+                )
+                CyberMenuRow(
+                    icon = FeatherIcons.Github,
+                    title = stringResource(R.string.about_github_repo),
+                    subtitle = GITHUB_REPO_URL.removePrefix("https://"),
+                    onClick = { openUrl(context, GITHUB_REPO_URL) },
+                    showDivider = true
+                )
+                CyberMenuRow(
+                    icon = FeatherIcons.Book,
+                    title = stringResource(R.string.about_license),
+                    subtitle = stringResource(R.string.about_license_name),
+                    onClick = { openUrl(context, LICENSE_URL) },
+                    showDivider = false
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun ActionButtonsRow(
@@ -790,8 +766,8 @@ private fun ActionButtonsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.lg),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.md)
+            .padding(horizontal = Spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         ActionCircleButton(
             icon = FeatherIcons.Share2,
@@ -803,8 +779,7 @@ private fun ActionButtonsRow(
             icon = FeatherIcons.Star,
             label = stringResource(R.string.about_action_star),
             onClick = onStar,
-            modifier = Modifier.weight(1f),
-            accent = true
+            modifier = Modifier.weight(1f)
         )
         ActionCircleButton(
             icon = FeatherIcons.MessageSquare,
@@ -826,16 +801,8 @@ private fun ActionCircleButton(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    accent: Boolean = false
+    modifier: Modifier = Modifier
 ) {
-    val gradient = Brush.horizontalGradient(
-        listOf(
-            if (accent) Color(0xFFFFCC00) else CyberColors.Cyan,
-            CyberColors.LineBlue
-        )
-    )
-
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(Radius.md))
@@ -844,13 +811,14 @@ private fun ActionCircleButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
+        // 纸感圆形按钮：浅灰底 + 深灰细描边
         Box(
             modifier = Modifier
-                .size(52.dp)
+                .size(50.dp)
                 .clip(CircleShape)
-                .background(CyberColors.Cyan.copy(alpha = 0.08f))
+                .background(CyberColors.IconBg)
                 .border(
-                    border = BorderStroke(1.2.dp, gradient),
+                    border = BorderStroke(0.8.dp, CyberColors.CardStroke),
                     shape = CircleShape
                 ),
             contentAlignment = Alignment.Center
@@ -858,63 +826,21 @@ private fun ActionCircleButton(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (accent) Color(0xFFFFCC00) else CyberColors.Cyan,
+                tint = Color(0xFF344054),
                 modifier = Modifier.size(22.dp)
             )
         }
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFF475467)
         )
     }
 }
 
 // ============================================================
-// 5. Links Section (Version / GitHub / License)
-// ============================================================
-
-@Composable
-private fun LinksSection(
-    context: Context,
-    appInfo: AppInfo,
-    onCheckUpdate: () -> Unit
-) {
-    Column(
-        modifier = Modifier.padding(horizontal = Spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(Spacing.md)
-    ) {
-        CyberCard {
-            Column {
-                CyberMenuRow(
-                    icon = FeatherIcons.Tag,
-                    title = stringResource(R.string.about_check_update),
-                    subtitle = "当前 v${appInfo.name} · 点击查询 GitHub",
-                    onClick = onCheckUpdate,
-                    showDivider = true
-                )
-                CyberMenuRow(
-                    icon = FeatherIcons.Github,
-                    title = stringResource(R.string.about_github_repo),
-                    subtitle = GITHUB_REPO_URL.removePrefix("https://"),
-                    onClick = { openUrl(context, GITHUB_REPO_URL) },
-                    showDivider = true
-                )
-                CyberMenuRow(
-                    icon = FeatherIcons.Book,
-                    title = stringResource(R.string.about_license),
-                    subtitle = "MIT License",
-                    onClick = { openUrl(context, LICENSE_URL) },
-                    showDivider = false
-                )
-            }
-        }
-    }
-}
-
-// ============================================================
-// 6. Open Source Credits Section
+// 4. Open Source Credits Section（扁平 chip）
 // ============================================================
 
 @Composable
@@ -928,7 +854,7 @@ private fun OpenSourceCreditsSection() {
         Text(
             text = stringResource(R.string.about_credits_subtitle),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Color(0xFF667085),
             modifier = Modifier.padding(start = 4.dp)
         )
 
@@ -945,7 +871,9 @@ private fun OpenSourceCreditsSection() {
 
         CyberCard {
             FlowRow(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.sm),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
@@ -962,43 +890,41 @@ private fun OpenSourceCreditsSection() {
 
 @Composable
 private fun CreditChip(name: String, author: String) {
-    val gradient = Brush.horizontalGradient(
-        listOf(CyberColors.Cyan.copy(alpha = 0.6f), CyberColors.LineBlue.copy(alpha = 0.6f))
-    )
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(Radius.sm))
-            .background(CyberColors.Cyan.copy(alpha = 0.06f))
+            .background(CyberColors.IconBg)
             .border(
-                border = BorderStroke(0.8.dp, gradient),
+                border = BorderStroke(0.8.dp, CyberColors.CardStroke),
                 shape = RoundedCornerShape(Radius.sm)
             )
             .padding(horizontal = Spacing.sm, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        // 小圆点：中灰（不使用渐变）
         Box(
             modifier = Modifier
                 .size(6.dp)
                 .clip(CircleShape)
-                .background(brush = gradient)
+                .background(Color(0xFF98A2B3))
         )
         Text(
             text = name,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = Color(0xFF101828)
         )
         Text(
             text = "· $author",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = Color(0xFF667085)
         )
     }
 }
 
 // ============================================================
-// 7. Update Result Dialog (Enhanced: size + speed)
+// 5. Update Result Dialog（纸感：纯 Material 默认样式）
 // ============================================================
 
 @Composable
@@ -1042,34 +968,32 @@ private fun UpdateResultDialog(
                                 state.latestTag
                             ),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = Color(0xFF101828)
                         )
                         Text(
                             text = stringResource(R.string.about_release_notes),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = Color(0xFF101828)
                         )
+                        // Release Notes 文本框：浅灰底深灰描边
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(180.dp)
                                 .clip(RoundedCornerShape(Radius.md))
-                                .background(CyberColors.Cyan.copy(alpha = 0.05f))
+                                .background(CyberColors.IconBg)
                                 .border(
-                                    border = BorderStroke(
-                                        0.8.dp,
-                                        CyberColors.Cyan.copy(alpha = 0.2f)
-                                    ),
+                                    border = BorderStroke(0.8.dp, CyberColors.CardStroke),
                                     shape = RoundedCornerShape(Radius.md)
                                 )
                         ) {
                             val notes = state.releaseNotes?.takeIf { it.isNotBlank() }
-                                ?: "（该 Release 未填写更新说明）"
+                                ?: stringResource(R.string.about_release_notes_empty)
                             androidx.compose.foundation.text.BasicText(
                                 text = notes,
                                 style = MaterialTheme.typography.bodySmall.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = Color(0xFF475467),
                                     fontFamily = FontFamily.Monospace
                                 ),
                                 modifier = Modifier
@@ -1117,7 +1041,7 @@ private fun UpdateResultDialog(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(Spacing.md)
                     ) {
-                        CyberProgressIndicatorWithDetail(
+                        PaperProgressIndicatorWithDetail(
                             progressPct = progressPct,
                             downloadedBytes = state.downloadedBytes,
                             totalBytes = state.totalBytes,
@@ -1142,12 +1066,13 @@ private fun UpdateResultDialog(
                     Text(
                         text = state.filePath.substringAfterLast('/'),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = Color(0xFF475467)
                     )
                     Text(
                         text = formatFileSize(state.fileSizeBytes),
                         style = MaterialTheme.typography.bodySmall,
-                        color = CyberColors.Cyan
+                        color = Color(0xFF101828),
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             },
@@ -1177,7 +1102,7 @@ private fun UpdateResultDialog(
 }
 
 @Composable
-private fun CyberProgressIndicatorWithDetail(
+private fun PaperProgressIndicatorWithDetail(
     progressPct: Int,
     downloadedBytes: Long,
     totalBytes: Long,
@@ -1192,7 +1117,6 @@ private fun CyberProgressIndicatorWithDetail(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        // Detail: downloaded / total
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1206,7 +1130,7 @@ private fun CyberProgressIndicatorWithDetail(
                 ),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = Color(0xFF101828)
             )
             if (speedBytesPerSec > 0) {
                 Text(
@@ -1215,27 +1139,28 @@ private fun CyberProgressIndicatorWithDetail(
                         formatFileSize(speedBytesPerSec)
                     ),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = CyberColors.Cyan,
+                    color = Color(0xFF475467),
                     fontWeight = FontWeight.SemiBold
                 )
             }
         }
 
+        // 纸感进度条：Material primary 色，track 用浅灰
         LinearProgressIndicator(
             progress = { animatedProgress },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(10.dp)
+                .height(8.dp)
                 .clip(RoundedCornerShape(Radius.pill)),
-            color = CyberColors.Cyan,
-            trackColor = CyberColors.Cyan.copy(alpha = 0.12f),
+            color = Color(0xFF344054),
+            trackColor = CyberColors.IconBg,
             drawStopIndicator = {}
         )
 
         Text(
             text = stringResource(R.string.about_downloading, progressPct),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = Color(0xFF667085)
         )
     }
 }
@@ -1264,9 +1189,9 @@ private fun shareApp(context: Context) {
             type = "text/plain"
             putExtra(
                 Intent.EXTRA_TEXT,
-                "R-DeepCode - Android 上的 AI 代码编辑器：\n$RELEASES_URL"
+                context.getString(R.string.about_share_text, RELEASES_URL)
             )
-            putExtra(Intent.EXTRA_TITLE, "分享 R-DeepCode")
+            putExtra(Intent.EXTRA_TITLE, context.getString(R.string.about_share_title))
         }
         val chooser = Intent.createChooser(sendIntent, null)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1290,7 +1215,7 @@ private suspend fun checkUpdate(
             .build()
         SHARED_CLIENT.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) {
-                return@use UpdateDialogState.Error("HTTP ${resp.code}")
+                return@use UpdateDialogState.Error(context.getString(R.string.about_http_error, resp.code))
             }
             val body = resp.body?.string().orEmpty()
             val json = JsonParser.parseString(body).asJsonObject
@@ -1341,7 +1266,7 @@ private suspend fun downloadApk(
         val req = okhttp3.Request.Builder().url(downloadUrl).build()
         SHARED_CLIENT.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) {
-                onError("HTTP ${resp.code}")
+                onError(context.getString(R.string.about_http_error, resp.code))
                 return@withContext
             }
             val body = resp.body ?: run {
@@ -1367,7 +1292,6 @@ private suspend fun downloadApk(
                     ((totalRead * 100) / contentLength).toInt()
                 } else 0
 
-                // Compute speed every ~200ms
                 val now = System.currentTimeMillis()
                 val elapsed = now - lastTickMs
                 if (elapsed >= 200L) {
@@ -1445,6 +1369,27 @@ internal fun splitVersion(v: String): Pair<String, String> {
 }
 
 // ============================================================
+// Helper: load app icon bitmap
+// ============================================================
+
+private fun loadAppIconBitmap(context: Context): ImageBitmap? {
+    return runCatching {
+        val pm = context.packageManager
+        val appInfo = pm.getApplicationInfo(context.packageName, 0)
+        val drawable: Drawable = pm.getApplicationIcon(appInfo)
+        val bmp = Bitmap.createBitmap(
+            drawable.intrinsicWidth.coerceAtLeast(1),
+            drawable.intrinsicHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bmp)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        bmp.asImageBitmap()
+    }.getOrNull()
+}
+
+// ============================================================
 // Data classes + constants
 // ============================================================
 
@@ -1485,28 +1430,19 @@ private sealed interface UpdateDialogState {
     data class Error(val message: String) : UpdateDialogState
 }
 
-private val SHARED_CLIENT by lazy { OkHttpClient.Builder().build() }
+// ============================================================
+// Network constants
+// ============================================================
 
-private fun loadAppIconBitmap(context: Context): ImageBitmap? {
-    return runCatching {
-        val pm = context.packageManager
-        val drawable: Drawable = pm.getApplicationInfo(context.packageName, 0).loadIcon(pm)
-        val sizePx = android.util.TypedValue.applyDimension(
-            android.util.TypedValue.COMPLEX_UNIT_DIP,
-            ICON_PX_DP.toFloat(),
-            context.resources.displayMetrics
-        ).toInt().coerceAtLeast(1)
-        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-        drawable.setBounds(0, 0, sizePx, sizePx)
-        Canvas(bitmap).also { drawable.draw(it) }
-        bitmap.asImageBitmap()
-    }.getOrNull()
-}
+private val SHARED_CLIENT: OkHttpClient = OkHttpClient.Builder()
+    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+    .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+    .build()
 
 private const val GITHUB_REPO_URL = "https://github.com/Lisir2002/deepcode-R"
-private const val LICENSE_URL = "https://github.com/Lisir2002/deepcode-R/blob/main/LICENSE"
-private const val RELEASES_URL = "https://github.com/Lisir2002/deepcode-R/releases/latest"
-private const val GITHUB_LATEST_API = "https://api.github.com/repos/Lisir2002/deepcode-R/releases/latest"
-private const val ISSUES_URL = "https://github.com/Lisir2002/deepcode-R/issues"
-private const val COMMUNITY_URL = "https://discord.gg/"
-private const val ICON_PX_DP = 96
+private const val GITHUB_LATEST_API =
+    "https://api.github.com/repos/Lisir2002/deepcode-R/releases/latest"
+private const val RELEASES_URL = "$GITHUB_REPO_URL/releases"
+private const val ISSUES_URL = "$GITHUB_REPO_URL/issues"
+private const val COMMUNITY_URL = "$GITHUB_REPO_URL/discussions"
+private const val LICENSE_URL = "$GITHUB_REPO_URL/blob/main/LICENSE"

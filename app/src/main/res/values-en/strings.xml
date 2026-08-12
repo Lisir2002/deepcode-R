@@ -750,4 +750,92 @@
     <string name="chat_action_delete">Delete Message</string>
     <string name="chat_edit_dialog_title">Edit Message</string>
     <string name="chat_edit_dialog_hint">Enter message content</string>
+
+    <!-- ====================== About Page i18n - EN ====================== -->
+    <!-- About - Stats -->
+    <string name="about_stats">Usage Stats</string>
+    <string name="about_sessions">Sessions</string>
+    <string name="about_messages">Messages</string>
+    <string name="about_input_tokens">Input Tokens</string>
+    <string name="about_output_tokens">Output Tokens</string>
+    <string name="about_first_used">First Used</string>
+    <string name="about_days_active">%1$d days with you</string>
+    <string name="about_active_days">Active Days</string>
+
+    <!-- About - Stats Units -->
+    <string name="about_stats_unit_sessions">times</string>
+    <string name="about_stats_unit_messages">msgs</string>
+    <string name="about_stats_unit_days">days</string>
+    <string name="about_stats_unit_tokens">Tok</string>
+    <string name="about_stats_unit_since">since</string>
+
+    <!-- About - FAQ -->
+    <string name="about_faq">FAQ</string>
+    <string name="about_faq_q1">What is R-DeepCode?</string>
+    <string name="about_faq_a1">R-DeepCode is an AI-powered code editor running on Android devices. It includes a full terminal environment, an AI Agent, and MCP protocol support, so you can write, debug, and run code on your phone anytime, anywhere.</string>
+    <string name="about_faq_q2">Which AI providers are supported?</string>
+    <string name="about_faq_a2">In theory any OpenAI-compatible API works. We provide quick presets for domestic providers like Doubao, Zhipu AI and Qwen, plus custom Base URLs for any compatible service.</string>
+    <string name="about_faq_q3">Is the container environment a sandbox? Will it affect my phone?</string>
+    <string name="about_faq_a3">The container is built on PRoot, fully contained within the app\'s private directory. No root is required, and no system partitions are modified. All container processes stop when you close the app.</string>
+    <string name="about_faq_q4">Is my code or chat data uploaded to the cloud?</string>
+    <string name="about_faq_a4">By default, workspace files, chat history and credentials are stored locally. Only the necessary context is sent to your configured AI provider during API calls; the app itself never collects or uploads any user data.</string>
+
+    <!-- About - Share & Community -->
+    <string name="about_share">Share App</string>
+    <string name="about_share_subtitle">Send APK to friends</string>
+    <string name="about_rate">Give a Star</string>
+    <string name="about_rate_subtitle">Star the GitHub repo ⭐</string>
+    <string name="about_feedback">Feedback</string>
+    <string name="about_feedback_subtitle">File an Issue / Contact author</string>
+    <string name="about_community">Join Community</string>
+    <string name="about_community_subtitle">Discord / Telegram group</string>
+
+    <!-- About - Action Buttons -->
+    <string name="about_action_share">Share</string>
+    <string name="about_action_star">Star</string>
+    <string name="about_action_feedback">Feedback</string>
+    <string name="about_action_community">Join</string>
+
+    <!-- About - Hero / Author -->
+    <string name="about_author_title">Author</string>
+    <string name="about_author">@Lisir2002</string>
+    <string name="about_package">Package</string>
+    <string name="about_build_no">Build</string>
+    <string name="about_sdk_min">Min SDK</string>
+    <string name="about_slogan">AI-powered · Code editor in your pocket</string>
+
+    <!-- About - Update Dialog -->
+    <string name="about_release_notes">Release Notes</string>
+    <string name="about_release_notes_empty">(No release notes for this version)</string>
+    <string name="about_check_update_subtitle">Current v%1$s · Tap to check GitHub</string>
+    <string name="about_download_apk">Download APK</string>
+    <string name="about_downloading">Downloading… %1$d%%</string>
+    <string name="about_download_complete">Download complete</string>
+    <string name="about_install_apk">Install APK</string>
+    <string name="about_open_releases_page">Open Releases page</string>
+    <string name="about_download_progress_detail">%1$s / %2$s</string>
+    <string name="about_download_speed">%1$s/s</string>
+    <string name="about_http_error">HTTP %1$d error</string>
+
+    <!-- About - Share text -->
+    <string name="about_share_title">Share R-DeepCode</string>
+    <string name="about_share_text">R-DeepCode - AI code editor on Android:\n%1$s</string>
+
+    <!-- About - Open Source Credits -->
+    <string name="about_credits">Powered by Open Source</string>
+    <string name="about_credits_subtitle">Kudos to every open-source contributor</string>
+    <string name="about_credit_room">Room</string>
+    <string name="about_credit_hilt">Hilt</string>
+    <string name="about_credit_okhttp">OkHttp</string>
+    <string name="about_credit_compose">Jetpack Compose</string>
+    <string name="about_credit_kotlin">Kotlin</string>
+    <string name="about_credit_coroutines">Coroutines</string>
+    <string name="about_credit_material">Material 3</string>
+    <string name="about_credit_ktor">Ktor</string>
+
+    <!-- About - License -->
+    <string name="about_license_name">MIT License</string>
+
+    <!-- About - Copyright -->
+    <string name="about_copyright">© 2025 Lisir2002 · Made with ❤ for mobile developers</string>
 </resources>

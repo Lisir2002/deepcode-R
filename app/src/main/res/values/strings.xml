@@ -820,4 +820,30 @@
     <string name="about_credit_coroutines">Coroutines</string>
     <string name="about_credit_material">Material 3</string>
     <string name="about_credit_ktor">Ktor</string>
+
+    <!-- About - Stats Units -->
+    <string name="about_stats_unit_sessions">次</string>
+    <string name="about_stats_unit_messages">条</string>
+    <string name="about_stats_unit_days">天</string>
+    <string name="about_stats_unit_tokens">Tok</string>
+    <string name="about_stats_unit_since">起</string>
+
+    <!-- About - Check Update Subtitle -->
+    <string name="about_check_update_subtitle">当前 v%1$s · 点击查询 GitHub</string>
+
+    <!-- About - License -->
+    <string name="about_license_name">MIT License</string>
+
+    <!-- About - Release Notes Empty -->
+    <string name="about_release_notes_empty">（该 Release 未填写更新说明）</string>
+
+    <!-- About - HTTP Error -->
+    <string name="about_http_error">HTTP %1$d 错误</string>
+
+    <!-- About - Share -->
+    <string name="about_share_title">分享 R-DeepCode</string>
+    <string name="about_share_text">R-DeepCode - Android 上的 AI 代码编辑器：\n%1$s</string>
+
+    <!-- About - Copyright -->
+    <string name="about_copyright">© 2025 Lisir2002 · Made with ❤ for mobile developers</string>
 </resources>
