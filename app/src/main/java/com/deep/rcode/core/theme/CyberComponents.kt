@@ -53,7 +53,7 @@ import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Search
-import compose.icons.feathericons.X
+import compose.icons.feathericons.XCircle
 import kotlin.math.roundToInt
 
 object CyberColors {
@@ -133,8 +133,10 @@ internal fun CyberMenuRow(
     }
 ) {
     val highlightColor = Color(0x330984E3) // 浅蓝高亮
+    val bodyLargeStyle = MaterialTheme.typography.bodyLarge
+    val bodyMediumStyle = MaterialTheme.typography.bodyMedium
 
-    val highlightedTitle = remember(title, highlightQuery) {
+    val highlightedTitle = remember(title, highlightQuery, bodyLargeStyle) {
         if (highlightQuery.isBlank()) {
             AnnotatedString(title)
         } else {
@@ -147,7 +149,7 @@ internal fun CyberMenuRow(
                     var startIndex = lower.indexOf(lowerToken)
                     while (startIndex >= 0) {
                         addStyle(
-                            MaterialTheme.typography.bodyLarge.toSpanStyle().copy(
+                            bodyLargeStyle.toSpanStyle().copy(
                                 background = highlightColor,
                                 fontWeight = FontWeight.SemiBold
                             ),
@@ -161,7 +163,7 @@ internal fun CyberMenuRow(
         }
     }
 
-    val highlightedSubtitle = remember(subtitle, highlightQuery) {
+    val highlightedSubtitle = remember(subtitle, highlightQuery, bodyMediumStyle) {
         if (highlightQuery.isBlank() || subtitle.isEmpty()) {
             AnnotatedString(subtitle)
         } else {
@@ -174,7 +176,7 @@ internal fun CyberMenuRow(
                     var startIndex = lower.indexOf(lowerToken)
                     while (startIndex >= 0) {
                         addStyle(
-                            MaterialTheme.typography.bodyMedium.toSpanStyle().copy(
+                            bodyMediumStyle.toSpanStyle().copy(
                                 background = highlightColor,
                                 fontWeight = FontWeight.Medium
                             ),
@@ -289,7 +291,7 @@ internal fun CyberSearchBar(
                     modifier = Modifier.size(24.dp)
                 ) {
                     Icon(
-                        imageVector = compose.icons.feathericons.X,
+                        imageVector = XCircle,
                         contentDescription = null,
                         tint = Color(0xFF667085),
                         modifier = Modifier.size(16.dp)
