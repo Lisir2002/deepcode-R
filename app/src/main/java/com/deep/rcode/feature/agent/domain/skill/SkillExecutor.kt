@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
@@ -39,7 +40,7 @@ sealed class SkillExecutionResult {
 class SkillExecutor @Inject constructor(
     private val commandEngine: CommandEngine,
     private val toolPermissionManager: ToolPermissionManager,
-    private val toolRegistry: ToolRegistry,
+    private val toolRegistryProvider: Provider<ToolRegistry>,
     private val containerInstaller: ContainerInstaller,
     private val auditLogRepo: RemoteAuditLogRepository
 ) {
@@ -130,7 +131,7 @@ class SkillExecutor @Inject constructor(
         val toolName = skill.mcpTool?.takeIf { it.isNotBlank() }
             ?: return SkillExecutionResult.Error("MCP 技能缺少 mcp_tool 绑定", "SKILL_MISSING_MCP_TOOL")
 
-        val tool = toolRegistry.getTool(toolName)
+        val tool = toolRegistryProvider.get().getTool(toolName)
             ?: return SkillExecutionResult.Error(
                 "MCP 工具「$toolName」未连接或未注册，请先在 MCP 设置中连接对应服务",
                 "SKILL_MCP_NOT_CONNECTED"
