@@ -122,7 +122,7 @@ class MigrationSchemaConsistencyTest {
             return
         }
 
-        // 1) 解析迁移 SQL 的实际列
+        // 1) 解析迁移 SQL 的实际列（CREATE TABLE 体 + 后续 ALTER TABLE ADD COLUMN）
         val items = splitTopLevel(createBody)
         val actualCols = mutableListOf<ParsedCol>()
         val tablePk = parseTableLevelPk(createBody)
@@ -136,6 +136,13 @@ class MigrationSchemaConsistencyTest {
                 continue
             }
             actualCols.add(parseColumnDef(item))
+        }
+        // RC92 修复：部分列通过 ALTER TABLE ADD COLUMN 添加（如 agent_messages 的 isCompacted、
+        // inputTokens 等），只解析 CREATE TABLE 体会漏掉这些列 → 合并 ALTER 添加的列。
+        for (alterCol in findAlterAddColumns(allSql, tableName)) {
+            if (actualCols.none { it.name == alterCol.name }) {
+                actualCols.add(alterCol)
+            }
         }
 
         // 2) 解析 Room 期望列
@@ -286,6 +293,24 @@ class MigrationSchemaConsistencyTest {
         }
         if (depth != 0) return null
         return allSql.substring(start, i - 1)
+    }
+
+    /**
+     * 解析所有 `ALTER TABLE <tableName> ADD COLUMN <colDef>` 语句，返回添加的列定义。
+     * 用于合并 CREATE TABLE 之后通过 ALTER 追加的列（如 agent_messages 的 isCompacted、inputTokens 等）。
+     */
+    private fun findAlterAddColumns(allSql: String, tableName: String): List<ParsedCol> {
+        val result = mutableListOf<ParsedCol>()
+        val regex = Regex(
+            """(?i)ALTER\s+TABLE\s+`?$tableName`?\s+ADD\s+COLUMN\s+(.+?)(?:;|$)""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        for (m in regex.findAll(allSql)) {
+            val colDef = m.groupValues[1].trim()
+            if (colDef.isBlank()) continue
+            result.add(parseColumnDef(colDef))
+        }
+        return result
     }
 
     private fun splitTopLevel(body: String): List<String> {

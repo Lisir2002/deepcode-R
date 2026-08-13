@@ -218,6 +218,20 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // RC92：MigrationSchemaConsistencyTest 失败详情 println 到 stdout，
+    // 默认 Gradle 吞掉测试 stdout/stderr，CI 日志看不到具体不一致项。
+    // 开启 showStandardStreams 让失败详情直接出现在 CI 控制台日志。
+    testOptions {
+        unitTests.all {
+            it.testLogging {
+                showStandardStreams = true
+                showExceptions = true
+                showStackTraces = true
+                showCauses = true
+            }
+        }
+    }
+
     @Suppress("DEPRECATION")
     kotlinOptions {
         jvmTarget = "17"
