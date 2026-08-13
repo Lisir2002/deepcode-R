@@ -17,8 +17,11 @@ CREATE TABLE IF NOT EXISTS credential_encryption_state (
 );
 
 -- SSH 连接 / 凭据操作 / 备份导入导出 / SFTP 审计日志
+-- RC93 修复：id 补 NOT NULL。Room 对 autoGenerate 的 INTEGER 主键期望 notNull=true
+-- （Room 生成的 CREATE TABLE 为 `id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL`），
+-- 缺 NOT NULL 会导致 TableInfo 校验失败（Migration didn't properly handle: remote_audit_logs）。
 CREATE TABLE IF NOT EXISTS remote_audit_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     category TEXT NOT NULL,
     action TEXT NOT NULL,
     connectionId TEXT,

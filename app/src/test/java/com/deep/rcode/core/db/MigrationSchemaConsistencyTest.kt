@@ -114,13 +114,15 @@ class MigrationSchemaConsistencyTest {
         allSql: String,
         failures: MutableList<String>
     ) {
-        val createBody = findLastCreateTableBody(allSql, tableName)
-        if (createBody == null) {
+        val createResult = findLastCreateTableBody(allSql, tableName)
+        if (createResult == null) {
             // RC92 修复：部分表（如 agent_messages）在 v8 之前的初始 schema 中创建，
             // 迁移 SQL 只有 ALTER TABLE ADD COLUMN，没有 CREATE TABLE。
             // 这类表的结构由 Room 生成的初始 schema 保证一致，跳过 CREATE TABLE 校验。
             return
         }
+        val createBody = createResult.first
+        val usedNewTable = createResult.second
 
         // 1) 解析迁移 SQL 的实际列（CREATE TABLE 体 + 后续 ALTER TABLE ADD COLUMN）
         val items = splitTopLevel(createBody)
@@ -128,9 +130,12 @@ class MigrationSchemaConsistencyTest {
         val tablePk = parseTableLevelPk(createBody)
         for (item in items) {
             val upper = item.uppercase()
+            // RC93 修复：CHECK 约束必须带空格或左括号（"CHECK (" / "CHECK("）才判定为约束，
+            // 裸 "CHECK" 会误伤列名以 CHECK 开头的列（如 checkpoint_file_snapshots.checkpointId）。
             if (upper.startsWith("PRIMARY KEY") ||
                 upper.startsWith("FOREIGN KEY") ||
-                upper.startsWith("CHECK") ||
+                upper.startsWith("CHECK ") ||
+                upper.startsWith("CHECK(") ||
                 upper.startsWith("UNIQUE")
             ) {
                 continue
@@ -139,31 +144,43 @@ class MigrationSchemaConsistencyTest {
         }
         // RC92 修复：部分列通过 ALTER TABLE ADD COLUMN 添加（如 agent_messages 的 isCompacted、
         // inputTokens 等），只解析 CREATE TABLE 体会漏掉这些列 → 合并 ALTER 添加的列。
-        for (alterCol in findAlterAddColumns(allSql, tableName)) {
-            if (actualCols.none { it.name == alterCol.name }) {
-                actualCols.add(alterCol)
+        // RC93 修复：表若经过 _new 四步法重建（如 ai_providers 迁移 25/38），重建表已包含最终全部列，
+        // 此前通过 ALTER ADD COLUMN 添加、后被重建删除的列（如 ai_providers.apiPath 迁移 13）不应再合并。
+        if (!usedNewTable) {
+            for (alterCol in findAlterAddColumns(allSql, tableName)) {
+                if (actualCols.none { it.name == alterCol.name }) {
+                    actualCols.add(alterCol)
+                }
             }
         }
 
         // 2) 解析 Room 期望列
         // RC92 修复：Room 2.7.x schema 中部分字段（尤其 nullable 字段）的 defaultValue 可能是 JSON null，
         // org.json 的 getString 对 null 值抛 JSONException → 改用 opt 系列方法读取，缺失/null 一律视为 "undefined"。
+        // RC93 修复：Room 2.7.x schema 的 field 对象没有 primaryKeyPosition 字段（optInt 恒为 0），
+        // 主键信息在 entity.primaryKey.columnNames 数组里（数组顺序即主键顺序）。
+        // 改用该数组推导主键位置，避免全部主键列被误判为「迁移=1 期望=0」。
         val fields = entity.optJSONArray("fields")
             ?: run {
                 failures.add("[$tableName] schema 中缺少 fields 数组")
                 return
             }
+        val pkColumnNames = entity.optJSONObject("primaryKey")
+            ?.optJSONArray("columnNames")
+            ?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }
+            ?: emptyList()
         val expectedCols = mutableListOf<ExpectedCol>()
         for (j in 0 until fields.length()) {
             val f = fields.getJSONObject(j)
             val defVal = f.optString("defaultValue", "undefined")
+            val colName = f.optString("columnName", "?")
             expectedCols.add(
                 ExpectedCol(
-                    name = f.optString("columnName", "?"),
+                    name = colName,
                     affinity = f.optString("affinity", ""),
                     notNull = f.optBoolean("notNull", false),
                     defaultValue = if (defVal == "undefined" || defVal == "null") null else defVal,
-                    pkPosition = f.optInt("primaryKeyPosition", 0)
+                    pkPosition = if (colName in pkColumnNames) pkColumnNames.indexOf(colName) + 1 else 0
                 )
             )
         }
@@ -263,17 +280,22 @@ class MigrationSchemaConsistencyTest {
     // ── SQL 解析工具 ─────────────────────────────────────────────
     /**
      * 查找迁移 SQL 中该表的最终 CREATE TABLE 语句体（不含外层括号）。
+     * 返回 Pair(建表体, 是否命中 _new 重建表)。
      *
      * RC92 修复：迁移 38/41/42 采用「CREATE _new → DROP 原表 → RENAME」四步法重建表，
      * 最终表结构由 `${tableName}_new` 决定，而不是旧迁移里的原表 CREATE TABLE。
      * 因此优先匹配 `${tableName}_new`；找不到再回退匹配精确表名。
      * 两者都找不到返回 null（表在 v8 前初始 schema 创建，无 CREATE TABLE）。
+     *
+     * RC93 修复：返回 usedNewTable 标志，供调用方决定是否合并 ALTER ADD COLUMN 列
+     * （_new 重建表已包含最终全部列，此前 ALTER 添加后被删除的列不应再合并）。
      */
-    private fun findLastCreateTableBody(allSql: String, tableName: String): String? {
+    private fun findLastCreateTableBody(allSql: String, tableName: String): Pair<String, Boolean>? {
         val newName = "${tableName}_new"
         val newBody = findLastCreateTableBodyExact(allSql, newName)
-        if (newBody != null) return newBody
-        return findLastCreateTableBodyExact(allSql, tableName)
+        if (newBody != null) return newBody to true
+        val body = findLastCreateTableBodyExact(allSql, tableName)
+        return body?.let { it to false }
     }
 
     private fun findLastCreateTableBodyExact(allSql: String, tableName: String): String? {
@@ -332,8 +354,11 @@ class MigrationSchemaConsistencyTest {
     }
 
     private fun parseColumnDef(def: String): ParsedCol {
-        val name = Regex("""^`?([^`\s]+)`?""").find(def)!!.groupValues[1]
-        val rest = def.substringAfter(name).trim()
+        // RC93 修复：用完整正则匹配（含反引号）的结束位置截取剩余部分，
+        // 避免 substringAfter(name) 漏掉 name 后的反引号导致类型被解析成 "`"。
+        val m = Regex("""^`?([^`\s]+)`?""").find(def)!!
+        val name = m.groupValues[1]
+        val rest = def.substring(m.range.last + 1).trim()
         val type = rest.substringBefore(' ').substringBefore('(').trim()
         val notNull = Regex("""\bNOT\s+NULL\b""", RegexOption.IGNORE_CASE).containsMatchIn(def)
         val isPk = Regex("""\bPRIMARY\s+KEY\b""", RegexOption.IGNORE_CASE).containsMatchIn(def)
