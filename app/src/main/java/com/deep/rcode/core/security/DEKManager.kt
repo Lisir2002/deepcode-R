@@ -75,7 +75,18 @@ class DEKManager private constructor() {
 
         val existingEntry = keyStore.getEntry(MASTERKEY_ALIAS, null) as? KeyStore.SecretKeyEntry
         if (existingEntry != null) {
-            return existingEntry.secretKey
+            // RC73 修复（Incompatible purpose 根因）：设备上可能残留旧版本创建的 MasterKey，
+            // 其 KeyGenParameterSpec 用 PURPOSE_ENCRYPT|PURPOSE_DECRYPT（旧版直接加密数据），
+            // 而新代码用 Cipher.WRAP_MODE/UNWRAP_MODE 初始化它（wrapDek/unwrapDek）。
+            // Android Keystore 会在 Cipher.init 时校验用途授权，未授权 WRAP/UNWRAP 就抛
+            // KeyStoreException: Incompatible purpose → ensureInitialized 失败 → 密钥无法保存。
+            // 修复：已存在分支先校验是否支持 WRAP/UNWRAP，不支持则删除并重建（用正确用途）。
+            if (supportsWrapUnwrap(existingEntry.secretKey)) {
+                return existingEntry.secretKey
+            }
+            FileLogger.w(TAG, "已存在 MasterKey 不支持 WRAP/UNWRAP（用途不兼容），删除并重建")
+            keyStore.deleteEntry(MASTERKEY_ALIAS)
+            cachedDek = null
         }
 
         FileLogger.i(TAG, "生成新的 MasterKey（biometricRequired=$biometricRequired）")
@@ -125,6 +136,22 @@ class DEKManager private constructor() {
             val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
             keyStore.load(null)
             keyStore.containsAlias(MASTERKEY_ALIAS)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * RC73：校验 MasterKey 是否支持 WRAP/UNWRAP 用途。
+     * 用 Cipher.WRAP_MODE 初始化，若 KeyGenParameterSpec 未授权 WRAP_KEY 用途，
+     * Android Keystore 会在 init 时抛 KeyStoreException: Incompatible purpose。
+     * 必须 IO 线程。
+     */
+    private fun supportsWrapUnwrap(key: SecretKey): Boolean {
+        return try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.WRAP_MODE, key)
+            true
         } catch (e: Exception) {
             false
         }
