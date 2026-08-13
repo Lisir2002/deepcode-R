@@ -212,6 +212,22 @@ class SettingsViewModel @Inject constructor(
     private val _fetchState = MutableStateFlow<FetchState>(FetchState.Idle)
     val fetchState: StateFlow<FetchState> = _fetchState.asStateFlow()
 
+    /**
+     * RC72：保存提供商时的错误提示通道（一次性，消费后自动清空）。
+     *
+     * 背景：RC71 把 AIProviderRepositoryImpl.toEntity 的「加密失败」从静默落空串改成抛异常，
+     * 以杜绝密钥被空串覆盖。但 ViewModel 的 saveProvider 用 viewModelScope.launch 无 try-catch，
+     * 未捕获的协程异常会直接导致 App 崩溃（闪退）。这里接管异常：不崩溃、不静默丢密钥，
+     * 而是把错误暴露给 UI 弹提示。
+     */
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError: StateFlow<String?> = _saveError.asStateFlow()
+
+    /** 消费一次保存错误提示（UI 展示后调用），避免重复弹。 */
+    fun consumeSaveError() {
+        _saveError.value = null
+    }
+
     private val _testResults = MutableStateFlow<Map<String, ModelTestResult>>(emptyMap())
     val testResults: StateFlow<Map<String, ModelTestResult>> = _testResults.asStateFlow()
 
@@ -975,7 +991,14 @@ class SettingsViewModel @Inject constructor(
 
     fun saveProvider(provider: AIProviderConfig) {
         viewModelScope.launch {
-            repository.saveProvider(provider)
+            // RC72：接管保存异常，避免未捕获协程异常导致崩溃（闪退）。
+            // 底层 toEntity 在加密失败时会抛异常（防止密钥被空串覆盖），必须在这里捕获，
+            // 否则 viewModelScope.launch 的未捕获异常会直接闪退。
+            runCatching { repository.saveProvider(provider) }
+                .onFailure { e ->
+                    FileLogger.e("SettingsVM", "保存提供商失败: ${e.message}", e)
+                    _saveError.value = e.message ?: "保存失败，请重试"
+                }
         }
     }
 

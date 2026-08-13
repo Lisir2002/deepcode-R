@@ -133,6 +133,8 @@ fun ProviderEditorScreen(
     val testResults by viewModel.testResults.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val modelMetadata by viewModel.modelMetadata.collectAsStateWithLifecycle()
+    /** RC72：保存失败提示（不闪退，弹 Toast）。 */
+    val saveError by viewModel.saveError.collectAsStateWithLifecycle()
     /** RC63 ③ 兼容端点全局策略（下拉 + 两个 Switch）。 */
     val defaultPolicy by viewModel.compatibilityDefaultPolicyFlow.collectAsStateWithLifecycle()
     val autoDowngrade by viewModel.autoDowngradeOnSendFailureFlow.collectAsStateWithLifecycle()
@@ -175,6 +177,15 @@ fun ProviderEditorScreen(
         onDispose {
             viewModel.resetFetchState()
             viewModel.clearTestResults()
+        }
+    }
+
+    // RC72：保存失败时弹 Toast（不闪退），消费后不再重复弹。
+    LaunchedEffect(saveError) {
+        val err = saveError
+        if (err != null) {
+            android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.consumeSaveError()
         }
     }
 
