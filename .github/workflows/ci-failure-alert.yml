@@ -43,15 +43,15 @@ jobs:
 
           # 检查是否已有相同 workflow 的失败 issue
           match=$(echo "$existing" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-workflow = '$WORKFLOW_NAME'
-branch = '$BRANCH'
-for issue in data:
-    if workflow in issue['title'] and branch in issue['title']:
-        print(issue['number'])
-        break
-" 2>/dev/null || echo "")
+          import sys, json
+          data = json.load(sys.stdin)
+          workflow = '$WORKFLOW_NAME'
+          branch = '$BRANCH'
+          for issue in data:
+              if workflow in issue['title'] and branch in issue['title']:
+                  print(issue['number'])
+                  break
+          " 2>/dev/null || echo "")
 
           if [[ -n "$match" ]]; then
             echo "已有同类型 issue #$match，不再新建"
