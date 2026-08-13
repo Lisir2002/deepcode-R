@@ -1,6 +1,7 @@
 package com.deep.rcode.core.db
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -201,6 +202,11 @@ object LightweightSchemaRescue {
             val ctype = sqlTypeFor(f.type)
             val isSinglePk = (cname == pkColumnName)
             val isCompositePkPart = (cname in compositePkColumns)
+            // RC91 SCHEMA 42 修复：解析 @ColumnInfo(defaultValue)，让 Funnel 2 抢救建出的表
+            // 与 Room TableInfo 校验期望的 DEFAULT 完全一致（此前缺 DEFAULT → 校验失败 → 误入 Funnel 3 删表）。
+            val defaultValue = f.getAnnotation(ColumnInfo::class.java)
+                ?.takeIf { it.defaultValue != ColumnInfo.VALUE_UNSPECIFIED }
+                ?.defaultValue
             // RC67 P1-6 补充：复合主键列 SQLite 规定强制 NOT NULL（即使是 String 等非 primitive 类型也不能 NULL）
             val primitiveForceNotNull = !f.type.isPrimitive
             val nullable: Boolean = if (isCompositePkPart) false else primitiveForceNotNull
@@ -212,6 +218,7 @@ object LightweightSchemaRescue {
                     if (pkAutoGenerate && ctype == "INTEGER") append(" AUTOINCREMENT")
                 }
                 if (!nullable && !isSinglePk) append(" NOT NULL")
+                if (defaultValue != null) append(" DEFAULT $defaultValue")
             }
             (frag to cname) to Unit  // Pair 结构兼容旧循环取值 (it.first.first=frag, it.first.second=cname)
         }
@@ -235,7 +242,17 @@ object LightweightSchemaRescue {
                 val ctype = sqlTypeFor(f.type)
                 val isCompositePkPart = (cname in compositePkColumns)
                 val nullable = if (isCompositePkPart) false else !f.type.isPrimitive
-                val alterPart = "`$cname` $ctype" + if (!nullable) " NOT NULL" else ""
+                // RC91 SCHEMA 42 修复：ADD COLUMN 同样带上 @ColumnInfo(defaultValue)。
+                // SQLite 规定「NOT NULL 的 ADD COLUMN 必须带非 NULL DEFAULT」，否则 ALTER 直接失败；
+                // 且缺 DEFAULT 会导致 Room TableInfo 校验失败。
+                val defaultValue = f.getAnnotation(ColumnInfo::class.java)
+                    ?.takeIf { it.defaultValue != ColumnInfo.VALUE_UNSPECIFIED }
+                    ?.defaultValue
+                val alterPart = buildString {
+                    append("`$cname` $ctype")
+                    if (!nullable) append(" NOT NULL")
+                    if (defaultValue != null) append(" DEFAULT $defaultValue")
+                }
                 runCatching {
                     db.execSQL("ALTER TABLE `$tableName` ADD COLUMN $alterPart")
                     report.columnsAdded++
@@ -248,11 +265,35 @@ object LightweightSchemaRescue {
         }
 
         // 6) 索引（@Entity indices）
+        // RC91 SCHEMA 42 修复：
+        //   · 索引名对齐 Room 约定 index_<table>_<cols>（旧版误用 idx_ 前缀，Room TableInfo 校验
+        //     会因索引名不匹配失败 → 误入 Funnel 3 删表）；
+        //   · 索引列带 ASC/DESC 排序（@Index(orders=[...])），Room 校验会比对每个列的排序方向；
+        //   · 先清理旧版 rescue 遗留的 idx_ 前缀索引（DROP INDEX IF EXISTS），避免残留索引再次触发校验失败。
         val indices: Array<Index> = entityAnn.indices
         if (indices.isNotEmpty()) {
+            runCatching {
+                db.query("PRAGMA index_list(`$tableName`)").use { cur ->
+                    val nameIdx = cur.getColumnIndex("name")
+                    if (nameIdx >= 0) {
+                        while (cur.moveToNext()) {
+                            val name = cur.getString(nameIdx)
+                            if (name.startsWith("idx_${tableName}_")) {
+                                db.execSQL("DROP INDEX IF EXISTS `$name`")
+                            }
+                        }
+                    }
+                }
+            }.onFailure {
+                val m = "清理旧版 idx_ 遗留索引失败（非致命）: ${it.message}"
+                FileLogger.w(TAG, m, it)
+            }
             for (idx in indices) {
                 val idxName = indexNameFor(tableName, idx)
-                val cols = idx.value.joinToString(", ") { "`$it`" }
+                val cols = idx.value.mapIndexed { i, c ->
+                    val order = idx.orders.getOrNull(i) ?: Index.Order.ASC
+                    "`$c`" + if (order == Index.Order.DESC) " DESC" else " ASC"
+                }.joinToString(", ")
                 val uniquePart = if (idx.unique) " UNIQUE " else " "
                 runCatching {
                     db.execSQL("CREATE${uniquePart}INDEX IF NOT EXISTS `$idxName` ON `$tableName` ($cols)")
@@ -336,8 +377,10 @@ object LightweightSchemaRescue {
     }
 
     private fun indexNameFor(tableName: String, index: Index): String {
-        val base = "idx_${tableName}_${index.value.joinToString("_")}"
-        return if (index.unique) "${base}_unique" else base
+        // RC91 SCHEMA 42 修复：Room 生成的索引名统一为 index_<table>_<col1>_<col2>
+        // （唯一索引同样如此，只是 CREATE UNIQUE INDEX 而非名字带后缀）。
+        // 旧版返回 idx_<table>_<cols>[_unique] 与 Room 期望不符，会导致 TableInfo 校验失败。
+        return "index_${tableName}_${index.value.joinToString("_")}"
     }
 
     // ── DB-SHIELD-4 (Funnel 4)：灾难前数据库文件备份 ──────────────────────

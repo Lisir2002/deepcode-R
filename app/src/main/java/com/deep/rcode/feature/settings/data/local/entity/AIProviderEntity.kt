@@ -1,5 +1,6 @@
 package com.deep.rcode.feature.settings.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -11,7 +12,9 @@ data class AIProviderEntity(
     /**
      * Android Keystore 加密后的 API Key（AES-256-GCM）。
      * RC68 SCHEMA 38 迁移：删除明文 apiKey 列，从此列唯一负责存储；若为空表示加密尚未执行。
+     * RC91：声明与迁移 31/38 一致的 SQL DEFAULT ''，避免 Room TableInfo 校验失败。
      */
+    @ColumnInfo(defaultValue = "''")
     val encryptedApiKey: String = "",
     val baseUrl: String,
     /**
@@ -26,6 +29,7 @@ data class AIProviderEntity(
      */
     val isActive: Boolean,
     /** 可用模型列表，以换行分隔持久化。 */
+    @ColumnInfo(defaultValue = "''")
     val models: String = "",
     /**
      * 布尔语义：该 provider 是否在切换列表里“勾选可用”（= 灰色打钩）。
@@ -34,7 +38,10 @@ data class AIProviderEntity(
      *   - isEnabled 复选：用户不希望出现在「切换模型下拉」里的 provider 可以关掉。
      * RC68 前的 bug：UI 代码里有路径把两个字段都写成 true；仓储 invariant 修复确保不会同时让两条 active。
      */
+    @ColumnInfo(defaultValue = "1")
     val isEnabled: Boolean = true,
+    @ColumnInfo(defaultValue = "0")
     val useFullUrl: Boolean = false,
+    @ColumnInfo(defaultValue = "0")
     val useResponseApi: Boolean = false
 )

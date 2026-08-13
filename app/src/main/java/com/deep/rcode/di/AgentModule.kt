@@ -364,7 +364,14 @@ object AgentModule {
                 builder.fallbackToDestructiveMigration() // 真·终极兜底：DROP 所有表再重建（Funnel4 前必须已经备份 .db/.wal/.shm）
             }
         }
-        return builder.build()
+        val db = builder.build()
+        // RC91 SCHEMA 42 修复：强制打开 DB（openHelper.writableDatabase）。
+        // Room 的 build() 是惰性的——迁移执行与 TableInfo 校验发生在首次访问 DAO 时，而不是 build() 时。
+        // 若不强制打开，外层 Funnel 链的 runCatching 永远接不到迁移失败，Funnel 1 会「假成功」直接返回，
+        // 整个 DB-SHIELD 四阶段兜底架构失效（这正是此前 skill_state 迁移校验失败却能继续运行的原因）。
+        // 强制打开让迁移/校验在 buildAgentDatabase 内同步完成，失败即抛 → 被 Funnel 链正确捕获。
+        db.openHelper.writableDatabase
+        return db
     }
 
     @Provides

@@ -1,5 +1,6 @@
 package com.deep.rcode.feature.agent.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.deep.rcode.core.util.EnumSafe
@@ -35,12 +36,17 @@ data class AgentMessageEntity(
     // 仅 USER 行：用户上传附件的展示元数据。内部模型提示仍不落入 content。
     val attachmentsJson: String? = null,
     /** 该消息已被上下文压缩归入摘要，不应再参与上下文回放或 UI 展示。默认 false。 */
+    @ColumnInfo(defaultValue = "0")
     val isCompacted: Boolean = false,
     /** 上下文压缩生成的内部摘要：参与模型回放，但不作为普通聊天气泡展示。 */
+    @ColumnInfo(defaultValue = "0")
     val isContextSummary: Boolean = false,
     /** 上下文压缩生成的内部用户锚点：参与模型回放，UI 渲染为压缩分隔线。 */
+    @ColumnInfo(defaultValue = "0")
     val isCompactionMarker: Boolean = false,
+    @ColumnInfo(defaultValue = "0")
     val inputTokens: Int = 0,
+    @ColumnInfo(defaultValue = "0")
     val outputTokens: Int = 0
 ) {
     fun toUIMessage(): AgentUIMessage {

@@ -1,5 +1,6 @@
 package com.deep.rcode.feature.credentials.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -19,11 +20,16 @@ data class GitCredentialEntity(
     /** 账号用户名。与 token 拼成 `user:token` 后 base64 注入 Authorization。 */
     val username: String,
     /** Android Keystore AES-256-GCM 加密后的访问令牌（PAT 等）。 */
+    @ColumnInfo(defaultValue = "''")
     val encryptedToken: String = "",
     /** 用户自定义别名，为空时 UI 显示 host · username。 */
+    @ColumnInfo(defaultValue = "''")
     val label: String = "",
     /** 是否为该 host 的默认凭据（host 内唯一）。切换 default 时由仓储清同 host 其余。 */
+    @ColumnInfo(defaultValue = "0")
     val isDefault: Boolean = false,
+    @ColumnInfo(defaultValue = "0")
     val createdAtMs: Long = 0,
+    @ColumnInfo(defaultValue = "0")
     val updatedAtMs: Long = 0
 )

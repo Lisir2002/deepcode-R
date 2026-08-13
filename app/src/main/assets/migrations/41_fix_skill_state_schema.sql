@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS skill_state_new (
 INSERT INTO skill_state_new (id, enabled, version, source, installedAtMs)
     SELECT id, enabled, version, source, installedAtMs FROM skill_state;
 
-DROP TABLE skill_state;
+-- RC91：DROP 加 IF EXISTS，防止 skill_state 已被 Funnel 3 破坏性重建删掉时连锁报 no such table。
+DROP TABLE IF EXISTS skill_state;
 
 ALTER TABLE skill_state_new RENAME TO skill_state;

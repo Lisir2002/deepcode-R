@@ -378,6 +378,8 @@ dependencies {
 
     // Testing
     testImplementation("junit:junit:4.13.2")
+    // MigrationSchemaConsistencyTest：解析 Room 导出的 schema JSON（app/schemas/）做迁移一致性校验
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation(composeBom)

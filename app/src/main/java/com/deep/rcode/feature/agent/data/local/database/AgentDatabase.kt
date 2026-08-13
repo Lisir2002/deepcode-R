@@ -72,8 +72,8 @@ import com.deep.rcode.feature.t2i.data.local.entity.T2ITaskEntity
         T2ITaskEntity::class,
         SkillStateEntity::class
     ],
-    version = 41,
-    exportSchema = false
+    version = 42,
+    exportSchema = true
 )
 abstract class AgentDatabase : RoomDatabase() {
     abstract fun agentMessageDao(): AgentMessageDao
@@ -100,6 +100,6 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun skillStateDao(): SkillStateDao
 
     companion object {
-        const val SCHEMA_VERSION = 41
+        const val SCHEMA_VERSION = 42
     }
 }

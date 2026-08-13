@@ -1,13 +1,24 @@
 package com.deep.rcode.feature.agent.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.deep.rcode.core.util.EnumSafe
 import com.deep.rcode.feature.agent.domain.model.AgentMode
 import com.deep.rcode.feature.agent.domain.model.ChatSession
 import com.deep.rcode.feature.agent.domain.model.ReasoningEffort
 
-@Entity(tableName = "chat_sessions")
+@Entity(
+    tableName = "chat_sessions",
+    indices = [
+        // RC91：与迁移 38 创建的 index_chat_sessions_workspacePath_updatedAtMs 完全对齐（含 DESC 排序）
+        Index(
+            value = ["workspacePath", "updatedAtMs"],
+            orders = [Index.Order.ASC, Index.Order.DESC]
+        )
+    ]
+)
 data class ChatSessionEntity(
     @PrimaryKey val id: String,
     val title: String,
@@ -15,13 +26,19 @@ data class ChatSessionEntity(
     val createdAtMs: Long,
     /** 最后一次更新时间毫秒。 */
     val updatedAtMs: Long,
+    @ColumnInfo(defaultValue = "''")
     val workspacePath: String = "",
+    @ColumnInfo(defaultValue = "'BUILD'")
     val mode: String = AgentMode.BUILD.name,
+    @ColumnInfo(defaultValue = "'MEDIUM'")
     val reasoningEffort: String = ReasoningEffort.MEDIUM.name,
     val providerId: String? = null,
     val model: String? = null,
+    @ColumnInfo(defaultValue = "0")
     val totalInputTokens: Int = 0,
+    @ColumnInfo(defaultValue = "0")
     val totalOutputTokens: Int = 0,
+    @ColumnInfo(defaultValue = "0")
     val lastInputTokens: Int = 0
 ) {
     fun toDomain(): ChatSession = ChatSession(

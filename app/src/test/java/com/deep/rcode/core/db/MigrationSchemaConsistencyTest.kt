@@ -1,0 +1,351 @@
+package com.deep.rcode.core.db
+
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+import java.io.File
+import java.io.FileFilter
+
+/**
+ * DB-SHIELD Phase C-RC91 新增 CI 闸门：MigrationSchemaConsistencyTest。
+ *
+ * 背景：RC74 skill_state / RC68 三张表（session_checkpoints、model_capability_overrides、
+ * zth_hallucination_fuses）都出现过「迁移 SQL 建的表结构与 @Entity 定义不一致」的隐患，
+ * 表现为 Room TableInfo 校验失败（Migration didn't properly handle: xxx），
+ * 轻则日志刷错、重则触发 Funnel 3 删表丢数据。
+ *
+ * 本测试以 Room 导出的 schema JSON（app/schemas/.../N.json，由 KSP 在编译期生成）为权威基准，
+ * 逐表对比 assets/migrations 下所有迁移 SQL 的「最终建表结果」：
+ *   1) 列名集合一致
+ *   2) 每列类型 / NOT NULL / DEFAULT / 主键位置一致
+ *   3) 索引集合一致（名称 / unique / 列 / ASC-DESC 排序）
+ *
+ * 一旦有人改了 Entity 却忘了同步迁移 SQL（或反之），CI 立即 fail，杜绝「升级后 TableInfo 校验失败」。
+ *
+ * 前置条件：schemas 目录必须存在（先执行一次构建，KSP 会导出 Room schema）。
+ * 该目录已提交进仓库，CI 上编译后自动刷新，因此测试始终基于最新 Entity 定义。
+ */
+class MigrationSchemaConsistencyTest {
+
+    private val projectRoot: File by lazy {
+        var f = File(System.getProperty("user.dir") ?: ".")
+        for (i in 0..5) {
+            val has = f.listFiles(FileFilter { it.name.startsWith("settings.gradle") })?.isNotEmpty() == true
+            if (has) return@lazy f
+            f = f.parentFile ?: break
+        }
+        File(System.getProperty("user.dir") ?: ".").resolve("../..").canonicalFile
+    }
+
+    private val migrationsDir: File by lazy {
+        val candidate = projectRoot.resolve("app/src/main/assets/migrations")
+        assertTrue("migrations 目录不存在: ${candidate.path}", candidate.isDirectory)
+        candidate
+    }
+
+    private val schemasDir: File by lazy {
+        projectRoot.resolve("app/schemas")
+    }
+
+    // ── 数据结构 ────────────────────────────────────────────────
+    private data class ParsedCol(
+        val name: String,
+        val type: String,
+        val notNull: Boolean,
+        val defaultValue: String?,
+        val isPk: Boolean
+    )
+
+    private data class ParsedIndex(
+        val name: String,
+        val unique: Boolean,
+        val columns: List<String>,
+        val orders: List<String>
+    )
+
+    private data class MigrationFile(val fileName: String, val version: Int, val file: File)
+
+    // ── 主测试 ──────────────────────────────────────────────────
+    @Test
+    fun `SCHEMA-CONSISTENCY - 迁移 SQL 最终建表与 Room 导出 schema 完全一致`() {
+        val schemaFile = findSchemaJson()
+        val schema = JSONObject(schemaFile.readText())
+        val dbObj = schema.getJSONObject("database")
+        val entities = dbObj.getJSONArray("entities")
+
+        val migrations = listMigrationFiles().sortedBy { it.version }
+        val allSql = migrations.joinToString("\n") { it.file.readText() }
+
+        val failures = mutableListOf<String>()
+        for (i in 0 until entities.length()) {
+            val entity = entities.getJSONObject(i)
+            val tableName = entity.getString("tableName")
+            checkEntity(entity, tableName, allSql, failures)
+        }
+
+        if (failures.isNotEmpty()) {
+            fail(
+                "SCHEMA-CONSISTENCY 发现 ${failures.size} 处迁移 SQL 与 Room 导出 schema 不一致 " +
+                        "（基准 schema: ${schemaFile.name}）。\n" +
+                        "这些不一致会导致 Room TableInfo 校验失败（Migration didn't properly handle），" +
+                        "触发 Funnel 2/3 抢救甚至删表丢数据。请同步修改迁移 SQL 或 Entity 定义。\n" +
+                        failures.joinToString("\n")
+            )
+        }
+    }
+
+    // ── 单表校验 ────────────────────────────────────────────────
+    private fun checkEntity(
+        entity: JSONObject,
+        tableName: String,
+        allSql: String,
+        failures: MutableList<String>
+    ) {
+        val createBody = findLastCreateTableBody(allSql, tableName)
+        if (createBody == null) {
+            failures.add("[$tableName] 迁移 SQL 中找不到 CREATE TABLE 语句（Entity 存在但迁移缺失？）")
+            return
+        }
+
+        // 1) 解析迁移 SQL 的实际列
+        val items = splitTopLevel(createBody)
+        val actualCols = mutableListOf<ParsedCol>()
+        val tablePk = parseTableLevelPk(createBody)
+        for (item in items) {
+            val upper = item.uppercase()
+            if (upper.startsWith("PRIMARY KEY") ||
+                upper.startsWith("FOREIGN KEY") ||
+                upper.startsWith("CHECK") ||
+                upper.startsWith("UNIQUE")
+            ) {
+                continue
+            }
+            actualCols.add(parseColumnDef(item))
+        }
+
+        // 2) 解析 Room 期望列
+        val fields = entity.getJSONArray("fields")
+        val expectedCols = mutableListOf<ExpectedCol>()
+        for (j in 0 until fields.length()) {
+            val f = fields.getJSONObject(j)
+            val defVal = f.getString("defaultValue")
+            expectedCols.add(
+                ExpectedCol(
+                    name = f.getString("columnName"),
+                    affinity = f.optString("affinity", ""),
+                    notNull = f.getBoolean("notNull"),
+                    defaultValue = if (defVal == "undefined") null else defVal,
+                    pkPosition = f.getInt("primaryKeyPosition")
+                )
+            )
+        }
+
+        // 3) 列名集合
+        val actualNames = actualCols.map { it.name }.toSet()
+        val expectedNames = expectedCols.map { it.name }.toSet()
+        if (actualNames != expectedNames) {
+            failures.add(
+                "[$tableName] 列名不一致：迁移=${actualNames.sorted()} 期望=${expectedNames.sorted()}"
+            )
+            return
+        }
+
+        // 4) 逐列对比
+        for (exp in expectedCols) {
+            val act = actualCols.first { it.name == exp.name }
+            if (act.type.uppercase() != exp.affinity.uppercase()) {
+                failures.add("[$tableName] 列 ${exp.name} 类型不一致：迁移=${act.type} 期望=${exp.affinity}")
+            }
+            if (act.notNull != exp.notNull) {
+                failures.add("[$tableName] 列 ${exp.name} NOT NULL 不一致：迁移=${act.notNull} 期望=${exp.notNull}")
+            }
+            if (act.defaultValue != exp.defaultValue) {
+                failures.add(
+                    "[$tableName] 列 ${exp.name} DEFAULT 不一致：迁移=${act.defaultValue ?: "无"} 期望=${exp.defaultValue ?: "无"}"
+                )
+            }
+            val actPkPos = when {
+                act.isPk -> 1
+                tablePk.contains(exp.name) -> tablePk.indexOf(exp.name) + 1
+                else -> 0
+            }
+            if (actPkPos != exp.pkPosition) {
+                failures.add("[$tableName] 列 ${exp.name} 主键位置不一致：迁移=$actPkPos 期望=${exp.pkPosition}")
+            }
+        }
+
+        // 5) 索引对比
+        val actualIndices = findIndicesForTable(allSql, tableName)
+        val expectedIndices = parseExpectedIndices(entity)
+        val actualIndexNames = actualIndices.map { it.name }.toSet()
+        val expectedIndexNames = expectedIndices.map { it.name }.toSet()
+        if (actualIndexNames != expectedIndexNames) {
+            failures.add(
+                "[$tableName] 索引集合不一致：迁移=${actualIndexNames.sorted()} 期望=${expectedIndexNames.sorted()}"
+            )
+        } else {
+            for (expIdx in expectedIndices) {
+                val actIdx = actualIndices.first { it.name == expIdx.name }
+                if (actIdx.unique != expIdx.unique) {
+                    failures.add("[$tableName] 索引 ${expIdx.name} unique 不一致：迁移=${actIdx.unique} 期望=${expIdx.unique}")
+                }
+                if (actIdx.columns != expIdx.columns) {
+                    failures.add("[$tableName] 索引 ${expIdx.name} 列不一致：迁移=${actIdx.columns} 期望=${expIdx.columns}")
+                }
+                if (actIdx.orders != expIdx.orders) {
+                    failures.add("[$tableName] 索引 ${expIdx.name} 排序不一致：迁移=${actIdx.orders} 期望=${expIdx.orders}")
+                }
+            }
+        }
+    }
+
+    private data class ExpectedCol(
+        val name: String,
+        val affinity: String,
+        val notNull: Boolean,
+        val defaultValue: String?,
+        val pkPosition: Int
+    )
+
+    private fun parseExpectedIndices(entity: JSONObject): List<ParsedIndex> {
+        val indices = entity.getJSONArray("indices")
+        val result = mutableListOf<ParsedIndex>()
+        for (i in 0 until indices.length()) {
+            val idx = indices.getJSONObject(i)
+            val colsArr = idx.getJSONArray("columnNames")
+            val ordersArr = idx.optJSONArray("orders")
+            val cols = (0 until colsArr.length()).map { colsArr.getString(it) }
+            val orders = if (ordersArr != null && ordersArr.length() == cols.size) {
+                (0 until ordersArr.length()).map { ordersArr.getString(it) }
+            } else {
+                cols.map { "ASC" }
+            }
+            result.add(
+                ParsedIndex(
+                    name = idx.getString("name"),
+                    unique = idx.getBoolean("unique"),
+                    columns = cols,
+                    orders = orders
+                )
+            )
+        }
+        return result
+    }
+
+    // ── SQL 解析工具 ─────────────────────────────────────────────
+    private fun findLastCreateTableBody(allSql: String, tableName: String): String? {
+        val regex = Regex("""(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?$tableName`?\s*\(""")
+        val matches = regex.findAll(allSql).toList()
+        if (matches.isEmpty()) return null
+        val m = matches.last()
+        val start = m.range.last + 1
+        var depth = 1
+        var i = start
+        while (i < allSql.length && depth > 0) {
+            when (allSql[i]) {
+                '(' -> depth++
+                ')' -> depth--
+            }
+            i++
+        }
+        if (depth != 0) return null
+        return allSql.substring(start, i - 1)
+    }
+
+    private fun splitTopLevel(body: String): List<String> {
+        val parts = mutableListOf<String>()
+        var depth = 0
+        var start = 0
+        for (i in body.indices) {
+            when (body[i]) {
+                '(' -> depth++
+                ')' -> depth--
+                ',' -> if (depth == 0) {
+                    parts.add(body.substring(start, i).trim())
+                    start = i + 1
+                }
+            }
+        }
+        parts.add(body.substring(start).trim())
+        return parts.filter { it.isNotBlank() }
+    }
+
+    private fun parseColumnDef(def: String): ParsedCol {
+        val name = Regex("""^`?([^`\s]+)`?""").find(def)!!.groupValues[1]
+        val rest = def.substringAfter(name).trim()
+        val type = rest.substringBefore(' ').substringBefore('(').trim()
+        val notNull = Regex("""\bNOT\s+NULL\b""", RegexOption.IGNORE_CASE).containsMatchIn(def)
+        val isPk = Regex("""\bPRIMARY\s+KEY\b""", RegexOption.IGNORE_CASE).containsMatchIn(def)
+        return ParsedCol(name, type, notNull, extractDefaultValue(def), isPk)
+    }
+
+    private fun extractDefaultValue(def: String): String? {
+        val m = Regex("""(?i)\bDEFAULT\s+""").find(def) ?: return null
+        val rest = def.substring(m.range.last + 1).trim()
+        return if (rest.startsWith("'")) {
+            var j = 1
+            while (j < rest.length) {
+                if (rest[j] == '\'') {
+                    if (j + 1 < rest.length && rest[j + 1] == '\'') {
+                        j += 2
+                        continue
+                    }
+                    return rest.substring(0, j + 1)
+                }
+                j++
+            }
+            rest
+        } else {
+            rest.substringBefore(' ').trim()
+        }
+    }
+
+    private fun parseTableLevelPk(body: String): List<String> {
+        val m = Regex("""(?i)PRIMARY\s+KEY\s*\(([^)]*)\)""").find(body) ?: return emptyList()
+        return m.groupValues[1].split(',').map { it.trim().trim('`') }.filter { it.isNotBlank() }
+    }
+
+    private fun findIndicesForTable(allSql: String, tableName: String): List<ParsedIndex> {
+        val result = mutableListOf<ParsedIndex>()
+        val regex = Regex(
+            """(?i)CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([^`\s]+)`?\s+ON\s+`?$tableName`?\s*\(([^)]*)\)"""
+        )
+        for (m in regex.findAll(allSql)) {
+            val unique = m.groupValues[1].isNotBlank()
+            val name = m.groupValues[2]
+            val colsPart = m.groupValues[3]
+            val cols = colsPart.split(',').map { it.trim() }
+            val colNames = cols.map { it.substringBefore(' ').trim().trim('`') }
+            val orders = cols.map { c ->
+                if (Regex("""\bDESC\b""", RegexOption.IGNORE_CASE).containsMatchIn(c)) "DESC" else "ASC"
+            }
+            result.add(ParsedIndex(name, unique, colNames, orders))
+        }
+        return result
+    }
+
+    // ── 文件工具 ─────────────────────────────────────────────────
+    private fun listMigrationFiles(): List<MigrationFile> = migrationsDir
+        .listFiles { _, name -> name.endsWith(".sql") }
+        .orEmpty()
+        .map { f ->
+            val prefix: String = f.name.substringBefore('_')
+            val parsed: Int = prefix.toIntOrNull()
+                ?: error("迁移文件名无法解析版本号前缀: ${f.name}（格式应为 <version>_xxx.sql）")
+            MigrationFile(fileName = f.name, version = parsed, file = f)
+        }
+
+    private fun findSchemaJson(): File {
+        assertTrue(
+            "schemas 目录不存在: ${schemasDir.path}\n" +
+                    "请先执行一次构建（./gradlew :app:assembleDebug 或 :app:testDebugUnitTest），" +
+                    "KSP 会在编译期把 Room schema 导出到 app/schemas/ 下。",
+            schemasDir.isDirectory
+        )
+        val files = schemasDir.walkTopDown().filter { it.isFile && it.name.endsWith(".json") }.toList()
+        assertTrue("schemas 目录下没有 .json 文件: ${schemasDir.path}", files.isNotEmpty())
+        return files.maxByOrNull { it.lastModified() }!!
+    }
+}
