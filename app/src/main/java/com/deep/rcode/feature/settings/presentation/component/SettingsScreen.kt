@@ -71,7 +71,6 @@ import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
 import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.presentation.SecuritySettingsViewModel
 import com.deep.rcode.feature.settings.presentation.SettingsViewModel
-import com.deep.rcode.feature.settings.presentation.SkillsViewModel
 import com.deep.rcode.feature.settings.presentation.components.RemoteAuditLogsScreen
 import com.deep.rcode.feature.settings.presentation.components.SecuritySettingsScreen
 import compose.icons.FeatherIcons
@@ -92,7 +91,6 @@ import compose.icons.feathericons.Save
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Server
 import compose.icons.feathericons.Terminal
-import compose.icons.feathericons.Zap
 
 /** 设置页内部二级菜单分区。Menu 为首页菜单，其余为各自的二级页。 */
 enum class SettingsSection(@param:StringRes val titleRes: Int) {
@@ -108,7 +106,6 @@ enum class SettingsSection(@param:StringRes val titleRes: Int) {
     Backup(R.string.settings_backup),
     Security(R.string.settings_security),
     RemoteAuditLogs(R.string.settings_remote_audit_logs),
-    Skills(R.string.settings_skills),
     About(R.string.settings_about)
 }
 
@@ -119,7 +116,6 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToTerminalSettings: () -> Unit = {},
     onNavigateToSshHosts: () -> Unit = {},
-    onNavigateToCapabilityCenter: () -> Unit = {},
     onStopAllAndCloseTerminal: () -> Unit = {}
 ) {
     val providers by viewModel.providers.collectAsStateWithLifecycle()
@@ -292,8 +288,7 @@ fun SettingsScreen(
                         }
                         section = it
                     },
-                    onNavigateToTerminalSettings = onNavigateToTerminalSettings,
-                    onNavigateToCapabilityCenter = onNavigateToCapabilityCenter
+                    onNavigateToTerminalSettings = onNavigateToTerminalSettings
                 )
                 SettingsSection.Providers -> ProvidersSection(
                     providers = providers,
@@ -378,11 +373,6 @@ fun SettingsScreen(
                 }
                 SettingsSection.RemoteAuditLogs -> {
                     RemoteAuditLogsScreen(auditLogRepo = viewModel.auditLogRepository)
-                }
-                SettingsSection.Skills -> {
-                    val skillsViewModel: SkillsViewModel =
-                        androidx.hilt.navigation.compose.hiltViewModel()
-                    SkillsScreen(viewModel = skillsViewModel)
                 }
                 SettingsSection.ProviderEditor -> {} // 已在上方 early return 处理
                 SettingsSection.RemoteServers -> {} // 已在上方 early return 处理
@@ -470,7 +460,6 @@ internal fun SettingsMenu(
     onOpenLanguageSheet: () -> Unit,
     onOpen: (SettingsSection) -> Unit,
     onNavigateToTerminalSettings: () -> Unit = {},
-    onNavigateToCapabilityCenter: () -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val themeLabel = stringResource(themeMode.labelRes)
@@ -538,15 +527,6 @@ internal fun SettingsMenu(
             icon = FeatherIcons.Box,
             keywords = listOf("mcp", "server", "工具", "function", "协议", "服务器"),
             action = { onOpen(SettingsSection.Mcp) }
-        ),
-        MenuItem(
-            section = SettingsSection.Skills,
-            group = groupAI,
-            title = stringResource(SettingsSection.Skills.titleRes),
-            subtitle = stringResource(R.string.settings_skills_subtitle),
-            icon = FeatherIcons.Zap,
-            keywords = listOf("skill", "技能", "prompt", "脚本", "script", "mcp", "加载"),
-            action = onNavigateToCapabilityCenter
         ),
         MenuItem(
             section = SettingsSection.Permissions,

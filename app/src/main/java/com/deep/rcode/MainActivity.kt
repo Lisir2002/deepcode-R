@@ -401,7 +401,6 @@ fun AppNavigation() {
                         scope.launch { drawerState.open() }
                     },
                     onNavigateToTerminalSettings = { navController.navigate("terminal_settings") },
-                    onNavigateToCapabilityCenter = { navController.navigate("capability_center") },
                     // RC62：用户点「管理 SSH 主机配置」不再是占位。
                     // 从 SettingsScreen（本路由内部）点 → 直接让 SettingsScreen 的 section 切换 RemoteServers。
                     // 实现方式：利用 SettingsScreen 内部已经消费的 SettingsViewModel.openSection() 机制，
