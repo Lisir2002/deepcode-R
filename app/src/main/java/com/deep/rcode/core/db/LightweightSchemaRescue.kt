@@ -17,6 +17,7 @@ import com.deep.rcode.feature.agent.data.local.entity.HardConstraintDeleteAuditE
 import com.deep.rcode.feature.agent.data.local.entity.L0SoftCompactRestoreLogEntity
 import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.deep.rcode.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
+import com.deep.rcode.feature.agent.data.local.entity.SkillStateEntity
 import com.deep.rcode.feature.agent.data.local.entity.TodoItemEntity
 import com.deep.rcode.feature.agent.data.local.entity.UserConfirmedSentinelEntity
 import com.deep.rcode.feature.agent.data.local.entity.ZthTelemetryEventEntity
@@ -96,7 +97,9 @@ object LightweightSchemaRescue {
         // ══ RC69 T2I 新增：同步 AgentDatabase.kt @Database entities[18..20] ══
         T2IProviderEntity::class.java,
         T2IProviderModelEntity::class.java,
-        T2ITaskEntity::class.java
+        T2ITaskEntity::class.java,
+        // ══ RC74 Skill 新增：同步 AgentDatabase.kt @Database entities[21]（skill_state）══
+        SkillStateEntity::class.java
     )
 
     fun rescue(context: Context, dbFile: File, dbVersion: Int): RescueReport {
