@@ -93,13 +93,17 @@ class MigrationSchemaConsistencyTest {
         }
 
         if (failures.isNotEmpty()) {
-            fail(
+            val msg =
                 "SCHEMA-CONSISTENCY 发现 ${failures.size} 处迁移 SQL 与 Room 导出 schema 不一致 " +
                         "（基准 schema: ${schemaFile.name}）。\n" +
                         "这些不一致会导致 Room TableInfo 校验失败（Migration didn't properly handle），" +
                         "触发 Funnel 2/3 抢救甚至删表丢数据。请同步修改迁移 SQL 或 Entity 定义。\n" +
                         failures.joinToString("\n")
-            )
+            // RC92：println 到 stdout，让 Gradle 控制台日志直接可见（测试报告在 CI 上不易获取）
+            println("\n===== SCHEMA-CONSISTENCY FAILURE DETAILS =====")
+            println(msg)
+            println("==============================================")
+            fail(msg)
         }
     }
 
