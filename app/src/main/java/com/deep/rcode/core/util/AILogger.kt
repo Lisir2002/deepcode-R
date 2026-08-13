@@ -1,7 +1,11 @@
 package com.deep.rcode.core.util
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Environment
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.google.gson.GsonBuilder
 import java.io.File
 
@@ -18,17 +22,24 @@ import java.util.concurrent.atomic.AtomicInteger
  * 与 [FileLogger]（按天分文件的通用应用日志）相互独立：本类按「会话」维度归档，体量更大、
  * 内容更全（含完整对话历史、工具定义、原始 SSE 流），因此单独成文件、单独清理。
  *
- * 文件落在外部私有目录 `getExternalFilesDir/ai-logs/session-<id>.log`（不可用时回退内部
- * `filesDir/ai-logs/`）。所有写入串行化到单线程后台执行，不阻塞调用方协程。
+ * 文件写入**公共外部存储** `Documents/RDeepCode/ai-logs/session-<id>.log`（当 WRITE_EXTERNAL_STORAGE
+ * 权限已授予时），该目录在应用卸载后**仍然保留**；权限未授予时回退外部私有目录
+ * `getExternalFilesDir/ai-logs/`（不可用时再回退内部 `filesDir/ai-logs/`）。
+ * 所有写入串行化到单线程后台执行，不阻塞调用方协程。
  * 请求体不含 API Key（密钥在 HTTP 头，本类只记录 URL 与 body），可安全留存。
  *
- * 使用前需在 [android.app.Application.onCreate] 调用一次 [init]。
+ * 使用前需在 [android.app.Application.onCreate] 调用一次 [init]；当外部存储权限在运行时被授予后，
+ * 调用方（如 MainActivity 权限回调）应调用 [onExternalStorageGranted] 把日志目录切换到公共存储。
  */
 object AILogger {
 
     private const val TAG = "AILogger"
     private const val MAX_AGE_DAYS = 7
     private const val MAX_FILE_BYTES = 20 * 1024 * 1024 // 单会话文件上限 20MB（每轮重发完整历史，增长快）
+
+    // 公共外部存储目录（卸载后仍保留）：/storage/emulated/0/Documents/RDeepCode/ai-logs
+    private const val PUBLIC_ROOT_DIR = "RDeepCode"
+    private const val PUBLIC_LOG_SUBDIR = "ai-logs"
 
     private val ioExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "ai-logger").apply { isDaemon = true }
@@ -47,13 +58,46 @@ object AILogger {
     /** 初始化日志目录。重复调用安全。 */
     fun init(context: Context) {
         if (logDir != null) return
-        // 优先外部私有目录，便于（root 或 adb 下）取出；不可用时回退内部存储。
-        val base = context.getExternalFilesDir(null) ?: context.filesDir
-        val dir = File(base, "ai-logs").apply { mkdirs() }
+        val dir = resolveLogDir(context)
         logDir = dir
         ioExecutor.execute { cleanupOldLogs(dir) }
         FileLogger.i(TAG, "AILogger 初始化完成，AI 会话日志目录: ${dir.absolutePath}")
     }
+
+    /**
+     * 外部存储权限在运行时被授予后调用，把日志目录切换到公共外部存储（卸载后仍保留）。
+     * [init] 通常发生在 Application.onCreate（早于权限授予），因此需要在此处重新解析目录。
+     */
+    fun onExternalStorageGranted(context: Context) {
+        val newDir = resolveLogDir(context)
+        val current = logDir
+        if (current == null || newDir.absolutePath != current.absolutePath) {
+            logDir = newDir
+            ioExecutor.execute { cleanupOldLogs(newDir) }
+            FileLogger.i(TAG, "外部存储权限已授予，AI 会话日志目录切换为: ${newDir.absolutePath}")
+        }
+    }
+
+    /**
+     * 解析日志目录：优先公共外部存储 `Documents/RDeepCode/ai-logs`（卸载后保留，需 WRITE_EXTERNAL_STORAGE
+     * 权限，targetSdk=28 下可写）；权限未授予时回退外部私有目录，再回退内部存储。
+     */
+    @Suppress("DEPRECATION") // targetSdk=28 下 getExternalStoragePublicDirectory 仍可用且不受分区存储限制
+    private fun resolveLogDir(context: Context): File {
+        if (hasExternalStorageWrite(context)) {
+            val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            val dir = File(File(base, PUBLIC_ROOT_DIR), PUBLIC_LOG_SUBDIR)
+            if (dir.exists() || dir.mkdirs()) return dir
+        }
+        // 回退：外部私有目录（卸载时清除，但无需权限）；再回退内部存储。
+        val base = context.getExternalFilesDir(null) ?: context.filesDir
+        return File(base, "ai-logs").apply { mkdirs() }
+    }
+
+    private fun hasExternalStorageWrite(context: Context): Boolean =
+        Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
 
     /**
      * 记录一次请求的 URL 与请求体，并把本会话计数 +1（作为本次交互的序号）。

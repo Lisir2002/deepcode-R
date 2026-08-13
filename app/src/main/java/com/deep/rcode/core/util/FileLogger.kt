@@ -1,7 +1,11 @@
 package com.deep.rcode.core.util
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Environment
 import android.util.Log
+import androidx.core.content.ContextCompat
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -20,24 +24,31 @@ enum class LogLevel {
 }
 
 /**
- * 把日志落盘到 App 的内部存储，方便在没有连接 adb 的情况下调试。
+ * 把日志落盘到 App 的存储，方便在没有连接 adb 的情况下调试。
  *
- * 日志写到外部私有目录 `getExternalFilesDir/logs/` 下（不可用时回退到内部 `filesDir/logs/`），
- * 按天分文件（log-yyyy-MM-dd.txt）。外部私有目录可通过文件管理器在
- * `/storage/emulated/0/Android/data/<包名>/files/logs/` 直接查看，无需 root。
+ * 日志写入**公共外部存储** `Documents/RDeepCode/logs/`（当 WRITE_EXTERNAL_STORAGE 权限已授予时），
+ * 该目录在应用卸载后**仍然保留**，便于卸载后排查问题；权限未授予时回退到外部私有目录
+ * `getExternalFilesDir/logs/`（不可用时再回退内部 `filesDir/logs/`），按天分文件
+ * （log-yyyy-MM-dd.txt）。公共外部目录可通过文件管理器在
+ * `/storage/emulated/0/Documents/RDeepCode/logs/` 直接查看，无需 root。
  * 所有写入都串行化到单线程后台执行，避免阻塞主线程与多线程交错。同时镜像一份到 [android.util.Log]。
  *
  * 支持按等级过滤：低于 [minLevel] 的日志（含 logcat 镜像与落盘）一律跳过。等级由
  * `LogSettingsRepository` 持久化、`AIEditorApp` 在启动与设置变更时通过 [setMinLevel] 同步。
  * 开发期默认 [LogLevel.VERBOSE]（全量记录）。
  *
- * 使用前需在 [Application.onCreate] 调用一次 [init]。
+ * 使用前需在 [Application.onCreate] 调用一次 [init]；当外部存储权限在运行时被授予后，
+ * 调用方（如 MainActivity 权限回调）应调用 [onExternalStorageGranted] 把日志目录切换到公共存储。
  */
 object FileLogger {
 
     private const val TAG = "FileLogger"
     private const val MAX_AGE_DAYS = 7
     private const val MAX_FILE_BYTES = 5 * 1024 * 1024 // 单个日志文件上限 5MB（VERBOSE 下增长较快）
+
+    // 公共外部存储目录（卸载后仍保留）：/storage/emulated/0/Documents/RDeepCode/logs
+    private const val PUBLIC_ROOT_DIR = "RDeepCode"
+    private const val PUBLIC_LOG_SUBDIR = "logs"
 
     private val ioExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "file-logger").apply { isDaemon = true }
@@ -67,13 +78,46 @@ object FileLogger {
     /** 初始化日志目录。重复调用安全。 */
     fun init(context: Context) {
         if (logDir != null) return
-        // 优先外部私有目录，便于用户用文件管理器查看；不可用时回退内部存储。
-        val base = context.getExternalFilesDir(null) ?: context.filesDir
-        val dir = File(base, "logs").apply { mkdirs() }
+        val dir = resolveLogDir(context)
         logDir = dir
         ioExecutor.execute { cleanupOldLogs(dir) }
         i(TAG, "FileLogger 初始化完成，日志目录: ${dir.absolutePath}")
     }
+
+    /**
+     * 外部存储权限在运行时被授予后调用，把日志目录切换到公共外部存储（卸载后仍保留）。
+     * [init] 通常发生在 Application.onCreate（早于权限授予），因此需要在此处重新解析目录。
+     */
+    fun onExternalStorageGranted(context: Context) {
+        val newDir = resolveLogDir(context)
+        val current = logDir
+        if (current == null || newDir.absolutePath != current.absolutePath) {
+            logDir = newDir
+            ioExecutor.execute { cleanupOldLogs(newDir) }
+            i(TAG, "外部存储权限已授予，日志目录切换为: ${newDir.absolutePath}")
+        }
+    }
+
+    /**
+     * 解析日志目录：优先公共外部存储 `Documents/RDeepCode/logs`（卸载后保留，需 WRITE_EXTERNAL_STORAGE
+     * 权限，targetSdk=28 下可写）；权限未授予时回退外部私有目录，再回退内部存储。
+     */
+    @Suppress("DEPRECATION") // targetSdk=28 下 getExternalStoragePublicDirectory 仍可用且不受分区存储限制
+    private fun resolveLogDir(context: Context): File {
+        if (hasExternalStorageWrite(context)) {
+            val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            val dir = File(File(base, PUBLIC_ROOT_DIR), PUBLIC_LOG_SUBDIR)
+            if (dir.exists() || dir.mkdirs()) return dir
+        }
+        // 回退：外部私有目录（卸载时清除，但无需权限）；再回退内部存储。
+        val base = context.getExternalFilesDir(null) ?: context.filesDir
+        return File(base, "logs").apply { mkdirs() }
+    }
+
+    private fun hasExternalStorageWrite(context: Context): Boolean =
+        Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
 
     fun v(tag: String, message: String) {
         if (!shouldLog(LogLevel.VERBOSE)) return

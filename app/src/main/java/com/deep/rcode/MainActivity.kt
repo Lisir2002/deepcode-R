@@ -106,7 +106,11 @@ class MainActivity : ComponentActivity() {
     ) { grants ->
         val granted = grants[Manifest.permission.WRITE_EXTERNAL_STORAGE] == true ||
             grants[Manifest.permission.READ_EXTERNAL_STORAGE] == true
-        if (!granted) {
+        if (granted) {
+            // 权限授予后把日志目录切换到公共外部存储（卸载后仍保留）
+            com.deep.rcode.core.util.FileLogger.onExternalStorageGranted(this)
+            com.deep.rcode.core.util.AILogger.onExternalStorageGranted(this)
+        } else {
             Toast.makeText(
                 this,
                 getString(R.string.main_no_storage_permission),
