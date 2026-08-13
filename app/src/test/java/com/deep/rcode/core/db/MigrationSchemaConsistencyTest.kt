@@ -72,8 +72,11 @@ class MigrationSchemaConsistencyTest {
     fun `SCHEMA-CONSISTENCY - 迁移 SQL 最终建表与 Room 导出 schema 完全一致`() {
         val schemaFile = findSchemaJson()
         val schema = JSONObject(schemaFile.readText())
-        val dbObj = schema.getJSONObject("database")
-        val entities = dbObj.getJSONArray("entities")
+        // Room 2.7.x schema 顶层结构：{ "formatVersion": 1, "database": { "version": N, "entities": [...] } }
+        val dbObj = schema.optJSONObject("database")
+            ?: fail("schema JSON 顶层缺少 database 键（文件: ${schemaFile.name}）")
+        val entities = dbObj.optJSONArray("entities")
+            ?: fail("schema JSON database 缺少 entities 数组（文件: ${schemaFile.name}）")
 
         val migrations = listMigrationFiles().sortedBy { it.version }
         val allSql = migrations.joinToString("\n") { it.file.readText() }
@@ -81,7 +84,7 @@ class MigrationSchemaConsistencyTest {
         val failures = mutableListOf<String>()
         for (i in 0 until entities.length()) {
             val entity = entities.getJSONObject(i)
-            val tableName = entity.getString("tableName")
+            val tableName = entity.optString("tableName", "?")
             checkEntity(entity, tableName, allSql, failures)
         }
 
@@ -126,18 +129,24 @@ class MigrationSchemaConsistencyTest {
         }
 
         // 2) 解析 Room 期望列
-        val fields = entity.getJSONArray("fields")
+        // RC92 修复：Room 2.7.x schema 中部分字段（尤其 nullable 字段）的 defaultValue 可能是 JSON null，
+        // org.json 的 getString 对 null 值抛 JSONException → 改用 opt 系列方法读取，缺失/null 一律视为 "undefined"。
+        val fields = entity.optJSONArray("fields")
+            ?: run {
+                failures.add("[$tableName] schema 中缺少 fields 数组")
+                return
+            }
         val expectedCols = mutableListOf<ExpectedCol>()
         for (j in 0 until fields.length()) {
             val f = fields.getJSONObject(j)
-            val defVal = f.getString("defaultValue")
+            val defVal = f.optString("defaultValue", "undefined")
             expectedCols.add(
                 ExpectedCol(
-                    name = f.getString("columnName"),
+                    name = f.optString("columnName", "?"),
                     affinity = f.optString("affinity", ""),
-                    notNull = f.getBoolean("notNull"),
-                    defaultValue = if (defVal == "undefined") null else defVal,
-                    pkPosition = f.getInt("primaryKeyPosition")
+                    notNull = f.optBoolean("notNull", false),
+                    defaultValue = if (defVal == "undefined" || defVal == "null") null else defVal,
+                    pkPosition = f.optInt("primaryKeyPosition", 0)
                 )
             )
         }
@@ -210,11 +219,11 @@ class MigrationSchemaConsistencyTest {
     )
 
     private fun parseExpectedIndices(entity: JSONObject): List<ParsedIndex> {
-        val indices = entity.getJSONArray("indices")
+        val indices = entity.optJSONArray("indices") ?: return emptyList()
         val result = mutableListOf<ParsedIndex>()
         for (i in 0 until indices.length()) {
             val idx = indices.getJSONObject(i)
-            val colsArr = idx.getJSONArray("columnNames")
+            val colsArr = idx.optJSONArray("columnNames") ?: continue
             val ordersArr = idx.optJSONArray("orders")
             val cols = (0 until colsArr.length()).map { colsArr.getString(it) }
             val orders = if (ordersArr != null && ordersArr.length() == cols.size) {
@@ -224,8 +233,8 @@ class MigrationSchemaConsistencyTest {
             }
             result.add(
                 ParsedIndex(
-                    name = idx.getString("name"),
-                    unique = idx.getBoolean("unique"),
+                    name = idx.optString("name", "?"),
+                    unique = idx.optBoolean("unique", false),
                     columns = cols,
                     orders = orders
                 )
