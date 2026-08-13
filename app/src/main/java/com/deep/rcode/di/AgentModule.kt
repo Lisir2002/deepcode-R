@@ -30,6 +30,7 @@ import com.deep.rcode.feature.workspace.data.local.dao.RemoteMountDao
 import com.deep.rcode.feature.t2i.data.local.dao.T2IProviderDao
 import com.deep.rcode.feature.t2i.data.local.dao.T2IProviderModelDao
 import com.deep.rcode.feature.t2i.data.local.dao.T2ITaskDao
+import com.deep.rcode.feature.agent.data.local.dao.SkillStateDao
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
 import com.deep.rcode.feature.agent.data.local.database.AgentDatabase
 import com.deep.rcode.feature.agent.data.CodeChangeTracker
@@ -499,6 +500,13 @@ object AgentModule {
     @Singleton
     fun provideT2ITaskDao(database: AgentDatabase): T2ITaskDao {
         return database.t2iTaskDao()
+    }
+
+    // ══ RC74 Skill：skill_state DAO 绑定
+    @Provides
+    @Singleton
+    fun provideSkillStateDao(database: AgentDatabase): SkillStateDao {
+        return database.skillStateDao()
     }
 
     // ══ RC69 T2I：ImageGenerator（interface）→ OpenAiCompatibleImageGenerator（实现）绑定

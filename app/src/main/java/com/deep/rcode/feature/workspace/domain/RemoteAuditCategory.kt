@@ -46,4 +46,8 @@ object RemoteAuditAction {
     // ── SECURITY ──
     const val EMERGENCY_RESET_MASTERKEY = "EMERGENCY_RESET_MASTERKEY"
     const val BIOMETRIC_SWITCH = "BIOMETRIC_SWITCH"
+
+    // ── SKILL（RC74：脚本技能沙箱执行审计）──
+    const val SKILL_EXEC_OK = "SKILL_EXEC_OK"
+    const val SKILL_EXEC_FAIL = "SKILL_EXEC_FAIL"
 }

@@ -36,6 +36,7 @@
     <string name="settings_backup">备份与还原</string>
     <string name="settings_security">安全</string>
     <string name="settings_remote_audit_logs">远程连接审计</string>
+    <string name="settings_skills">技能中心</string>
     <string name="settings_about">关于</string>
     <string name="settings_language">语言</string>
 
@@ -73,6 +74,7 @@
     <string name="settings_keepalive_subtitle">显示前台通知，避免退到后台时系统杀进程</string>
     <string name="settings_backup_subtitle">加密导出/导入配置、聊天历史与凭据</string>
     <string name="settings_about_subtitle">版本检查 · GitHub · 许可证</string>
+    <string name="settings_skills_subtitle">浏览、启用/禁用与卸载技能</string>
 
     <!-- Settings category titles -->
     <string name="settings_category_ai">AI 配置</string>

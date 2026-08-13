@@ -12,6 +12,7 @@ import com.deep.rcode.feature.agent.data.local.dao.HardConstraintDeleteAuditDao
 import com.deep.rcode.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
 import com.deep.rcode.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.deep.rcode.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
+import com.deep.rcode.feature.agent.data.local.dao.SkillStateDao
 import com.deep.rcode.feature.agent.data.local.dao.TodoItemDao
 import com.deep.rcode.feature.agent.data.local.dao.UserConfirmedSentinelDao
 import com.deep.rcode.feature.agent.data.local.dao.ZthTelemetryEventDao
@@ -24,6 +25,7 @@ import com.deep.rcode.feature.agent.data.local.entity.HardConstraintDeleteAuditE
 import com.deep.rcode.feature.agent.data.local.entity.L0SoftCompactRestoreLogEntity
 import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.deep.rcode.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
+import com.deep.rcode.feature.agent.data.local.entity.SkillStateEntity
 import com.deep.rcode.feature.agent.data.local.entity.TodoItemEntity
 import com.deep.rcode.feature.agent.data.local.entity.UserConfirmedSentinelEntity
 import com.deep.rcode.feature.agent.data.local.entity.ZthTelemetryEventEntity
@@ -67,9 +69,10 @@ import com.deep.rcode.feature.t2i.data.local.entity.T2ITaskEntity
         ZthTelemetryEventEntity::class,
         T2IProviderEntity::class,
         T2IProviderModelEntity::class,
-        T2ITaskEntity::class
+        T2ITaskEntity::class,
+        SkillStateEntity::class
     ],
-    version = 39,
+    version = 40,
     exportSchema = false
 )
 abstract class AgentDatabase : RoomDatabase() {
@@ -94,8 +97,9 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun t2iProviderDao(): T2IProviderDao
     abstract fun t2iProviderModelDao(): T2IProviderModelDao
     abstract fun t2iTaskDao(): T2ITaskDao
+    abstract fun skillStateDao(): SkillStateDao
 
     companion object {
-        const val SCHEMA_VERSION = 39
+        const val SCHEMA_VERSION = 40
     }
 }

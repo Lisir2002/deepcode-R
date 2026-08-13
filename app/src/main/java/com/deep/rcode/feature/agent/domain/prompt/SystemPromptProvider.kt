@@ -7,7 +7,7 @@ import com.deep.rcode.feature.agent.domain.memory.MemoryRepository
 import com.deep.rcode.feature.agent.domain.memory.MemoryScope
 import com.deep.rcode.feature.agent.domain.model.AgentContext
 import com.deep.rcode.feature.agent.domain.model.AgentMode
-import com.deep.rcode.feature.agent.domain.skill.SkillRepository
+import com.deep.rcode.feature.agent.domain.skill.SkillStateRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -22,7 +22,7 @@ import javax.inject.Singleton
 @Singleton
 class SystemPromptProvider @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val skillRepository: SkillRepository,
+    private val skillStateRepository: SkillStateRepository,
     private val memoryRepository: MemoryRepository,
     private val containerInstaller: ContainerInstaller
 ) {
@@ -83,7 +83,8 @@ class SystemPromptProvider @Inject constructor(
 
         override fun build(ctx: AgentContext): String? {
             // 每轮实时扫描磁盘，如有新增立即生效。这里为了避免每次大体积反序列化造成开销，可以简单做内存对比。
-            val skills = try { skillRepository.listSkills() } catch (e: Exception) { return null }
+            // 仅列出已启用的技能（启用状态由 Room skill_state 持久化，SkillStateRepository 已叠加）。
+            val skills = try { skillStateRepository.listSkillsSync().filter { it.enabled } } catch (e: Exception) { return null }
             if (skills.isEmpty()) return null
             
             val list = skills.joinToString("\n") { "- ${it.name}: ${it.description.ifBlank { "（无描述）" }}" }

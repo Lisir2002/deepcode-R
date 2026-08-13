@@ -1,7 +1,10 @@
 package com.deep.rcode.feature.agent.domain.tool.skill
 
 import com.deep.rcode.core.util.FileLogger
-import com.deep.rcode.feature.agent.domain.skill.SkillRepository
+import com.deep.rcode.feature.agent.domain.skill.SkillExecutor
+import com.deep.rcode.feature.agent.domain.skill.SkillExecutionResult
+import com.deep.rcode.feature.agent.domain.skill.SkillStateRepository
+import com.deep.rcode.feature.agent.domain.skill.SkillType
 import com.deep.rcode.feature.agent.domain.tool.AgentTool
 import com.deep.rcode.feature.agent.domain.tool.ParameterType
 import com.deep.rcode.feature.agent.domain.tool.ToolParameter
@@ -14,23 +17,27 @@ import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
 /**
- * 让 AI 按需加载一个技能的完整指令正文。
+ * 让 AI 按需加载/执行一个技能（RC74 升级为执行分层）。
  *
- * 系统提示里只注入了各 skill 的 name+description 清单；AI 判断某个 skill 适用时，调用本工具拿到
- * SKILL.md 正文（可能含「先 apk add python3，再 python /root/.rdeepcode/skills/<name>/x.py」之类的执行步骤），
- * 随后用 read_file/execute_command 等工具按正文行事。skill 目录在容器内为 `/root/.rdeepcode/skills/<name>/`。
+ * 系统提示里只注入了各 skill 的 name+description 清单；AI 判断某个 skill 适用时，调用本工具：
+ * - PROMPT 技能：返回 SKILL.md 正文（注入上下文）。
+ * - SCRIPT 技能：在 PRoot 容器内沙箱执行入口脚本（执行前需审批）。
+ * - MCP 技能：映射到已连接的 MCP 工具执行。
+ *
+ * 仅允许加载已启用的技能；依赖自动递归解析（含环/缺失/禁用检测）。
  */
 class LoadSkillTool @Inject constructor(
-    private val skillRepository: SkillRepository
+    private val skillStateRepository: SkillStateRepository,
+    private val skillExecutor: SkillExecutor
 ) : AgentTool() {
     private companion object {
         const val TAG = "LoadSkillTool"
     }
 
     override val name = "loadSkill"
-    override val capabilities = setOf(ToolCapability.READ_AGENT_CONFIG)
+    override val capabilities = setOf(ToolCapability.READ_AGENT_CONFIG, ToolCapability.EXECUTE_COMMANDS)
     override val description =
-        "加载指定技能（Skill）的完整指令内容。当系统提示清单中的技能适用于当前任务时，调用此工具获取其详细操作说明。"
+        "加载或执行指定技能（Skill）。PROMPT 技能返回完整指令内容；SCRIPT/MCP 技能按类型执行。当系统提示清单中的技能适用于当前任务时调用。"
 
     override val parameters: Map<String, ToolParameter> = mapOf(
         "skill_name" to ToolParameter(
@@ -38,6 +45,12 @@ class LoadSkillTool @Inject constructor(
             type = ParameterType.STRING,
             description = "要加载的技能名称（与系统提示「可用技能」清单中的名称一致）。",
             required = true
+        ),
+        "args" to ToolParameter(
+            name = "args",
+            type = ParameterType.OBJECT,
+            description = "传给脚本/MCP 技能的参数（键值对，可选）。PROMPT 技能忽略。",
+            required = false
         )
     )
 
@@ -47,17 +60,55 @@ class LoadSkillTool @Inject constructor(
             return ToolResult.Error("缺少必需参数: skill_name", "MISSING_SKILL_NAME")
         }
 
-        val instructions = skillRepository.loadInstructions(skillName)
-        if (instructions == null) {
-            val available = skillRepository.listSkills().joinToString(", ") { it.name }
-            FileLogger.w(TAG, "load_skill 未找到: $skillName，可用: $available")
+        val skills = skillStateRepository.listSkills()
+        val skill = skills.firstOrNull { it.name.equals(skillName, ignoreCase = true) }
+            ?: run {
+                val available = skills.joinToString(", ") { it.name }
+                FileLogger.w(TAG, "load_skill 未找到: $skillName，可用: $available")
+                return ToolResult.Error(
+                    "未找到技能「$skillName」。可用技能: ${available.ifEmpty { "（无）" }}",
+                    "SKILL_NOT_FOUND"
+                )
+            }
+
+        if (!skill.enabled) {
+            return ToolResult.Error("技能「${skill.name}」已被禁用，请在设置-技能中心启用后再使用", "SKILL_DISABLED")
+        }
+
+        // 依赖解析：自动递归加载依赖，环/缺失/禁用时给出明确错误
+        val resolution = skillStateRepository.resolveSkillWithDependencies(skill.id)
+        if (resolution == null) {
+            return ToolResult.Error("技能「${skill.name}」解析失败", "SKILL_RESOLVE_FAILED")
+        }
+        if (resolution.missingDependencies.isNotEmpty()) {
             return ToolResult.Error(
-                "未找到技能「$skillName」。可用技能: ${available.ifEmpty { "（无）" }}",
-                "SKILL_NOT_FOUND"
+                "技能「${skill.name}」缺少依赖: ${resolution.missingDependencies.joinToString(", ")}",
+                "SKILL_MISSING_DEP"
+            )
+        }
+        if (resolution.disabledDependencies.isNotEmpty()) {
+            return ToolResult.Error(
+                "技能「${skill.name}」的依赖已被禁用: ${resolution.disabledDependencies.joinToString(", ")}",
+                "SKILL_DISABLED_DEP"
             )
         }
 
-        FileLogger.d(TAG, "load_skill 加载成功: $skillName (${instructions.length} 字符)")
-        return ToolResult.Success(JsonPrimitive(instructions))
+        // 提取参数（args 为 JSON 对象 → Map<String,String>）
+        val execArgs = mutableMapOf<String, String>()
+        (args["args"] as? kotlinx.serialization.json.JsonObject)?.forEach { (k, v) ->
+            (v as? JsonPrimitive)?.contentOrNull?.let { execArgs[k] = it }
+        }
+
+        val result = skillExecutor.execute(skill, execArgs)
+        return when (result) {
+            is SkillExecutionResult.Success -> {
+                FileLogger.d(TAG, "load_skill 执行成功: ${skill.name} (${result.output.length} 字符)")
+                ToolResult.Success(JsonPrimitive(result.output))
+            }
+            is SkillExecutionResult.Error -> {
+                FileLogger.w(TAG, "load_skill 执行失败: ${skill.name} - ${result.message}")
+                ToolResult.Error(result.message, result.code)
+            }
+        }
     }
 }
