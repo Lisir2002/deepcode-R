@@ -71,10 +71,14 @@ class DbSCHIELDPreflightTest {
         val DECLARED = findDeclaredSchemaVersionInAgentDatabaseKt()
 
         val have = migrations.map { it.version }.toSortedSet()
-        val missing = (MIN .. DECLARED).filterNot { have.contains(it) }
+        // 程序化迁移（如 RobustMigration44 v43→v44）没有对应 SQL 文件，从缺失校验中豁免。
+        // 若将来新增程序化迁移，必须同步把版本号加入 RobustMigration44.PROGRAMMATIC_MIGRATION_VERSIONS。
+        val programmatic = RobustMigration44.PROGRAMMATIC_MIGRATION_VERSIONS
+        val missing = (MIN .. DECLARED).filterNot { have.contains(it) || programmatic.contains(it) }
         assertTrue(
             "SCHEMA_GAP[MISSING]：期望覆盖 v${MIN}..v${DECLARED}，缺失=$missing；" +
-                    "请在 ${migrationsDir.path} 下补对应 SQL 迁移文件（命名 <version>_<desc>.sql）",
+                    "程序化迁移版本=${programmatic.sorted()}（无需 SQL 文件）；" +
+                    "其余缺失请在 ${migrationsDir.path} 下补对应 SQL 迁移文件（命名 <version>_<desc>.sql）",
             missing.isEmpty()
         )
 
@@ -508,6 +512,59 @@ class DbSCHIELDPreflightTest {
                     "原因：LightweightSchemaRescue / DB-SHIELD / BackupManagerImpl 都是按文件清单反射或导入的，" +
                     "名字错位会导致「抢救漏建表 + 备份漏表」，用户感知就是「升级后表突然空了」。\n" +
                     "违规明细:\n  - " + mismatches.joinToString("\n  - ")
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 10) SCHEMA-JSON-PRESENT-TEST (RC94)：
+    //     Room 导出的 schema JSON（app/schemas/<db>/<version>.json）必须存在、版本一致、实体数一致。
+    //     Funnel 2 LightweightSchemaRescue 运行时从 assets 读它做抢救（替代失效的注解反射），
+    //     缺失/过期 = 抢救失效 → 线上升级崩到 Funnel 3/4。
+    // ─────────────────────────────────────────────────────────────
+    @Test
+    fun `SCHEMA-JSON-PRESENT-TEST - Room schema JSON 存在且版本与实体数对齐`() {
+        val version = findDeclaredSchemaVersionInAgentDatabaseKt()
+        val schemaDir = projectRoot.resolve(
+            "app/schemas/com.deep.rcode.feature.agent.data.local.database.AgentDatabase"
+        )
+        val schemaFile = schemaDir.resolve("$version.json")
+        assertTrue(
+            "Room 导出 schema JSON 缺失: ${schemaFile.path}\n" +
+                    "Funnel 2 LightweightSchemaRescue 运行时从 assets 读该文件做抢救（替代失效的注解反射）。\n" +
+                    "请确认 build.gradle.kts 已配置 ksp { arg(\"room.schemaLocation\", ...) } 且 KSP 编译成功导出。",
+            schemaFile.isFile
+        )
+        val json = org.json.JSONObject(schemaFile.readText())
+        val dbObj = json.getJSONObject("database")
+        val jsonVersion = dbObj.getInt("version")
+        assertEquals(
+            "schema JSON version=$jsonVersion 与 @Database(version=$version) 不一致；请重新编译让 KSP 重新导出。",
+            version, jsonVersion
+        )
+        val entities = dbObj.getJSONArray("entities")
+        val dbEntitiesCount = countEntitiesInAgentDatabaseKt()
+        assertEquals(
+            "schema JSON 实体数=${entities.length()} 与 @Database entities 数组=$dbEntitiesCount 不一致；" +
+                    "请重新编译让 KSP 重新导出 schema JSON。",
+            dbEntitiesCount, entities.length()
+        )
+
+        // ── 资产路径回归闸门（RC94 修复）────────────────────────────
+        // build.gradle.kts 用 assets.srcDir("schemas") 把 app/schemas 并入 assets，AGP 会剥掉
+        // 源目录名 → APK 内实际路径是 assets/<fqcn>/<version>.json（无 schemas/ 前缀）。
+        // 因此 LightweightSchemaRescue.SCHEMA_ASSET_DIR 必须为空字符串，否则运行时
+        // assets.open("schemas/...") 找不到文件 → Funnel 2 抢救失效 → 线上升级崩到 Funnel 3/4。
+        // 若将来改为保留 schemas/ 前缀（如改用 copy 任务），必须同步改此处与代码常量。
+        val rescueKt = projectRoot.resolve(
+            "app/src/main/java/com/deep/rcode/core/db/LightweightSchemaRescue.kt"
+        )
+        assertTrue("LightweightSchemaRescue.kt 不存在: ${rescueKt.path}", rescueKt.isFile)
+        val rescueSrc = rescueKt.readText()
+        assertTrue(
+            "LightweightSchemaRescue.SCHEMA_ASSET_DIR 必须为空字符串（与 assets.srcDir(\"schemas\") " +
+                    "剥前缀的打包行为一致）。当前源码中 SCHEMA_ASSET_DIR 非空，运行时 assets.open() 会找不到 " +
+                    "schema JSON → Funnel 2 抢救失效。请同步修改 LightweightSchemaRescue.kt 与 build.gradle.kts。",
+            rescueSrc.contains("private const val SCHEMA_ASSET_DIR = \"\"")
         )
     }
 }

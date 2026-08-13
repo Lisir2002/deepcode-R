@@ -132,10 +132,21 @@ object MigrationLoader {
                 }
             }
 
+            // RC94 修复：追加程序化迁移 v43→v44（RobustMigration44）。
+            // 该迁移用 PRAGMA table_info 探测实际 schema，幂等修复 5 张表（session_checkpoints /
+            // model_capability_overrides / zth_hallucination_fuses / remote_audit_logs /
+            // zth_telemetry_events），解决「迁移 42 引用 createdAt 列」导致的线上崩溃。
+            migrations.add(RobustMigration44.MIGRATION_43_44)
+
             // DB-SHIELD-1: 连续性闸门（不抛异常，但写 FATAL 级日志供 CrashHandler 同步落盘 + 下次诊断用）
             val declaredDbVersion = com.deep.rcode.feature.agent.data.local.database.AgentDatabase.SCHEMA_VERSION
             val versionsSorted = migrations
-                .mapNotNull { (it as? FileMigration)?.version }
+                .mapNotNull { migration ->
+                    when (migration) {
+                        is FileMigration -> migration.version
+                        else -> migration.endVersion
+                    }
+                }
                 .distinct()
                 .sorted()
             assertContinuity(versionsSorted, declaredDbVersion)

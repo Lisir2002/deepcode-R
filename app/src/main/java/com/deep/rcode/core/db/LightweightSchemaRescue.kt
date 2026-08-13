@@ -1,10 +1,6 @@
 package com.deep.rcode.core.db
 
 import android.content.Context
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import com.deep.rcode.core.db.entity.CredentialEncryptionStateEntity
@@ -30,24 +26,33 @@ import com.deep.rcode.feature.workspace.data.local.entity.RemoteMountEntity
 import com.deep.rcode.feature.t2i.data.local.entity.T2IProviderEntity
 import com.deep.rcode.feature.t2i.data.local.entity.T2IProviderModelEntity
 import com.deep.rcode.feature.t2i.data.local.entity.T2ITaskEntity
+import org.json.JSONObject
 import java.io.File
-import java.lang.reflect.Field
-import java.lang.reflect.Modifier
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * DB-SHIELD-4 (Funnel 2): 「轻量抢救」模式（生产级实现 —— 只依赖 JDK java.lang.reflect +
- * AndroidX Room 注解，不引入 kotlin-reflect）。
+ * DB-SHIELD-4 (Funnel 2): 「轻量抢救」模式（RC94 重写 —— 从「注解反射」升级为「Room 官方导出 schema JSON」）。
+ *
+ * ── 为什么重写 ─────────────────────────────────────────────────────
+ * 旧版用 java.lang.reflect 读取 @Entity/@ColumnInfo/@Index 注解来重建表。但 Room 的注解
+ * retention 是 BINARY（不是 RUNTIME），Release/R8 构建下 getAnnotation() 恒返回 null，
+ * 线上日志反复出现 `Class XxxEntity 缺少 @Entity 注解` → Funnel 2 从未真正生效，直接连锁
+ * 崩到 Funnel 3/4（删表/全删）。RC94 改为解析 Room 编译期导出的 schema JSON
+ * （app/schemas/<db>/<version>.json，KSP 自动生成，build.gradle.kts 已打进 assets）：
+ *   · createSql 就是 Room 生成的精确建表 SQL（含列类型/NOT NULL/DEFAULT/主键），
+ *     抢救建出的表与 Room TableInfo 校验期望 100% 一致；
+ *   · 索引 createSql 同样来自 Room，IF NOT EXISTS 幂等；
+ *   · 不再依赖任何注解反射，Release/R8 下行为与 Debug 完全一致。
  *
  * 触发条件：正常 Room 构建（保守迁移）失败 → 说明有 migration 缺失或对不上。
  * 我们不直接 destructive（DROP 老表 → 用户数据没了 + 删库过程中进程被杀=闪退），而是：
  *   1. 用 SQLite 原生 SupportSQLiteOpenHelper 打开旧库（绕过 Room 的 TableInfo 校验）；
- *   2. 对 ALL_ENTITY_CLASSES 每一个用 java.lang.reflect 解析：
- *      a) CREATE TABLE IF NOT EXISTS（幂等）
- *      b) PRAGMA table_info → 对比 Entity 字段；缺列 → ALTER TABLE ADD COLUMN（默认 NULL 安全）；
- *      c) CREATE INDEX IF NOT EXISTS（@Entity(indices=[...])）
+ *   2. 对 schema JSON 里每一个实体：
+ *      a) 表不存在 → 直接用 createSql 建表（幂等）；
+ *      b) 表已存在 → PRAGMA table_info 对比；缺列 → ALTER TABLE ADD COLUMN（带实体声明的 DEFAULT）；
+ *      c) 用 JSON 里的索引 createSql 建索引（IF NOT EXISTS 幂等）；
  *   3. PRAGMA user_version = SCHEMA_VERSION。
  *
  * 语义：老表（chat_sessions / agent_messages 等用户历史数据）100% 保留，即使它的某一列
@@ -56,6 +61,23 @@ import java.util.Locale
 object LightweightSchemaRescue {
 
     private const val TAG = "LightweightSchemaRescue"
+
+    /**
+     * Room 导出 schema JSON 在 assets 中的根目录。
+     *
+     * 注意：build.gradle.kts 用 `assets.srcDir("schemas")` 把 app/schemas 目录整体并入 assets，
+     * AGP 会剥掉源目录名，因此 APK 内实际路径是
+     *   assets/com.deep.rcode.feature.agent.data.local.database.AgentDatabase/44.json
+     * （没有 schemas/ 前缀）。此处根目录必须为空字符串，与 APK 实际布局保持一致，
+     * 否则运行时 assets.open() 找不到文件 → Funnel 2 抢救失效。
+     */
+    private const val SCHEMA_ASSET_DIR = ""
+
+    /** AgentDatabase 全限定名（Room 导出 schema 的子目录名 = 数据库类 FQCN）。 */
+    private const val DATABASE_FQCN = "com.deep.rcode.feature.agent.data.local.database.AgentDatabase"
+
+    /** Room createSql 里的表名占位符。 */
+    private const val TABLE_NAME_PLACEHOLDER = "\${TABLE_NAME}"
 
     data class RescueReport(
         val tablesCreated: Int,
@@ -66,12 +88,11 @@ object LightweightSchemaRescue {
     )
 
     /**
-     * ALL_ENTITY_CLASSES：与 AgentDatabase.kt @Database(entities=[...]) 一一对应（18 项顺序一致）。
+     * ALL_ENTITY_CLASSES：与 AgentDatabase.kt @Database(entities=[...]) 一一对应（22 项顺序一致）。
      * 加表/删表时必须同步更新；DbSCHIELDPreflightTest.ENTITY-COUNT-TEST CI 闸门强制校验。
      *
-     * 注意：@Database entities[6] = com.deep.rcode.feature.credentials.data.local.entity.GitCredentialEntity
-     *   （旧版 RC61 的 agent 包同名类在 RC62 credentials 模块拆分时已删除，现在真正被 Room
-     *   注册的是 credentials 包的 GitCredentialEntity，AgentDatabase.kt L29 的 import 指向它）
+     * 注意：RC94 起 Funnel 2 抢救不再用反射读注解（改读 schema JSON），此清单仅保留给
+     *   CI 闸门做「@Database entities 与清单一致性」校验，防止加表时漏同步。
      */
     val ALL_ENTITY_CLASSES: List<Class<*>> = listOf<Class<*>>(
         AgentMessageEntity::class.java,
@@ -80,9 +101,6 @@ object LightweightSchemaRescue {
         RemoteConnectionEntity::class.java,
         RemoteMountEntity::class.java,
         TodoItemEntity::class.java,
-        // 注意：@Database entities[6] = GitCredentialEntity（credentials.data.local.entity 包）
-        //   因 agent.data.local.entity 子包的同名 GitCredentialEntity 在 RC62 模块拆分时已删除，
-        //   AgentDatabase.kt L29 import 指向 credentials 包的类，这里必须一致。
         GitCredentialEntity::class.java,
         CheckpointEntity::class.java,
         CheckpointFileSnapshotEntity::class.java,
@@ -103,8 +121,39 @@ object LightweightSchemaRescue {
         SkillStateEntity::class.java
     )
 
+    // ── schema JSON 解析模型（Room 官方导出格式）──────────────────────────
+    private data class ColumnSchema(
+        val columnName: String,
+        val affinity: String,
+        val notNull: Boolean,
+        val defaultValue: String?
+    )
+
+    private data class IndexSchema(
+        val name: String,
+        val createSql: String
+    )
+
+    private data class EntitySchema(
+        val tableName: String,
+        val createSql: String,
+        val columns: List<ColumnSchema>,
+        val indices: List<IndexSchema>
+    )
+
     fun rescue(context: Context, dbFile: File, dbVersion: Int): RescueReport {
         val reportBuilder = RescueReportBuilder()
+
+        // 1) 从 assets 加载 Room 官方导出的 schema JSON（权威 schema，替代失效的注解反射）
+        val entities = loadSchemaEntities(context, dbVersion, reportBuilder)
+        if (entities.isEmpty()) {
+            FileLogger.e(
+                TAG,
+                "schema JSON 加载为空，Funnel 2 无法抢救（assets 缺 $SCHEMA_ASSET_DIR/$DATABASE_FQCN/$dbVersion.json？" +
+                        "请确认 build.gradle.kts 已配置 assets.srcDir(\"schemas\") 且 KSP 已导出 schema）"
+            )
+        }
+
         runCatching {
             val config = androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(dbFile.absolutePath)
@@ -112,7 +161,7 @@ object LightweightSchemaRescue {
                     override fun onCreate(db: SupportSQLiteDatabase) {}
                     override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
                     override fun onOpen(db: SupportSQLiteDatabase) {
-                        doRescueOnDb(db, reportBuilder)
+                        doRescueOnDb(db, entities, reportBuilder)
                         db.execSQL("PRAGMA user_version = $dbVersion")
                         FileLogger.i(TAG, "轻量抢救结束: created=${reportBuilder.tablesCreated} " +
                                 "+cols=${reportBuilder.columnsAdded} +idxs=${reportBuilder.indexesCreated} " +
@@ -137,7 +186,77 @@ object LightweightSchemaRescue {
         return reportBuilder.build()
     }
 
-    private fun doRescueOnDb(db: SupportSQLiteDatabase, report: RescueReportBuilder) {
+    // ── 加载 & 解析 Room schema JSON ──────────────────────────────────────
+    private fun loadSchemaEntities(
+        context: Context,
+        dbVersion: Int,
+        report: RescueReportBuilder
+    ): List<EntitySchema> {
+        val assetPath = if (SCHEMA_ASSET_DIR.isEmpty()) {
+            "$DATABASE_FQCN/$dbVersion.json"
+        } else {
+            "$SCHEMA_ASSET_DIR/$DATABASE_FQCN/$dbVersion.json"
+        }
+        val jsonText = runCatching {
+            context.assets.open(assetPath).bufferedReader().use { it.readText() }
+        }.getOrElse {
+            report.failures.add("无法读取 schema JSON asset: $assetPath (${it.message})")
+            return emptyList()
+        }
+        return runCatching {
+            parseEntities(JSONObject(jsonText))
+        }.getOrElse {
+            report.failures.add("解析 schema JSON 失败: ${it.message}")
+            emptyList()
+        }
+    }
+
+    private fun parseEntities(root: JSONObject): List<EntitySchema> {
+        val db = root.getJSONObject("database")
+        val arr = db.getJSONArray("entities")
+        val out = mutableListOf<EntitySchema>()
+        for (i in 0 until arr.length()) {
+            val e = arr.getJSONObject(i)
+            val tableName = e.getString("tableName")
+            val createSql = e.getString("createSql")
+
+            val fields = e.getJSONArray("fields")
+            val columns = mutableListOf<ColumnSchema>()
+            for (j in 0 until fields.length()) {
+                val f = fields.getJSONObject(j)
+                columns.add(
+                    ColumnSchema(
+                        columnName = f.getString("columnName"),
+                        affinity = f.getString("affinity"),
+                        notNull = f.optBoolean("notNull", false),
+                        defaultValue = if (f.has("defaultValue")) f.getString("defaultValue") else null
+                    )
+                )
+            }
+
+            val indices = mutableListOf<IndexSchema>()
+            if (e.has("indices")) {
+                val idxArr = e.getJSONArray("indices")
+                for (j in 0 until idxArr.length()) {
+                    val idx = idxArr.getJSONObject(j)
+                    indices.add(
+                        IndexSchema(
+                            name = idx.getString("name"),
+                            createSql = idx.optString("createSql", "")
+                        )
+                    )
+                }
+            }
+            out.add(EntitySchema(tableName, createSql, columns, indices))
+        }
+        return out
+    }
+
+    private fun doRescueOnDb(
+        db: SupportSQLiteDatabase,
+        entities: List<EntitySchema>,
+        report: RescueReportBuilder
+    ) {
         db.beginTransaction()
         try {
             // 1) 迁移历史表先创建（保证后续 FileMigration 可继续写）
@@ -145,11 +264,11 @@ object LightweightSchemaRescue {
                 "CREATE TABLE IF NOT EXISTS migration_history (" +
                         "version INTEGER PRIMARY KEY, script_name TEXT, executed_at INTEGER)"
             )
-            for (entityClass in ALL_ENTITY_CLASSES) {
+            for (entity in entities) {
                 runCatching {
-                    rescueOneEntity(db, entityClass, report)
+                    rescueOneEntity(db, entity, report)
                 }.onFailure {
-                    val m = "rescueOneEntity(${entityClass.simpleName}) failed: ${it.message}"
+                    val m = "rescueOneEntity(${entity.tableName}) failed: ${it.message}"
                     FileLogger.w(TAG, m, it)
                     report.failures.add(m)
                 }
@@ -163,96 +282,23 @@ object LightweightSchemaRescue {
     // ── 单表抢救：CREATE / ADD COLUMNS / CREATE INDICES（全部 IF NOT EXISTS 幂等）──
     private fun rescueOneEntity(
         db: SupportSQLiteDatabase,
-        entityClass: Class<*>,
+        entity: EntitySchema,
         report: RescueReportBuilder
     ) {
-        val entityAnn = entityClass.getAnnotation(Entity::class.java)
-            ?: error("Class ${entityClass.simpleName} 缺少 @Entity 注解（ALL_ENTITY_CLASSES 清单错误？）")
-        val tableName = entityAnn.tableName.ifBlank { entityClass.simpleName }
-
+        val tableName = entity.tableName
         val existingCols = readExistingColumns(db, tableName)
         if (existingCols.isNotEmpty()) report.tablesSkippedExisting++
 
-        // 1) 解析字段（按声明顺序）、主键列、是否 autoGenerate
-        val allFields = entityClass.declaredFields
-            .filter { !Modifier.isStatic(it.modifiers) && !it.name.contains("Companion") }
-            .associateBy { it.name }
-
-        // 2) 找主键列与 autoGenerate
-        // RC67 P1-6 修复：新增解析 @Entity(primaryKeys=[...]) 复合主键；
-        //   · 单主键字段 @PrimaryKey 继续正常支持
-        //   · @Entity(primaryKeys=[a,b]) 复合主键：我们无法在列上逐个声明 PRIMARY KEY（SQLite 每张表只能 1 次 PRIMARY KEY 约束），
-        //     所以退化成「建表时省略 PRIMARY KEY 约束，但把复合主键列在 ADD COLUMN 时标为 NOT NULL」，
-        //     并向 RescueReport.failures 写入告警 —— Room 仍会因为 PRIMARY KEY 缺失导致 TableInfo 校验失败，
-        //     但至少 Funnel 2/3 的保守 destructive 兜底还能继续，不会直接崩到 Funnel 4 全删。
-        val pkSpec = findPrimaryKeySpec(
-            entityAnn = entityAnn,
-            fields = allFields.values,
-            tableName = tableName,
-            report = report
-        )
-        val pkColumnName: String? = pkSpec.singlePkColumnName
-        val pkAutoGenerate: Boolean = pkSpec.singlePkAutoGenerate
-        val compositePkColumns: List<String> = pkSpec.compositePkColumns
-
-        // 3) 生成 (sql fragment, columnName) 列表，按字段名稳定排序
-        val columnSpecs: List<Pair<Pair<String, String>, Unit>> = allFields.keys.sorted().map { fieldName ->
-            val f = allFields[fieldName]!!
-            val cname = fieldName  // 当前项目所有 Entity 不使用 @ColumnInfo(name=...)，直接字段名=列名
-            val ctype = sqlTypeFor(f.type)
-            val isSinglePk = (cname == pkColumnName)
-            val isCompositePkPart = (cname in compositePkColumns)
-            // RC91 SCHEMA 42 修复：解析 @ColumnInfo(defaultValue)，让 Funnel 2 抢救建出的表
-            // 与 Room TableInfo 校验期望的 DEFAULT 完全一致（此前缺 DEFAULT → 校验失败 → 误入 Funnel 3 删表）。
-            val defaultValue = f.getAnnotation(ColumnInfo::class.java)
-                ?.takeIf { it.defaultValue != ColumnInfo.VALUE_UNSPECIFIED }
-                ?.defaultValue
-            // RC67 P1-6 补充：复合主键列 SQLite 规定强制 NOT NULL（即使是 String 等非 primitive 类型也不能 NULL）
-            val primitiveForceNotNull = !f.type.isPrimitive
-            val nullable: Boolean = if (isCompositePkPart) false else primitiveForceNotNull
-            val frag = buildString {
-                append("`$cname` ")
-                append(ctype)
-                if (isSinglePk) {
-                    append(" PRIMARY KEY")
-                    if (pkAutoGenerate && ctype == "INTEGER") append(" AUTOINCREMENT")
-                }
-                if (!nullable && !isSinglePk) append(" NOT NULL")
-                if (defaultValue != null) append(" DEFAULT $defaultValue")
-            }
-            (frag to cname) to Unit  // Pair 结构兼容旧循环取值 (it.first.first=frag, it.first.second=cname)
-        }
-
-        // 4) CREATE TABLE IF NOT EXISTS（表不存在时，一次性建好所有列 + 表级复合主键约束）
         if (existingCols.isEmpty()) {
-            val columnsClause = columnSpecs.joinToString(", ") { it.first.first }
-            // RC67 P1-6 复合主键：如果 @Entity(primaryKeys=[...])，在所有列定义后面追加 ", PRIMARY KEY (c1,c2,...)"
-            val pkClause: String = if (compositePkColumns.isNotEmpty()) {
-                ", PRIMARY KEY (" + compositePkColumns.joinToString(", ") { "`$it`" } + ")"
-            } else ""
-            val ddl = "CREATE TABLE IF NOT EXISTS `$tableName` ($columnsClause$pkClause)"
+            // 表不存在：直接用 Room 生成的 createSql（列类型/NOT NULL/DEFAULT/主键 100% 匹配 TableInfo 校验）
+            val ddl = entity.createSql.replace(TABLE_NAME_PLACEHOLDER, tableName)
             db.execSQL(ddl)
             report.tablesCreated++
         } else {
-            // 5) 表已存在：缺列 ADD COLUMN（注意：ALTER TABLE SQLite 只能 ADD，不支持 DROP/ALTER）
-            for (spec in columnSpecs) {
-                val cname = spec.first.second
-                if (existingCols.containsKey(cname)) continue
-                val f = allFields[cname]!!
-                val ctype = sqlTypeFor(f.type)
-                val isCompositePkPart = (cname in compositePkColumns)
-                val nullable = if (isCompositePkPart) false else !f.type.isPrimitive
-                // RC91 SCHEMA 42 修复：ADD COLUMN 同样带上 @ColumnInfo(defaultValue)。
-                // SQLite 规定「NOT NULL 的 ADD COLUMN 必须带非 NULL DEFAULT」，否则 ALTER 直接失败；
-                // 且缺 DEFAULT 会导致 Room TableInfo 校验失败。
-                val defaultValue = f.getAnnotation(ColumnInfo::class.java)
-                    ?.takeIf { it.defaultValue != ColumnInfo.VALUE_UNSPECIFIED }
-                    ?.defaultValue
-                val alterPart = buildString {
-                    append("`$cname` $ctype")
-                    if (!nullable) append(" NOT NULL")
-                    if (defaultValue != null) append(" DEFAULT $defaultValue")
-                }
+            // 表已存在：缺列 ADD COLUMN（SQLite ALTER 只支持 ADD，不支持 DROP/ALTER）
+            for (col in entity.columns) {
+                if (existingCols.containsKey(col.columnName)) continue
+                val alterPart = buildAddColumnDdl(col)
                 runCatching {
                     db.execSQL("ALTER TABLE `$tableName` ADD COLUMN $alterPart")
                     report.columnsAdded++
@@ -264,50 +310,45 @@ object LightweightSchemaRescue {
             }
         }
 
-        // 6) 索引（@Entity indices）
-        // RC91 SCHEMA 42 修复：
-        //   · 索引名对齐 Room 约定 index_<table>_<cols>（旧版误用 idx_ 前缀，Room TableInfo 校验
-        //     会因索引名不匹配失败 → 误入 Funnel 3 删表）；
-        //   · 索引列带 ASC/DESC 排序（@Index(orders=[...])），Room 校验会比对每个列的排序方向；
-        //   · 先清理旧版 rescue 遗留的 idx_ 前缀索引（DROP INDEX IF EXISTS），避免残留索引再次触发校验失败。
-        val indices: Array<Index> = entityAnn.indices
-        if (indices.isNotEmpty()) {
+        // 索引：用 JSON 里的 createSql（Room 生成，IF NOT EXISTS 幂等，索引名/列序/排序与校验期望一致）
+        for (idx in entity.indices) {
+            if (idx.createSql.isBlank()) continue
             runCatching {
-                db.query("PRAGMA index_list(`$tableName`)").use { cur ->
-                    val nameIdx = cur.getColumnIndex("name")
-                    if (nameIdx >= 0) {
-                        while (cur.moveToNext()) {
-                            val name = cur.getString(nameIdx)
-                            if (name.startsWith("idx_${tableName}_")) {
-                                db.execSQL("DROP INDEX IF EXISTS `$name`")
-                            }
-                        }
-                    }
-                }
+                db.execSQL(idx.createSql.replace(TABLE_NAME_PLACEHOLDER, tableName))
+                report.indexesCreated++
             }.onFailure {
-                val m = "清理旧版 idx_ 遗留索引失败（非致命）: ${it.message}"
+                val m = "CREATE INDEX ${idx.name} failed: ${it.message}"
                 FileLogger.w(TAG, m, it)
-            }
-            for (idx in indices) {
-                val idxName = indexNameFor(tableName, idx)
-                val cols = idx.value.mapIndexed { i, c ->
-                    val order = idx.orders.getOrNull(i) ?: Index.Order.ASC
-                    "`$c`" + if (order == Index.Order.DESC) " DESC" else " ASC"
-                }.joinToString(", ")
-                val uniquePart = if (idx.unique) " UNIQUE " else " "
-                runCatching {
-                    db.execSQL("CREATE${uniquePart}INDEX IF NOT EXISTS `$idxName` ON `$tableName` ($cols)")
-                    report.indexesCreated++
-                }.onFailure {
-                    val m = "CREATE INDEX $idxName failed: ${it.message}"
-                    FileLogger.w(TAG, m, it)
-                    report.failures.add(m)
-                }
+                report.failures.add(m)
             }
         }
     }
 
-    // ── 反射工具（java.lang.reflect 原生）────────────────────────────────────
+    /**
+     * 构造 ADD COLUMN 片段。
+     * 实体声明了 defaultValue → 原样使用（Room TableInfo 校验精确比对默认值）；
+     * NOT NULL 且未声明默认值 → SQLite 规定必须带非 NULL DEFAULT，用类型安全默认值保证 ALTER 成功
+     *   （数据不丢；Room 校验可能因默认值不匹配进入 Funnel 3，但不会崩）。
+     */
+    private fun buildAddColumnDdl(col: ColumnSchema): String {
+        val sb = StringBuilder("`${col.columnName}` ${col.affinity}")
+        if (col.notNull) {
+            val def = col.defaultValue ?: safeDefaultFor(col.affinity)
+            sb.append(" NOT NULL DEFAULT $def")
+        } else if (col.defaultValue != null) {
+            sb.append(" DEFAULT ${col.defaultValue}")
+        }
+        return sb.toString()
+    }
+
+    private fun safeDefaultFor(affinity: String): String = when (affinity.uppercase(Locale.US)) {
+        "INTEGER" -> "0"
+        "REAL" -> "0"
+        "BLOB" -> "X''"
+        else -> "''"
+    }
+
+    // ── SQLite 工具 ───────────────────────────────────────────────────────
     private fun readExistingColumns(db: SupportSQLiteDatabase, tableName: String): Map<String, String> {
         val out = linkedMapOf<String, String>()
         runCatching {
@@ -321,66 +362,6 @@ object LightweightSchemaRescue {
             }
         }
         return out
-    }
-
-    // RC67 P1-6: 主键解析的返回结构（单主键 / 复合主键互斥）
-    private data class PkSpec(
-        val singlePkColumnName: String?,   // 非 null 表示使用字段级 @PrimaryKey
-        val singlePkAutoGenerate: Boolean, // 仅当 singlePkColumnName != null 时有效
-        val compositePkColumns: List<String> // 非空表示使用 @Entity(primaryKeys=[...]) 复合主键
-    )
-
-    private fun findPrimaryKeySpec(
-        entityAnn: Entity,
-        fields: Collection<Field>,
-        tableName: String,
-        report: RescueReportBuilder
-    ): PkSpec {
-        // 1) 优先识别 @Entity(primaryKeys=[...]) 复合主键（Room 官方支持多列主键）
-        val composite: Array<String> = entityAnn.primaryKeys
-        if (composite.isNotEmpty()) {
-            val cols = composite.toList()
-            val msg = ("Composite PK on `$tableName` (${cols.joinToString()}): " +
-                    "Funnel2 会强制所有 PK 列 NOT NULL 并添加表级 PRIMARY KEY 约束；" +
-                    "但如果老表已存在且缺少这些 PK 列，SQLite ALTER TABLE ADD COLUMN 无法追加 PRIMARY KEY 约束，" +
-                    "Room TableInfo 校验可能仍失败 → 会进入 Funnel3 保守 destructive。")
-            FileLogger.w(TAG, msg)
-            report.failures.add(msg)
-            return PkSpec(singlePkColumnName = null, singlePkAutoGenerate = false, compositePkColumns = cols)
-        }
-        // 2) 退回字段级 @PrimaryKey（单主键）
-        for (f in fields) {
-            val a = f.getAnnotation(PrimaryKey::class.java) ?: continue
-            return PkSpec(
-                singlePkColumnName = f.name,
-                singlePkAutoGenerate = a.autoGenerate,
-                compositePkColumns = emptyList()
-            )
-        }
-        // 3) 都没有 → 理论上 Room 编译期就会报 @Entity 缺主键错误，
-        //    这里给个 warn，继续无主键走（最坏也是 Funnel3 兜底）
-        report.failures.add("Table `$tableName`: 既没有字段 @PrimaryKey，也没有 @Entity(primaryKeys=[...])，跳过主键抢救")
-        return PkSpec(null, false, emptyList())
-    }
-
-    private fun sqlTypeFor(javaType: Class<*>): String = when {
-        javaType == String::class.java -> "TEXT"
-        javaType == Int::class.javaPrimitiveType || javaType == Int::class.javaObjectType -> "INTEGER"
-        javaType == Long::class.javaPrimitiveType || javaType == Long::class.javaObjectType -> "INTEGER"
-        javaType == Short::class.javaPrimitiveType || javaType == Short::class.javaObjectType -> "INTEGER"
-        javaType == Byte::class.javaPrimitiveType || javaType == Byte::class.javaObjectType -> "INTEGER"
-        javaType == Boolean::class.javaPrimitiveType || javaType == Boolean::class.javaObjectType -> "INTEGER"
-        javaType == Float::class.javaPrimitiveType || javaType == Float::class.javaObjectType -> "REAL"
-        javaType == Double::class.javaPrimitiveType || javaType == Double::class.javaObjectType -> "REAL"
-        javaType == ByteArray::class.java -> "BLOB"
-        else -> "TEXT"  // 枚举（存 .name）一律 TEXT
-    }
-
-    private fun indexNameFor(tableName: String, index: Index): String {
-        // RC91 SCHEMA 42 修复：Room 生成的索引名统一为 index_<table>_<col1>_<col2>
-        // （唯一索引同样如此，只是 CREATE UNIQUE INDEX 而非名字带后缀）。
-        // 旧版返回 idx_<table>_<cols>[_unique] 与 Room 期望不符，会导致 TableInfo 校验失败。
-        return "index_${tableName}_${index.value.joinToString("_")}"
     }
 
     // ── DB-SHIELD-4 (Funnel 4)：灾难前数据库文件备份 ──────────────────────

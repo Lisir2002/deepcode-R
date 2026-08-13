@@ -162,6 +162,13 @@ android {
     sourceSets {
         getByName("main") {
             assets.srcDir("src/_armAssets")
+            // RC94：Room 导出的 schema JSON（app/schemas/<version>.json，KSP 编译期生成）也打进 assets，
+            // 供 LightweightSchemaRescue（Funnel 2）在运行时解析「权威 schema」做轻量抢救。
+            // 背景：Room 的 @Entity/@PrimaryKey/@ColumnInfo/@Index 注解均为 BINARY retention，
+            //   运行时 getAnnotation() 恒返回 null，旧版反射抢救从未真正生效（Release/R8 下必失败）。
+            //   改为解析 Room 官方导出的 schema JSON（createSql 即 Room 生成的精确建表 SQL），
+            //   抢救建出的表与 Room TableInfo 校验期望 100% 一致，Funnel 2 才真正可用。
+            assets.srcDir("schemas")
         }
     }
 

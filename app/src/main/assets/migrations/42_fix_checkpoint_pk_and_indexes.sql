@@ -1,32 +1,14 @@
--- RC91 SCHEMA 42：修复 RC68/RC63 遗留的三张表 schema 与实体不一致。
--- 采用「CREATE NEW → INSERT OR IGNORE 回拷 → DROP IF EXISTS → RENAME」幂等四步法（与 38/41 同款）。
---
--- 1/3 session_checkpoints：旧迁移 28 建了 createdAt 列，实体/DAO 用 createdAtMs
---     → 重建为 createdAtMs 并保留数据（createdAt → createdAtMs）。
--- 2/3 model_capability_overrides：旧迁移 33 用单主键 id + 3 个 idx_* 索引，
---     实体是复合主键 (providerType, modelId) 且无索引
---     → 重建为复合主键、删除多余索引、保留数据（INSERT OR IGNORE 按新主键去重）。
--- 3/3 zth_hallucination_fuses：旧迁移 35 用单主键 id + UNIQUE(scope,scopeId) 索引，
---     实体是复合主键 (scope, scopeId) 且只有 state/updatedAtMs 索引
---     → 重建为复合主键、删除 UNIQUE 索引、保留数据（INSERT OR IGNORE 按新主键去重）。
+-- RC94 SCHEMA 42 修正：session_checkpoints 段改为「幂等 no-op」。
+-- 背景：RC91 起迁移 28 已改为建 createdAtMs 列（与实体/DAO 对齐），但本迁移 42 仍固定引用
+--   createdAt 列 → 新 schema 设备（RC91+ 全新安装）升级时 SQLite 在 prepare 阶段报
+--   no such column: createdAt → Funnel 1 失败 → 连锁触发 Funnel 2/3/4 全崩（线上 CRASH）。
+-- 修复：session_checkpoints 的重建（createdAt → createdAtMs）改由程序化迁移 RobustMigration44
+--   （v43→v44）用 PRAGMA table_info 探测实际列名后幂等处理；此处仅保留索引创建（两 schema 通用）。
+-- 注意：model_capability_overrides / zth_hallucination_fuses 两段不受列名影响，继续保留。
 
 -- ══════════════════════════════════════════════════════════
--- 1/3 session_checkpoints
+-- 1/3 session_checkpoints（no-op：仅确保索引存在，重建逻辑见 RobustMigration44 v43→v44）
 -- ══════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS session_checkpoints_new (
-    id TEXT NOT NULL PRIMARY KEY,
-    sessionId TEXT NOT NULL,
-    userMessageId TEXT NOT NULL,
-    promptSnippet TEXT NOT NULL,
-    createdAtMs INTEGER NOT NULL
-);
-
-INSERT OR IGNORE INTO session_checkpoints_new (id, sessionId, userMessageId, promptSnippet, createdAtMs)
-    SELECT id, sessionId, userMessageId, promptSnippet, createdAt FROM session_checkpoints;
-
-DROP TABLE IF EXISTS session_checkpoints;
-ALTER TABLE session_checkpoints_new RENAME TO session_checkpoints;
-
 CREATE INDEX IF NOT EXISTS index_session_checkpoints_sessionId ON session_checkpoints (sessionId);
 
 -- ══════════════════════════════════════════════════════════
