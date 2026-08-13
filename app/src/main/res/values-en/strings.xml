@@ -74,6 +74,36 @@
     <string name="settings_about_subtitle">Version check · GitHub · License</string>
     <string name="settings_skills_subtitle">Browse, enable/disable and uninstall skills</string>
 
+    <!-- Capability Center -->
+    <string name="capability_center_title">Capability Center</string>
+    <string name="capability_tab_tools">Tools</string>
+    <string name="capability_tab_agent">Agent</string>
+    <string name="capability_tab_skills">Skills</string>
+    <string name="capability_tools_empty">No tools</string>
+    <string name="capability_tools_empty_subtitle">Tools are registered automatically when the Agent workflow starts.</string>
+    <string name="capability_tool_no_description">(no description)</string>
+    <string name="capability_tool_no_parameters">This tool has no parameters</string>
+    <string name="capability_tool_parameters">Parameters</string>
+    <string name="capability_tool_optional">optional</string>
+    <string name="capability_tool_permission_auto">Auto approve</string>
+    <string name="capability_tool_permission_ask">Ask</string>
+    <string name="capability_agent_runtime">Runtime</string>
+    <string name="capability_agent_execution_mode">Execution mode</string>
+    <string name="capability_agent_execution_local">Local PRoot container</string>
+    <string name="capability_agent_execution_remote">Remote SSH server</string>
+    <string name="capability_agent_active_provider">Active provider</string>
+    <string name="capability_agent_no_provider">Not configured</string>
+    <string name="capability_agent_session_mode">Session mode</string>
+    <string name="capability_agent_mode_build">BUILD</string>
+    <string name="capability_agent_mode_plan">PLAN</string>
+    <string name="capability_agent_mode_auto">AUTO</string>
+    <string name="capability_agent_stats">Capability stats</string>
+    <string name="capability_agent_tool_count">Tools</string>
+    <string name="capability_agent_skill_count">Skills</string>
+    <string name="capability_agent_rule_count">Rules</string>
+    <string name="capability_agent_policy">Permission policy</string>
+    <string name="capability_agent_policy_desc">Tool calls are evaluated by the permission policy engine: read-only operations are auto-approved, while writes and command execution require user confirmation. AUTO mode approves all permissions (with high-risk deletion protection retained). Manage rules under Settings → Tool Permissions.</string>
+
     <!-- Settings category titles -->
     <string name="settings_category_ai">AI Configuration</string>
     <string name="settings_category_ai_agent">AI Configuration &amp; Agent</string>

@@ -76,6 +76,36 @@
     <string name="settings_about_subtitle">版本检查 · GitHub · 许可证</string>
     <string name="settings_skills_subtitle">浏览、启用/禁用与卸载技能</string>
 
+    <!-- 能力中心 -->
+    <string name="capability_center_title">能力中心</string>
+    <string name="capability_tab_tools">工具</string>
+    <string name="capability_tab_agent">Agent</string>
+    <string name="capability_tab_skills">技能</string>
+    <string name="capability_tools_empty">暂无工具</string>
+    <string name="capability_tools_empty_subtitle">工具在 Agent 工作流启动时自动注册。</string>
+    <string name="capability_tool_no_description">（无描述）</string>
+    <string name="capability_tool_no_parameters">该工具无参数</string>
+    <string name="capability_tool_parameters">参数</string>
+    <string name="capability_tool_optional">可选</string>
+    <string name="capability_tool_permission_auto">自动放行</string>
+    <string name="capability_tool_permission_ask">需询问</string>
+    <string name="capability_agent_runtime">运行环境</string>
+    <string name="capability_agent_execution_mode">执行模式</string>
+    <string name="capability_agent_execution_local">本地 PRoot 容器</string>
+    <string name="capability_agent_execution_remote">远程 SSH 服务器</string>
+    <string name="capability_agent_active_provider">激活 Provider</string>
+    <string name="capability_agent_no_provider">未配置</string>
+    <string name="capability_agent_session_mode">会话模式</string>
+    <string name="capability_agent_mode_build">BUILD（构建）</string>
+    <string name="capability_agent_mode_plan">PLAN（计划）</string>
+    <string name="capability_agent_mode_auto">AUTO（自动）</string>
+    <string name="capability_agent_stats">能力统计</string>
+    <string name="capability_agent_tool_count">工具</string>
+    <string name="capability_agent_skill_count">技能</string>
+    <string name="capability_agent_rule_count">授权规则</string>
+    <string name="capability_agent_policy">权限策略</string>
+    <string name="capability_agent_policy_desc">工具调用由权限策略引擎评估：只读操作自动放行，写操作与命令执行需用户确认；AUTO 模式放行全部权限（仍保留高危删除防护）。可在「设置 → 工具授权」中管理授权规则。</string>
+
     <!-- Settings category titles -->
     <string name="settings_category_ai">AI 配置</string>
     <string name="settings_category_ai_agent">AI 配置 &amp; Agent</string>

@@ -119,6 +119,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToTerminalSettings: () -> Unit = {},
     onNavigateToSshHosts: () -> Unit = {},
+    onNavigateToCapabilityCenter: () -> Unit = {},
     onStopAllAndCloseTerminal: () -> Unit = {}
 ) {
     val providers by viewModel.providers.collectAsStateWithLifecycle()
@@ -291,7 +292,8 @@ fun SettingsScreen(
                         }
                         section = it
                     },
-                    onNavigateToTerminalSettings = onNavigateToTerminalSettings
+                    onNavigateToTerminalSettings = onNavigateToTerminalSettings,
+                    onNavigateToCapabilityCenter = onNavigateToCapabilityCenter
                 )
                 SettingsSection.Providers -> ProvidersSection(
                     providers = providers,
@@ -468,6 +470,7 @@ internal fun SettingsMenu(
     onOpenLanguageSheet: () -> Unit,
     onOpen: (SettingsSection) -> Unit,
     onNavigateToTerminalSettings: () -> Unit = {},
+    onNavigateToCapabilityCenter: () -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val themeLabel = stringResource(themeMode.labelRes)
@@ -543,7 +546,7 @@ internal fun SettingsMenu(
             subtitle = stringResource(R.string.settings_skills_subtitle),
             icon = FeatherIcons.Zap,
             keywords = listOf("skill", "技能", "prompt", "脚本", "script", "mcp", "加载"),
-            action = { onOpen(SettingsSection.Skills) }
+            action = onNavigateToCapabilityCenter
         ),
         MenuItem(
             section = SettingsSection.Permissions,
