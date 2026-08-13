@@ -8,15 +8,21 @@ import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * 管理 MasterKey（Android Keystore）与 DEK（Data Encryption Key）的双层密钥体系。
  *
  * 职责：
  * 1. 生成/加载 MasterKey（AES-256，Android Keystore 存储，不可导出）。
- * 2. 用 MasterKey wrap/unwrap DEK（DEK 是 256-bit AES 对称密钥，持久化在 Room 的
+ * 2. 用 MasterKey 加密/解密 DEK（DEK 是 256-bit AES 对称密钥，持久化在 Room 的
  *    [CredentialEncryptionStateEntity.dekCiphertext]）。
- * 3. 内存缓存已 unwrap 的 DEK（进程级，不持久化）。
+ * 3. 内存缓存已解密的 DEK（进程级，不持久化）。
+ *
+ * RC74：DEK 保护改用 AES/GCM ENCRYPT/DECRYPT（而非 WRAP/UNWRAP）。
+ * Android Keystore 的 AES/GCM 不支持密钥包装模式，WRAP/UNWRAP 会抛
+ * Incompatible purpose → 旧版 DEK 永远无法初始化 → API Key 无法保存。
  *
  * MasterKey 支持可选的 [setUserAuthenticationRequired(true)] ，开启后 30 秒内
  * 首次解密需要指纹/面容验证。
@@ -35,14 +41,6 @@ class DEKManager private constructor() {
         private const val GCM_TAG_BITS = 128
         private const val IV_LEN = 12
         private const val DEK_LEN_BITS = 256
-
-        /**
-         * RC61b：Android Keystore 官方 `KeyProperties` 仅提供 `PURPOSE_WRAP_KEY=32`，
-         * 并未公开 `PURPOSE_UNWRAP_KEY` 常量，但 Cipher.UNWRAP_MODE 需要该权限位
-         * （实际值 = 0x8 = 8，自 API 23 引入 wrap/unwrap 即存在且稳定，与 RC61a 硬编码一致）。
-         * 用局部常量替代硬编码：既避免魔法数字，又规避「引用不存在官方符号导致编译失败」。
-         */
-        private const val PURPOSE_UNWRAP_KEY_COMPAT = 8
 
         @Volatile
         private var instance: DEKManager? = null
@@ -75,16 +73,17 @@ class DEKManager private constructor() {
 
         val existingEntry = keyStore.getEntry(MASTERKEY_ALIAS, null) as? KeyStore.SecretKeyEntry
         if (existingEntry != null) {
-            // RC73 修复（Incompatible purpose 根因）：设备上可能残留旧版本创建的 MasterKey，
-            // 其 KeyGenParameterSpec 用 PURPOSE_ENCRYPT|PURPOSE_DECRYPT（旧版直接加密数据），
-            // 而新代码用 Cipher.WRAP_MODE/UNWRAP_MODE 初始化它（wrapDek/unwrapDek）。
-            // Android Keystore 会在 Cipher.init 时校验用途授权，未授权 WRAP/UNWRAP 就抛
-            // KeyStoreException: Incompatible purpose → ensureInitialized 失败 → 密钥无法保存。
-            // 修复：已存在分支先校验是否支持 WRAP/UNWRAP，不支持则删除并重建（用正确用途）。
-            if (supportsWrapUnwrap(existingEntry.secretKey)) {
+            // RC74 根因修复（DEK 未初始化 / Incompatible purpose）：
+            // 旧版用 AES/GCM + WRAP_MODE/UNWRAP_MODE 保护 DEK，但 Android Keystore 的
+            // AES/GCM 并不实现密钥包装模式（WRAP/UNWRAP），Cipher.init 会抛
+            // UnsupportedOperationException / Incompatible purpose → wrapDek/unwrapDek
+            // 永远失败 → ensureInitialized 失败 → DEK 未初始化 → API Key 无法保存。
+            // 本版本改为 AES/GCM ENCRYPT/DECRYPT 保护 DEK（标准、普遍支持）。
+            // 已存在分支校验 MasterKey 是否支持 ENCRYPT/DECRYPT，不支持则删除重建。
+            if (supportsEncryptDecrypt(existingEntry.secretKey)) {
                 return existingEntry.secretKey
             }
-            FileLogger.w(TAG, "已存在 MasterKey 不支持 WRAP/UNWRAP（用途不兼容），删除并重建")
+            FileLogger.w(TAG, "已存在 MasterKey 不支持 ENCRYPT/DECRYPT（用途不兼容），删除并重建")
             keyStore.deleteEntry(MASTERKEY_ALIAS)
             cachedDek = null
         }
@@ -94,10 +93,9 @@ class DEKManager private constructor() {
             KeyProperties.KEY_ALGORITHM_AES,
             ANDROID_KEYSTORE
         )
-        // PURPOSE_WRAP_KEY | PURPOSE_UNWRAP_KEY_COMPAT = 允许该 MasterKey 执行 wrap/unwrap DEK。
-        // 说明：KeyProperties 仅公开 PURPOSE_WRAP_KEY；PURPOSE_UNWRAP_KEY_COMPAT(8) 为兼容常量，
-        //       与 RC61a 已验证的硬编码一致，编译期不受 compileSdk 常量存在性影响。
-        val purpose = KeyProperties.PURPOSE_WRAP_KEY or PURPOSE_UNWRAP_KEY_COMPAT
+        // RC74：MasterKey 授权 ENCRYPT|DECRYPT，用 AES/GCM 加密 DEK 原始字节（标准做法）。
+        // 不再使用 WRAP_KEY/UNWRAP_KEY 用途（AES/GCM 不支持密钥包装）。
+        val purpose = KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
         val specBuilder = KeyGenParameterSpec.Builder(MASTERKEY_ALIAS, purpose)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
@@ -142,15 +140,15 @@ class DEKManager private constructor() {
     }
 
     /**
-     * RC73：校验 MasterKey 是否支持 WRAP/UNWRAP 用途。
-     * 用 Cipher.WRAP_MODE 初始化，若 KeyGenParameterSpec 未授权 WRAP_KEY 用途，
+     * RC74：校验 MasterKey 是否支持 ENCRYPT/DECRYPT 用途。
+     * 用 Cipher.ENCRYPT_MODE 初始化，若 KeyGenParameterSpec 未授权 ENCRYPT 用途，
      * Android Keystore 会在 init 时抛 KeyStoreException: Incompatible purpose。
      * 必须 IO 线程。
      */
-    private fun supportsWrapUnwrap(key: SecretKey): Boolean {
+    private fun supportsEncryptDecrypt(key: SecretKey): Boolean {
         return try {
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.WRAP_MODE, key)
+            cipher.init(Cipher.ENCRYPT_MODE, key)
             true
         } catch (e: Exception) {
             false
@@ -186,29 +184,47 @@ class DEKManager private constructor() {
     }
 
     /**
-     * 用 MasterKey wrap DEK → Base64 密文字符串。
+     * 用 MasterKey 加密 DEK → Base64 密文字符串。
+     *
+     * **RC74 根因修复：** 旧实现用 `Cipher.WRAP_MODE` 包装 DEK，但 Android Keystore 的
+     * AES/GCM 并不实现密钥包装模式，`Cipher.init(WRAP_MODE)` 会抛
+     * `UnsupportedOperationException / Incompatible purpose`，导致 wrapDek 永远失败 →
+     * ensureInitialized 失败 → DEK 未初始化 → API Key 无法保存。
+     * 本版本改为标准的 AES/GCM ENCRYPT_MODE：随机 IV + 加密 DEK 原始字节，
+     * 输出格式 `Base64(IV(12B) + ciphertext+tag)`。
+     *
      * 结果持久化到 [CredentialEncryptionStateEntity.dekCiphertext]。必须 IO 线程。
      */
     fun wrapDek(masterKey: SecretKey, dek: SecretKey): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.WRAP_MODE, masterKey)
-        val wrapped = cipher.wrap(dek)
-        return Base64.getEncoder().encodeToString(wrapped)
+        cipher.init(Cipher.ENCRYPT_MODE, masterKey)
+        val iv = cipher.iv
+        val ciphertext = cipher.doFinal(dek.encoded)
+        val out = ByteArray(iv.size + ciphertext.size)
+        System.arraycopy(iv, 0, out, 0, iv.size)
+        System.arraycopy(ciphertext, 0, out, iv.size, ciphertext.size)
+        return Base64.getEncoder().encodeToString(out)
     }
 
     /**
-     * 用 MasterKey unwrap DEK 密文 → 内存 SecretKey。
+     * 用 MasterKey 解密 DEK 密文 → 内存 SecretKey。
+     *
+     * **RC74：** 与 [wrapDek] 配套，使用 AES/GCM DECRYPT_MODE，从
+     * `Base64(IV + ciphertext+tag)` 中解析出 IV 与密文后解密得到 DEK 原始字节。
+     * 若 MasterKey 已被外部重置，GCM tag 校验失败会抛异常（即视为被重置）。
+     *
      * 结果缓存到 [cachedDek]。必须 IO 线程。
      */
     fun unwrapDek(masterKey: SecretKey, dekCiphertextB64: String): SecretKey {
-        val wrapped = Base64.getDecoder().decode(dekCiphertextB64)
+        val bytes = Base64.getDecoder().decode(dekCiphertextB64)
+        val iv = bytes.copyOfRange(0, IV_LEN)
+        val ciphertext = bytes.copyOfRange(IV_LEN, bytes.size)
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        // WRAP/UNWRAP 模式的 IV 由 Cipher 在 wrap 时内部生成并随 wrapped bytes 一起编码，
-        // unwrap 时 cipher 自行从 wrapped 字节流解析，不需要外部 IV。
-        cipher.init(Cipher.UNWRAP_MODE, masterKey)
-        val dek = cipher.unwrap(wrapped, KeyProperties.KEY_ALGORITHM_AES, Cipher.SECRET_KEY)
-        cachedDek = dek as SecretKey
-        return cachedDek!!
+        cipher.init(Cipher.DECRYPT_MODE, masterKey, GCMParameterSpec(GCM_TAG_BITS, iv))
+        val dekBytes = cipher.doFinal(ciphertext)
+        val dek = SecretKeySpec(dekBytes, KeyProperties.KEY_ALGORITHM_AES)
+        cachedDek = dek
+        return dek
     }
 
     /** 获取内存缓存的 DEK（如果存在）。volatile 读，任意线程。 */
