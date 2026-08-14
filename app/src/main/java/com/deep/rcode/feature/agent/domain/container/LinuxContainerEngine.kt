@@ -815,6 +815,50 @@ class LinuxContainerEngine @Inject constructor(
         bundleRepository.saveCustomPackagesSnapshot(custom)
     }
 
+    /**
+     * 联动检测：从容器真实 apk 世界刷新 bundle 安装状态。
+     *
+     * 聊天页 AI 通过 Bash 直接 `apk add` / `apk del` 安装/卸载环境时，
+     * 不会走 [installBundle] / [uninstallBundle]，导致 [TerminalBundleRepository]
+     * 的标记状态与实际容器不一致（例如聊天页装了 python，功能包页仍显示"安装"；
+     * 聊天页卸载了环境，功能包页仍显示"已安装"）。
+     *
+     * 本方法用 `apk info` 拉取真实已装包，逐 bundle 判断其主包是否在列，
+     * 同步 StateFlow 与磁盘标记，让功能包页面与聊天页环境安装联动。
+     * 由终端功能包页进入 / 手动刷新时调用。
+     */
+    suspend fun refreshBundleStatesFromApk() {
+        if (!containerInstaller.isInstalledFor(currentProfile)) return
+        val text = runCatching {
+            execCaptured("apk info 2>/dev/null", projectPath = null, timeoutMs = APK_LIST_TIMEOUT_MS).output
+        }.getOrDefault("")
+        val installed = text.lineSequence()
+            .map { it.trim() }
+            .filter { line ->
+                line.isNotBlank() && APK_PKG_NAME_REGEX.matches(line)
+            }
+            .toSet()
+        for (b in TerminalBundles.ALL) {
+            val pkgs = b.packages.trim().split(Regex("""\s+""")).filter { it.isNotBlank() }
+            val primary = pkgs.firstOrNull()
+            val present = primary != null && installed.contains(primary)
+            val current = bundleRepository.states.value[b.id]
+            if (present) {
+                if (current !is BundleInstallState.Installed) {
+                    FileLogger.i(TAG, "联动检测：${b.displayName} 已装（apk 世界命中 ${primary}），同步为已安装")
+                    bundleRepository.markInstalled(b.id, b)
+                }
+            } else {
+                if (current is BundleInstallState.Installed) {
+                    FileLogger.i(TAG, "联动检测：${b.displayName} 已卸载（apk 世界无 ${primary}），同步为未安装")
+                    bundleRepository.markUninstalled(b.id)
+                }
+            }
+        }
+        // 顺带刷新自定义包，与 apk 世界保持一致
+        runCatching { refreshCustomPackagesSnapshot() }
+    }
+
     /** 重置容器：物理删除 rootfs + proot 目录，bundleRepo 状态重置。高风险操作。 */
     suspend fun resetContainer() {
         // initMutex 保护：不与正在初始化的 job 并发

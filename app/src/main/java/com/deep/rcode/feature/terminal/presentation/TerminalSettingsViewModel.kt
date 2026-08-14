@@ -186,9 +186,11 @@ class TerminalSettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
-        // 第一次进入页面时刷新一下自定义包列表（需要容器已就绪 → 未就绪时 Engine 内部已兜底为空列表）
+        // 第一次进入页面时联动刷新：从容器真实 apk 世界同步 bundle 安装状态 + 自定义包列表。
+        // 聊天页 AI 通过 Bash 直接 apk add/del 安装/卸载环境时不会走 installBundle/uninstallBundle，
+        // 这里用真实 apk 状态校准，保证功能包页与聊天页环境安装联动一致。
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching { containerEngine.refreshCustomPackagesSnapshot() }
+            runCatching { containerEngine.refreshBundleStatesFromApk() }
             refreshStorageUsed()
         }
     }
@@ -281,6 +283,13 @@ class TerminalSettingsViewModel @Inject constructor(
     fun refreshCustom() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { containerEngine.refreshCustomPackagesSnapshot() }
+        }
+    }
+
+    /** 手动刷新功能包列表：从容器真实 apk 世界重新同步 bundle 安装状态（联动检测）。 */
+    fun refreshBundles() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { containerEngine.refreshBundleStatesFromApk() }
         }
     }
 

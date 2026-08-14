@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -38,6 +41,7 @@ import com.deep.rcode.feature.terminal.presentation.TerminalSettingsViewModel
 import com.deep.rcode.feature.terminal.presentation.component.toUi
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
+import compose.icons.feathericons.RefreshCw
 import kotlinx.coroutines.launch
 
 /**
@@ -76,7 +80,18 @@ fun TerminalBundleManagerScreen(
                 title = "功能包管理",
                 onNavigateBack = onNavigateBack,
                 navigationIcon = FeatherIcons.ArrowLeft,
-                navigationContentDescription = stringResource(R.string.common_back)
+                navigationContentDescription = stringResource(R.string.common_back),
+                actions = {
+                    // 手动刷新：从容器真实 apk 世界重新同步 bundle 安装状态（联动检测）
+                    IconButton(onClick = viewModel::refreshBundles) {
+                        Icon(
+                            imageVector = FeatherIcons.RefreshCw,
+                            contentDescription = "刷新安装状态",
+                            tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             )
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }

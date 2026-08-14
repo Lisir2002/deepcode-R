@@ -3,6 +3,7 @@ package com.deep.rcode.feature.agent.domain.tool.container
 import com.deep.rcode.feature.agent.domain.container.BoundedOutput
 import com.deep.rcode.feature.agent.domain.container.CommandEngine
 import com.deep.rcode.feature.agent.domain.container.CommandEvent
+import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.domain.tool.AgentTool
 import com.deep.rcode.feature.agent.domain.tool.ParameterType
@@ -15,8 +16,12 @@ import com.deep.rcode.feature.agent.domain.tool.ToolResult
 import com.deep.rcode.feature.agent.domain.tool.ToolStreamEvent
 import com.deep.rcode.feature.workspace.data.repository.WorkspaceRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -32,10 +37,16 @@ import javax.inject.Inject
  *
  * 同时实现 [StreamingAgentTool]：优先逐行流式输出，让聊天里能实时看到命令执行过程；
  * [execute] 作为非流式兜底保留，最终聚合结果两者一致（喂回模型不变）。
+ *
+ * 联动检测：AI 通过 Bash 直接 `apk add` / `apk del` 安装/卸载环境时，不会走
+ * [LinuxContainerEngine.installBundle] / [uninstallBundle]，导致终端功能包页的
+ * 安装状态与实际容器不一致。命令执行完成后若命中 apk 增删，自动触发一次
+ * [LinuxContainerEngine.refreshBundleStatesFromApk] 校准 bundle 状态。
  */
 class ExecuteCommandTool @Inject constructor(
     private val commandEngine: CommandEngine,
-    private val workspaceRepository: WorkspaceRepository
+    private val workspaceRepository: WorkspaceRepository,
+    private val containerEngine: LinuxContainerEngine
 ) : AgentTool(), StreamingAgentTool {
     private companion object {
         const val TAG = "ExecuteCommandTool"
@@ -45,6 +56,25 @@ class ExecuteCommandTool @Inject constructor(
 
         /** 超时上限（秒），与 [LinuxContainerEngine.MAX_TIMEOUT_MS] 对齐。 */
         const val MAX_TIMEOUT_SECONDS = 1_800L
+
+        /** 命中即视为「改动了 apk 世界」的命令片段，触发 bundle 状态联动刷新。 */
+        private val APK_MUTATION_REGEX = Regex("""\bapk\s+(add|del|remove|fix|upgrade|delete)\b""")
+    }
+
+    /** 联动刷新用的后台作用域：fire-and-forget，不阻塞工具结果返回。 */
+    private val linkageScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * 若命令命中 apk 增删，异步触发一次 bundle 状态联动刷新（从容器真实 apk 世界校准）。
+     * 幂等、失败静默，不干扰主流程。
+     */
+    private fun maybeSyncBundleStates(command: String) {
+        if (!APK_MUTATION_REGEX.containsMatchIn(command)) return
+        FileLogger.i(TAG, "检测到 apk 增删命令，联动刷新 bundle 安装状态")
+        linkageScope.launch {
+            runCatching { containerEngine.refreshBundleStatesFromApk() }
+                .onFailure { FileLogger.w(TAG, "联动刷新 bundle 状态失败: ${it.message}", it) }
+        }
     }
 
     override val name = "Bash"
@@ -101,6 +131,7 @@ class ExecuteCommandTool @Inject constructor(
             FileLogger.d(TAG, "execute_command (timeout=${timeoutMs}ms): $command")
             val output = commandEngine.runCommandSync(command, workdir, timeoutMs)
             FileLogger.v(TAG, "execute_command 完成，输出 ${output.length} 字符")
+            maybeSyncBundleStates(command)
             ToolResult.Success(JsonPrimitive(output))
         } catch (e: CancellationException) {
             throw e
@@ -142,6 +173,7 @@ class ExecuteCommandTool @Inject constructor(
                 }
             }
             FileLogger.v(TAG, "execute_command(流式) 完成，输出 ${accumulated.totalChars} 字符")
+            maybeSyncBundleStates(command)
             emit(ToolStreamEvent.Completed(ToolResult.Success(JsonPrimitive(accumulated.build()))))
         } catch (e: CancellationException) {
             throw e
