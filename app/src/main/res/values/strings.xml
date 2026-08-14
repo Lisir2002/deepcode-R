@@ -353,6 +353,14 @@
     <string name="chat_retrying">网络波动，正在重试 %1$s/%2$s</string>
     <string name="chat_thinking_process">思考过程</string>
     <string name="chat_expand_remaining">展开剩余 %1$s 行</string>
+    <string name="chat_task_history">历史对话</string>
+    <string name="chat_task_untitled">任务</string>
+    <string name="chat_task_user">用户消息</string>
+    <string name="chat_task_reasoning">思考过程</string>
+    <string name="chat_task_reply">回复</string>
+    <string name="chat_task_tool">工具调用</string>
+    <string name="chat_task_expand">展开</string>
+    <string name="chat_task_collapse">折叠</string>
 
     <!-- Container Settings -->
     <string name="container_bindings">绑定: %1$s</string>

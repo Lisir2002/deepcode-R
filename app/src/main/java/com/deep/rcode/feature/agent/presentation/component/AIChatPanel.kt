@@ -94,6 +94,7 @@ fun AIChatPanel(
     val agentState by viewModel.agentState.collectAsStateWithLifecycle()
     val messagesState by viewModel.messagesState.collectAsStateWithLifecycle()
     val messages = messagesState.messages
+    val taskGroups by viewModel.taskGroups.collectAsStateWithLifecycle()
     val changes by viewModel.changes.collectAsStateWithLifecycle()
 
     val currentSessionId by viewModel.currentSessionId.collectAsStateWithLifecycle()
@@ -437,14 +438,15 @@ fun AIChatPanel(
                         ),
                         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                     ) {
-                        items(messages, key = { it.id }, contentType = { it.role.name }) { message ->
-                            val live = runningTool.firstOrNull { it.messageId == message.id }?.text
-                            AgentMessageItem(
-                                message = message,
-                                liveOutput = live,
+                        items(taskGroups, key = { it.taskId }, contentType = { "task" }) { group ->
+                            TaskAccordion(
+                                group = group,
                                 markdownCache = markdownCache,
+                                onToggleTask = { viewModel.toggleTask(it) },
+                                onToggleSubGroup = { taskId, type -> viewModel.toggleSubGroup(taskId, type) },
                                 onRewindClick = { viewModel.openRewindMenu(it) },
-                                onMoreClick = { messageForMenu = it }
+                                onMoreClick = { messageForMenu = it },
+                                runningTool = runningTool
                             )
                         }
                         val reasoning = streamingReasoning

@@ -27,6 +27,8 @@ data class AgentUIMessage(
     val role: MessageRole,
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
+    // 所属任务分组 id：同一轮用户请求产出的消息共享同一 taskId；历史消息为空串。
+    val taskId: String = "",
     val attachments: List<AgentAttachment> = emptyList(),
     // 仅 TOOL 消息：渲染用，不参与上下文回放。
     val toolName: String? = null,
@@ -127,4 +129,48 @@ data class QueuedRequest(
     val inputImages: List<AgentImage> = emptyList(),
     val inputAttachments: List<AgentAttachment> = emptyList(),
     val isAutoTrigger: Boolean = false
+)
+
+/**
+ * 任务子分类类型（二级手风琴）：任务组内按消息类型聚合的类别。
+ * 渲染顺序即枚举声明顺序：用户消息 → 思考过程 → 助手回复 → 工具调用。
+ */
+enum class TaskSubGroupType {
+    /** 用户消息（本轮请求）。 */
+    USER,
+    /** 思考过程（reasoning 块）。 */
+    REASONING,
+    /** 助手文本回复。 */
+    REPLY,
+    /** 工具调用（TOOL 消息）。 */
+    TOOL
+}
+
+/**
+ * 任务子分组（二级手风琴）：同一任务组内、同一类型的消息集合。
+ * [isExpanded] 由 ViewModel 维护（跨重组稳定），UI 只读。
+ */
+@Immutable
+data class TaskSubGroup(
+    val type: TaskSubGroupType,
+    val messages: List<AgentUIMessage>,
+    val isExpanded: Boolean = true
+)
+
+/**
+ * 任务分组（一级手风琴）：同一轮用户请求（taskId）产出的所有消息归为一组。
+ * - [title]：任务标题，取该任务第一条用户消息的摘要。
+ * - [timestamp]：任务起始时间（第一条用户消息的时间戳）。
+ * - [subGroups]：按类型拆分的二级手风琴分组。
+ * - [isExpanded]：一级手风琴展开状态，由 ViewModel 维护。
+ * - [isStreaming]：该任务是否正在流式生成中（用于渲染实时占位）。
+ */
+@Immutable
+data class TaskGroup(
+    val taskId: String,
+    val title: String,
+    val timestamp: Long,
+    val subGroups: List<TaskSubGroup>,
+    val isExpanded: Boolean = true,
+    val isStreaming: Boolean = false
 )

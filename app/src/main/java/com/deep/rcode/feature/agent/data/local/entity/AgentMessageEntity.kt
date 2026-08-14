@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 data class AgentMessageEntity(
     @PrimaryKey val id: String,
     val sessionId: String,
+    val taskId: String,
     val role: String,
     val content: String,
     /** 消息生成时间毫秒（虽然这里是 ms 单位，但历史名字沿用 timestamp，避免迁移大规模重写）。 */
@@ -65,6 +66,7 @@ data class AgentMessageEntity(
             role = roleEnum,
             content = content,
             timestamp = timestamp,
+            taskId = taskId,
             toolName = toolName,
             toolArgs = toolArgs,
             isError = isError,

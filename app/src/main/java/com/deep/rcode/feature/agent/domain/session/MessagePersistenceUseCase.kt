@@ -38,6 +38,7 @@ class MessagePersistenceUseCase @Inject constructor(
         role: MessageRole,
         content: String,
         id: String = UUID.randomUUID().toString(),
+        taskId: String = "",
         toolCalls: List<ToolCall> = emptyList(),
         toolCallId: String? = null,
         toolName: String? = null,
@@ -54,6 +55,7 @@ class MessagePersistenceUseCase @Inject constructor(
             AgentMessageEntity(
                 id = id,
                 sessionId = sessionId,
+                taskId = taskId,
                 role = role.name,
                 content = sanitizeContent(content),
                 timestamp = nextTimestamp(),

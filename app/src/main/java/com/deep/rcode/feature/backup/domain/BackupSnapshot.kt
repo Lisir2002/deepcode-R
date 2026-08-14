@@ -148,6 +148,7 @@ data class ChatSessionDto(
 data class AgentMessageDto(
     val id: String,
     val sessionId: String,
+    val taskId: String = "",
     val role: String,
     val content: String,
     val timestamp: Long,

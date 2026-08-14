@@ -351,6 +351,14 @@
     <string name="chat_retrying">Network issue, retrying %1$s/%2$s</string>
     <string name="chat_thinking_process">Thinking process</string>
     <string name="chat_expand_remaining">Expand remaining %1$s lines</string>
+    <string name="chat_task_history">Historical conversation</string>
+    <string name="chat_task_untitled">Task</string>
+    <string name="chat_task_user">User message</string>
+    <string name="chat_task_reasoning">Reasoning</string>
+    <string name="chat_task_reply">Reply</string>
+    <string name="chat_task_tool">Tool calls</string>
+    <string name="chat_task_expand">Expand</string>
+    <string name="chat_task_collapse">Collapse</string>
 
     <!-- Container Settings -->
     <string name="container_bindings">Bindings: %1$s</string>

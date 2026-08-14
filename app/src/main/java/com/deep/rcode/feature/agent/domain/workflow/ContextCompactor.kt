@@ -140,6 +140,7 @@ class ContextCompactor @Inject constructor(
                     AgentMessageEntity(
                         id = markerId,
                         sessionId = sessionId,
+                        taskId = "",
                         role = MessageRole.USER.name,
                         content = CONTEXT_COMPACTION_MARKER,
                         timestamp = cutoffTimestamp - 2,
@@ -150,6 +151,7 @@ class ContextCompactor @Inject constructor(
                     AgentMessageEntity(
                         id = compactedId,
                         sessionId = sessionId,
+                        taskId = "",
                         role = MessageRole.ASSISTANT.name,
                         content = compactedMessage.content,
                         timestamp = cutoffTimestamp - 1,

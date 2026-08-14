@@ -205,6 +205,102 @@ class AIAgentViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, ChatMessagesState(null, emptyList(), loaded = false))
 
+    // 任务手风琴展开状态（按会话）：taskId -> 是否展开一级手风琴。
+    private val _expandedTasks = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    // 任务子手风琴展开状态（按会话）：taskId -> 已展开的子分类集合。
+    private val _expandedSubGroups = MutableStateFlow<Map<String, Set<TaskSubGroupType>>>(emptyMap())
+
+    /**
+     * 任务分组列表：把扁平消息列表按 taskId 分组为一级手风琴（任务），
+     * 组内按消息类型拆分为二级手风琴（用户消息 / 思考过程 / 助手回复 / 工具调用）。
+     * 历史消息（taskId 为空串）归入顶部「历史对话」组，默认折叠以节省空间。
+     */
+    val taskGroups: StateFlow<List<TaskGroup>> = combine(
+        messagesState,
+        _expandedTasks,
+        _expandedSubGroups
+    ) { state, expandedTasks, expandedSubGroups ->
+        buildTaskGroups(state.messages, expandedTasks, expandedSubGroups)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** 切换一级任务手风琴的展开/折叠。 */
+    fun toggleTask(taskId: String) {
+        val current = _expandedTasks.value
+        _expandedTasks.value = current + (taskId to !(current[taskId] ?: taskId.isNotBlank()))
+    }
+
+    /** 切换任务内二级子手风琴的展开/折叠。 */
+    fun toggleSubGroup(taskId: String, type: TaskSubGroupType) {
+        val current = _expandedSubGroups.value
+        val types = current[taskId] ?: emptySet()
+        val updated = if (type in types) types - type else types + type
+        _expandedSubGroups.value = current + (taskId to updated)
+    }
+
+    private fun buildTaskGroups(
+        messages: List<AgentUIMessage>,
+        expandedTasks: Map<String, Boolean>,
+        expandedSubGroups: Map<String, Set<TaskSubGroupType>>
+    ): List<TaskGroup> {
+        val historical = messages.filter { it.taskId.isBlank() }
+        val tasked = messages.filter { it.taskId.isNotBlank() }
+        val result = mutableListOf<TaskGroup>()
+
+        // 历史对话（升级前 / 斜杠命令 / 压缩锚点等无 taskId 的消息）：顶部扁平组，默认折叠。
+        if (historical.isNotEmpty()) {
+            result += TaskGroup(
+                taskId = "",
+                title = context.getString(R.string.chat_task_history),
+                timestamp = historical.first().timestamp,
+                subGroups = buildSubGroups(historical, expandedSubGroups[""]),
+                isExpanded = expandedTasks[""] ?: false
+            )
+        }
+
+        // 按 taskId 分组，保持首次出现顺序（时间序）。
+        val taskOrder = tasked.map { it.taskId }.distinct()
+        val grouped = tasked.groupBy { it.taskId }
+        for (taskId in taskOrder) {
+            val taskMessages = grouped[taskId] ?: continue
+            val firstUser = taskMessages.firstOrNull { it.role == MessageRole.USER }
+            val title = firstUser?.content?.let { deriveTaskTitle(it) } ?: context.getString(R.string.chat_task_untitled)
+            val timestamp = firstUser?.timestamp ?: taskMessages.first().timestamp
+            result += TaskGroup(
+                taskId = taskId,
+                title = title,
+                timestamp = timestamp,
+                subGroups = buildSubGroups(taskMessages, expandedSubGroups[taskId]),
+                isExpanded = expandedTasks[taskId] ?: true
+            )
+        }
+        return result
+    }
+
+    private fun buildSubGroups(
+        messages: List<AgentUIMessage>,
+        expandedTypes: Set<TaskSubGroupType>?
+    ): List<TaskSubGroup> = TaskSubGroupType.entries.mapNotNull { type ->
+        val typeMessages = messages.filter { it.matchesSubGroup(type) }
+        if (typeMessages.isEmpty()) null
+        else TaskSubGroup(
+            type = type,
+            messages = typeMessages,
+            isExpanded = expandedTypes?.contains(type) ?: true
+        )
+    }
+
+    private fun AgentUIMessage.matchesSubGroup(type: TaskSubGroupType): Boolean = when (type) {
+        TaskSubGroupType.USER -> role == MessageRole.USER && !isBackgroundNotification
+        TaskSubGroupType.REASONING -> reasoning?.hasVisibleContent() == true
+        TaskSubGroupType.REPLY -> role == MessageRole.ASSISTANT && content.hasVisibleContent()
+        TaskSubGroupType.TOOL -> role == MessageRole.TOOL
+    }
+
+    /** 从用户消息内容派生任务标题：取首个非空行，截断到 24 字符。 */
+    private fun deriveTaskTitle(content: String): String {
+        val firstLine = content.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: ""
+        return if (firstLine.length <= 24) firstLine else firstLine.take(24) + "…"
+    }
 
     private val _changesMap = MutableStateFlow<Map<String, List<CodeChange>>>(emptyMap())
     val changes: StateFlow<List<CodeChange>> = _currentSessionId
@@ -317,6 +413,10 @@ class AIAgentViewModel @Inject constructor(
     // 工具调用传入参数（argsPreview）按落库消息 id 暂存：ToolCallStarted 落库后，
     // ToolCallFinished / 用户停止会用同 id REPLACE 整行，需在此把参数带到后续落库。
     private val toolArgsByMsgId = mutableMapOf<String, String>()
+
+    // 当前请求的 taskId（按会话）：同一轮用户请求（executeAgentRequestStream）生成的所有消息
+    // （用户消息 / 助手回复 / 工具调用 / 思考过程）都归入同一任务分组。
+    private val currentTaskIdBySession = mutableMapOf<String, String>()
 
     /** 是否有正在运行、可被打断的 agent 任务。 */
     val isRunning: Boolean get() {
@@ -578,13 +678,16 @@ class AIAgentViewModel @Inject constructor(
 
         try {
             var failed = false
+            // 本轮请求的 taskId：该请求产出的所有消息归入同一任务分组（任务手风琴）。
+            val taskId = UUID.randomUUID().toString()
+            currentTaskIdBySession[sessionId] = taskId
             // 必须在插入本次用户消息之前读取历史：workflow 会自己 add(userRequest)，避免重复。
             val history = messagePersistenceUseCase.buildHistory(sessionId, SessionUseCase.PENDING_TOOL_MARKER)
             val isFirst = history.isEmpty()
 
             if (!isAutoTrigger) {
                 val userMsgId = UUID.randomUUID().toString()
-                messagePersistenceUseCase.persist(sessionId, MessageRole.USER, request, id = userMsgId, attachments = inputAttachments)
+                messagePersistenceUseCase.persist(sessionId, MessageRole.USER, request, id = userMsgId, taskId = taskId, attachments = inputAttachments)
                 checkpointManager.createCheckpoint(sessionId, userMsgId, request)
                 if (isFirst) sessionUseCase.updateTitle(sessionId, sessionUseCase.deriveTitle(request))
             }
@@ -639,6 +742,7 @@ class AIAgentViewModel @Inject constructor(
                             sessionId,
                             MessageRole.ASSISTANT,
                             normalized,
+                            taskId = taskId,
                             toolCalls = event.toolCalls,
                             reasoning = reasoning,
                             signature = event.signature.ifEmpty { null },
@@ -667,6 +771,7 @@ class AIAgentViewModel @Inject constructor(
                             MessageRole.TOOL,
                             "${SessionUseCase.PENDING_TOOL_MARKER} ${context.getString(R.string.agent_tool_executing, event.toolName)}",
                             id = msgId,
+                            taskId = taskId,
                             toolCallId = event.id,
                             toolName = event.toolName,
                             toolArgs = event.argsPreview,
@@ -690,6 +795,7 @@ class AIAgentViewModel @Inject constructor(
                             MessageRole.TOOL,
                             event.result,
                             id = msgId,
+                            taskId = taskId,
                             toolCallId = event.id,
                             toolName = event.toolName,
                             toolArgs = event.argsPreview ?: toolArgsByMsgId[msgId],
@@ -731,6 +837,7 @@ class AIAgentViewModel @Inject constructor(
             if (sessionJobs[sessionId] == coroutineContext[Job]) {
                 sessionJobs.remove(sessionId)
             }
+            currentTaskIdBySession.remove(sessionId)
             _runningTools.value = _runningTools.value - sessionId
             setStreamingText(sessionId, null)
             setStreamingReasoning(sessionId, null)
@@ -782,6 +889,7 @@ class AIAgentViewModel @Inject constructor(
         _streamingReasonings.value = emptyMap()
         _runningTools.value = emptyMap()
         _retryStates.value = emptyMap()
+        currentTaskIdBySession.clear()
     }
 
     fun stopAgent() {
@@ -792,6 +900,8 @@ class AIAgentViewModel @Inject constructor(
         val streamingText = _streamingTexts.value[sessionId]
         val streamingReasoning = _streamingReasonings.value[sessionId]
         val stoppedText = context.getString(R.string.agent_stopped_by_user)
+        // 同步捕获本轮 taskId：job.cancel() 后 finally 会清理 map，这里先取走避免竞态。
+        val stoppedTaskId = currentTaskIdBySession[sessionId] ?: ""
         job.cancel()
         pendingMergedNotifications.remove(sessionId)
         setAgentState(sessionId, AgentUIState.Idle)
@@ -811,6 +921,7 @@ class AIAgentViewModel @Inject constructor(
                         role = MessageRole.TOOL,
                         content = content,
                         id = running.messageId,
+                        taskId = stoppedTaskId,
                         toolCallId = running.messageId.removePrefix("tool_"),
                         toolName = running.toolName.ifBlank { null },
                         toolArgs = running.toolArgs.ifBlank { toolArgsByMsgId[running.messageId] },
@@ -826,6 +937,7 @@ class AIAgentViewModel @Inject constructor(
                     sessionId = sessionId,
                     role = MessageRole.ASSISTANT,
                     content = content,
+                    taskId = stoppedTaskId,
                     reasoning = reasoning
                 )
             }

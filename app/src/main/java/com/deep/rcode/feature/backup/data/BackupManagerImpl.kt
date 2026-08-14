@@ -698,12 +698,12 @@ class BackupManagerImpl @Inject constructor(
     )
 
     private fun AgentMessageEntity.toDto() = AgentMessageDto(
-        id, sessionId, role, content, timestamp, toolCallsJson, toolCallId, toolName, toolArgs,
+        id, sessionId, taskId, role, content, timestamp, toolCallsJson, toolCallId, toolName, toolArgs,
         isError, reasoning, signature, attachmentsJson, isCompacted, isContextSummary, isCompactionMarker
     )
 
     private fun AgentMessageDto.toEntity() = AgentMessageEntity(
-        id, sessionId, role, content, timestamp, toolCallsJson, toolCallId, toolName, toolArgs,
+        id, sessionId, taskId, role, content, timestamp, toolCallsJson, toolCallId, toolName, toolArgs,
         isError, reasoning, signature, attachmentsJson, isCompacted, isContextSummary, isCompactionMarker
     )
 
