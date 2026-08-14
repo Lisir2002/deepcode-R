@@ -50,6 +50,7 @@ import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.XCircle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
