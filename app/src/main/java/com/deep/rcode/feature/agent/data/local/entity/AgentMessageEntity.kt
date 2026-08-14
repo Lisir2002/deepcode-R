@@ -15,6 +15,8 @@ import kotlinx.serialization.json.Json
 data class AgentMessageEntity(
     @PrimaryKey val id: String,
     val sessionId: String,
+    /** 任务分组 id：同一轮用户请求产出的消息共享同一 taskId；历史消息为空串。 */
+    @ColumnInfo(defaultValue = "")
     val taskId: String,
     val role: String,
     val content: String,
