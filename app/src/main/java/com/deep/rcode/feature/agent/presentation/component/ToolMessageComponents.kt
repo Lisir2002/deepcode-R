@@ -1,5 +1,10 @@
 package com.deep.rcode.feature.agent.presentation.component
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -24,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -81,7 +87,11 @@ internal const val TOOL_SECTION_LINE_LIMIT = 20
  * 对 edit_file / write_file 这类带结构化差异的结果，展开后以「+新增/−删除」的彩色差异视图呈现。
  */
 @Composable
-internal fun ToolMessageBody(message: AgentUIMessage, liveOutput: String? = null) {
+internal fun ToolMessageBody(
+    message: AgentUIMessage,
+    liveOutput: String? = null,
+    initiallyExpanded: Boolean = true
+) {
     val streaming = liveOutput != null
     val running = streaming || message.content.startsWith(SessionUseCase.PENDING_TOOL_MARKER) ||
         message.content.startsWith(SessionUseCase.LEGACY_PENDING_TOOL_MARKER)
@@ -106,7 +116,7 @@ internal fun ToolMessageBody(message: AgentUIMessage, liveOutput: String? = null
 
     val expandable = !running && (edit != null || !resultText.isNullOrBlank() || !argsFull.isNullOrBlank()
             || (todoData != null && todoData.items.isNotEmpty()) || webSearchData != null)
-    var expanded by remember(message.id) { mutableStateOf(edit != null || todoData != null) }
+    var expanded by remember(message.id) { mutableStateOf(initiallyExpanded && (edit != null || todoData != null)) }
 
     val toolLabel = if (edit != null) edit.path.substringAfterLast('/') else (message.toolName ?: stringResource(R.string.common_tool))
 

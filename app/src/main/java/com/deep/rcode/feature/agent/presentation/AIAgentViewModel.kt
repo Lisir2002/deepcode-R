@@ -207,14 +207,14 @@ class AIAgentViewModel @Inject constructor(
 
     // 任务手风琴展开状态（按会话）：taskId -> 是否展开一级手风琴。
     private val _expandedTasks = MutableStateFlow<Map<String, Boolean>>(emptyMap())
-    // 任务子手风琴展开状态（按会话）：taskId -> 已展开的子分类集合。
-    private val _expandedSubGroups = MutableStateFlow<Map<String, Set<TaskSubGroupType>>>(emptyMap())
+    // 二级片段展开状态（按会话）：subGroupId -> 是否展开。片段 id 唯一标识时间顺序中的一段连续同类型消息。
+    private val _expandedSubGroups = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     // 当前正在流式生成的任务（按会话）：sessionId -> taskId。用于任务手风琴头部脉冲指示。
     private val _streamingTaskBySession = MutableStateFlow<Map<String, String>>(emptyMap())
 
     /**
      * 任务分组列表：把扁平消息列表按 taskId 分组为一级手风琴（任务），
-     * 组内按消息类型拆分为二级手风琴（用户消息 / 思考过程 / 助手回复 / 工具调用）。
+     * 组内按时间顺序扫描、仅合并「连续同类型」消息为二级片段（用户消息 / 助手回复 / 工具调用）。
      * 历史消息（taskId 为空串）归入顶部「历史对话」组，默认折叠以节省空间。
      */
     val taskGroups: StateFlow<List<TaskGroup>> = combine(
@@ -237,18 +237,16 @@ class AIAgentViewModel @Inject constructor(
         _expandedTasks.value = current + (taskId to !(current[taskId] ?: taskId.isNotBlank()))
     }
 
-    /** 切换任务内二级子手风琴的展开/折叠。 */
-    fun toggleSubGroup(taskId: String, type: TaskSubGroupType) {
+    /** 切换任务内二级片段手风琴的展开/折叠。 */
+    fun toggleSubGroup(taskId: String, subGroupId: String) {
         val current = _expandedSubGroups.value
-        val types = current[taskId] ?: emptySet()
-        val updated = if (type in types) types - type else types + type
-        _expandedSubGroups.value = current + (taskId to updated)
+        _expandedSubGroups.value = current + (subGroupId to !(current[subGroupId] ?: true))
     }
 
     private fun buildTaskGroups(
         messages: List<AgentUIMessage>,
         expandedTasks: Map<String, Boolean>,
-        expandedSubGroups: Map<String, Set<TaskSubGroupType>>,
+        expandedSubGroups: Map<String, Boolean>,
         streamingTaskId: String?
     ): List<TaskGroup> {
         val historical = messages.filter { it.taskId.isBlank() }
@@ -261,7 +259,7 @@ class AIAgentViewModel @Inject constructor(
                 taskId = "",
                 title = context.getString(R.string.chat_task_history),
                 timestamp = historical.first().timestamp,
-                subGroups = buildSubGroups(historical, expandedSubGroups[""]),
+                subGroups = buildSubGroups("", historical, expandedSubGroups),
                 isExpanded = expandedTasks[""] ?: false
             )
         }
@@ -278,7 +276,7 @@ class AIAgentViewModel @Inject constructor(
                 taskId = taskId,
                 title = title,
                 timestamp = timestamp,
-                subGroups = buildSubGroups(taskMessages, expandedSubGroups[taskId]),
+                subGroups = buildSubGroups(taskId, taskMessages, expandedSubGroups),
                 isExpanded = expandedTasks[taskId] ?: true,
                 isStreaming = taskId == streamingTaskId
             )
@@ -286,24 +284,55 @@ class AIAgentViewModel @Inject constructor(
         return result
     }
 
+    /**
+     * 按时间顺序把消息切分为「连续同类型」片段：仅合并相邻同类型消息，绝不跨类型重排，
+     * 从而完整保留任务内真实的执行时间线（如：用户 → 思考 → 工具 → 思考 → 工具 → 回复）。
+     * 片段 id = "$taskId-$seq"，跨重组稳定，用于维护二级手风琴展开状态。
+     */
     private fun buildSubGroups(
+        taskId: String,
         messages: List<AgentUIMessage>,
-        expandedTypes: Set<TaskSubGroupType>?
-    ): List<TaskSubGroup> = TaskSubGroupType.entries.mapNotNull { type ->
-        val typeMessages = messages.filter { it.matchesSubGroup(type) }
-        if (typeMessages.isEmpty()) null
-        else TaskSubGroup(
-            type = type,
-            messages = typeMessages,
-            isExpanded = expandedTypes?.contains(type) ?: true
-        )
+        expandedMap: Map<String, Boolean>
+    ): List<TaskSubGroup> {
+        val result = mutableListOf<TaskSubGroup>()
+        var currentType: TaskSubGroupType? = null
+        var currentMessages = mutableListOf<AgentUIMessage>()
+        var seq = 0
+        for (msg in messages) {
+            val type = msg.subGroupType() ?: continue
+            if (currentType != null && type != currentType) {
+                val id = "$taskId-$seq"
+                result += TaskSubGroup(
+                    id = id,
+                    type = currentType,
+                    messages = currentMessages,
+                    isExpanded = expandedMap[id] ?: true
+                )
+                seq++
+                currentMessages = mutableListOf()
+            }
+            currentType = type
+            currentMessages += msg
+        }
+        if (currentType != null && currentMessages.isNotEmpty()) {
+            val id = "$taskId-$seq"
+            result += TaskSubGroup(
+                id = id,
+                type = currentType,
+                messages = currentMessages,
+                isExpanded = expandedMap[id] ?: true
+            )
+        }
+        return result
     }
 
-    private fun AgentUIMessage.matchesSubGroup(type: TaskSubGroupType): Boolean = when (type) {
-        TaskSubGroupType.USER -> role == MessageRole.USER && !isBackgroundNotification
-        TaskSubGroupType.REASONING -> reasoning?.hasVisibleContent() == true
-        TaskSubGroupType.REPLY -> role == MessageRole.ASSISTANT && content.hasVisibleContent()
-        TaskSubGroupType.TOOL -> role == MessageRole.TOOL
+    /** 消息归属的二级片段类型：ASSISTANT 消息（含内嵌思考）统一归 REPLY，保持 reasoning 与正文同处时间线。 */
+    private fun AgentUIMessage.subGroupType(): TaskSubGroupType? = when {
+        role == MessageRole.USER && !isBackgroundNotification -> TaskSubGroupType.USER
+        role == MessageRole.ASSISTANT &&
+            (reasoning?.hasVisibleContent() == true || content.hasVisibleContent()) -> TaskSubGroupType.REPLY
+        role == MessageRole.TOOL -> TaskSubGroupType.TOOL
+        else -> null
     }
 
     /** 从用户消息内容派生任务标题：取首个非空行，截断到 24 字符。 */

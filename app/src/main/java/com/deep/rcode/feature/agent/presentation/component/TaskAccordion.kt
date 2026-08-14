@@ -74,7 +74,7 @@ internal fun TaskAccordion(
     group: TaskGroup,
     markdownCache: MarkdownRenderCache?,
     onToggleTask: (String) -> Unit,
-    onToggleSubGroup: (String, TaskSubGroupType) -> Unit,
+    onToggleSubGroup: (String, String) -> Unit,
     onRewindClick: ((String) -> Unit)?,
     onMoreClick: ((AgentUIMessage) -> Unit)?,
     runningTool: List<RunningToolOutput>,
@@ -279,15 +279,16 @@ private fun MessageCountBadge(count: Int) {
 }
 
 /**
- * 二级子手风琴：任务组内按消息类型聚合（用户消息 / 思考过程 / 助手回复 / 工具调用）。
+ * 二级片段手风琴：任务组内时间上连续的同类型消息片段（用户消息 / 助手回复 / 工具调用）。
  * 每种子类型有独立的强调色、图标和淡色背景，便于视觉分区。
+ * 片段按真实执行顺序排列，reasoning 内嵌在助手消息气泡中，不单独拆组。
  */
 @Composable
 private fun SubAccordion(
     group: TaskGroup,
     subGroup: TaskSubGroup,
     markdownCache: MarkdownRenderCache?,
-    onToggleSubGroup: (String, TaskSubGroupType) -> Unit,
+    onToggleSubGroup: (String, String) -> Unit,
     onRewindClick: ((String) -> Unit)?,
     onMoreClick: ((AgentUIMessage) -> Unit)?,
     runningTool: List<RunningToolOutput>
@@ -302,11 +303,11 @@ private fun SubAccordion(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
-            // 二级手风琴头部
+            // 二级片段头部
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onToggleSubGroup(group.taskId, subGroup.type) }
+                    .clickable { onToggleSubGroup(group.taskId, subGroup.id) }
                     .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
@@ -339,7 +340,7 @@ private fun SubAccordion(
                     modifier = Modifier.size(16.dp)
                 )
             }
-            // 二级手风琴内容：消息气泡
+            // 二级片段内容：消息气泡（保持时间顺序）
             AnimatedVisibility(
                 visible = subGroup.isExpanded,
                 enter = expandVertically(
@@ -358,31 +359,14 @@ private fun SubAccordion(
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     subGroup.messages.forEach { message ->
-                        when (subGroup.type) {
-                            TaskSubGroupType.REASONING -> {
-                                ReasoningBubble(
-                                    text = message.reasoning.orEmpty(),
-                                    initiallyExpanded = false,
-                                    cache = markdownCache
-                                )
-                            }
-                            else -> {
-                                val live = runningTool.firstOrNull { it.messageId == message.id }?.text
-                                // REPLY 子分组中消息的 reasoning 已在 REASONING 子分组单独展示，这里剥离避免重复。
-                                val renderMessage = if (subGroup.type == TaskSubGroupType.REPLY && message.reasoning != null) {
-                                    message.copy(reasoning = null)
-                                } else {
-                                    message
-                                }
-                                AgentMessageItem(
-                                    message = renderMessage,
-                                    liveOutput = live,
-                                    markdownCache = markdownCache,
-                                    onRewindClick = onRewindClick,
-                                    onMoreClick = onMoreClick
-                                )
-                            }
-                        }
+                        val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                        AgentMessageItem(
+                            message = message,
+                            liveOutput = live,
+                            markdownCache = markdownCache,
+                            onRewindClick = onRewindClick,
+                            onMoreClick = onMoreClick
+                        )
                     }
                 }
             }

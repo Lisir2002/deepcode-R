@@ -443,7 +443,7 @@ fun AIChatPanel(
                                 group = group,
                                 markdownCache = markdownCache,
                                 onToggleTask = { viewModel.toggleTask(it) },
-                                onToggleSubGroup = { taskId, type -> viewModel.toggleSubGroup(taskId, type) },
+                                onToggleSubGroup = { taskId, subGroupId -> viewModel.toggleSubGroup(taskId, subGroupId) },
                                 onRewindClick = { viewModel.openRewindMenu(it) },
                                 onMoreClick = { messageForMenu = it },
                                 runningTool = runningTool
