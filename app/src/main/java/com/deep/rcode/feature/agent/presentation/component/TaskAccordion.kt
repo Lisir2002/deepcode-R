@@ -47,6 +47,7 @@ import com.deep.rcode.core.theme.LocalAppDarkMode
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.presentation.AgentUIMessage
+import com.deep.rcode.feature.agent.presentation.MessageRole
 import com.deep.rcode.feature.agent.presentation.RunningToolOutput
 import com.deep.rcode.feature.agent.presentation.TaskGroup
 import com.deep.rcode.feature.agent.presentation.TaskSubGroup
@@ -55,6 +56,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.ChevronUp
+import compose.icons.feathericons.FileText
 import compose.icons.feathericons.MessageSquare
 import compose.icons.feathericons.Star
 import compose.icons.feathericons.Tool
@@ -77,10 +79,13 @@ internal fun TaskAccordion(
     onToggleSubGroup: (String, String) -> Unit,
     onRewindClick: ((String) -> Unit)?,
     onMoreClick: ((AgentUIMessage) -> Unit)?,
+    onViewChanges: ((List<EditDiff>) -> Unit)?,
     runningTool: List<RunningToolOutput>,
     modifier: Modifier = Modifier
 ) {
     val totalCount = group.subGroups.sumOf { it.messages.size }
+    // 任务内所有 editFile/writeFile 的 diff，按路径聚合（同一文件多次修改合并）
+    val fileDiffs = remember(group.taskId, group.subGroups) { collectTaskFileDiffs(group) }
 
     // 流式生成脉冲动画：动态调整边框高亮
     val infiniteTransition = rememberInfiniteTransition(label = "streamingPulse")
@@ -213,10 +218,12 @@ internal fun TaskAccordion(
                         SubAccordion(
                             group = group,
                             subGroup = subGroup,
+                            fileDiffs = fileDiffs,
                             markdownCache = markdownCache,
                             onToggleSubGroup = onToggleSubGroup,
                             onRewindClick = onRewindClick,
                             onMoreClick = onMoreClick,
+                            onViewChanges = onViewChanges,
                             runningTool = runningTool
                         )
                     }
@@ -279,6 +286,157 @@ private fun MessageCountBadge(count: Int) {
 }
 
 /**
+ * 工具调用摘要行：把任务内所有文件修改聚合为一行（「修改了 N 个文件 · +X -Y」），
+ * 点击打开底部弹窗查看详细 diff。避免多个文件修改气泡在聊天流中拥挤。
+ */
+@Composable
+private fun ToolSummaryRow(
+    fileDiffs: List<EditDiff>,
+    onClick: () -> Unit
+) {
+    val totalAdded = fileDiffs.sumOf { it.added }
+    val totalRemoved = fileDiffs.sumOf { it.removed }
+    Surface(
+        shape = RoundedCornerShape(Radius.md),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            // 工具图标（琥珀强调色）
+            androidx.compose.material3.Icon(
+                imageVector = FeatherIcons.Tool,
+                contentDescription = null,
+                tint = Color(0xFFD97706),
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = stringResource(R.string.tool_summary_files, fileDiffs.size),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            // 变更统计
+            if (totalAdded > 0) {
+                Text(
+                    text = "+$totalAdded",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = DiffAddText,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            if (totalRemoved > 0) {
+                Text(
+                    text = "-$totalRemoved",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = DiffRemoveText,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            // 查看箭头
+            androidx.compose.material3.Icon(
+                imageVector = FeatherIcons.ChevronRight,
+                contentDescription = stringResource(R.string.tool_summary_view),
+                tint = Brand.IconGray,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 回复气泡底部的「查看修改」按钮：任务内有文件修改时显示，点击打开底部弹窗。
+ */
+@Composable
+private fun ViewChangesButton(
+    fileDiffs: List<EditDiff>,
+    onClick: () -> Unit
+) {
+    val totalAdded = fileDiffs.sumOf { it.added }
+    val totalRemoved = fileDiffs.sumOf { it.removed }
+    Surface(
+        shape = RoundedCornerShape(Radius.pill),
+        color = Brand.Blue.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, Brand.Blue.copy(alpha = 0.25f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = FeatherIcons.FileText,
+                contentDescription = null,
+                tint = Brand.Blue,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = stringResource(R.string.tool_view_changes, fileDiffs.size),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = Brand.Blue,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (totalAdded > 0 || totalRemoved > 0) {
+                Text(
+                    text = "+$totalAdded -$totalRemoved",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Brand.Blue.copy(alpha = 0.8f),
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            androidx.compose.material3.Icon(
+                imageVector = FeatherIcons.ChevronRight,
+                contentDescription = null,
+                tint = Brand.Blue,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 收集任务内所有 editFile/writeFile 的结构化 diff，按文件路径聚合（同一文件多次修改合并 hunks）。
+ */
+private fun collectTaskFileDiffs(group: TaskGroup): List<EditDiff> {
+    val byPath = LinkedHashMap<String, EditDiff>()
+    group.subGroups.forEach { sub ->
+        sub.messages.forEach { msg ->
+            if (msg.role == MessageRole.TOOL && !msg.isError &&
+                (msg.toolName == "editFile" || msg.toolName == "writeFile")
+            ) {
+                val diff = parseEditDiff(msg.content) ?: return@forEach
+                val existing = byPath[diff.path]
+                byPath[diff.path] = if (existing != null) {
+                    existing.copy(
+                        added = existing.added + diff.added,
+                        removed = existing.removed + diff.removed,
+                        hunks = existing.hunks + diff.hunks
+                    )
+                } else {
+                    diff
+                }
+            }
+        }
+    }
+    return byPath.values.toList()
+}
+
+/**
  * 二级片段手风琴：任务组内时间上连续的同类型消息片段（用户消息 / 助手回复 / 工具调用）。
  * 每种子类型有独立的强调色、图标和淡色背景，便于视觉分区。
  * 片段按真实执行顺序排列，reasoning 内嵌在助手消息气泡中，不单独拆组。
@@ -287,10 +445,12 @@ private fun MessageCountBadge(count: Int) {
 private fun SubAccordion(
     group: TaskGroup,
     subGroup: TaskSubGroup,
+    fileDiffs: List<EditDiff>,
     markdownCache: MarkdownRenderCache?,
     onToggleSubGroup: (String, String) -> Unit,
     onRewindClick: ((String) -> Unit)?,
     onMoreClick: ((AgentUIMessage) -> Unit)?,
+    onViewChanges: ((List<EditDiff>) -> Unit)?,
     runningTool: List<RunningToolOutput>
 ) {
     val label = stringResource(subGroup.type.labelRes())
@@ -358,28 +518,36 @@ private fun SubAccordion(
                         .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
-                    // TOOL 片段：连续相同工具名聚合为面板，避免重复调用拥挤
+                    // TOOL 片段：折叠为一行摘要（文件修改聚合），点击打开弹窗
                     if (subGroup.type == TaskSubGroupType.TOOL) {
-                        groupConsecutiveToolCalls(subGroup.messages).forEach { (toolName, msgs) ->
-                            if (msgs.size > 1) {
-                                ToolCallGroup(
-                                    toolName = toolName ?: stringResource(R.string.common_tool),
-                                    messages = msgs,
-                                    runningTool = runningTool,
-                                    markdownCache = markdownCache,
-                                    onRewindClick = onRewindClick,
-                                    onMoreClick = onMoreClick
-                                )
-                            } else {
-                                val message = msgs.first()
-                                val live = runningTool.firstOrNull { it.messageId == message.id }?.text
-                                AgentMessageItem(
-                                    message = message,
-                                    liveOutput = live,
-                                    markdownCache = markdownCache,
-                                    onRewindClick = onRewindClick,
-                                    onMoreClick = onMoreClick
-                                )
+                        if (fileDiffs.isNotEmpty()) {
+                            ToolSummaryRow(
+                                fileDiffs = fileDiffs,
+                                onClick = { onViewChanges?.invoke(fileDiffs) }
+                            )
+                        } else {
+                            // 无文件修改的工具调用（如 websearch/todo 等）：保留紧凑列表
+                            groupConsecutiveToolCalls(subGroup.messages).forEach { (toolName, msgs) ->
+                                if (msgs.size > 1) {
+                                    ToolCallGroup(
+                                        toolName = toolName ?: stringResource(R.string.common_tool),
+                                        messages = msgs,
+                                        runningTool = runningTool,
+                                        markdownCache = markdownCache,
+                                        onRewindClick = onRewindClick,
+                                        onMoreClick = onMoreClick
+                                    )
+                                } else {
+                                    val message = msgs.first()
+                                    val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                                    AgentMessageItem(
+                                        message = message,
+                                        liveOutput = live,
+                                        markdownCache = markdownCache,
+                                        onRewindClick = onRewindClick,
+                                        onMoreClick = onMoreClick
+                                    )
+                                }
                             }
                         }
                     } else {
@@ -391,6 +559,13 @@ private fun SubAccordion(
                                 markdownCache = markdownCache,
                                 onRewindClick = onRewindClick,
                                 onMoreClick = onMoreClick
+                            )
+                        }
+                        // REPLY 片段：底部加「查看修改」按钮（有文件修改时）
+                        if (subGroup.type == TaskSubGroupType.REPLY && fileDiffs.isNotEmpty() && onViewChanges != null) {
+                            ViewChangesButton(
+                                fileDiffs = fileDiffs,
+                                onClick = { onViewChanges(fileDiffs) }
                             )
                         }
                     }

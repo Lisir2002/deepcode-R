@@ -759,6 +759,9 @@
     <string name="tool_result">结果</string>
     <string name="tool_group_success">%1$d 成功</string>
     <string name="tool_group_failed">%1$d 失败</string>
+    <string name="tool_summary_files">修改了 %1$d 个文件</string>
+    <string name="tool_summary_view">查看修改</string>
+    <string name="tool_view_changes">查看修改 (%1$d 个文件)</string>
     <string name="tool_expand_remaining">展开剩余 %1$s 行</string>
 
     <!-- Vision Model -->

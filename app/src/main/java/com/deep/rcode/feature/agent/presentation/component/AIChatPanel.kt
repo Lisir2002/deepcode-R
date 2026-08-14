@@ -141,6 +141,7 @@ fun AIChatPanel(
     var pendingAttachments by remember { mutableStateOf<List<PendingUploadAttachment>>(emptyList()) }
     var messageForMenu by remember { mutableStateOf<AgentUIMessage?>(null) }
     var editingMessage by remember { mutableStateOf<AgentUIMessage?>(null) }
+    var fileDiffsForSheet by remember { mutableStateOf<List<EditDiff>?>(null) }
     val listState = rememberLazyListState()
     val markdownCache = remember { MarkdownRenderCache() }
     val scope = rememberCoroutineScope()
@@ -446,6 +447,7 @@ fun AIChatPanel(
                                 onToggleSubGroup = { taskId, subGroupId -> viewModel.toggleSubGroup(taskId, subGroupId) },
                                 onRewindClick = { viewModel.openRewindMenu(it) },
                                 onMoreClick = { messageForMenu = it },
+                                onViewChanges = { fileDiffsForSheet = it },
                                 runningTool = runningTool
                             )
                         }
@@ -581,6 +583,13 @@ fun AIChatPanel(
                     } else 0f
                 }
             )
+
+            fileDiffsForSheet?.let { diffs ->
+                FileDiffSheet(
+                    fileDiffs = diffs,
+                    onDismiss = { fileDiffsForSheet = null }
+                )
+            }
 
             targetRewindMessageId?.let { targetId ->
                 val targetMsg = messages.find { it.id == targetId }
