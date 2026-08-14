@@ -358,15 +358,41 @@ private fun SubAccordion(
                         .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
-                    subGroup.messages.forEach { message ->
-                        val live = runningTool.firstOrNull { it.messageId == message.id }?.text
-                        AgentMessageItem(
-                            message = message,
-                            liveOutput = live,
-                            markdownCache = markdownCache,
-                            onRewindClick = onRewindClick,
-                            onMoreClick = onMoreClick
-                        )
+                    // TOOL 片段：连续相同工具名聚合为面板，避免重复调用拥挤
+                    if (subGroup.type == TaskSubGroupType.TOOL) {
+                        groupConsecutiveToolCalls(subGroup.messages).forEach { (toolName, msgs) ->
+                            if (msgs.size > 1) {
+                                ToolCallGroup(
+                                    toolName = toolName ?: stringResource(R.string.common_tool),
+                                    messages = msgs,
+                                    runningTool = runningTool,
+                                    markdownCache = markdownCache,
+                                    onRewindClick = onRewindClick,
+                                    onMoreClick = onMoreClick
+                                )
+                            } else {
+                                val message = msgs.first()
+                                val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                                AgentMessageItem(
+                                    message = message,
+                                    liveOutput = live,
+                                    markdownCache = markdownCache,
+                                    onRewindClick = onRewindClick,
+                                    onMoreClick = onMoreClick
+                                )
+                            }
+                        }
+                    } else {
+                        subGroup.messages.forEach { message ->
+                            val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                            AgentMessageItem(
+                                message = message,
+                                liveOutput = live,
+                                markdownCache = markdownCache,
+                                onRewindClick = onRewindClick,
+                                onMoreClick = onMoreClick
+                            )
+                        }
                     }
                 }
             }
@@ -423,4 +449,28 @@ private fun formatTaskTime(timestamp: Long): String {
     return runCatching {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
     }.getOrDefault("")
+}
+
+/**
+ * 把 TOOL 片段内的消息按「连续相同工具名」切分为子组，保持时间顺序。
+ * 仅合并相邻同工具名的调用（如连续 writeFile 多个文件），不同工具名之间不重排。
+ * 返回 (toolName, messages) 列表；toolName 为 null 时表示未知工具名。
+ */
+private fun groupConsecutiveToolCalls(messages: List<AgentUIMessage>): List<Pair<String?, List<AgentUIMessage>>> {
+    val result = mutableListOf<Pair<String?, List<AgentUIMessage>>>()
+    var currentName: String? = null
+    var currentList = mutableListOf<AgentUIMessage>()
+    for (msg in messages) {
+        val name = msg.toolName
+        if (currentName != null && name != currentName) {
+            result += currentName to currentList
+            currentList = mutableListOf()
+        }
+        currentName = name
+        currentList += msg
+    }
+    if (currentName != null && currentList.isNotEmpty()) {
+        result += currentName to currentList
+    }
+    return result
 }

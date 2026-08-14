@@ -63,7 +63,8 @@ internal fun AgentMessageItem(
     liveOutput: String? = null,
     markdownCache: MarkdownRenderCache? = null,
     onRewindClick: ((String) -> Unit)? = null,
-    onMoreClick: ((AgentUIMessage) -> Unit)? = null
+    onMoreClick: ((AgentUIMessage) -> Unit)? = null,
+    initiallyExpanded: Boolean = true
 ) {
     if (message.isCompactionMarker) {
         CompactionDivider()
@@ -126,7 +127,7 @@ internal fun AgentMessageItem(
                             }
                         ) {
                         if (message.role == MessageRole.TOOL) {
-                            ToolMessageBody(message, liveOutput = liveOutput)
+                            ToolMessageBody(message, liveOutput = liveOutput, initiallyExpanded = initiallyExpanded)
                         } else {
                             val textColor = when (message.role) {
                                 MessageRole.USER -> MaterialTheme.colorScheme.onPrimary

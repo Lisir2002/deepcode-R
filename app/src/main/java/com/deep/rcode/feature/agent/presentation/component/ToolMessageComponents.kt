@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -57,9 +58,11 @@ import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.domain.session.SessionUseCase
 import com.deep.rcode.feature.agent.presentation.AgentUIMessage
+import com.deep.rcode.feature.agent.presentation.RunningToolOutput
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
+import compose.icons.feathericons.Tool
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -230,6 +233,128 @@ internal fun ToolMessageBody(
                 attachments = message.attachments,
                 onClick = { openAttachment(context, it) }
             )
+        }
+    }
+}
+
+/**
+ * 连续相同工具调用的聚合面板：把「连续且工具名相同」的多次调用合并为一个可折叠面板，
+ * 避免重复调用（如连续创建/编辑多个文件）时页面拥挤。
+ *
+ * 头部显示：工具图标 + 工具名 + 调用次数 + 状态汇总（成功/失败）+ 展开箭头。
+ * 展开后渲染每个调用的紧凑行（[ToolMessageBody]，默认折叠为一行，可再点开看 diff/结果）。
+ * 面板默认折叠；仅当 [messages] 中至少有一个正在流式（liveOutput 非空）时保持展开以实时展示进度。
+ */
+@Composable
+internal fun ToolCallGroup(
+    toolName: String,
+    messages: List<AgentUIMessage>,
+    runningTool: List<RunningToolOutput>,
+    markdownCache: MarkdownRenderCache?,
+    onRewindClick: ((String) -> Unit)?,
+    onMoreClick: ((AgentUIMessage) -> Unit)?
+) {
+    val anyStreaming = messages.any { m ->
+        runningTool.any { it.messageId == m.id }
+    }
+    var expanded by remember(toolName, messages.map { it.id }) { mutableStateOf(anyStreaming) }
+    val errorCount = messages.count { it.isError }
+    val successCount = messages.size - errorCount
+
+    Surface(
+        shape = RoundedCornerShape(Radius.md),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column {
+            // 聚合面板头部
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                // 工具图标（琥珀强调色，与 TOOL 子分类一致）
+                androidx.compose.material3.Icon(
+                    imageVector = FeatherIcons.Tool,
+                    contentDescription = null,
+                    tint = Color(0xFFD97706),
+                    modifier = Modifier.size(16.dp)
+                )
+                // 工具名
+                Text(
+                    text = toolName,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                // 调用次数
+                Text(
+                    text = "×${messages.size}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold
+                )
+                // 状态汇总
+                if (errorCount > 0) {
+                    Text(
+                        text = stringResource(R.string.tool_group_failed, errorCount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = DiffRemoveText,
+                        fontWeight = FontWeight.Medium
+                    )
+                } else if (successCount > 0 && !anyStreaming) {
+                    Text(
+                        text = stringResource(R.string.tool_group_success, successCount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = DiffAddText,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                // 展开/折叠箭头
+                androidx.compose.material3.Icon(
+                    imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                    contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
+                    tint = Brand.IconGray,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            // 聚合面板内容：每个调用一行（默认折叠）
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(
+                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                    expandFrom = Alignment.Top
+                ) + fadeIn(tween(200)),
+                exit = shrinkVertically(
+                    animationSpec = tween(200),
+                    shrinkTowards = Alignment.Top
+                ) + fadeOut(tween(150))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                ) {
+                    messages.forEach { message ->
+                        val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                        AgentMessageItem(
+                            message = message,
+                            liveOutput = live,
+                            markdownCache = markdownCache,
+                            onRewindClick = onRewindClick,
+                            onMoreClick = onMoreClick,
+                            initiallyExpanded = false
+                        )
+                    }
+                }
+            }
         }
     }
 }
