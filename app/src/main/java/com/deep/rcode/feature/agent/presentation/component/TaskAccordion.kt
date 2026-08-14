@@ -53,6 +53,7 @@ import com.deep.rcode.feature.agent.presentation.RunningToolOutput
 import com.deep.rcode.feature.agent.presentation.TaskGroup
 import com.deep.rcode.feature.agent.presentation.TaskSubGroup
 import com.deep.rcode.feature.agent.presentation.TaskSubGroupType
+import com.deep.rcode.feature.agent.domain.permission.ShellCommandParser
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
@@ -66,8 +67,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -446,14 +445,15 @@ private fun collectTaskFileDiffs(group: TaskGroup): List<EditDiff> {
                     }
                 }
                 "Bash" -> {
-                    parseBashDelete(msg.toolArgs)?.let { path ->
+                    parseBashDeletes(msg.toolArgs).forEach { (path, isWildcard) ->
                         if (byPath[path] == null) {
                             byPath[path] = EditDiff(
                                 path = path,
                                 added = 0,
                                 removed = 0,
                                 hunks = emptyList(),
-                                type = FileChangeType.DELETE
+                                type = FileChangeType.DELETE,
+                                isWildcard = isWildcard
                             )
                         }
                     }
@@ -486,20 +486,35 @@ private fun collectTaskLogs(group: TaskGroup): List<ToolLogEntry> {
 }
 
 /**
- * 从 Bash 工具参数中解析删除文件的命令（rm），返回被删除的文件路径。
- * 支持 `rm path`、`rm -f path`、`rm -rf path` 等常见形式；通配符/引号内多路径不做解析。
+ * 从 Bash 工具参数中解析删除文件的命令（rm），返回被删除的路径列表及是否通配符模式。
+ *
+ * 复用 [ShellCommandParser]（授权系统的安全静态分析器）：
+ * - [ShellCommandParser.analyze] 按 `&&`/`;`/`|`/换行 拆顶层段，引号感知；
+ * - [ShellCommandParser.parseRmInfo] 解析每段是否为 rm，支持多路径、`-r/-R/--recursive`、
+ *   `--` 分隔符、环境赋值前缀（`FOO=bar rm ...`）、通配符（`*`/`?`）。
+ * 通配符路径保留为模式条目（如 `*.log`），由弹窗以「删除模式」差异化展示。
  */
-private fun parseBashDelete(toolArgs: String?): String? {
-    if (toolArgs.isNullOrBlank()) return null
+private fun parseBashDeletes(toolArgs: String?): List<Pair<String, Boolean>> {
+    if (toolArgs.isNullOrBlank()) return emptyList()
     return runCatching {
         val obj = Json.parseToJsonElement(toolArgs).jsonObject
-        val command = obj["command"]?.jsonPrimitive?.contentOrNull ?: return null
-        val trimmed = command.trim()
-        if (!trimmed.startsWith("rm")) return null
-        val parts = trimmed.split(Regex("\\s+")).drop(1)
-        val path = parts.firstOrNull { !it.startsWith("-") } ?: return null
-        path.trim('"', '\'').takeIf { it.isNotEmpty() && !it.contains("*") }
-    }.getOrNull()
+        val command = obj["command"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+        val analysis = ShellCommandParser.analyze(command)
+        val result = mutableListOf<Pair<String, Boolean>>()
+        analysis.segments.forEach { tokens ->
+            val info = ShellCommandParser.parseRmInfo(tokens)
+            if (info.isRm) {
+                info.targetPaths.forEach { path ->
+                    val trimmed = path.trim('"', '\'')
+                    if (trimmed.isNotEmpty()) {
+                        // 逐路径判定通配符，避免 `rm a.txt *.log` 把 a.txt 也误标为通配模式
+                        result += trimmed to (trimmed.contains('*') || trimmed.contains('?'))
+                    }
+                }
+            }
+        }
+        result
+    }.getOrDefault(emptyList())
 }
 
 /** 日志 Tab 单条结果的最大字符数，超出截断避免长输出撑爆弹窗。 */

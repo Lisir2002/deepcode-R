@@ -591,7 +591,9 @@ internal data class EditDiff(
     val added: Int,
     val removed: Int,
     val hunks: List<EditHunk>,
-    val type: FileChangeType = FileChangeType.MODIFY
+    val type: FileChangeType = FileChangeType.MODIFY,
+    /** 删除条目是否为通配符模式（如 `*.log`），用于弹窗差异化展示。 */
+    val isWildcard: Boolean = false
 )
 
 /**

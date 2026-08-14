@@ -774,6 +774,7 @@
     <string name="file_change_modify">修改</string>
     <string name="file_change_delete">删除</string>
     <string name="file_deleted_hint">该文件已被删除</string>
+    <string name="file_deleted_wildcard_hint">删除匹配该模式的文件</string>
     <string name="file_diff_empty">暂无文件变更</string>
     <string name="file_log_empty">暂无工具日志</string>
 

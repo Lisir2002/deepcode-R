@@ -238,7 +238,10 @@ private fun FileChangesTab(
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = stringResource(R.string.file_deleted_hint),
+                                text = stringResource(
+                                    if (current.isWildcard) R.string.file_deleted_wildcard_hint
+                                    else R.string.file_deleted_hint
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = deleteColor
                             )

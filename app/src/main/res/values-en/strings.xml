@@ -772,6 +772,7 @@
     <string name="file_change_modify">Modified</string>
     <string name="file_change_delete">Deleted</string>
     <string name="file_deleted_hint">This file has been deleted</string>
+    <string name="file_deleted_wildcard_hint">Files matching this pattern were deleted</string>
     <string name="file_diff_empty">No file changes</string>
     <string name="file_log_empty">No tool logs</string>
 
