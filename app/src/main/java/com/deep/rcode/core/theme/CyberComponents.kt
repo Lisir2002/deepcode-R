@@ -24,13 +24,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,11 +42,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronRight
@@ -249,7 +249,6 @@ internal fun CyberMenuRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CyberSearchBar(
     query: String,
@@ -258,33 +257,59 @@ internal fun CyberSearchBar(
     resultCount: Int? = null,
     onClear: (() -> Unit)? = null
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
+    // 紧凑单行搜索栏：44dp 高度、圆角、浅灰填充，占位文案单行省略，避免占用两行空间。
+    val hasText = query.isNotEmpty()
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.lg),
-        singleLine = true,
+            .padding(horizontal = Spacing.lg)
+            .height(44.dp),
         shape = RoundedCornerShape(12.dp),
-        leadingIcon = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = FeatherIcons.Search,
-                    contentDescription = null,
-                    tint = Color(0xFF667085)
-                )
-                if (resultCount != null && query.isNotEmpty()) {
-                    Spacer(Modifier.width(6.dp))
+        color = if (hasText) Color.White else Color(0xFFF2F3F5),
+        border = BorderStroke(1.dp, Color(0xFFE4E7EC))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = FeatherIcons.Search,
+                contentDescription = null,
+                tint = Color(0xFF667085),
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(modifier = Modifier.weight(1f)) {
+                if (!hasText) {
                     Text(
-                        text = "$resultCount",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                        color = Color(0xFF98A2B3)
+                        text = placeholder,
+                        color = Color(0xFF98A2B3),
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFF101828)),
+                    cursorBrush = SolidColor(Color(0xFF101828)),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
-        },
-        trailingIcon = {
-            if (query.isNotEmpty() && onClear != null) {
+            if (resultCount != null && hasText) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "$resultCount",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                    color = Color(0xFF98A2B3)
+                )
+            }
+            if (hasText && onClear != null) {
+                Spacer(Modifier.width(4.dp))
                 IconButton(
                     onClick = onClear,
                     modifier = Modifier.size(24.dp)
@@ -296,27 +321,8 @@ internal fun CyberSearchBar(
                     )
                 }
             }
-        },
-        placeholder = {
-            Text(
-                text = placeholder,
-                color = Color(0xFF667085),
-                style = MaterialTheme.typography.bodyMedium
-            )
-        },
-        textStyle = MaterialTheme.typography.bodyMedium,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = Color.White,
-            unfocusedContainerColor = Color.White,
-            focusedBorderColor = Color(0xFFD0D5DD),
-            unfocusedBorderColor = Color(0xFFE4E7EC),
-            focusedTextColor = Color(0xFF101828),
-            unfocusedTextColor = Color(0xFF101828),
-            cursorColor = Color(0xFF101828),
-            focusedPlaceholderColor = Color(0xFF98A2B3),
-            unfocusedPlaceholderColor = Color(0xFF98A2B3)
-        )
-    )
+        }
+    }
 }
 
 @Composable

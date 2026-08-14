@@ -3,7 +3,7 @@
     <string name="app_name">R-DeepCode</string>
 
     <!-- Settings menu titles -->
-    <string name="settings_search_hint">Search settings (e.g. provider, log, theme, remote…)</string>
+    <string name="settings_search_hint">Search settings…</string>
     <string name="settings_search_empty_title">No results found</string>
     <string name="settings_search_empty_subtitle">No settings found for \"%s\". Try different keywords.</string>
     <string name="settings_title">Settings</string>
