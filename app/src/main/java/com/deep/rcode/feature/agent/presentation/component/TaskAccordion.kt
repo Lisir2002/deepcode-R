@@ -413,21 +413,23 @@ private fun EmbeddedToolAccordion(
     onMoreClick: ((AgentUIMessage) -> Unit)?
 ) {
     if (attachedTools.isEmpty()) return
-    var expanded by remember { mutableStateOf(false) }
     val batchFileDiffs = remember(attachedTools) { collectBatchFileDiffs(attachedTools) }
     // 检测正在运行的安装命令进度（apt/apk/pip/sdkmanager），有则折叠态显示进度条
     val activeInstall = remember(attachedTools, runningTool) { resolveAttachedInstall(attachedTools, runningTool) }
+    // 安装进行中自动展开：让执行安装的工具气泡内联显示实时进度；安装完成后自动收起
+    val hasActiveInstall = activeInstall != null
+    var expanded by remember(hasActiveInstall) { mutableStateOf(hasActiveInstall) }
 
     Column {
-        // 折叠态：安装进度 > 文件变更摘要 > 工具调用计数
-        if (activeInstall != null) {
+        // 折叠态：安装进度 > 文件变更摘要 > 工具调用计数（展开时由工具气泡内联展示进度，避免重复）
+        if (!expanded && activeInstall != null) {
             InstallProgressRow(progress = activeInstall)
-        } else if (batchFileDiffs.isNotEmpty()) {
+        } else if (!expanded && batchFileDiffs.isNotEmpty()) {
             ToolSummaryRow(
                 fileDiffs = batchFileDiffs,
                 onClick = { expanded = !expanded }
             )
-        } else {
+        } else if (!expanded) {
             ToolCallCountRow(
                 tools = attachedTools,
                 onClick = { expanded = !expanded }

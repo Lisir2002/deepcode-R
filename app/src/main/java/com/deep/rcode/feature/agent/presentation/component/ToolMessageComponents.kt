@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.dp
 import com.deep.rcode.core.theme.Brand
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
+import com.deep.rcode.feature.agent.domain.container.progress.InstallProgress
+import com.deep.rcode.feature.agent.domain.container.progress.InstallProgressParsers
 import com.deep.rcode.feature.agent.domain.session.SessionUseCase
 import com.deep.rcode.feature.agent.presentation.AgentUIMessage
 import com.deep.rcode.feature.agent.presentation.RunningToolOutput
@@ -126,6 +128,11 @@ internal fun ToolMessageBody(
 
     val toolLabel = if (edit != null) edit.path.substringAfterLast('/') else (message.toolName ?: stringResource(R.string.common_tool))
 
+    // 安装进度：Bash 安装命令运行时，在工具气泡内实时显示进度与状态（进度条 + 当前阶段 + ETA）
+    val installProgress = if (streaming && (message.toolName == "Bash" || message.toolName.isNullOrEmpty())) {
+        resolveBubbleInstallProgress(message, liveOutput)
+    } else null
+
     Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
         Row(
             modifier = Modifier
@@ -185,6 +192,10 @@ internal fun ToolMessageBody(
                     modifier = Modifier.size(18.dp)
                 )
             }
+        }
+        if (installProgress != null) {
+            Spacer(Modifier.height(Spacing.xs))
+            InstallProgressRow(installProgress)
         }
         if (streaming) {
             if (!liveOutput.isNullOrBlank()) {
@@ -738,4 +749,27 @@ internal fun toolArgHint(argsJson: String?): String? {
         val str = (v as? JsonPrimitive)?.contentOrNull ?: v?.toString()
         str?.replace("\n", " ")?.trim()?.takeIf { it.isNotEmpty() }
     }.getOrNull()
+}
+
+/**
+ * 从工具消息中解析正在运行的安装进度，供工具气泡内联展示。
+ * 仅当命令命中安装类包管理器（apt/apk/pip/sdkmanager）且能解析出进度时返回非空。
+ * 完成（DONE）状态返回 null，避免在气泡内残留已完成进度条。
+ */
+private fun resolveBubbleInstallProgress(message: AgentUIMessage, liveOutput: String?): InstallProgress? {
+    if (liveOutput.isNullOrBlank()) return null
+    val parser = InstallProgressParsers.parserFor(extractCommandFromArgs(message.toolArgs)) ?: return null
+    val lastLine = liveOutput.lineSequence().lastOrNull { it.isNotBlank() } ?: return null
+    val progress = parser.parse(lastLine)
+    if (progress != null && !progress.isDone) return progress
+    return null
+}
+
+/** 从工具参数 JSON 预览中提取 command 字段。 */
+private fun extractCommandFromArgs(argsPreview: String?): String {
+    if (argsPreview.isNullOrBlank()) return ""
+    return runCatching {
+        val obj = Json.parseToJsonElement(argsPreview).jsonObject
+        obj["command"]?.jsonPrimitive?.contentOrNull ?: ""
+    }.getOrDefault("")
 }
