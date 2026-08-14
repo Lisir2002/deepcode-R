@@ -767,6 +767,17 @@
     <string name="tool_view_changes">查看修改 (%1$d 个文件)</string>
     <string name="tool_expand_remaining">展开剩余 %1$s 行</string>
 
+    <!-- Environment Overview -->
+    <string name="env_overview_title">构建环境</string>
+    <string name="env_overview_summary">%1$d 已装 · %2$d 缺失</string>
+    <string name="env_overview_installing">安装中</string>
+    <string name="env_overview_refresh">刷新环境状态</string>
+    <string name="env_overview_eta">剩余 %1$s</string>
+    <string name="env_overview_completed">环境安装完成</string>
+    <string name="env_status_installed">已装</string>
+    <string name="env_status_missing">缺失</string>
+    <string name="env_status_installing">安装中</string>
+
     <!-- File Diff Sheet -->
     <string name="file_diff_sheet_title">任务变更 (%1$d)</string>
     <string name="file_diff_tab_changes">文件修改 (%1$d)</string>

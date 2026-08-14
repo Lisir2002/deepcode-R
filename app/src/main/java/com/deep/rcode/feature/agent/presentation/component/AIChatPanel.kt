@@ -448,7 +448,8 @@ fun AIChatPanel(
                                 onRewindClick = { viewModel.openRewindMenu(it) },
                                 onMoreClick = { messageForMenu = it },
                                 onViewChanges = { fileDiffsForSheet = it },
-                                runningTool = runningTool
+                                runningTool = runningTool,
+                                onRefreshEnvironment = { viewModel.refreshEnvironment() }
                             )
                         }
                         val reasoning = streamingReasoning

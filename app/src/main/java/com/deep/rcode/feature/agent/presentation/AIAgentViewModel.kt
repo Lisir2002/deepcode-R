@@ -34,11 +34,14 @@ import com.deep.rcode.feature.terminal.domain.takeTailLines
 import com.deep.rcode.feature.agent.domain.workflow.AgentEvent
 import com.deep.rcode.feature.agent.domain.tool.ToolPermissionManager
 import com.deep.rcode.feature.agent.domain.tool.ToolRegistry
+import com.deep.rcode.feature.agent.domain.tool.ToolResult
+import com.deep.rcode.feature.agent.domain.tool.container.CheckEnvironmentTool
 import com.deep.rcode.feature.agent.domain.tool.mode.PlanApprovalChoice
 import com.deep.rcode.feature.agent.domain.tool.mode.PlanApprovalManager
 import com.deep.rcode.feature.agent.domain.tool.mode.PlanApprovalRequest
 import com.deep.rcode.feature.agent.domain.tool.question.AskUserQuestionManager
 import com.deep.rcode.feature.agent.domain.tool.question.UserQuestionAnswer
+import com.deep.rcode.feature.agent.domain.tool.toTransportString
 import com.deep.rcode.feature.agent.domain.session.SessionUseCase
 import com.deep.rcode.feature.agent.domain.session.MessagePersistenceUseCase
 import com.deep.rcode.feature.backup.domain.BackupManager
@@ -92,6 +95,7 @@ class AIAgentViewModel @Inject constructor(
     private val checkpointManager: CheckpointManager,
     private val checkpointDao: CheckpointDao,
     private val backupManager: BackupManager,
+    private val checkEnvironmentTool: CheckEnvironmentTool,
     @param:ApplicationContext private val context: Context
 ) : ViewModel(), SlashCommandContext {
 
@@ -745,6 +749,29 @@ class AIAgentViewModel @Inject constructor(
             }
             sessionUseCase.touch(sessionId, messagePersistenceUseCase.nextTimestamp())
 
+            // 任务开始时自动执行一次环境探测：结果落库为 TOOL 消息（UI 渲染环境总览卡片），
+            // 并作为 ToolResultMessage 并入模型上下文，让 AI 一开始就知道环境状态。
+            // 仅当容器已就绪时执行（避免探测触发不必要的容器初始化）；失败时静默跳过（不阻塞主流程）。
+            val autoEnvResult = if (containerEngine.isProvisioned()) {
+                runCatching {
+                    checkEnvironmentTool.execute(emptyMap())
+                }.getOrNull()
+            } else null
+            val envToolMsgId = if (autoEnvResult is ToolResult.Success) {
+                val envMsgId = "tool_env_${UUID.randomUUID()}"
+                messagePersistenceUseCase.persist(
+                    sessionId,
+                    MessageRole.TOOL,
+                    autoEnvResult.toTransportString(),
+                    id = envMsgId,
+                    taskId = taskId,
+                    toolName = "check_environment",
+                    toolArgs = null,
+                    isError = false
+                )
+                envMsgId
+            } else null
+
             val sessionEntity = sessionUseCase.getSessionById(sessionId)
             val sessionDomain = sessionEntity?.toDomain()
             val mode = sessionDomain?.mode ?: AgentMode.BUILD
@@ -760,10 +787,20 @@ class AIAgentViewModel @Inject constructor(
                 mode = mode,
                 reasoningEffort = sessionDomain?.reasoningEffort?.apiValue
             )
+            // 自动探测结果并入上下文：作为 ToolResultMessage 追加，让模型感知环境状态
+            val contextWithEnv = if (envToolMsgId != null && autoEnvResult is ToolResult.Success) {
+                agentContext.copy(
+                    history = agentContext.history + AgentMessage.ToolResultMessage(
+                        id = envToolMsgId,
+                        toolName = "check_environment",
+                        result = autoEnvResult.toTransportString()
+                    )
+                )
+            } else agentContext
 
             agentWorkflow.executeEvents(
                 userRequest = modelRequest,
-                context = agentContext,
+                context = contextWithEnv,
                 tools = toolRegistry.getAvailableTools(mode)
             ).collect { event ->
                 when (event) {
@@ -916,6 +953,30 @@ class AIAgentViewModel @Inject constructor(
 
     fun resolveUserQuestion(id: String, answer: UserQuestionAnswer) {
         askUserQuestionManager.resolve(id, answer)
+    }
+
+    /**
+     * 手动刷新环境探测：重新执行 check_environment 并落库为 TOOL 消息，
+     * 使环境总览卡片立即展示最新状态（Room Flow 自动触发 UI 刷新）。
+     * 仅当容器已就绪时执行；失败时静默跳过（不打扰用户）。
+     */
+    fun refreshEnvironment() {
+        val sid = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            if (!containerEngine.isProvisioned()) return@launch
+            val result = runCatching { checkEnvironmentTool.execute(emptyMap()) }.getOrNull()
+            if (result is ToolResult.Success) {
+                messagePersistenceUseCase.persist(
+                    sid,
+                    MessageRole.TOOL,
+                    result.toTransportString(),
+                    taskId = currentTaskIdBySession[sid] ?: "",
+                    toolName = "check_environment",
+                    toolArgs = null,
+                    isError = false
+                )
+            }
+        }
     }
 
     /**

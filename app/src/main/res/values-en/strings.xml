@@ -765,6 +765,17 @@
     <string name="tool_view_changes">View changes (%1$d files)</string>
     <string name="tool_expand_remaining">Expand remaining %1$s lines</string>
 
+    <!-- Environment Overview -->
+    <string name="env_overview_title">Build Environment</string>
+    <string name="env_overview_summary">%1$d installed · %2$d missing</string>
+    <string name="env_overview_installing">Installing</string>
+    <string name="env_overview_refresh">Refresh environment</string>
+    <string name="env_overview_eta">%1$s left</string>
+    <string name="env_overview_completed">Environment installation complete</string>
+    <string name="env_status_installed">Installed</string>
+    <string name="env_status_missing">Missing</string>
+    <string name="env_status_installing">Installing</string>
+
     <!-- File Diff Sheet -->
     <string name="file_diff_sheet_title">Task changes (%1$d)</string>
     <string name="file_diff_tab_changes">Files (%1$d)</string>

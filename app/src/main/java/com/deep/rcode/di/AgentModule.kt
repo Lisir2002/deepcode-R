@@ -51,6 +51,7 @@ import com.deep.rcode.feature.agent.domain.tool.file.ViewImageTool
 import com.deep.rcode.feature.agent.domain.tool.file.WriteFileTool
 import com.deep.rcode.feature.agent.domain.tool.editor.EditFileTool
 import com.deep.rcode.feature.agent.domain.tool.container.ExecuteCommandTool
+import com.deep.rcode.feature.agent.domain.tool.container.CheckEnvironmentTool
 import com.deep.rcode.feature.agent.domain.tool.container.TerminalSessionTool
 import com.deep.rcode.feature.agent.domain.tool.explorer.ListFilesTool
 import com.deep.rcode.feature.agent.domain.tool.explorer.SearchCodeTool
@@ -630,6 +631,7 @@ object AgentModule {
         writeFileTool: WriteFileTool,
         editFileTool: EditFileTool,
         executeCommandTool: ExecuteCommandTool,
+        checkEnvironmentTool: CheckEnvironmentTool,
         terminalSessionTool: TerminalSessionTool,
         listFilesTool: ListFilesTool,
         searchCodeTool: SearchCodeTool,
@@ -650,6 +652,7 @@ object AgentModule {
             register("writeFile", writeFileTool)
             register("editFile", editFileTool)
             register("Bash", executeCommandTool)
+            register("check_environment", checkEnvironmentTool)
             register("terminal", terminalSessionTool)
             register("list", listFilesTool)
             register("search", searchCodeTool)
