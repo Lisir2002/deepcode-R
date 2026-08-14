@@ -141,7 +141,7 @@ fun AIChatPanel(
     var pendingAttachments by remember { mutableStateOf<List<PendingUploadAttachment>>(emptyList()) }
     var messageForMenu by remember { mutableStateOf<AgentUIMessage?>(null) }
     var editingMessage by remember { mutableStateOf<AgentUIMessage?>(null) }
-    var fileDiffsForSheet by remember { mutableStateOf<List<EditDiff>?>(null) }
+    var fileDiffsForSheet by remember { mutableStateOf<TaskChangesSheetData?>(null) }
     val listState = rememberLazyListState()
     val markdownCache = remember { MarkdownRenderCache() }
     val scope = rememberCoroutineScope()
@@ -584,9 +584,10 @@ fun AIChatPanel(
                 }
             )
 
-            fileDiffsForSheet?.let { diffs ->
+            fileDiffsForSheet?.let { sheetData ->
                 FileDiffSheet(
-                    fileDiffs = diffs,
+                    fileDiffs = sheetData.fileDiffs,
+                    logs = sheetData.logs,
                     onDismiss = { fileDiffsForSheet = null }
                 )
             }

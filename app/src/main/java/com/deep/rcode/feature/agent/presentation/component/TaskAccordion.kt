@@ -65,6 +65,12 @@ import compose.icons.feathericons.User
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 一级任务手风琴：一个任务（taskId）对应一个折叠面板。
@@ -80,13 +86,15 @@ internal fun TaskAccordion(
     onToggleSubGroup: (String, String) -> Unit,
     onRewindClick: ((String) -> Unit)?,
     onMoreClick: ((AgentUIMessage) -> Unit)?,
-    onViewChanges: ((List<EditDiff>) -> Unit)?,
+    onViewChanges: ((TaskChangesSheetData) -> Unit)?,
     runningTool: List<RunningToolOutput>,
     modifier: Modifier = Modifier
 ) {
     val totalCount = group.subGroups.sumOf { it.messages.size }
-    // 任务内所有 editFile/writeFile 的 diff，按路径聚合（同一文件多次修改合并）
+    // 任务内所有文件变更（增/删/改），按路径聚合（同一文件多次修改合并）
     val fileDiffs = remember(group.taskId, group.subGroups) { collectTaskFileDiffs(group) }
+    // 任务内全部工具执行日志（含查询操作），供弹窗「日志」Tab 展示
+    val toolLogs = remember(group.taskId, group.subGroups) { collectTaskLogs(group) }
 
     // 流式生成脉冲动画：动态调整边框高亮
     val infiniteTransition = rememberInfiniteTransition(label = "streamingPulse")
@@ -220,6 +228,7 @@ internal fun TaskAccordion(
                             group = group,
                             subGroup = subGroup,
                             fileDiffs = fileDiffs,
+                            toolLogs = toolLogs,
                             markdownCache = markdownCache,
                             onToggleSubGroup = onToggleSubGroup,
                             onRewindClick = onRewindClick,
@@ -287,16 +296,17 @@ private fun MessageCountBadge(count: Int) {
 }
 
 /**
- * 工具调用摘要行：把任务内所有文件修改聚合为一行（「修改了 N 个文件 · +X -Y」），
- * 点击打开底部弹窗查看详细 diff。避免多个文件修改气泡在聊天流中拥挤。
+ * 工具调用摘要行：把任务内所有文件变更聚合为一行（「修改了 N 个文件 · +X -Y」），
+ * 纯展示，不可点击；点击入口仅保留在回复气泡的「查看修改」按钮。
+ * 避免多个文件修改气泡在聊天流中拥挤。
  */
 @Composable
 private fun ToolSummaryRow(
-    fileDiffs: List<EditDiff>,
-    onClick: () -> Unit
+    fileDiffs: List<EditDiff>
 ) {
-    val totalAdded = fileDiffs.sumOf { it.added }
-    val totalRemoved = fileDiffs.sumOf { it.removed }
+    val createCount = fileDiffs.count { it.type == FileChangeType.CREATE }
+    val deleteCount = fileDiffs.count { it.type == FileChangeType.DELETE }
+    val modifyCount = fileDiffs.count { it.type == FileChangeType.MODIFY }
     Surface(
         shape = RoundedCornerShape(Radius.md),
         color = MaterialTheme.colorScheme.surface,
@@ -306,7 +316,6 @@ private fun ToolSummaryRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
                 .padding(horizontal = Spacing.md, vertical = Spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
@@ -326,30 +335,31 @@ private fun ToolSummaryRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            // 变更统计
-            if (totalAdded > 0) {
+            // 变更分类统计
+            if (createCount > 0) {
                 Text(
-                    text = "+$totalAdded",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = DiffAddText,
+                    text = stringResource(R.string.tool_summary_create, createCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF22C55E),
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            if (totalRemoved > 0) {
+            if (modifyCount > 0) {
                 Text(
-                    text = "-$totalRemoved",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = DiffRemoveText,
+                    text = stringResource(R.string.tool_summary_modify, modifyCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF3B82F6),
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            // 查看箭头
-            androidx.compose.material3.Icon(
-                imageVector = FeatherIcons.ChevronRight,
-                contentDescription = stringResource(R.string.tool_summary_view),
-                tint = Brand.IconGray,
-                modifier = Modifier.size(18.dp)
-            )
+            if (deleteCount > 0) {
+                Text(
+                    text = stringResource(R.string.tool_summary_delete, deleteCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFEF4444),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }
@@ -411,31 +421,89 @@ private fun ViewChangesButton(
 }
 
 /**
- * 收集任务内所有 editFile/writeFile 的结构化 diff，按文件路径聚合（同一文件多次修改合并 hunks）。
+ * 收集任务内所有文件变更（增 / 改 / 删），按文件路径聚合（同一文件多次修改合并 hunks）。
+ * - editFile / writeFile(覆盖) → MODIFY
+ * - writeFile(created=true) → CREATE
+ * - Bash 中的 rm 命令 → DELETE
  */
 private fun collectTaskFileDiffs(group: TaskGroup): List<EditDiff> {
     val byPath = LinkedHashMap<String, EditDiff>()
     group.subGroups.forEach { sub ->
         sub.messages.forEach { msg ->
-            if (msg.role == MessageRole.TOOL && !msg.isError &&
-                (msg.toolName == "editFile" || msg.toolName == "writeFile")
-            ) {
-                val diff = parseEditDiff(msg.content) ?: return@forEach
-                val existing = byPath[diff.path]
-                byPath[diff.path] = if (existing != null) {
-                    existing.copy(
-                        added = existing.added + diff.added,
-                        removed = existing.removed + diff.removed,
-                        hunks = existing.hunks + diff.hunks
-                    )
-                } else {
-                    diff
+            if (msg.role != MessageRole.TOOL || msg.isError) return@forEach
+            when (msg.toolName) {
+                "editFile", "writeFile" -> {
+                    val diff = parseEditDiff(msg.content) ?: return@forEach
+                    val existing = byPath[diff.path]
+                    byPath[diff.path] = if (existing != null) {
+                        existing.copy(
+                            added = existing.added + diff.added,
+                            removed = existing.removed + diff.removed,
+                            hunks = existing.hunks + diff.hunks
+                        )
+                    } else {
+                        diff
+                    }
+                }
+                "Bash" -> {
+                    parseBashDelete(msg.toolArgs)?.let { path ->
+                        if (byPath[path] == null) {
+                            byPath[path] = EditDiff(
+                                path = path,
+                                added = 0,
+                                removed = 0,
+                                hunks = emptyList(),
+                                type = FileChangeType.DELETE
+                            )
+                        }
+                    }
                 }
             }
         }
     }
     return byPath.values.toList()
 }
+
+/**
+ * 收集任务内全部工具调用的执行日志（含 readFile/list 等查询操作），按时间顺序排列，
+ * 供弹窗「日志」Tab 展示。
+ */
+private fun collectTaskLogs(group: TaskGroup): List<ToolLogEntry> {
+    val logs = mutableListOf<ToolLogEntry>()
+    group.subGroups.forEach { sub ->
+        sub.messages.forEach { msg ->
+            if (msg.role != MessageRole.TOOL) return@forEach
+            val rawResult = formatToolResult(msg.content)
+            logs += ToolLogEntry(
+                toolName = msg.toolName,
+                args = toolArgHint(msg.toolArgs),
+                result = rawResult.take(LOG_RESULT_LIMIT),
+                isError = msg.isError
+            )
+        }
+    }
+    return logs
+}
+
+/**
+ * 从 Bash 工具参数中解析删除文件的命令（rm），返回被删除的文件路径。
+ * 支持 `rm path`、`rm -f path`、`rm -rf path` 等常见形式；通配符/引号内多路径不做解析。
+ */
+private fun parseBashDelete(toolArgs: String?): String? {
+    if (toolArgs.isNullOrBlank()) return null
+    return runCatching {
+        val obj = Json.parseToJsonElement(toolArgs).jsonObject
+        val command = obj["command"]?.jsonPrimitive?.contentOrNull ?: return null
+        val trimmed = command.trim()
+        if (!trimmed.startsWith("rm")) return null
+        val parts = trimmed.split(Regex("\\s+")).drop(1)
+        val path = parts.firstOrNull { !it.startsWith("-") } ?: return null
+        path.trim('"', '\'').takeIf { it.isNotEmpty() && !it.contains("*") }
+    }.getOrNull()
+}
+
+/** 日志 Tab 单条结果的最大字符数，超出截断避免长输出撑爆弹窗。 */
+private const val LOG_RESULT_LIMIT = 2000
 
 /**
  * 二级片段手风琴：任务组内时间上连续的同类型消息片段（用户消息 / 助手回复 / 工具调用）。
@@ -447,11 +515,12 @@ private fun SubAccordion(
     group: TaskGroup,
     subGroup: TaskSubGroup,
     fileDiffs: List<EditDiff>,
+    toolLogs: List<ToolLogEntry>,
     markdownCache: MarkdownRenderCache?,
     onToggleSubGroup: (String, String) -> Unit,
     onRewindClick: ((String) -> Unit)?,
     onMoreClick: ((AgentUIMessage) -> Unit)?,
-    onViewChanges: ((List<EditDiff>) -> Unit)?,
+    onViewChanges: ((TaskChangesSheetData) -> Unit)?,
     runningTool: List<RunningToolOutput>
 ) {
     val label = stringResource(subGroup.type.labelRes())
@@ -519,13 +588,10 @@ private fun SubAccordion(
                         .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
-                    // TOOL 片段：折叠为一行摘要（文件修改聚合），点击打开弹窗
+                    // TOOL 片段：折叠为一行摘要（文件变更聚合），纯展示不可点击
                     if (subGroup.type == TaskSubGroupType.TOOL) {
                         if (fileDiffs.isNotEmpty()) {
-                            ToolSummaryRow(
-                                fileDiffs = fileDiffs,
-                                onClick = { onViewChanges?.invoke(fileDiffs) }
-                            )
+                            ToolSummaryRow(fileDiffs = fileDiffs)
                         } else {
                             // 无文件修改的工具调用（如 websearch/todo 等）：保留紧凑列表
                             groupConsecutiveToolCalls(subGroup.messages).forEach { (toolName, msgs) ->
@@ -562,11 +628,11 @@ private fun SubAccordion(
                                 onMoreClick = onMoreClick
                             )
                         }
-                        // REPLY 片段：底部加「查看修改」按钮（有文件修改时）
+                        // REPLY 片段：底部加「查看修改」按钮（有文件变更时）
                         if (subGroup.type == TaskSubGroupType.REPLY && fileDiffs.isNotEmpty() && onViewChanges != null) {
                             ViewChangesButton(
                                 fileDiffs = fileDiffs,
-                                onClick = { onViewChanges(fileDiffs) }
+                                onClick = { onViewChanges(TaskChangesSheetData(fileDiffs, toolLogs)) }
                             )
                         }
                     }

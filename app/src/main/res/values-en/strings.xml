@@ -758,9 +758,22 @@
     <string name="tool_group_success">%1$d succeeded</string>
     <string name="tool_group_failed">%1$d failed</string>
     <string name="tool_summary_files">Modified %1$d files</string>
-    <string name="tool_summary_view">View changes</string>
+    <string name="tool_summary_create">%1$d created</string>
+    <string name="tool_summary_modify">%1$d modified</string>
+    <string name="tool_summary_delete">%1$d deleted</string>
     <string name="tool_view_changes">View changes (%1$d files)</string>
     <string name="tool_expand_remaining">Expand remaining %1$s lines</string>
+
+    <!-- File Diff Sheet -->
+    <string name="file_diff_sheet_title">Task changes (%1$d)</string>
+    <string name="file_diff_tab_changes">Files (%1$d)</string>
+    <string name="file_diff_tab_logs">Logs (%1$d)</string>
+    <string name="file_change_create">Created</string>
+    <string name="file_change_modify">Modified</string>
+    <string name="file_change_delete">Deleted</string>
+    <string name="file_deleted_hint">This file has been deleted</string>
+    <string name="file_diff_empty">No file changes</string>
+    <string name="file_log_empty">No tool logs</string>
 
     <!-- Vision Model -->
     <string name="vision_follow_chat_model">Follow current chat model</string>

@@ -69,6 +69,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -567,12 +568,30 @@ internal fun DiffExpandToggle(expanded: Boolean, hiddenCount: Int, onToggle: () 
 /** edit_file 单处编辑的差异片段。 */
 internal data class EditHunk(val startLine: Int, val diff: String)
 
+/** 文件变更类型：增 / 改 / 删，用于弹窗内分类标签与差异化展示。 */
+internal enum class FileChangeType { CREATE, MODIFY, DELETE }
+
+/** 工具执行日志条目：用于弹窗「日志」Tab，按时间顺序展示任务内全部工具调用。 */
+internal data class ToolLogEntry(
+    val toolName: String?,
+    val args: String?,
+    val result: String?,
+    val isError: Boolean
+)
+
+/** 底部弹窗数据：文件变更（增/删/改）+ 工具执行日志。 */
+internal data class TaskChangesSheetData(
+    val fileDiffs: List<EditDiff>,
+    val logs: List<ToolLogEntry>
+)
+
 /** edit_file 结果中解析出的结构化差异 */
 internal data class EditDiff(
     val path: String,
     val added: Int,
     val removed: Int,
-    val hunks: List<EditHunk>
+    val hunks: List<EditHunk>,
+    val type: FileChangeType = FileChangeType.MODIFY
 )
 
 /**
@@ -597,6 +616,10 @@ private fun parseEditDiffObject(obj: JsonObject): EditDiff? {
     val added = obj["added_lines"]?.jsonPrimitive?.intOrNull ?: 0
     val removed = obj["removed_lines"]?.jsonPrimitive?.intOrNull ?: 0
 
+    // 判断文件变更类型：writeFile 的 created=true 为新增，否则默认为修改
+    val type = if (obj["created"]?.jsonPrimitive?.booleanOrNull == true) FileChangeType.CREATE
+               else FileChangeType.MODIFY
+
     val hunks = obj["hunks"]?.jsonArray?.mapNotNull { el ->
         val ho = el.jsonObject
         val d = ho["diff"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
@@ -606,7 +629,7 @@ private fun parseEditDiffObject(obj: JsonObject): EditDiff? {
         listOf(EditHunk(startLine = obj["start_line"]?.jsonPrimitive?.intOrNull ?: 1, diff = d))
     }
     if (hunks.isEmpty()) return null
-    return EditDiff(path = path, added = added, removed = removed, hunks = hunks)
+    return EditDiff(path = path, added = added, removed = removed, hunks = hunks, type = type)
 }
 
 /**
