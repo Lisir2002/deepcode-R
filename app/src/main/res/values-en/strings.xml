@@ -758,6 +758,7 @@
     <string name="tool_group_success">%1$d succeeded</string>
     <string name="tool_group_failed">%1$d failed</string>
     <string name="tool_summary_files">Modified %1$d files</string>
+    <string name="tool_summary_count">%1$d tool calls</string>
     <string name="tool_summary_create">%1$d created</string>
     <string name="tool_summary_modify">%1$d modified</string>
     <string name="tool_summary_delete">%1$d deleted</string>

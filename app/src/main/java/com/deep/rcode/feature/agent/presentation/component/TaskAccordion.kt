@@ -30,7 +30,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,10 +92,10 @@ internal fun TaskAccordion(
     modifier: Modifier = Modifier
 ) {
     val totalCount = group.subGroups.sumOf { it.messages.size }
-    // 任务内所有文件变更（增/删/改），按路径聚合（同一文件多次修改合并）
-    val fileDiffs = remember(group.taskId, group.subGroups) { collectTaskFileDiffs(group) }
     // 任务内全部工具执行日志（含查询操作），供弹窗「日志」Tab 展示
     val toolLogs = remember(group.taskId, group.subGroups) { collectTaskLogs(group) }
+    // 归并渲染单元：TOOL 片段嵌入紧随其后的 REPLY 片段（作为回复气泡的子气泡）
+    val renderUnits = remember(group.taskId, group.subGroups) { buildRenderUnits(group.subGroups) }
 
     // 流式生成脉冲动画：动态调整边框高亮
     val infiniteTransition = rememberInfiniteTransition(label = "streamingPulse")
@@ -222,11 +224,11 @@ internal fun TaskAccordion(
                         .padding(start = Spacing.md, end = Spacing.md, bottom = Spacing.md),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
-                    group.subGroups.forEach { subGroup ->
+                    renderUnits.forEach { unit ->
                         SubAccordion(
                             group = group,
-                            subGroup = subGroup,
-                            fileDiffs = fileDiffs,
+                            subGroup = unit.subGroup,
+                            attachedTools = unit.attachedTools,
                             toolLogs = toolLogs,
                             markdownCache = markdownCache,
                             onToggleSubGroup = onToggleSubGroup,
@@ -295,26 +297,29 @@ private fun MessageCountBadge(count: Int) {
 }
 
 /**
- * 工具调用摘要行：把任务内所有文件变更聚合为一行（「修改了 N 个文件 · +X -Y」），
- * 纯展示，不可点击；点击入口仅保留在回复气泡的「查看修改」按钮。
- * 避免多个文件修改气泡在聊天流中拥挤。
+ * 工具调用摘要行：把一批文件变更聚合为一行（「修改了 N 个文件 · +X -Y」）。
+ * 作为回复气泡内的工具调用子气泡折叠态，[onClick] 非空时可点击展开完整工具调用列表。
+ * 视觉采用工具子气泡样式（橙色淡底 + 琥珀强调色），与回复气泡形成层次。
  */
 @Composable
 private fun ToolSummaryRow(
-    fileDiffs: List<EditDiff>
+    fileDiffs: List<EditDiff>,
+    onClick: (() -> Unit)? = null
 ) {
     val createCount = fileDiffs.count { it.type == FileChangeType.CREATE }
     val deleteCount = fileDiffs.count { it.type == FileChangeType.DELETE }
     val modifyCount = fileDiffs.count { it.type == FileChangeType.MODIFY }
+    val visual = subGroupVisual(TaskSubGroupType.TOOL)
     Surface(
         shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        color = visual.bg,
+        border = BorderStroke(1.dp, visual.accent.copy(alpha = 0.2f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
                 .padding(horizontal = Spacing.md, vertical = Spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
@@ -323,7 +328,7 @@ private fun ToolSummaryRow(
             androidx.compose.material3.Icon(
                 imageVector = FeatherIcons.Tool,
                 contentDescription = null,
-                tint = Color(0xFFD97706),
+                tint = visual.accent,
                 modifier = Modifier.size(16.dp)
             )
             Text(
@@ -359,12 +364,158 @@ private fun ToolSummaryRow(
                     fontWeight = FontWeight.SemiBold
                 )
             }
+            // 可展开箭头
+            if (onClick != null) {
+                androidx.compose.material3.Icon(
+                    imageVector = FeatherIcons.ChevronDown,
+                    contentDescription = null,
+                    tint = visual.accent.copy(alpha = 0.5f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }
 
 /**
- * 回复气泡底部的「查看修改」按钮：任务内有文件修改时显示，点击打开底部弹窗。
+ * 嵌入在回复气泡顶部的工具调用子手风琴组件。
+ * - 默认折叠：显示 ToolSummaryRow（有文件变更）或 ToolCallCountRow（仅工具名/次数）；
+ * - 点击展开：显示该批次工具调用的完整列表（按连续相同工具名分组）。
+ * 「查看修改」按钮由回复气泡底部统一提供，此处不重复。
+ */
+@Composable
+private fun EmbeddedToolAccordion(
+    attachedTools: List<AgentUIMessage>,
+    markdownCache: MarkdownRenderCache?,
+    runningTool: List<RunningToolOutput>,
+    onRewindClick: ((String) -> Unit)?,
+    onMoreClick: ((AgentUIMessage) -> Unit)?
+) {
+    if (attachedTools.isEmpty()) return
+    var expanded by remember { mutableStateOf(false) }
+    val batchFileDiffs = remember(attachedTools) { collectBatchFileDiffs(attachedTools) }
+
+    Column {
+        // 折叠态：文件变更摘要或工具调用计数
+        if (batchFileDiffs.isNotEmpty()) {
+            ToolSummaryRow(
+                fileDiffs = batchFileDiffs,
+                onClick = { expanded = !expanded }
+            )
+        } else {
+            ToolCallCountRow(
+                tools = attachedTools,
+                onClick = { expanded = !expanded }
+            )
+        }
+
+        // 展开列表
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(
+                animationSpec = tween(300, easing = FastOutSlowInEasing),
+                expandFrom = Alignment.Top
+            ) + fadeIn(tween(200)),
+            exit = shrinkVertically(
+                animationSpec = tween(200),
+                shrinkTowards = Alignment.Top
+            ) + fadeOut(tween(150))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                groupConsecutiveToolCalls(attachedTools).forEach { (toolName, msgs) ->
+                    if (msgs.size > 1) {
+                        ToolCallGroup(
+                            toolName = toolName ?: stringResource(R.string.common_tool),
+                            messages = msgs,
+                            runningTool = runningTool,
+                            markdownCache = markdownCache,
+                            onRewindClick = onRewindClick,
+                            onMoreClick = onMoreClick
+                        )
+                    } else {
+                        val message = msgs.first()
+                        val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                        AgentMessageItem(
+                            message = message,
+                            liveOutput = live,
+                            markdownCache = markdownCache,
+                            onRewindClick = onRewindClick,
+                            onMoreClick = onMoreClick
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 工具调用计数行：当工具调用不涉及文件变更时（如 websearch/todo/readFile 等），
+ * 在回复气泡顶部展示「N 个工具调用」可折叠摘要，避免非文件工具被完全隐藏。
+ */
+@Composable
+private fun ToolCallCountRow(
+    tools: List<AgentUIMessage>,
+    onClick: () -> Unit
+) {
+    val count = tools.size
+    val toolNames = tools.mapNotNull { it.toolName }.distinct()
+    val visual = subGroupVisual(TaskSubGroupType.TOOL)
+    Surface(
+        shape = RoundedCornerShape(Radius.md),
+        color = visual.bg,
+        border = BorderStroke(1.dp, visual.accent.copy(alpha = 0.2f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = FeatherIcons.Tool,
+                contentDescription = null,
+                tint = visual.accent,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = stringResource(R.string.tool_summary_count, count),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (toolNames.isNotEmpty()) {
+                Text(
+                    text = toolNames.joinToString(", "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = visual.accent.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            }
+            androidx.compose.material3.Icon(
+                imageVector = FeatherIcons.ChevronDown,
+                contentDescription = null,
+                tint = visual.accent.copy(alpha = 0.5f),
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 回复气泡底部的「查看修改」按钮：对应批次有文件变更时显示，点击打开底部弹窗。
  */
 @Composable
 private fun ViewChangesButton(
@@ -420,42 +571,101 @@ private fun ViewChangesButton(
 }
 
 /**
- * 收集任务内所有文件变更（增 / 改 / 删），按文件路径聚合（同一文件多次修改合并 hunks）。
+ * 渲染单元：一个二级片段 + 嵌入其顶部的工具调用消息列表。
+ * 正常场景下 TOOL 片段被归并到紧随其后的 REPLY 片段；仅当任务内无任何 REPLY 时，
+ * TOOL 片段才作为独立兜底单元渲染（避免工具调用信息丢失）。
+ */
+private data class RenderUnit(
+    val subGroup: TaskSubGroup,
+    val attachedTools: List<AgentUIMessage> = emptyList()
+)
+
+/**
+ * 把任务内的二级片段归并为渲染单元，保持消息真实时间顺序：
+ * - TOOL 片段 → 暂存，不独立渲染；
+ * - REPLY 片段 → 携带暂存的工具调用（嵌入回复顶部），并成为「最近回复」；
+ * - 其他片段（USER）→ 若暂存非空，嵌入最近回复；无最近回复则兜底独立 TOOL 单元；
+ * - 任务结束 → 若暂存非空，同样嵌入最近回复或兜底。
+ */
+private fun buildRenderUnits(subGroups: List<TaskSubGroup>): List<RenderUnit> {
+    val units = mutableListOf<RenderUnit>()
+    val pendingTools = mutableListOf<AgentUIMessage>()
+    var lastReplyIndex = -1
+    subGroups.forEach { subGroup ->
+        when (subGroup.type) {
+            TaskSubGroupType.TOOL -> pendingTools += subGroup.messages
+            TaskSubGroupType.REPLY -> {
+                units += RenderUnit(subGroup, pendingTools.toList())
+                pendingTools.clear()
+                lastReplyIndex = units.lastIndex
+            }
+            else -> {
+                flushPendingTools(pendingTools, units, lastReplyIndex)
+                units += RenderUnit(subGroup)
+            }
+        }
+    }
+    flushPendingTools(pendingTools, units, lastReplyIndex)
+    return units
+}
+
+/** 把暂存的工具调用嵌入最近回复；无最近回复时兜底为独立 TOOL 单元。 */
+private fun flushPendingTools(
+    pendingTools: MutableList<AgentUIMessage>,
+    units: MutableList<RenderUnit>,
+    lastReplyIndex: Int
+) {
+    if (pendingTools.isEmpty()) return
+    if (lastReplyIndex >= 0) {
+        val prev = units[lastReplyIndex]
+        units[lastReplyIndex] = prev.copy(attachedTools = prev.attachedTools + pendingTools)
+    } else {
+        units += RenderUnit(
+            TaskSubGroup(
+                id = "orphan-tool-${pendingTools.first().id}",
+                type = TaskSubGroupType.TOOL,
+                messages = pendingTools.toList()
+            )
+        )
+    }
+    pendingTools.clear()
+}
+
+/**
+ * 从一批工具调用消息中收集文件变更（增 / 改 / 删），按文件路径聚合（同一文件多次修改合并 hunks）。
  * - editFile / writeFile(覆盖) → MODIFY
  * - writeFile(created=true) → CREATE
  * - Bash 中的 rm 命令 → DELETE
  */
-private fun collectTaskFileDiffs(group: TaskGroup): List<EditDiff> {
+private fun collectBatchFileDiffs(messages: List<AgentUIMessage>): List<EditDiff> {
     val byPath = LinkedHashMap<String, EditDiff>()
-    group.subGroups.forEach { sub ->
-        sub.messages.forEach { msg ->
-            if (msg.role != MessageRole.TOOL || msg.isError) return@forEach
-            when (msg.toolName) {
-                "editFile", "writeFile" -> {
-                    val diff = parseEditDiff(msg.content) ?: return@forEach
-                    val existing = byPath[diff.path]
-                    byPath[diff.path] = if (existing != null) {
-                        existing.copy(
-                            added = existing.added + diff.added,
-                            removed = existing.removed + diff.removed,
-                            hunks = existing.hunks + diff.hunks
-                        )
-                    } else {
-                        diff
-                    }
+    messages.forEach { msg ->
+        if (msg.role != MessageRole.TOOL || msg.isError) return@forEach
+        when (msg.toolName) {
+            "editFile", "writeFile" -> {
+                val diff = parseEditDiff(msg.content) ?: return@forEach
+                val existing = byPath[diff.path]
+                byPath[diff.path] = if (existing != null) {
+                    existing.copy(
+                        added = existing.added + diff.added,
+                        removed = existing.removed + diff.removed,
+                        hunks = existing.hunks + diff.hunks
+                    )
+                } else {
+                    diff
                 }
-                "Bash" -> {
-                    parseBashDeletes(msg.toolArgs).forEach { (path, isWildcard) ->
-                        if (byPath[path] == null) {
-                            byPath[path] = EditDiff(
-                                path = path,
-                                added = 0,
-                                removed = 0,
-                                hunks = emptyList(),
-                                type = FileChangeType.DELETE,
-                                isWildcard = isWildcard
-                            )
-                        }
+            }
+            "Bash" -> {
+                parseBashDeletes(msg.toolArgs).forEach { (path, isWildcard) ->
+                    if (byPath[path] == null) {
+                        byPath[path] = EditDiff(
+                            path = path,
+                            added = 0,
+                            removed = 0,
+                            hunks = emptyList(),
+                            type = FileChangeType.DELETE,
+                            isWildcard = isWildcard
+                        )
                     }
                 }
             }
@@ -529,7 +739,7 @@ private const val LOG_RESULT_LIMIT = 2000
 private fun SubAccordion(
     group: TaskGroup,
     subGroup: TaskSubGroup,
-    fileDiffs: List<EditDiff>,
+    attachedTools: List<AgentUIMessage>,
     toolLogs: List<ToolLogEntry>,
     markdownCache: MarkdownRenderCache?,
     onToggleSubGroup: (String, String) -> Unit,
@@ -540,6 +750,8 @@ private fun SubAccordion(
 ) {
     val label = stringResource(subGroup.type.labelRes())
     val visual = subGroupVisual(subGroup.type)
+    // 该片段关联的工具调用批次内的文件变更（增/删/改），按路径聚合
+    val batchFileDiffs = remember(subGroup.id, attachedTools) { collectBatchFileDiffs(attachedTools) }
 
     Surface(
         shape = RoundedCornerShape(Radius.md),
@@ -603,10 +815,14 @@ private fun SubAccordion(
                         .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
-                    // TOOL 片段：折叠为一行摘要（文件变更聚合），纯展示不可点击
+                    // TOOL 片段（兜底独立单元）：折叠为一行摘要
                     if (subGroup.type == TaskSubGroupType.TOOL) {
-                        if (fileDiffs.isNotEmpty()) {
-                            ToolSummaryRow(fileDiffs = fileDiffs)
+                        // 兜底单元无 attachedTools，基于自身消息收集文件变更
+                        val toolFileDiffs = remember(subGroup.id, subGroup.messages) {
+                            collectBatchFileDiffs(subGroup.messages)
+                        }
+                        if (toolFileDiffs.isNotEmpty()) {
+                            ToolSummaryRow(fileDiffs = toolFileDiffs)
                         } else {
                             // 无文件修改的工具调用（如 websearch/todo 等）：保留紧凑列表
                             groupConsecutiveToolCalls(subGroup.messages).forEach { (toolName, msgs) ->
@@ -633,6 +849,17 @@ private fun SubAccordion(
                             }
                         }
                     } else {
+                        // REPLY 等类型：顶部嵌入工具调用子气泡
+                        if (subGroup.type == TaskSubGroupType.REPLY && attachedTools.isNotEmpty()) {
+                            EmbeddedToolAccordion(
+                                attachedTools = attachedTools,
+                                markdownCache = markdownCache,
+                                runningTool = runningTool,
+                                onRewindClick = onRewindClick,
+                                onMoreClick = onMoreClick
+                            )
+                        }
+                        // 消息正文
                         subGroup.messages.forEach { message ->
                             val live = runningTool.firstOrNull { it.messageId == message.id }?.text
                             AgentMessageItem(
@@ -643,11 +870,11 @@ private fun SubAccordion(
                                 onMoreClick = onMoreClick
                             )
                         }
-                        // REPLY 片段：底部加「查看修改」按钮（有文件变更时）
-                        if (subGroup.type == TaskSubGroupType.REPLY && fileDiffs.isNotEmpty() && onViewChanges != null) {
+                        // REPLY 片段底部：查看修改按钮（用批次数据）
+                        if (subGroup.type == TaskSubGroupType.REPLY && batchFileDiffs.isNotEmpty() && onViewChanges != null) {
                             ViewChangesButton(
-                                fileDiffs = fileDiffs,
-                                onClick = { onViewChanges(TaskChangesSheetData(fileDiffs, toolLogs)) }
+                                fileDiffs = batchFileDiffs,
+                                onClick = { onViewChanges(TaskChangesSheetData(batchFileDiffs, toolLogs)) }
                             )
                         }
                     }
