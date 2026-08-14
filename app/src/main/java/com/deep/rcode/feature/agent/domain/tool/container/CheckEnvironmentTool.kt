@@ -93,18 +93,18 @@ class CheckEnvironmentTool @Inject constructor(
     /** 构建批量探测脚本：一次往返探测全部组件，输出 `NAME|STATUS|PATH|VERSION` 行。 */
     private fun buildProbeScript(components: List<String>): String {
         val sb = StringBuilder()
-        // 注意：shell 变量用 \$ 转义，避免被 Kotlin 字符串模板误解析
+        // 注意：shell 变量用 \$ 转义，避免被 Kotlin 字符串模板误解析（$$ 会被解析为 $ + 模板变量）
         sb.append(
             """
             set +e
             probe() {
-              local name="$$1" bin="$$2"
-              if command -v "$$bin" >/dev/null 2>&1; then
-                local path="$$(command -v "$$bin")"
-                local ver="$$("$$bin" --version 2>&1 | grep -v '^$$' | head -1)"
-                echo "$$name|installed|$$path|$$ver"
+              local name="\$1" bin="\$2"
+              if command -v "\$bin" >/dev/null 2>&1; then
+                local path="\$(command -v "\$bin")"
+                local ver="\$("\$bin" --version 2>&1 | grep -v '^\$' | head -1)"
+                echo "\$name|installed|\$path|\$ver"
               else
-                echo "$$name|missing||"
+                echo "\$name|missing||"
               fi
             }
             """.trimIndent()
@@ -122,16 +122,16 @@ class CheckEnvironmentTool @Inject constructor(
         if (components.contains("Android SDK")) {
             sb.append(
                 """
-                if [ -n "$$ANDROID_HOME" ] && [ -d "$$ANDROID_HOME" ]; then
-                  echo "Android SDK|installed|$$ANDROID_HOME|$$(ls "$$ANDROID_HOME/platforms" 2>/dev/null | tr '\n' ' ')"
+                if [ -n "\$ANDROID_HOME" ] && [ -d "\$ANDROID_HOME" ]; then
+                  echo "Android SDK|installed|\$ANDROID_HOME|\$(ls "\$ANDROID_HOME/platforms" 2>/dev/null | tr '\n' ' ')"
                 fi
                 """.trimIndent()
             )
             sb.append("\n")
         }
         // 系统信息
-        sb.append("echo \"__OS__|$$(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"')\"\n")
-        sb.append("echo \"__ARCH__|$$(uname -m 2>/dev/null)\"\n")
+        sb.append("echo \"__OS__|\$(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"')\"\n")
+        sb.append("echo \"__ARCH__|\$(uname -m 2>/dev/null)\"\n")
         return sb.toString()
     }
 

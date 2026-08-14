@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -370,22 +371,22 @@ private fun formatEta(seconds: Long): String {
 @Composable
 private fun EnvironmentComponentRow(component: EnvironmentComponentState) {
     val isDark = LocalAppDarkMode.current
-    val (icon, iconColor, badgeText, badgeColor, badgeBg) = when (component.status) {
-        EnvironmentStatus.INSTALLED -> Triple(
+    val badge = when (component.status) {
+        EnvironmentStatus.INSTALLED -> ComponentBadge(
             FeatherIcons.CheckCircle,
             Color(0xFF22C55E),
             stringResource(R.string.env_status_installed),
             Color(0xFF22C55E),
             Color(0xFF22C55E).copy(alpha = if (isDark) 0.16f else 0.1f)
         )
-        EnvironmentStatus.MISSING -> Triple(
+        EnvironmentStatus.MISSING -> ComponentBadge(
             FeatherIcons.XCircle,
             Color(0xFFEF4444),
             stringResource(R.string.env_status_missing),
             Color(0xFFEF4444),
             Color(0xFFEF4444).copy(alpha = if (isDark) 0.16f else 0.1f)
         )
-        EnvironmentStatus.INSTALLING -> Triple(
+        EnvironmentStatus.INSTALLING -> ComponentBadge(
             FeatherIcons.Cpu,
             Brand.Blue,
             stringResource(R.string.env_status_installing),
@@ -401,9 +402,9 @@ private fun EnvironmentComponentRow(component: EnvironmentComponentState) {
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         Icon(
-            imageVector = icon,
+            imageVector = badge.icon,
             contentDescription = null,
-            tint = iconColor,
+            tint = badge.iconColor,
             modifier = Modifier.size(14.dp)
         )
         Text(
@@ -425,15 +426,24 @@ private fun EnvironmentComponentRow(component: EnvironmentComponentState) {
         }
         Surface(
             shape = RoundedCornerShape(Radius.pill),
-            color = badgeBg
+            color = badge.badgeBg
         ) {
             Text(
-                text = badgeText,
+                text = badge.badgeText,
                 style = MaterialTheme.typography.labelSmall,
-                color = badgeColor,
+                color = badge.badgeColor,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
             )
         }
     }
 }
+
+/** 组件状态徽章的展示信息（图标、颜色、文本）。 */
+private data class ComponentBadge(
+    val icon: ImageVector,
+    val iconColor: Color,
+    val badgeText: String,
+    val badgeColor: Color,
+    val badgeBg: Color
+)
