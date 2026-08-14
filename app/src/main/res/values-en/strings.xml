@@ -359,6 +359,8 @@
     <string name="chat_task_tool">Tool calls</string>
     <string name="chat_task_expand">Expand</string>
     <string name="chat_task_collapse">Collapse</string>
+    <string name="chat_task_streaming">Generating</string>
+    <string name="chat_task_message_count">%1$d</string>
 
     <!-- Container Settings -->
     <string name="container_bindings">Bindings: %1$s</string>

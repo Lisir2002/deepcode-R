@@ -361,6 +361,8 @@
     <string name="chat_task_tool">工具调用</string>
     <string name="chat_task_expand">展开</string>
     <string name="chat_task_collapse">折叠</string>
+    <string name="chat_task_streaming">生成中</string>
+    <string name="chat_task_message_count">%1$d 条</string>
 
     <!-- Container Settings -->
     <string name="container_bindings">绑定: %1$s</string>

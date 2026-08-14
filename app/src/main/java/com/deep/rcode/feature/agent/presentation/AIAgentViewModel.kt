@@ -209,6 +209,8 @@ class AIAgentViewModel @Inject constructor(
     private val _expandedTasks = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     // 任务子手风琴展开状态（按会话）：taskId -> 已展开的子分类集合。
     private val _expandedSubGroups = MutableStateFlow<Map<String, Set<TaskSubGroupType>>>(emptyMap())
+    // 当前正在流式生成的任务（按会话）：sessionId -> taskId。用于任务手风琴头部脉冲指示。
+    private val _streamingTaskBySession = MutableStateFlow<Map<String, String>>(emptyMap())
 
     /**
      * 任务分组列表：把扁平消息列表按 taskId 分组为一级手风琴（任务），
@@ -218,9 +220,15 @@ class AIAgentViewModel @Inject constructor(
     val taskGroups: StateFlow<List<TaskGroup>> = combine(
         messagesState,
         _expandedTasks,
-        _expandedSubGroups
-    ) { state, expandedTasks, expandedSubGroups ->
-        buildTaskGroups(state.messages, expandedTasks, expandedSubGroups)
+        _expandedSubGroups,
+        _streamingTaskBySession
+    ) { state, expandedTasks, expandedSubGroups, streamingTasks ->
+        buildTaskGroups(
+            state.messages,
+            expandedTasks,
+            expandedSubGroups,
+            streamingTaskId = streamingTasks[state.sessionId]
+        )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** 切换一级任务手风琴的展开/折叠。 */
@@ -240,7 +248,8 @@ class AIAgentViewModel @Inject constructor(
     private fun buildTaskGroups(
         messages: List<AgentUIMessage>,
         expandedTasks: Map<String, Boolean>,
-        expandedSubGroups: Map<String, Set<TaskSubGroupType>>
+        expandedSubGroups: Map<String, Set<TaskSubGroupType>>,
+        streamingTaskId: String?
     ): List<TaskGroup> {
         val historical = messages.filter { it.taskId.isBlank() }
         val tasked = messages.filter { it.taskId.isNotBlank() }
@@ -270,7 +279,8 @@ class AIAgentViewModel @Inject constructor(
                 title = title,
                 timestamp = timestamp,
                 subGroups = buildSubGroups(taskMessages, expandedSubGroups[taskId]),
-                isExpanded = expandedTasks[taskId] ?: true
+                isExpanded = expandedTasks[taskId] ?: true,
+                isStreaming = taskId == streamingTaskId
             )
         }
         return result
@@ -365,6 +375,7 @@ class AIAgentViewModel @Inject constructor(
 
     private fun setStreamingText(sessionId: String, text: String?) {
         _streamingTexts.value = if (text == null) _streamingTexts.value - sessionId else _streamingTexts.value + (sessionId to text)
+        updateStreamingTask(sessionId)
     }
 
     private val _streamingReasonings = MutableStateFlow<Map<String, String?>>(emptyMap())
@@ -377,6 +388,18 @@ class AIAgentViewModel @Inject constructor(
 
     private fun setStreamingReasoning(sessionId: String, text: String?) {
         _streamingReasonings.value = if (text == null) _streamingReasonings.value - sessionId else _streamingReasonings.value + (sessionId to text)
+        updateStreamingTask(sessionId)
+    }
+
+    /** 同步流式任务指示：会话正在流式（正文或思考）时标记当前 taskId，否则清除。 */
+    private fun updateStreamingTask(sessionId: String) {
+        val isStreaming = _streamingTexts.value[sessionId] != null || _streamingReasonings.value[sessionId] != null
+        val taskId = currentTaskIdBySession[sessionId]
+        _streamingTaskBySession.value = if (isStreaming && taskId != null) {
+            _streamingTaskBySession.value + (sessionId to taskId)
+        } else {
+            _streamingTaskBySession.value - sessionId
+        }
     }
 
     /** 按 sessionId 维护的重试状态；流式恢复或结束后置 null。 */
