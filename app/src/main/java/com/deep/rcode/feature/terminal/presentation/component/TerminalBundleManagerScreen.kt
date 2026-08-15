@@ -16,11 +16,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AssistChip
@@ -81,7 +83,7 @@ import kotlinx.coroutines.launch
  *      「自定义功能包」：常用快捷包 + 自定义包名安装 + 已安装自定义包列表
  * 原「自定义 APK 包」独立页面已废弃，其内容整合到本页 Tab 2。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TerminalBundleManagerScreen(
     viewModel: TerminalSettingsViewModel,
@@ -142,41 +144,45 @@ fun TerminalBundleManagerScreen(
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = Spacing.sm),
+                .padding(padding),
+            contentPadding = PaddingValues(vertical = Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(Spacing.lg)
         ) {
-            SharedContainerEnvCard(
-                containerInstalled = containerInstalled,
-                initProgress = containerInit,
-                storageUsedMb = storageUsedMb,
-                mode = ContainerCardMode.INIT_ONLY,
-                onInit = viewModel::ensureContainerInstalled
-            )
-
-            // Tab 菜单：预设独立功能包 / 自定义功能包
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("预设独立功能包", fontSize = 14.sp) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("自定义功能包", fontSize = 14.sp) }
+            item {
+                SharedContainerEnvCard(
+                    containerInstalled = containerInstalled,
+                    initProgress = containerInit,
+                    storageUsedMb = storageUsedMb,
+                    mode = ContainerCardMode.INIT_ONLY,
+                    onInit = viewModel::ensureContainerInstalled
                 )
             }
 
-            when (selectedTab) {
+            // Tab 菜单吸附顶部：上滑时容器卡片滚走，Tab 吸顶不随内容滚动
+            stickyHeader {
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("预设独立功能包", fontSize = 14.sp) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("自定义功能包", fontSize = 14.sp) }
+                    )
+                }
+            }
+
+            item {
+                when (selectedTab) {
                 0 -> {
                     // ── Tab 1：预设独立功能包（原功能包管理页内容） ──────────
                     AppSectionHeader(text = "AI 推荐组合")
