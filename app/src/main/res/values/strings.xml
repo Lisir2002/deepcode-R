@@ -768,15 +768,17 @@
     <string name="tool_expand_remaining">展开剩余 %1$s 行</string>
 
     <!-- Environment Overview -->
-    <string name="env_overview_title">构建环境</string>
-    <string name="env_overview_summary">%1$d 已装 · %2$d 缺失</string>
     <string name="env_overview_installing">安装中</string>
-    <string name="env_overview_refresh">刷新环境状态</string>
     <string name="env_overview_eta">剩余 %1$s</string>
-    <string name="env_overview_completed">环境安装完成</string>
     <string name="env_status_installed">已装</string>
     <string name="env_status_missing">缺失</string>
     <string name="env_status_installing">安装中</string>
+    <!-- Environment Status Strip（回复气泡内嵌状态条） -->
+    <string name="env_strip_checking">正在检测构建环境…</string>
+    <string name="env_strip_ready">构建环境就绪</string>
+    <string name="env_strip_installing">缺少 %1$s，正在安装…</string>
+    <string name="env_strip_missing">构建环境未就绪：缺少 %1$s</string>
+    <string name="env_strip_summary">%1$d/%2$d 就绪</string>
 
     <!-- File Diff Sheet -->
     <string name="file_diff_sheet_title">任务变更 (%1$d)</string>

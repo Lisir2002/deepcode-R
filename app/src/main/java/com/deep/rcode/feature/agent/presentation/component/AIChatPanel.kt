@@ -480,8 +480,7 @@ fun AIChatPanel(
                                 onEditClick = { message -> startEditMessage(message) },
                                 onNewChatClick = { message -> viewModel.newChatAndSend(message.content) },
                                 onViewChanges = { fileDiffsForSheet = it },
-                                runningTool = runningTool,
-                                onRefreshEnvironment = { viewModel.refreshEnvironment() }
+                                runningTool = runningTool
                             )
                         }
                         val reasoning = streamingReasoning

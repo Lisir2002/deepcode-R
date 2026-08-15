@@ -766,15 +766,17 @@
     <string name="tool_expand_remaining">Expand remaining %1$s lines</string>
 
     <!-- Environment Overview -->
-    <string name="env_overview_title">Build Environment</string>
-    <string name="env_overview_summary">%1$d installed · %2$d missing</string>
     <string name="env_overview_installing">Installing</string>
-    <string name="env_overview_refresh">Refresh environment</string>
     <string name="env_overview_eta">%1$s left</string>
-    <string name="env_overview_completed">Environment installation complete</string>
     <string name="env_status_installed">Installed</string>
     <string name="env_status_missing">Missing</string>
     <string name="env_status_installing">Installing</string>
+    <!-- Environment Status Strip -->
+    <string name="env_strip_checking">Checking build environment…</string>
+    <string name="env_strip_ready">Build environment ready</string>
+    <string name="env_strip_installing">Missing %1$s, installing…</string>
+    <string name="env_strip_missing">Build environment not ready: missing %1$s</string>
+    <string name="env_strip_summary">%1$d/%2$d ready</string>
 
     <!-- File Diff Sheet -->
     <string name="file_diff_sheet_title">Task changes (%1$d)</string>

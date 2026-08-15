@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.deep.rcode.core.theme.Brand
+import com.deep.rcode.core.theme.LocalAppDarkMode
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.domain.container.progress.InstallProgress
@@ -64,9 +66,12 @@ import com.deep.rcode.feature.agent.domain.session.SessionUseCase
 import com.deep.rcode.feature.agent.presentation.AgentUIMessage
 import com.deep.rcode.feature.agent.presentation.RunningToolOutput
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.CheckCircle
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
+import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Tool
+import compose.icons.feathericons.XCircle
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -103,6 +108,18 @@ internal fun ToolMessageBody(
     val streaming = liveOutput != null
     val running = streaming || message.content.startsWith(SessionUseCase.PENDING_TOOL_MARKER) ||
         message.content.startsWith(SessionUseCase.LEGACY_PENDING_TOOL_MARKER)
+
+    // 环境探测工具：以「一行状态条 + 可折叠详情」的紧凑形态内嵌在回复气泡顶部，
+    // 不展开为普通工具气泡（避免列出全部组件造成噪音）。
+    if (message.toolName == "check_environment") {
+        EnvironmentStatusStrip(
+            message = message,
+            liveOutput = liveOutput,
+            running = running
+        )
+        return
+    }
+
     val edit = if (!running && !message.isError &&
         (message.toolName == "editFile" || message.toolName == "writeFile")
     ) {
@@ -768,4 +785,122 @@ private fun extractCommandFromArgs(argsPreview: String?): String {
         val obj = Json.parseToJsonElement(argsPreview).jsonObject
         obj["command"]?.jsonPrimitive?.contentOrNull ?: ""
     }.getOrDefault("")
+}
+
+/**
+ * 环境探测状态条：以「一行状态条 + 可折叠详情」的紧凑形态内嵌在回复气泡顶部。
+ * - 运行中：显示「正在检测构建环境…」+ 转圈；
+ * - 完成：一行结论（就绪 ✓ / 缺少 X，正在安装… / 未就绪：缺少 X、Y）+ 可折叠展开 4 个构建核心组件明细。
+ * 仅展示构建链路核心组件（Java/Gradle/Android SDK/NDK），不列出无关组件。
+ */
+@Composable
+private fun EnvironmentStatusStrip(
+    message: AgentUIMessage,
+    liveOutput: String?,
+    running: Boolean
+) {
+    val isDark = LocalAppDarkMode.current
+    var expanded by remember(message.id) { mutableStateOf(false) }
+    val components = remember(message.id, message.content) { parseEnvironmentComponents(message.content) }
+    val installedCount = components.count { it.status == EnvironmentStatus.INSTALLED }
+    val missing = components.filter { it.status == EnvironmentStatus.MISSING }
+    val installing = components.filter { it.status == EnvironmentStatus.INSTALLING }
+
+    val ready = missing.isEmpty() && installing.isEmpty() && components.isNotEmpty()
+    val statusColor = when {
+        running -> Brand.Blue
+        ready -> Color(0xFF22C55E)
+        else -> Color(0xFFEF4444)
+    }
+    val statusIcon = when {
+        running -> FeatherIcons.RefreshCw
+        ready -> FeatherIcons.CheckCircle
+        else -> FeatherIcons.XCircle
+    }
+    val summaryText = when {
+        running -> stringResource(R.string.env_strip_checking)
+        ready -> stringResource(R.string.env_strip_ready)
+        installing.isNotEmpty() -> stringResource(R.string.env_strip_installing, installing.first().name)
+        else -> stringResource(
+            R.string.env_strip_missing,
+            missing.take(2).joinToString("、") { it.name }
+        )
+    }
+
+    Surface(
+        shape = RoundedCornerShape(Radius.md),
+        color = if (isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else Color(0xFFF1F5F9),
+        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = components.isNotEmpty() && !running) { expanded = !expanded }
+                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                if (running) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = statusColor
+                    )
+                } else {
+                    Icon(
+                        imageVector = statusIcon,
+                        contentDescription = null,
+                        tint = statusColor,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+                Text(
+                    text = summaryText,
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                if (components.isNotEmpty() && !running) {
+                    Text(
+                        text = stringResource(R.string.env_strip_summary, installedCount, components.size),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                    Icon(
+                        imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                        contentDescription = null,
+                        tint = Brand.IconGray,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(
+                    animationSpec = tween(200, easing = FastOutSlowInEasing),
+                    expandFrom = Alignment.Top
+                ) + fadeIn(tween(150)),
+                exit = shrinkVertically(
+                    animationSpec = tween(150),
+                    shrinkTowards = Alignment.Top
+                ) + fadeOut(tween(100))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = Spacing.md, end = Spacing.md, bottom = Spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                ) {
+                    components.forEach { component ->
+                        EnvironmentComponentRow(component)
+                    }
+                }
+            }
+        }
+    }
 }

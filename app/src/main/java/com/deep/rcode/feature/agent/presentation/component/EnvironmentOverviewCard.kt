@@ -1,14 +1,5 @@
 package com.deep.rcode.feature.agent.presentation.component
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -45,10 +35,7 @@ import com.deep.rcode.feature.agent.domain.container.progress.InstallPhaseType
 import com.deep.rcode.feature.agent.domain.container.progress.InstallProgress
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.CheckCircle
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.XCircle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -102,172 +89,6 @@ internal fun parseEnvironmentComponents(content: String): List<EnvironmentCompon
             )
         }
     }.getOrDefault(emptyList())
-}
-
-/**
- * 环境总览卡片：展示当前执行环境中构建/开发组件的安装状态。
- * - 头部：环境图标 + 标题 + 状态摘要（N 已装 / M 缺失）+ 刷新按钮 + 展开箭头；
- * - 展开后：组件列表（名称 + 状态徽章 + 版本）；
- * - 有正在进行的安装时：顶部显示进度条 + 当前组件名 + 预计剩余时间；
- * - 安装刚完成时：顶部显示绿色完成播报横幅。
- *
- * [onRefresh] 非空时显示刷新按钮，点击后重新探测环境。
- */
-@Composable
-internal fun EnvironmentOverviewCard(
-    components: List<EnvironmentComponentState>,
-    activeInstall: InstallProgress?,
-    modifier: Modifier = Modifier,
-    onRefresh: (() -> Unit)? = null,
-    justCompleted: Boolean = false
-) {
-    if (components.isEmpty() && activeInstall == null && !justCompleted) return
-    var expanded by remember { mutableStateOf(true) }
-    val isDark = LocalAppDarkMode.current
-    val installedCount = components.count { it.status == EnvironmentStatus.INSTALLED }
-    val missingCount = components.count { it.status == EnvironmentStatus.MISSING }
-    val installingCount = components.count { it.status == EnvironmentStatus.INSTALLING }
-
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = if (isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else Color(0xFFF1F5F9),
-        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)),
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Column {
-            // 头部
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .padding(start = Spacing.md, end = Spacing.xs, top = Spacing.sm, bottom = Spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-            ) {
-                Icon(
-                    imageVector = FeatherIcons.Cpu,
-                    contentDescription = null,
-                    tint = Brand.Blue,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = stringResource(R.string.env_overview_title),
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                // 安装中徽章
-                if (installingCount > 0) {
-                    Surface(
-                        shape = RoundedCornerShape(Radius.pill),
-                        color = Brand.Blue.copy(alpha = 0.12f)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.env_overview_installing),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Brand.Blue,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                } else if (components.isNotEmpty()) {
-                    Text(
-                        text = stringResource(R.string.env_overview_summary, installedCount, missingCount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                // 刷新按钮：手动重新探测环境
-                if (onRefresh != null) {
-                    IconButton(
-                        onClick = onRefresh,
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = FeatherIcons.RefreshCw,
-                            contentDescription = stringResource(R.string.env_overview_refresh),
-                            tint = Brand.IconGray,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
-                }
-                Icon(
-                    imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
-                    contentDescription = null,
-                    tint = Brand.IconGray,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically(
-                    animationSpec = tween(250, easing = FastOutSlowInEasing),
-                    expandFrom = Alignment.Top
-                ) + fadeIn(tween(200)),
-                exit = shrinkVertically(
-                    animationSpec = tween(200),
-                    shrinkTowards = Alignment.Top
-                ) + fadeOut(tween(150))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = Spacing.md, end = Spacing.md, bottom = Spacing.sm),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                ) {
-                    // 完成播报横幅：安装刚完成时展示
-                    if (justCompleted) {
-                        CompletionBanner()
-                    }
-                    // 安装进度条
-                    activeInstall?.let { progress ->
-                        InstallProgressRow(progress)
-                    }
-                    // 组件列表
-                    components.forEach { component ->
-                        EnvironmentComponentRow(component)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 安装完成播报横幅：绿色高亮提示环境安装完成。 */
-@Composable
-private fun CompletionBanner() {
-    val isDark = LocalAppDarkMode.current
-    Surface(
-        shape = RoundedCornerShape(Radius.sm),
-        color = Color(0xFF22C55E).copy(alpha = if (isDark) 0.14f else 0.1f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            Icon(
-                imageVector = FeatherIcons.CheckCircle,
-                contentDescription = null,
-                tint = Color(0xFF22C55E),
-                modifier = Modifier.size(14.dp)
-            )
-            Text(
-                text = stringResource(R.string.env_overview_completed),
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                color = Color(0xFF22C55E),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
 }
 
 /** 安装进度行：进度条 + 当前阶段描述 + 预计剩余时间（ETA）。 */
@@ -369,7 +190,7 @@ private fun formatEta(seconds: Long): String {
 
 /** 单个环境组件行：名称 + 状态徽章 + 版本。 */
 @Composable
-private fun EnvironmentComponentRow(component: EnvironmentComponentState) {
+internal fun EnvironmentComponentRow(component: EnvironmentComponentState) {
     val isDark = LocalAppDarkMode.current
     val badge = when (component.status) {
         EnvironmentStatus.INSTALLED -> ComponentBadge(

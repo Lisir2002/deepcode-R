@@ -91,23 +91,13 @@ internal fun TaskAccordion(
     onNewChatClick: ((AgentUIMessage) -> Unit)? = null,
     onViewChanges: ((TaskChangesSheetData) -> Unit)?,
     runningTool: List<RunningToolOutput>,
-    modifier: Modifier = Modifier,
-    onRefreshEnvironment: (() -> Unit)? = null
+    modifier: Modifier = Modifier
 ) {
     val totalCount = group.subGroups.sumOf { it.messages.size }
     // 任务内全部工具执行日志（含查询操作），供弹窗「日志」Tab 展示
     val toolLogs = remember(group.taskId, group.subGroups) { collectTaskLogs(group) }
     // 归并渲染单元：TOOL 片段嵌入紧随其后的 REPLY 片段（作为回复气泡的子气泡）
     val renderUnits = remember(group.taskId, group.subGroups) { buildRenderUnits(group.subGroups) }
-    // 环境总览：任务内 check_environment 工具结果 + 正在运行的安装进度
-    val envComponents = remember(group.taskId, group.subGroups) { collectEnvironmentComponents(group) }
-    val activeInstall = remember(group.taskId, group.subGroups, runningTool) {
-        resolveActiveInstall(group, runningTool)
-    }
-    // 安装是否刚完成：任务内最近一次安装类工具已结束且结果为完成
-    val justCompleted = remember(group.taskId, group.subGroups, runningTool) {
-        resolveInstallJustCompleted(group, runningTool)
-    }
 
     // 流式生成脉冲动画：动态调整边框高亮
     val infiniteTransition = rememberInfiniteTransition(label = "streamingPulse")
@@ -236,15 +226,6 @@ internal fun TaskAccordion(
                         .padding(start = Spacing.md, end = Spacing.md, bottom = Spacing.md),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
-                    // 环境总览卡片：任务内环境探测结果 + 安装进度 + 刷新 + 完成播报
-                    if (envComponents.isNotEmpty() || activeInstall != null || justCompleted) {
-                        EnvironmentOverviewCard(
-                            components = envComponents,
-                            activeInstall = activeInstall,
-                            onRefresh = onRefreshEnvironment,
-                            justCompleted = justCompleted
-                        )
-                    }
                     renderUnits.forEach { unit ->
                         SubAccordion(
                             group = group,
@@ -603,7 +584,7 @@ private data class RenderUnit(
 
 /**
  * 把任务内的二级片段归并为渲染单元，保持消息真实时间顺序：
- * - TOOL 片段 → 暂存，不独立渲染（check_environment 等系统探测工具被过滤，不嵌入回复气泡）；
+ * - TOOL 片段 → 暂存，不独立渲染；check_environment 等工具以紧凑状态条形态内嵌于回复气泡顶部；
  * - REPLY 片段 → 携带暂存的工具调用（嵌入回复顶部），并成为「最近回复」；
  * - 其他片段（USER）→ 若暂存非空，嵌入最近回复；无最近回复则兜底独立 TOOL 单元；
  * - 任务结束 → 若暂存非空，同样嵌入最近回复或兜底。
@@ -615,9 +596,7 @@ private fun buildRenderUnits(subGroups: List<TaskSubGroup>): List<RenderUnit> {
     subGroups.forEach { subGroup ->
         when (subGroup.type) {
             TaskSubGroupType.TOOL -> {
-                // 过滤系统探测工具（如 check_environment），它们已在环境总览卡片展示，不嵌入回复气泡
-                val filtered = subGroup.messages.filter { it.toolName != "check_environment" }
-                pendingTools += filtered
+                pendingTools += subGroup.messages
             }
             TaskSubGroupType.REPLY -> {
                 units += RenderUnit(subGroup, pendingTools.toList())
@@ -981,67 +960,8 @@ private fun groupConsecutiveToolCalls(messages: List<AgentUIMessage>): List<Pair
 }
 
 /**
- * 从任务组中收集 [check_environment] 工具的结果，解析为环境组件状态列表。
- * 取任务内最后一个完成的 check_environment 结果。
- */
-private fun collectEnvironmentComponents(group: TaskGroup): List<EnvironmentComponentState> {
-    val envTools = group.subGroups
-        .flatMap { it.messages }
-        .filter { it.role == MessageRole.TOOL && it.toolName == "check_environment" && !it.isError && !it.content.startsWith("[running]") }
-    if (envTools.isEmpty()) return emptyList()
-    // 取最后一个完整结果
-    val last = envTools.last()
-    return parseEnvironmentComponents(last.content)
-}
-
-/**
- * 从任务中解析正在运行的安装进度：检查 runningTool 中是否有 Bash 命令
- * 包含安装类命令（apt/apk/pip/sdkmanager），若有则用对应解析器解析最新输出行。
- */
-private fun resolveActiveInstall(group: TaskGroup, runningTool: List<RunningToolOutput>): InstallProgress? {
-    // 找到正在运行的 Bash 工具
-    val bashRunning = runningTool.filter { it.toolName == "Bash" || it.toolName == "" }
-    for (rt in bashRunning) {
-        val text = rt.text
-        if (text.isBlank()) continue
-        // 获取工具消息的 toolArgs 来判断命令内容
-        val toolMsg = group.subGroups
-            .flatMap { it.messages }
-            .firstOrNull { it.id == rt.messageId && it.role == MessageRole.TOOL }
-        val command = extractCommandFromArgs(toolMsg?.toolArgs)
-        val parser = InstallProgressParsers.parserFor(command) ?: continue
-        // 取最后一行解析
-        val lastLine = text.lineSequence().lastOrNull { it.isNotBlank() } ?: continue
-        val progress = parser.parse(lastLine)
-        if (progress != null && !progress.isDone) return progress
-    }
-    return null
-}
-
-/**
- * 检测任务内最近一次安装类工具是否已「成功完成」。
- * 规则：找到任务内最后一个已结束（不在 runningTool 中）的安装类 Bash 工具，
- * 用其解析器的 [InstallProgressParser.isCompleted] 判断结果是否表示完成。
- * 用于环境总览卡片的「完成播报」横幅。
- */
-private fun resolveInstallJustCompleted(group: TaskGroup, runningTool: List<RunningToolOutput>): Boolean {
-    val runningIds = runningTool.map { it.messageId }.toSet()
-    val installTools = group.subGroups
-        .flatMap { it.messages }
-        .filter { it.role == MessageRole.TOOL && !it.isError && !it.content.startsWith("[running]") }
-        .filter { msg ->
-            val command = extractCommandFromArgs(msg.toolArgs)
-            InstallProgressParsers.parserFor(command) != null && msg.id !in runningIds
-        }
-    if (installTools.isEmpty()) return false
-    val last = installTools.last()
-    val parser = InstallProgressParsers.parserFor(extractCommandFromArgs(last.toolArgs)) ?: return false
-    return parser.isCompleted(last.content)
-}
-
-/**
  * 从嵌入回复气泡的工具调用中解析正在运行的安装进度。
- * 与 [resolveActiveInstall] 类似，但作用域限定在 attachedTools（回复气泡的子气泡）。
+ * 作用域限定在 attachedTools（回复气泡的子气泡）。
  */
 private fun resolveAttachedInstall(
     attachedTools: List<AgentUIMessage>,

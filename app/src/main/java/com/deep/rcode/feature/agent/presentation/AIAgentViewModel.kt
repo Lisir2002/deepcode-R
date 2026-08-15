@@ -493,6 +493,16 @@ class AIAgentViewModel @Inject constructor(
         val ENV_MUTATION_REGEX = Regex(
             """\b(apk|apt|apt-get|pip|pip3|npm|go)\s+(add|del|remove|install|uninstall|upgrade|delete|purge|rm)\b"""
         )
+
+        /** 命中即视为「构建类命令」，触发按需环境探测（仅构建核心组件）。 */
+        val BUILD_COMMAND_REGEX = Regex(
+            """\b(gradle|gradlew|\./gradlew|mvn|mvnw|java|javac|sdkmanager|ndk-build)\b"""
+        )
+
+        /** 构建链路核心组件：仅探测这些，避免无关组件噪音。 */
+        val BUILD_CORE_COMPONENTS: List<String> = listOf(
+            "Java", "Gradle", "Android SDK", "Android NDK"
+        )
     }
 
     init {
@@ -756,29 +766,6 @@ class AIAgentViewModel @Inject constructor(
             }
             sessionUseCase.touch(sessionId, messagePersistenceUseCase.nextTimestamp())
 
-            // 任务开始时自动执行一次环境探测：结果落库为 TOOL 消息（UI 渲染环境总览卡片），
-            // 并作为 ToolResultMessage 并入模型上下文，让 AI 一开始就知道环境状态。
-            // 仅当容器已就绪时执行（避免探测触发不必要的容器初始化）；失败时静默跳过（不阻塞主流程）。
-            val autoEnvResult = if (containerEngine.isProvisioned()) {
-                runCatching {
-                    checkEnvironmentTool.execute(emptyMap())
-                }.getOrNull()
-            } else null
-            val envToolMsgId = if (autoEnvResult is ToolResult.Success) {
-                val envMsgId = "tool_env_${UUID.randomUUID()}"
-                messagePersistenceUseCase.persist(
-                    sessionId,
-                    MessageRole.TOOL,
-                    autoEnvResult.toTransportString(),
-                    id = envMsgId,
-                    taskId = taskId,
-                    toolName = "check_environment",
-                    toolArgs = null,
-                    isError = false
-                )
-                envMsgId
-            } else null
-
             val sessionEntity = sessionUseCase.getSessionById(sessionId)
             val sessionDomain = sessionEntity?.toDomain()
             val mode = sessionDomain?.mode ?: AgentMode.BUILD
@@ -794,20 +781,10 @@ class AIAgentViewModel @Inject constructor(
                 mode = mode,
                 reasoningEffort = sessionDomain?.reasoningEffort?.apiValue
             )
-            // 自动探测结果并入上下文：作为 ToolResultMessage 追加，让模型感知环境状态
-            val contextWithEnv = if (envToolMsgId != null && autoEnvResult is ToolResult.Success) {
-                agentContext.copy(
-                    history = agentContext.history + AgentMessage.ToolResultMessage(
-                        id = envToolMsgId,
-                        toolName = "check_environment",
-                        result = autoEnvResult.toTransportString()
-                    )
-                )
-            } else agentContext
 
             agentWorkflow.executeEvents(
                 userRequest = modelRequest,
-                context = contextWithEnv,
+                context = agentContext,
                 tools = toolRegistry.getAvailableTools(mode)
             ).collect { event ->
                 when (event) {
@@ -906,6 +883,12 @@ class AIAgentViewModel @Inject constructor(
                         if (!event.isError && isEnvironmentMutation(event.toolName, event.argsPreview)) {
                             refreshEnvironment(taskId = taskId)
                         }
+                        // 联动检测：构建类命令（gradle/mvn/java/javac 等）执行完成后，
+                        // 按需探测构建核心组件（Java/Gradle/Android SDK/NDK），
+                        // 为回复气泡内嵌状态条提供最新数据。
+                        if (!event.isError && isBuildCommand(event.toolName, event.argsPreview)) {
+                            refreshEnvironment(taskId = taskId, components = BUILD_CORE_COMPONENTS)
+                        }
                     }
                     is AgentEvent.Failed -> {
                         failed = true
@@ -975,11 +958,14 @@ class AIAgentViewModel @Inject constructor(
      *
      * [taskId] 指定新探测消息归属的任务分组；缺省时取当前会话的 taskId。
      */
-    fun refreshEnvironment(taskId: String? = null) {
+    fun refreshEnvironment(taskId: String? = null, components: List<String>? = null) {
         val sid = _currentSessionId.value ?: return
         viewModelScope.launch {
             if (!containerEngine.isProvisioned()) return@launch
-            val result = runCatching { checkEnvironmentTool.execute(emptyMap()) }.getOrNull()
+            val args = if (components.isNullOrEmpty()) emptyMap() else mapOf(
+                "components" to kotlinx.serialization.json.JsonArray(components.map { kotlinx.serialization.json.JsonPrimitive(it) })
+            )
+            val result = runCatching { checkEnvironmentTool.execute(args) }.getOrNull()
             if (result is ToolResult.Success) {
                 messagePersistenceUseCase.persist(
                     sid,
@@ -1003,6 +989,17 @@ class AIAgentViewModel @Inject constructor(
         val command = extractCommandFromArgs(argsPreview)
         if (command.isBlank()) return false
         return ENV_MUTATION_REGEX.containsMatchIn(command)
+    }
+
+    /**
+     * 判断工具调用是否为「构建类命令」（gradle/mvn/java/javac 等）。
+     * 命中后触发按需环境探测（仅构建核心组件），让回复气泡内嵌状态条有数据可展示。
+     */
+    private fun isBuildCommand(toolName: String?, argsPreview: String?): Boolean {
+        if (toolName != "Bash" && toolName != "execute_command" && !toolName.isNullOrEmpty()) return false
+        val command = extractCommandFromArgs(argsPreview)
+        if (command.isBlank()) return false
+        return BUILD_COMMAND_REGEX.containsMatchIn(command)
     }
 
     /** 从工具参数 JSON 预览中提取 command 字段。 */
