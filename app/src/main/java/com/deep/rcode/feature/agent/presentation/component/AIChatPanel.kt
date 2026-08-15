@@ -468,9 +468,9 @@ fun AIChatPanel(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             horizontal = Spacing.lg,
-                            vertical = Spacing.md
+                            vertical = Spacing.xs
                         ),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                     ) {
                         items(taskGroups, key = { it.taskId }, contentType = { "task" }) { group ->
                             TaskAccordion(

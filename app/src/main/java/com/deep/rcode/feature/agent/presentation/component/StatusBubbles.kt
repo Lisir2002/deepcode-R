@@ -64,7 +64,7 @@ internal fun ThinkingBubble() {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Box(
-                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.md),
+                modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                 contentAlignment = Alignment.Center
             ) {
                 TypingDots(color = MaterialTheme.colorScheme.primary)
@@ -86,7 +86,7 @@ internal fun CompactionProgressBubble() {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
@@ -114,7 +114,7 @@ internal fun RetryingBubble(attempt: Int, maxRetries: Int) {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
@@ -147,12 +147,12 @@ internal fun StreamingBubble(text: String) {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
+            Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs)) {
                 MarkdownContent(
                     text = text,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(Modifier.height(Spacing.sm))
+                Spacer(Modifier.height(Spacing.xs))
                 TypingDots(color = MaterialTheme.colorScheme.primary, dotSize = 5.dp)
             }
         }
@@ -191,7 +191,7 @@ internal fun ReasoningBubble(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
+            Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -222,7 +222,7 @@ internal fun ReasoningBubble(
                     )
                 }
                 if (effectiveExpanded) {
-                    Spacer(Modifier.height(Spacing.sm))
+                    Spacer(Modifier.height(Spacing.xs))
                     MarkdownContent(
                         text = text,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -239,7 +239,7 @@ internal fun ReasoningBubble(
                     )
                 } else if (overThreshold) {
                     // 折叠态：显示最新内容（尾部 N 行）+「还有 X 行」
-                    Spacer(Modifier.height(Spacing.sm))
+                    Spacer(Modifier.height(Spacing.xs))
                     val tailText = remember(text) {
                         text.lines().takeLast(REASONING_COLLAPSE_LINE_LIMIT).joinToString("\n")
                     }

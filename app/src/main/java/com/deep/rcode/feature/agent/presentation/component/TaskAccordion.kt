@@ -146,7 +146,7 @@ internal fun TaskAccordion(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onToggleTask(group.taskId) }
-                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
@@ -229,8 +229,8 @@ internal fun TaskAccordion(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = Spacing.md, end = Spacing.md, bottom = Spacing.md),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        .padding(start = Spacing.sm, end = Spacing.sm, bottom = Spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                 ) {
                     renderUnits.forEach { unit ->
                         SubAccordion(
@@ -329,7 +329,7 @@ private fun ToolSummaryRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
@@ -439,8 +439,8 @@ private fun EmbeddedToolAccordion(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = Spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    .padding(top = Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
             ) {
                 groupConsecutiveToolCalls(attachedTools).forEach { (toolName, msgs) ->
                     if (msgs.size > 1) {
@@ -495,7 +495,7 @@ private fun ToolCallCountRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
@@ -618,7 +618,7 @@ private fun ViewChangesButton(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
@@ -900,7 +900,7 @@ private fun SubAccordion(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                 ) {
                     // TOOL 片段（兜底独立单元）：折叠为一行摘要
                     if (subGroup.type == TaskSubGroupType.TOOL) {

@@ -85,7 +85,8 @@ internal fun AgentMessageItem(
 
     val isUser = message.role == MessageRole.USER
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
-    val maxUserBubbleWidth = remember(screenWidthDp) { (screenWidthDp * 0.85).dp }
+    // 紧凑优化：用户气泡放宽到 92% 屏宽，减少换行、降低整体纵向占用
+    val maxUserBubbleWidth = remember(screenWidthDp) { (screenWidthDp * 0.92).dp }
     var copied by remember { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val copyScope = rememberCoroutineScope()
@@ -153,13 +154,13 @@ internal fun AgentMessageItem(
                                             text = message.content,
                                             color = textColor,
                                             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                                            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)
+                                            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs)
                                         )
                                     } else {
                                         MarkdownContent(
                                             text = message.content,
                                             color = textColor,
-                                            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+                                            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                                             cache = markdownCache
                                         )
                                     }
@@ -240,10 +241,10 @@ private fun MessageActionIconButton(
 ) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(28.dp),
+        modifier = Modifier.size(24.dp),
         colors = IconButtonDefaults.iconButtonColors(contentColor = tint),
     ) {
-        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(14.dp))
+        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(13.dp))
     }
 }
 
@@ -279,7 +280,7 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
@@ -311,7 +312,7 @@ private fun CompactionDivider() {
             .padding(vertical = Spacing.xs)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {

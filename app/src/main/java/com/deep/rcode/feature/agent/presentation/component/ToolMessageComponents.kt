@@ -153,7 +153,7 @@ internal fun ToolMessageBody(
         resolveBubbleInstallProgress(message, liveOutput)
     } else null
 
-    Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
+    Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -856,7 +856,7 @@ private fun EnvironmentStatusStrip(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(enabled = components.isNotEmpty() && !running) { expanded = !expanded }
-                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
