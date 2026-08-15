@@ -26,6 +26,7 @@ import com.deep.rcode.feature.agent.domain.tool.ToolRegistry
 import com.deep.rcode.feature.agent.domain.tool.ToolResult
 import com.deep.rcode.feature.agent.domain.tool.ToolOutputStore
 import com.deep.rcode.feature.agent.domain.tool.ToolDependencyScheduler
+import com.deep.rcode.feature.agent.domain.tool.ToolResultCache
 import com.deep.rcode.feature.agent.domain.tool.ToolSessionState
 import com.deep.rcode.feature.agent.domain.tool.ToolOutputRecord
 import com.deep.rcode.feature.agent.domain.tool.ToolErrorClass
@@ -95,7 +96,9 @@ class StatefulAgentWorkflow @Inject constructor(
     private val messagePersistenceUseCase: MessagePersistenceUseCase,
     private val checkpointManager: CheckpointManager,
     /** L4 依赖感知调度：构建依赖图、拓扑分层、指数退避重试。 */
-    private val dependencyScheduler: ToolDependencyScheduler
+    private val dependencyScheduler: ToolDependencyScheduler,
+    /** L5 结果缓存：纯读工具按 (toolName, argsHash) 键控复用，TTL + mtime 双机制失效。 */
+    private val toolResultCache: ToolResultCache
 ) : AgentWorkflow {
 
     private companion object {
@@ -850,6 +853,21 @@ class StatefulAgentWorkflow @Inject constructor(
             return ToolRunResult(error.toTransportString(), true, errorClass = classifyError(error.code))
         }
         return try {
+            // L5 结果缓存：纯读工具（readFile/searchCode/listFiles/grep）按 (toolName, argsHash) 键控，
+            // 命中则直接复用结果，避免同参数重复执行。文件类工具由 mtime + TTL 双机制失效。
+            val cacheKey = if (name in ToolResultCache.FILE_TOOLS) {
+                context.sessionId?.let { sid -> toolResultCache.buildKey(name, toolCall.arguments, sid) }
+            } else {
+                null
+            }
+            if (cacheKey != null) {
+                val cached = toolResultCache.get(cacheKey)
+                if (cached != null) {
+                    recordSessionOutput(context, toolCall.id, name, cached)
+                    val errorClass = (cached as? ToolResult.Error)?.let { classifyError(it.code) }
+                    return ToolRunResult(cached.toTransportString(), cached is ToolResult.Error, errorClass = errorClass)
+                }
+            }
             if (name == "viewImage" && !activeModelSupportsVision(context.sessionId)) {
                 // RC63 备选方案③：viewImage 守卫策略（默认自动回退识图模型，FAIL_FAST 则直接报错提示用户）
                 val guardPolicy = compatibilityPolicyRepository.getViewImageUnknownGuardPolicy()
@@ -888,6 +906,10 @@ class StatefulAgentWorkflow @Inject constructor(
             }
             val processed = toolOutputStore.process(name, toolCall.id, transportResult)
             recordSessionOutput(context, toolCall.id, name, processed)
+            // L5 写缓存：仅成功结果入缓存，失败不缓存（避免缓存错误）。
+            if (cacheKey != null && processed is ToolResult.Success) {
+                toolResultCache.put(cacheKey, processed)
+            }
             val errorClass = (processed as? ToolResult.Error)?.let { classifyError(it.code) }
             ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, images, attachments, errorClass)
         } catch (e: CancellationException) {

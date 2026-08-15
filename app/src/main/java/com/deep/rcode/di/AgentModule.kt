@@ -683,6 +683,12 @@ object AgentModule {
 
     @Provides
     @Singleton
+    fun provideToolResultCache(): com.deep.rcode.feature.agent.domain.tool.ToolResultCache {
+        return com.deep.rcode.feature.agent.domain.tool.ToolResultCache()
+    }
+
+    @Provides
+    @Singleton
     fun provideAgentWorkflow(
         toolRegistry: ToolRegistry,
         aiProviderRepository: AIProviderRepository,
@@ -702,7 +708,8 @@ object AgentModule {
         sessionUseCase: com.deep.rcode.feature.agent.domain.session.SessionUseCase,
         messagePersistenceUseCase: com.deep.rcode.feature.agent.domain.session.MessagePersistenceUseCase,
         checkpointManager: com.deep.rcode.feature.agent.domain.checkpoint.CheckpointManager,
-        dependencyScheduler: com.deep.rcode.feature.agent.domain.tool.ToolDependencyScheduler
+        dependencyScheduler: com.deep.rcode.feature.agent.domain.tool.ToolDependencyScheduler,
+        toolResultCache: com.deep.rcode.feature.agent.domain.tool.ToolResultCache
     ): AgentWorkflow {
         return com.deep.rcode.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -723,7 +730,8 @@ object AgentModule {
             sessionUseCase,
             messagePersistenceUseCase,
             checkpointManager,
-            dependencyScheduler
+            dependencyScheduler,
+            toolResultCache
         )
     }
 }
