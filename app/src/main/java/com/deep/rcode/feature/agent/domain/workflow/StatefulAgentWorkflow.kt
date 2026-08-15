@@ -980,7 +980,8 @@ class StatefulAgentWorkflow @Inject constructor(
                 val action = (toolCall.arguments["action"] as? JsonPrimitive)?.contentOrNull
                 if (action !in setOf("save", "edit", "delete")) return
                 val memoryKey = (toolCall.arguments["name"] as? JsonPrimitive)?.contentOrNull ?: ""
-                val summary = (result.data as? JsonPrimitive)?.contentOrNull ?: ""
+                val summary = (result as? ToolResult.Success)?.data
+                    ?.let { (it as? JsonPrimitive)?.contentOrNull } ?: ""
                 ToolEvent.StateMemoryUpdated(memoryKey = memoryKey, summary = summary, sessionId = sessionId)
             }
             "loadSkill" -> {
