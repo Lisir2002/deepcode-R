@@ -3,21 +3,33 @@ package com.deep.rcode.feature.terminal.presentation.component
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,14 +37,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.deep.rcode.R
 import com.deep.rcode.core.theme.AppSectionHeader
 import com.deep.rcode.core.theme.AppTopAppBar
+import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.domain.container.ContainerInitState
 import com.deep.rcode.feature.agent.domain.container.GlobalInstallArchiveStore
@@ -42,7 +57,9 @@ import com.deep.rcode.feature.terminal.presentation.TerminalSettingsViewModel
 import com.deep.rcode.feature.terminal.presentation.component.toUi
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
+import compose.icons.feathericons.Grid
 import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.Trash2
 import kotlinx.coroutines.launch
 
 /**
@@ -60,6 +77,7 @@ fun TerminalBundleManagerScreen(
     val containerInstalled by viewModel.containerInstalled.collectAsStateWithLifecycle()
     val storageUsedMb by viewModel.storageUsedMb.collectAsStateWithLifecycle()
     val bundleStates by viewModel.bundleStates.collectAsStateWithLifecycle()
+    val customPkgs by viewModel.customPackages.collectAsStateWithLifecycle()
     val aiAllInstalled by viewModel.aiRecommendedAllInstalled.collectAsStateWithLifecycle()
     val errorToast by viewModel.errorToast.collectAsStateWithLifecycle()
 
@@ -169,6 +187,86 @@ fun TerminalBundleManagerScreen(
                             archiveSnapshot = archiveSnapshot,
                             onDismiss = { openDialogFor = null },
                         )
+                    }
+                }
+            }
+
+            AppSectionHeader(text = "已安装的自定义包")
+            run {
+                val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = TerminalCardsSpec.BorderAlpha)
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = Spacing.md)
+                        .fillMaxWidth()
+                        .border(1.dp, borderColor, RoundedCornerShape(Radius.md)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = TerminalCardsSpec.BgSoftAlpha)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = TerminalCardsSpec.Elevation),
+                    shape = RoundedCornerShape(Radius.md)
+                ) {
+                    Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                FeatherIcons.Grid,
+                                null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(Spacing.sm))
+                            Text(
+                                text = if (customPkgs.isEmpty()) "暂无自定义包" else "共 ${customPkgs.size} 个",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            NeutralTextButton(
+                                onClick = viewModel::refreshCustom,
+                                icon = FeatherIcons.RefreshCw,
+                                text = "刷新"
+                            )
+                        }
+                        when {
+                            !containerInstalled -> {
+                                Text(
+                                    "容器未初始化，无法查询自定义包",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            customPkgs.isEmpty() -> {
+                                Text(
+                                    "在聊天页让 AI 安装，或到「自定义 APK 包」页面安装 Alpine 社区包（htop / tmux / fzf 等），会显示在这里。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            else -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                                    customPkgs.forEach { pkg ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(DotSize.Chip)
+                                                    .background(SemanticColors.Success, shape = RoundedCornerShape(50))
+                                            )
+                                            Spacer(modifier = Modifier.width(Spacing.sm))
+                                            Text(
+                                                text = pkg,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontFamily = FontFamily.Monospace,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            DangerTextButton(
+                                                onClick = { viewModel.uninstallCustom(pkg) },
+                                                icon = FeatherIcons.Trash2,
+                                                text = "卸载"
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
