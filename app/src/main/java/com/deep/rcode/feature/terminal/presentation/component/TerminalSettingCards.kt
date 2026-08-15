@@ -59,7 +59,7 @@ import compose.icons.feathericons.Trash2
 
 /**
  * 终端设置相关共享组件 + Tokens。
- * 三份页面（TerminalSettingsScreen / TerminalBundleManagerScreen / TerminalCustomPackagesScreen）
+ * 两份页面（TerminalSettingsScreen / TerminalBundleManagerScreen）
  * 统一从这里拿卡片与样式，保证一改全改。
  */
 

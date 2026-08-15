@@ -102,7 +102,7 @@ import kotlinx.coroutines.launch
 /**
  * 终端设置页。包含：
  *  - 容器环境大卡片
- *  - 子页入口：功能包管理 / 自定义 APK 包（各跳独立子页面）
+ *  - 子页入口：功能包管理（含预设独立功能包 + 自定义功能包两个 Tab）
  *  - 4 分组开关：外观 / 键盘交互 / 行为 / SSH 常用
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,14 +111,12 @@ fun TerminalSettingsScreen(
     viewModel: TerminalSettingsViewModel,
     onNavigateBack: () -> Unit,
     onNavigateToSshHosts: () -> Unit,
-    onNavigateToBundleManager: () -> Unit = {},
-    onNavigateToCustomPackages: () -> Unit = {}
+    onNavigateToBundleManager: () -> Unit = {}
 ) {
     val containerInit by viewModel.containerInit.collectAsStateWithLifecycle()
     val containerInstalled by viewModel.containerInstalled.collectAsStateWithLifecycle()
     val storageUsedMb by viewModel.storageUsedMb.collectAsStateWithLifecycle()
     val bundleStates by viewModel.bundleStates.collectAsStateWithLifecycle()
-    val customPkgs by viewModel.customPackages.collectAsStateWithLifecycle()
     val aiAllInstalled by viewModel.aiRecommendedAllInstalled.collectAsStateWithLifecycle()
 
     val fontSizeSp by viewModel.fontSizeSp.collectAsStateWithLifecycle()
@@ -193,14 +191,6 @@ fun TerminalSettingsScreen(
                     title = "功能包管理",
                     subtitle = "官方 Bundle · 共 ${viewModel.bundles().size} 个，已安装 $installedBundleCount${if (aiAllInstalled) " · AI 组合已就绪" else ""}",
                     onClick = onNavigateToBundleManager,
-                    showDivider = true
-                )
-                _MenuRow(
-                    icon = FeatherIcons.Grid,
-                    title = "自定义 APK 包",
-                    subtitle = if (customPkgs.isEmpty()) "安装 Alpine 社区任意 apk 包（htop / neofetch / tmux 等）"
-                    else "已安装 ${customPkgs.size} 个自定义包：${customPkgs.take(4).joinToString(" ")}${if (customPkgs.size > 4) "…" else ""}",
-                    onClick = onNavigateToCustomPackages,
                     showDivider = false
                 )
             }

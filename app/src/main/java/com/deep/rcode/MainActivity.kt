@@ -62,7 +62,6 @@ import com.deep.rcode.feature.terminal.domain.TerminalKeepaliveService
 import com.deep.rcode.feature.terminal.presentation.TerminalSettingsViewModel
 import com.deep.rcode.feature.terminal.presentation.TerminalViewModel
 import com.deep.rcode.feature.terminal.presentation.component.TerminalBundleManagerScreen
-import com.deep.rcode.feature.terminal.presentation.component.TerminalCustomPackagesScreen
 import com.deep.rcode.feature.terminal.presentation.component.TerminalScreen
 import com.deep.rcode.feature.terminal.presentation.component.TerminalSettingsScreen
 import com.deep.rcode.feature.workspace.presentation.WorkspaceViewModel
@@ -451,20 +450,12 @@ fun AppNavigation() {
                             navController.navigate("settings")
                         }
                     },
-                    onNavigateToBundleManager = { navController.navigate("terminal_bundle_manager") },
-                    onNavigateToCustomPackages = { navController.navigate("terminal_custom_packages") }
+                    onNavigateToBundleManager = { navController.navigate("terminal_bundle_manager") }
                 )
             }
             composable("terminal_bundle_manager") {
                 val terminalSettingsVM: TerminalSettingsViewModel = hiltViewModel()
                 TerminalBundleManagerScreen(
-                    viewModel = terminalSettingsVM,
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-            composable("terminal_custom_packages") {
-                val terminalSettingsVM: TerminalSettingsViewModel = hiltViewModel()
-                TerminalCustomPackagesScreen(
                     viewModel = terminalSettingsVM,
                     onNavigateBack = { navController.popBackStack() }
                 )
