@@ -820,12 +820,11 @@
 
     <!-- Helper Strings -->
     <string name="container_channel_deleted">通道已删除</string>
-    <string name="chat_more_options">更多选项</string>
     <string name="chat_action_edit">编辑消息</string>
     <string name="chat_action_copy">复制文本</string>
-    <string name="chat_action_delete">删除消息</string>
-    <string name="chat_edit_dialog_title">编辑消息</string>
-    <string name="chat_edit_dialog_hint">请输入消息内容</string>
+    <string name="chat_action_new_chat">创建新聊天</string>
+    <string name="chat_editing_banner">正在编辑：%1$s</string>
+    <string name="chat_edit_cancel">取消编辑</string>
 
     <!-- About - Usage Stats -->
     <string name="about_stats">使用统计</string>

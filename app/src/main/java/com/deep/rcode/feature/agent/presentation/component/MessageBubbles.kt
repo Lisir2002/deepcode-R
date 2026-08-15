@@ -52,8 +52,8 @@ import com.deep.rcode.feature.agent.presentation.MessageRole
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.Copy
-import compose.icons.feathericons.MoreHorizontal
-import compose.icons.feathericons.RotateCcw
+import compose.icons.feathericons.Edit2
+import compose.icons.feathericons.MessageSquare
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -62,8 +62,8 @@ internal fun AgentMessageItem(
     message: AgentUIMessage,
     liveOutput: String? = null,
     markdownCache: MarkdownRenderCache? = null,
-    onRewindClick: ((String) -> Unit)? = null,
-    onMoreClick: ((AgentUIMessage) -> Unit)? = null,
+    onEditClick: ((AgentUIMessage) -> Unit)? = null,
+    onNewChatClick: ((AgentUIMessage) -> Unit)? = null,
     initiallyExpanded: Boolean = true
 ) {
     if (message.isCompactionMarker) {
@@ -170,10 +170,11 @@ internal fun AgentMessageItem(
                 if (isUser && hasAttachments) {
                     MessageAttachmentPreviewRow(attachments = message.attachments)
                 }
-                // 气泡下方复制按钮（工具消息不显示）
+                // 气泡下方操作按钮（工具消息不显示）
                 if (message.content.hasVisibleContent() && message.role != MessageRole.TOOL) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+                        // 复制
                         MessageActionIconButton(
                             icon = if (copied) FeatherIcons.Check else FeatherIcons.Copy,
                             contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
@@ -187,20 +188,22 @@ internal fun AgentMessageItem(
                                 }
                             }
                         )
-                        if (isUser && onRewindClick != null) {
+                        // 编辑（仅用户消息）：填入输入框，允许修改后重发
+                        if (isUser && onEditClick != null) {
                             MessageActionIconButton(
-                                icon = FeatherIcons.RotateCcw,
-                                contentDescription = stringResource(R.string.checkpoint_rewind_title),
+                                icon = FeatherIcons.Edit2,
+                                contentDescription = stringResource(R.string.chat_action_edit),
                                 tint = iconTint,
-                                onClick = { onRewindClick(message.id) }
+                                onClick = { onEditClick(message) }
                             )
                         }
-                        if (onMoreClick != null) {
+                        // 创建新聊天（仅用户消息）
+                        if (isUser && onNewChatClick != null) {
                             MessageActionIconButton(
-                                icon = FeatherIcons.MoreHorizontal,
-                                contentDescription = stringResource(R.string.chat_more_options),
+                                icon = FeatherIcons.MessageSquare,
+                                contentDescription = stringResource(R.string.chat_action_new_chat),
                                 tint = iconTint,
-                                onClick = { onMoreClick(message) }
+                                onClick = { onNewChatClick(message) }
                             )
                         }
                         if (message.role == MessageRole.ASSISTANT && (message.inputTokens > 0 || message.outputTokens > 0)) {

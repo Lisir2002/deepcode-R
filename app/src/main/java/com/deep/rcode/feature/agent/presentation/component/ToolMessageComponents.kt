@@ -264,9 +264,7 @@ internal fun ToolCallGroup(
     toolName: String,
     messages: List<AgentUIMessage>,
     runningTool: List<RunningToolOutput>,
-    markdownCache: MarkdownRenderCache?,
-    onRewindClick: ((String) -> Unit)?,
-    onMoreClick: ((AgentUIMessage) -> Unit)?
+    markdownCache: MarkdownRenderCache?
 ) {
     val anyStreaming = messages.any { m ->
         runningTool.any { it.messageId == m.id }
@@ -362,8 +360,6 @@ internal fun ToolCallGroup(
                             message = message,
                             liveOutput = live,
                             markdownCache = markdownCache,
-                            onRewindClick = onRewindClick,
-                            onMoreClick = onMoreClick,
                             initiallyExpanded = false
                         )
                     }

@@ -818,12 +818,11 @@
 
     <!-- Helper Strings -->
     <string name="container_channel_deleted">Channel deleted</string>
-    <string name="chat_more_options">More Options</string>
     <string name="chat_action_edit">Edit Message</string>
     <string name="chat_action_copy">Copy Text</string>
-    <string name="chat_action_delete">Delete Message</string>
-    <string name="chat_edit_dialog_title">Edit Message</string>
-    <string name="chat_edit_dialog_hint">Enter message content</string>
+    <string name="chat_action_new_chat">New Chat</string>
+    <string name="chat_editing_banner">Editing: %1$s</string>
+    <string name="chat_edit_cancel">Cancel Edit</string>
 
     <!-- ====================== About Page i18n - EN ====================== -->
     <!-- About - Stats -->

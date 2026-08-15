@@ -1,6 +1,5 @@
 package com.deep.rcode.feature.agent.presentation.component
 
-import android.content.ClipData
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -13,16 +12,23 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -36,8 +42,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -113,7 +117,7 @@ fun AIChatPanel(
     val pendingPermission by viewModel.pendingToolPermission.collectAsStateWithLifecycle()
     val pendingQuestion by viewModel.pendingUserQuestion.collectAsStateWithLifecycle()
     val queuedRequests by viewModel.queuedRequests.collectAsStateWithLifecycle()
-    val targetRewindMessageId by viewModel.targetRewindMessageId.collectAsStateWithLifecycle()
+
     val globalActiveProvider = settingsViewModel?.activeProvider?.collectAsStateWithLifecycle()?.value
     val providers = (settingsViewModel?.providers?.collectAsStateWithLifecycle()?.value ?: emptyList()).filter { it.isEnabled }
     val modelMetadata = settingsViewModel?.modelMetadata?.collectAsStateWithLifecycle()?.value.orEmpty()
@@ -139,8 +143,8 @@ fun AIChatPanel(
         if (inputText != inputDraft) inputText = inputDraft
     }
     var pendingAttachments by remember { mutableStateOf<List<PendingUploadAttachment>>(emptyList()) }
-    var messageForMenu by remember { mutableStateOf<AgentUIMessage?>(null) }
-    var editingMessage by remember { mutableStateOf<AgentUIMessage?>(null) }
+    // 编辑态：正在编辑的用户消息 id。发送时若非空则走「截断重发」而非普通发送。
+    var editingMessageId by remember { mutableStateOf<String?>(null) }
     var fileDiffsForSheet by remember { mutableStateOf<TaskChangesSheetData?>(null) }
     val listState = rememberLazyListState()
     val markdownCache = remember { MarkdownRenderCache() }
@@ -165,6 +169,27 @@ fun AIChatPanel(
 
     fun removePendingAttachment(index: Int) {
         pendingAttachments = pendingAttachments.filterIndexed { i, _ -> i != index }
+    }
+
+    /** 编辑用户消息：把内容填入输入框，让用户修改后发送（发送时截断该消息之后的对话）。 */
+    fun startEditMessage(message: AgentUIMessage) {
+        if (message.role != MessageRole.USER) return
+        editingMessageId = message.id
+        inputText = message.content
+        viewModel.updateInputDraft(message.content)
+        focusManager.clearFocus()
+        // 请求输入框获得焦点，弹出键盘方便修改
+        scope.launch {
+            kotlinx.coroutines.delay(100)
+            focusRequester.requestFocus()
+        }
+    }
+
+    /** 取消编辑态：清空编辑标记与输入框草稿。 */
+    fun cancelEditMessage() {
+        editingMessageId = null
+        inputText = ""
+        viewModel.clearInputDraft()
     }
 
     fun handlePickedAttachments(uris: List<Uri>, images: Boolean) {
@@ -312,6 +337,7 @@ fun AIChatPanel(
     val sendMessage: () -> Unit = {
         val text = inputText.trim()
         if (text.isNotEmpty() || pendingAttachments.isNotEmpty()) {
+            val editingId = editingMessageId
             val attachments = pendingAttachments
             val modelRequest = appendAttachmentsToRequest(context, text, attachments)
             // 判断是否把 pendingAttachments 中的图片作为 vision 输入传给模型。
@@ -327,17 +353,23 @@ fun AIChatPanel(
                 else -> m.supportsVision || m.source == com.deep.rcode.feature.settings.domain.model.ModelMetadata.Source.INFERRED
             }
             val images = if (sendImages) attachments.toAgentImages() else emptyList()
-            // 统一走队列：AI 忙时入队（等本轮结束后自动发送下一条），空闲时直接发送。
-            // 斜杠命令在 ViewModel 内（agent workflow 之前）分流执行，无需在此区分。
-            viewModel.enqueueAgentRequest(
-                request = text,
-                modelRequest = modelRequest,
-                currentFile = currentFile,
-                selectedCode = selectedCode,
-                projectRoot = projectRoot,
-                inputImages = images,
-                inputAttachments = attachments.toAgentAttachments()
-            )
+            if (editingId != null) {
+                // 编辑重发：截断该消息之后的对话，以新内容重新执行（上下文干净）
+                viewModel.editAndResend(editingId, text)
+            } else {
+                // 统一走队列：AI 忙时入队（等本轮结束后自动发送下一条），空闲时直接发送。
+                // 斜杠命令在 ViewModel 内（agent workflow 之前）分流执行，无需在此区分。
+                viewModel.enqueueAgentRequest(
+                    request = text,
+                    modelRequest = modelRequest,
+                    currentFile = currentFile,
+                    selectedCode = selectedCode,
+                    projectRoot = projectRoot,
+                    inputImages = images,
+                    inputAttachments = attachments.toAgentAttachments()
+                )
+            }
+            editingMessageId = null
             inputText = ""
             viewModel.clearInputDraft()
             pendingAttachments = emptyList()
@@ -445,8 +477,8 @@ fun AIChatPanel(
                                 markdownCache = markdownCache,
                                 onToggleTask = { viewModel.toggleTask(it) },
                                 onToggleSubGroup = { taskId, subGroupId -> viewModel.toggleSubGroup(taskId, subGroupId) },
-                                onRewindClick = { viewModel.openRewindMenu(it) },
-                                onMoreClick = { messageForMenu = it },
+                                onEditClick = { message -> startEditMessage(message) },
+                                onNewChatClick = { message -> viewModel.newChatAndSend(message.content) },
                                 onViewChanges = { fileDiffsForSheet = it },
                                 runningTool = runningTool,
                                 onRefreshEnvironment = { viewModel.refreshEnvironment() }
@@ -548,6 +580,17 @@ fun AIChatPanel(
                 }
             }
 
+            // 编辑态提示条：显示正在编辑哪条消息，支持取消编辑
+            editingMessageId?.let { editingId ->
+                val editingMsg = messages.find { it.id == editingId }
+                if (editingMsg != null) {
+                    EditingMessageBanner(
+                        snippet = editingMsg.content.take(80),
+                        onCancel = { cancelEditMessage() }
+                    )
+                }
+            }
+
             ChatInputBar(
                 value = inputText,
                 onValueChange = { inputText = it; viewModel.updateInputDraft(it) },
@@ -592,44 +635,55 @@ fun AIChatPanel(
                     onDismiss = { fileDiffsForSheet = null }
                 )
             }
+        }
+    }
+}
 
-            targetRewindMessageId?.let { targetId ->
-                val targetMsg = messages.find { it.id == targetId }
-                RewindOptionsBottomSheet(
-                    promptSnippet = targetMsg?.content ?: "",
-                    onOptionSelected = { option ->
-                        viewModel.executeRewindOption(targetId, option) { text ->
-                            inputText = text
-                        }
-                    },
-                    onDismissRequest = { viewModel.dismissRewindMenu() }
-                )
-            }
-
-            messageForMenu?.let { message ->
-                val clipboard = LocalClipboard.current
-                val copyScope = rememberCoroutineScope()
-                MessageActionsBottomSheet(
-                    message = message,
-                    onDismiss = { messageForMenu = null },
-                    onEditClick = { editingMessage = message },
-                    onCopyClick = {
-                        copyScope.launch {
-                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("message", message.content)))
-                        }
-                    },
-                    onDeleteClick = { viewModel.deleteMessage(message.id) }
-                )
-            }
-
-            editingMessage?.let { message ->
-                EditMessageDialog(
-                    initialText = message.content,
-                    onDismiss = { editingMessage = null },
-                    onConfirm = { newContent ->
-                        viewModel.updateMessageContent(message.id, newContent)
-                        editingMessage = null
-                    }
+/**
+ * 编辑态提示条：展示正在编辑的消息摘要，提供取消编辑入口。
+ * 出现在输入框上方，提示用户当前发送将「截断重发」。
+ */
+@Composable
+private fun EditingMessageBanner(
+    snippet: String,
+    onCancel: () -> Unit
+) {
+    Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(com.deep.rcode.core.theme.Radius.md),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg, vertical = Spacing.xs)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = compose.icons.FeatherIcons.Edit2,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = stringResource(R.string.chat_editing_banner, snippet),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = Spacing.sm)
+            )
+            IconButton(
+                onClick = onCancel,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = compose.icons.FeatherIcons.X,
+                    contentDescription = stringResource(R.string.chat_edit_cancel),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }

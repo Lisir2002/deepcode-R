@@ -87,8 +87,8 @@ internal fun TaskAccordion(
     markdownCache: MarkdownRenderCache?,
     onToggleTask: (String) -> Unit,
     onToggleSubGroup: (String, String) -> Unit,
-    onRewindClick: ((String) -> Unit)?,
-    onMoreClick: ((AgentUIMessage) -> Unit)?,
+    onEditClick: ((AgentUIMessage) -> Unit)? = null,
+    onNewChatClick: ((AgentUIMessage) -> Unit)? = null,
     onViewChanges: ((TaskChangesSheetData) -> Unit)?,
     runningTool: List<RunningToolOutput>,
     modifier: Modifier = Modifier,
@@ -253,8 +253,8 @@ internal fun TaskAccordion(
                             toolLogs = toolLogs,
                             markdownCache = markdownCache,
                             onToggleSubGroup = onToggleSubGroup,
-                            onRewindClick = onRewindClick,
-                            onMoreClick = onMoreClick,
+                            onEditClick = onEditClick,
+                            onNewChatClick = onNewChatClick,
                             onViewChanges = onViewChanges,
                             runningTool = runningTool
                         )
@@ -408,9 +408,7 @@ private fun ToolSummaryRow(
 private fun EmbeddedToolAccordion(
     attachedTools: List<AgentUIMessage>,
     markdownCache: MarkdownRenderCache?,
-    runningTool: List<RunningToolOutput>,
-    onRewindClick: ((String) -> Unit)?,
-    onMoreClick: ((AgentUIMessage) -> Unit)?
+    runningTool: List<RunningToolOutput>
 ) {
     if (attachedTools.isEmpty()) return
     val batchFileDiffs = remember(attachedTools) { collectBatchFileDiffs(attachedTools) }
@@ -460,9 +458,7 @@ private fun EmbeddedToolAccordion(
                             toolName = toolName ?: stringResource(R.string.common_tool),
                             messages = msgs,
                             runningTool = runningTool,
-                            markdownCache = markdownCache,
-                            onRewindClick = onRewindClick,
-                            onMoreClick = onMoreClick
+                            markdownCache = markdownCache
                         )
                     } else {
                         val message = msgs.first()
@@ -470,9 +466,7 @@ private fun EmbeddedToolAccordion(
                         AgentMessageItem(
                             message = message,
                             liveOutput = live,
-                            markdownCache = markdownCache,
-                            onRewindClick = onRewindClick,
-                            onMoreClick = onMoreClick
+                            markdownCache = markdownCache
                         )
                     }
                 }
@@ -774,8 +768,8 @@ private fun SubAccordion(
     toolLogs: List<ToolLogEntry>,
     markdownCache: MarkdownRenderCache?,
     onToggleSubGroup: (String, String) -> Unit,
-    onRewindClick: ((String) -> Unit)?,
-    onMoreClick: ((AgentUIMessage) -> Unit)?,
+    onEditClick: ((AgentUIMessage) -> Unit)?,
+    onNewChatClick: ((AgentUIMessage) -> Unit)?,
     onViewChanges: ((TaskChangesSheetData) -> Unit)?,
     runningTool: List<RunningToolOutput>
 ) {
@@ -862,9 +856,7 @@ private fun SubAccordion(
                                         toolName = toolName ?: stringResource(R.string.common_tool),
                                         messages = msgs,
                                         runningTool = runningTool,
-                                        markdownCache = markdownCache,
-                                        onRewindClick = onRewindClick,
-                                        onMoreClick = onMoreClick
+                                        markdownCache = markdownCache
                                     )
                                 } else {
                                     val message = msgs.first()
@@ -873,8 +865,8 @@ private fun SubAccordion(
                                         message = message,
                                         liveOutput = live,
                                         markdownCache = markdownCache,
-                                        onRewindClick = onRewindClick,
-                                        onMoreClick = onMoreClick
+                                        onEditClick = onEditClick,
+                                        onNewChatClick = onNewChatClick
                                     )
                                 }
                             }
@@ -885,9 +877,7 @@ private fun SubAccordion(
                             EmbeddedToolAccordion(
                                 attachedTools = attachedTools,
                                 markdownCache = markdownCache,
-                                runningTool = runningTool,
-                                onRewindClick = onRewindClick,
-                                onMoreClick = onMoreClick
+                                runningTool = runningTool
                             )
                         }
                         // 消息正文
@@ -897,8 +887,8 @@ private fun SubAccordion(
                                 message = message,
                                 liveOutput = live,
                                 markdownCache = markdownCache,
-                                onRewindClick = onRewindClick,
-                                onMoreClick = onMoreClick
+                                onEditClick = onEditClick,
+                                onNewChatClick = onNewChatClick
                             )
                         }
                         // REPLY 片段底部：查看修改按钮（用批次数据）

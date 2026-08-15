@@ -49,7 +49,6 @@ import com.deep.rcode.feature.agent.domain.command.SlashCommandContext
 import com.deep.rcode.feature.agent.domain.command.SlashCommandRegistry
 import com.deep.rcode.feature.agent.domain.command.SlashCommandHandler
 import com.deep.rcode.feature.agent.presentation.AgentAttachment
-import com.deep.rcode.feature.agent.presentation.component.RewindOption
 import com.deep.rcode.feature.agent.presentation.component.formatTokenCount
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -97,7 +96,6 @@ class AIAgentViewModel @Inject constructor(
     private val terminalSessionManager: TerminalSessionManager,
     private val slashCommandRegistry: SlashCommandRegistry,
     private val checkpointManager: CheckpointManager,
-    private val checkpointDao: CheckpointDao,
     private val backupManager: BackupManager,
     private val checkEnvironmentTool: CheckEnvironmentTool,
     @param:ApplicationContext private val context: Context
@@ -1266,47 +1264,6 @@ class AIAgentViewModel @Inject constructor(
     }
 
     /** 重命名会话标题。仅更新 title，不改 updatedAt，列表顺序保持不变。 */
-    // Checkpoint Rewind 选中的 Target Message
-    private val _targetRewindMessageId = MutableStateFlow<String?>(null)
-    val targetRewindMessageId: StateFlow<String?> = _targetRewindMessageId.asStateFlow()
-
-    fun openRewindMenu(messageId: String) {
-        _targetRewindMessageId.value = messageId
-    }
-
-    fun dismissRewindMenu() {
-        _targetRewindMessageId.value = null
-    }
-
-    fun executeRewindOption(messageId: String, option: RewindOption, onFillPrompt: (String) -> Unit) = viewModelScope.launch {
-        val sessionId = _currentSessionId.value ?: return@launch
-        val checkpoint = checkpointDao.getCheckpointByMessageId(messageId)
-        val targetMsgEntity = agentMessageDao.getMessageById(messageId) ?: return@launch
-
-        when (option) {
-            RewindOption.RESTORE_CODE_AND_CONVERSATION -> {
-                if (checkpoint != null) {
-                    checkpointManager.restoreCodeToCheckpoint(sessionId, checkpoint.id)
-                }
-                agentMessageDao.deleteMessagesFromTimestamp(sessionId, targetMsgEntity.timestamp)
-                dismissRewindMenu()
-                withContext(Dispatchers.Main) { onFillPrompt(targetMsgEntity.content) }
-            }
-            RewindOption.RESTORE_CONVERSATION -> {
-                agentMessageDao.deleteMessagesFromTimestamp(sessionId, targetMsgEntity.timestamp)
-                dismissRewindMenu()
-                withContext(Dispatchers.Main) { onFillPrompt(targetMsgEntity.content) }
-            }
-            RewindOption.RESTORE_CODE -> {
-                if (checkpoint != null) {
-                    checkpointManager.restoreCodeToCheckpoint(sessionId, checkpoint.id)
-                }
-                dismissRewindMenu()
-            }
-        }
-    }
-
-    /** 重命名会话标题。仅更新 title，不改 updatedAt，列表顺序保持不变。 */
     fun renameSession(id: String, newTitle: String) = viewModelScope.launch {
         val trimmed = newTitle.trim()
         if (trimmed.isEmpty()) return@launch
@@ -1430,24 +1387,46 @@ class AIAgentViewModel @Inject constructor(
         setChanges(sessionId, emptyList())
     }
 
-    fun updateMessageContent(messageId: String, newContent: String) = viewModelScope.launch {
+    /**
+     * 编辑并重发：更新该用户消息内容，截断其之后的所有消息，然后以新内容重新执行。
+     * 语义：从这条指令重新开始，上下文干净。
+     */
+    fun editAndResend(messageId: String, newContent: String) = viewModelScope.launch {
         try {
+            val msg = agentMessageDao.getMessageById(messageId) ?: return@launch
+            if (msg.role != MessageRole.USER.name) return@launch
+            // 1) 更新本条消息内容
             messagePersistenceUseCase.updateContent(messageId, newContent)
+            // 2) 截断该消息之后的对话（含本条之后的所有消息）
+            agentMessageDao.deleteMessagesAfterTimestamp(msg.sessionId, msg.timestamp)
+            // 3) 以新内容重新执行
+            enqueueAgentRequest(
+                request = newContent,
+                modelRequest = newContent,
+                projectRoot = _currentWorkspace.value,
+                targetSessionId = msg.sessionId
+            )
         } catch (e: Exception) {
-            FileLogger.e(TAG, "更新消息失败", e)
+            FileLogger.e(TAG, "编辑并重发失败", e)
         }
     }
 
-    fun deleteMessage(messageId: String) = viewModelScope.launch {
-        try {
-            val msg = agentMessageDao.getMessageById(messageId)
-            if (msg != null && msg.role == MessageRole.USER.name) {
-                agentMessageDao.deleteMessagesAfterTimestamp(msg.sessionId, msg.timestamp)
-            }
-            agentMessageDao.deleteMessageById(messageId)
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "删除消息失败", e)
-        }
+    /**
+     * 创建新聊天并发送：新建一个会话，然后自动发送该消息内容。
+     * 用于用户消息的「创建新聊天」快捷操作。
+     */
+    fun newChatAndSend(content: String) = viewModelScope.launch {
+        val ws = _currentWorkspace.value
+        if (ws.isBlank()) return@launch
+        val s = createSession(ws)
+        sessionUseCase.upsertSession(s)
+        _currentSessionId.value = s.id
+        enqueueAgentRequest(
+            request = content,
+            modelRequest = content,
+            projectRoot = ws,
+            targetSessionId = s.id
+        )
     }
 
     private fun detectLanguage(filePath: String): String {
