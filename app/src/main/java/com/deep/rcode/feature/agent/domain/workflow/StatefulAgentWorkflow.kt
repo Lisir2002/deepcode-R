@@ -25,8 +25,11 @@ import com.deep.rcode.feature.agent.domain.tool.ToolPermissionPolicy
 import com.deep.rcode.feature.agent.domain.tool.ToolRegistry
 import com.deep.rcode.feature.agent.domain.tool.ToolResult
 import com.deep.rcode.feature.agent.domain.tool.ToolOutputStore
+import com.deep.rcode.feature.agent.domain.tool.ToolDependencyScheduler
 import com.deep.rcode.feature.agent.domain.tool.ToolSessionState
 import com.deep.rcode.feature.agent.domain.tool.ToolOutputRecord
+import com.deep.rcode.feature.agent.domain.tool.ToolErrorClass
+import com.deep.rcode.feature.agent.domain.tool.RetryPolicy
 import com.deep.rcode.feature.agent.domain.tool.classifyError
 import com.deep.rcode.feature.agent.domain.tool.ToolStreamEvent
 import com.deep.rcode.feature.agent.domain.tool.toTransportString
@@ -90,7 +93,9 @@ class StatefulAgentWorkflow @Inject constructor(
     private val compatibilityPolicyRepository: CompatibilityPolicyRepository,
     private val sessionUseCase: SessionUseCase,
     private val messagePersistenceUseCase: MessagePersistenceUseCase,
-    private val checkpointManager: CheckpointManager
+    private val checkpointManager: CheckpointManager,
+    /** L4 依赖感知调度：构建依赖图、拓扑分层、指数退避重试。 */
+    private val dependencyScheduler: ToolDependencyScheduler
 ) : AgentWorkflow {
 
     private companion object {
@@ -167,7 +172,9 @@ class StatefulAgentWorkflow @Inject constructor(
         val isError: Boolean,
         val images: List<AgentImage> = emptyList(),
         /** 仅 sendFile 等展示型工具：随结果附带的文件卡片元数据，供 UI 渲染，不回放进模型上下文。 */
-        val attachments: List<com.deep.rcode.feature.agent.presentation.AgentAttachment> = emptyList()
+        val attachments: List<com.deep.rcode.feature.agent.presentation.AgentAttachment> = emptyList(),
+        /** L3 错误分类：成功为 null，失败按 [classifyError] 推断，供 L4 调度器判定是否重试。 */
+        val errorClass: ToolErrorClass? = null
     )
 
     /** 批量工具执行结果：携带 toolCall 元信息，供最后按原始顺序组装 ToolResultMessage。 */
@@ -722,17 +729,50 @@ class StatefulAgentWorkflow @Inject constructor(
                         val runResults = if (toolCalls.isEmpty()) {
                             emptyList()
                         } else {
-                            coroutineScope {
-                                toolCalls.map { toolCall ->
-                                    async {
-                                        val tool = toolRegistry.getTool(toolCall.name)
-                                        if (tool is StreamingAgentTool) {
-                                            runToolStream(tool, toolCall, currentContext) { send(it) }
-                                        } else {
-                                            runToolSync(tool, toolCall, currentContext)
-                                        }
+                            // L4 依赖感知调度：按工具声明的 dependsOn 构建依赖图并拓扑分层，
+                            // 无依赖的工具并行、有依赖的自动串行；可重试错误按指数退避自动重试。
+                            val plan = dependencyScheduler.buildSchedule(toolCalls, toolRegistry)
+                            if (plan.hasCycle) {
+                                toolCalls.map { call ->
+                                    ToolRunResult(
+                                        ToolResult.Error("调度失败: ${plan.cycleMessage}", "DEPENDENCY_CYCLE").toTransportString(),
+                                        true,
+                                        errorClass = ToolErrorClass.FATAL
+                                    )
+                                }
+                            } else {
+                                val resultsById = HashMap<String, ToolRunResult>()
+                                for (layer in plan.layers) {
+                                    coroutineScope {
+                                        layer.map { call ->
+                                            async {
+                                                val tool = toolRegistry.getTool(call.name)
+                                                val policy = tool?.retryPolicy ?: RetryPolicy()
+                                                val result = dependencyScheduler.runWithRetry(
+                                                    tool, call,
+                                                    execute = { t, c ->
+                                                        if (t is StreamingAgentTool) {
+                                                            runToolStream(t, c, currentContext) { send(it) }
+                                                        } else {
+                                                            runToolSync(t, c, currentContext)
+                                                        }
+                                                    },
+                                                    isRetryable = { r ->
+                                                        r.isError && r.errorClass?.let { it in policy.retryable } == true
+                                                    }
+                                                )
+                                                resultsById[call.id] = result
+                                            }
+                                        }.awaitAll()
                                     }
-                                }.awaitAll()
+                                }
+                                // 按原始顺序返回，保证与 toolCalls.forEachIndexed 组装结果一致。
+                                toolCalls.map {
+                                    resultsById[it.id] ?: ToolRunResult(
+                                        ToolResult.Error("工具未执行", "TOOL_NOT_EXECUTED").toTransportString(),
+                                        true
+                                    )
+                                }
                             }
                         }
 
@@ -807,7 +847,7 @@ class StatefulAgentWorkflow @Inject constructor(
         if (tool == null) {
             val error = ToolResult.Error("工具 $name 不存在", "TOOL_NOT_FOUND")
             recordSessionOutput(context, toolCall.id, name, error)
-            return ToolRunResult(error.toTransportString(), true)
+            return ToolRunResult(error.toTransportString(), true, errorClass = classifyError(error.code))
         }
         return try {
             if (name == "viewImage" && !activeModelSupportsVision(context.sessionId)) {
@@ -823,7 +863,8 @@ class StatefulAgentWorkflow @Inject constructor(
                     recordSessionOutput(context, toolCall.id, name, error)
                     return ToolRunResult(
                         error.toTransportString(),
-                        true
+                        true,
+                        errorClass = classifyError(error.code)
                     )
                 }
                 // 非多模态模型：同步用识图模型理解图片，文本结果直接作为工具返回
@@ -847,13 +888,14 @@ class StatefulAgentWorkflow @Inject constructor(
             }
             val processed = toolOutputStore.process(name, toolCall.id, transportResult)
             recordSessionOutput(context, toolCall.id, name, processed)
-            ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, images, attachments)
+            val errorClass = (processed as? ToolResult.Error)?.let { classifyError(it.code) }
+            ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, images, attachments, errorClass)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             val error = ToolResult.Error("工具执行失败: ${e.message}", "TOOL_EXECUTION_FAILED")
             recordSessionOutput(context, toolCall.id, name, error)
-            ToolRunResult(error.toTransportString(), true)
+            ToolRunResult(error.toTransportString(), true, errorClass = classifyError(error.code))
         }
     }
 
@@ -1059,11 +1101,13 @@ class StatefulAgentWorkflow @Inject constructor(
             }
             val result = finalResult ?: ToolResult.Error("流式工具未返回结果", "MISSING_STREAM_RESULT")
             val processed = toolOutputStore.process(toolCall.name, toolCall.id, result)
-            return ToolRunResult(processed.toTransportString(), processed is ToolResult.Error)
+            val errorClass = (processed as? ToolResult.Error)?.let { classifyError(it.code) }
+            return ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, errorClass = errorClass)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            return ToolRunResult(ToolResult.Error("工具执行失败: ${e.message}", "TOOL_EXECUTION_FAILED").toTransportString(), true)
+            val error = ToolResult.Error("工具执行失败: ${e.message}", "TOOL_EXECUTION_FAILED")
+            return ToolRunResult(error.toTransportString(), true, errorClass = classifyError(error.code))
         }
     }
 

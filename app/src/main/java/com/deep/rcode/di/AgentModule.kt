@@ -677,6 +677,12 @@ object AgentModule {
 
     @Provides
     @Singleton
+    fun provideToolDependencyScheduler(): com.deep.rcode.feature.agent.domain.tool.ToolDependencyScheduler {
+        return com.deep.rcode.feature.agent.domain.tool.ToolDependencyScheduler()
+    }
+
+    @Provides
+    @Singleton
     fun provideAgentWorkflow(
         toolRegistry: ToolRegistry,
         aiProviderRepository: AIProviderRepository,
@@ -695,7 +701,8 @@ object AgentModule {
         compatibilityPolicyRepository: com.deep.rcode.feature.settings.data.repository.CompatibilityPolicyRepository,
         sessionUseCase: com.deep.rcode.feature.agent.domain.session.SessionUseCase,
         messagePersistenceUseCase: com.deep.rcode.feature.agent.domain.session.MessagePersistenceUseCase,
-        checkpointManager: com.deep.rcode.feature.agent.domain.checkpoint.CheckpointManager
+        checkpointManager: com.deep.rcode.feature.agent.domain.checkpoint.CheckpointManager,
+        dependencyScheduler: com.deep.rcode.feature.agent.domain.tool.ToolDependencyScheduler
     ): AgentWorkflow {
         return com.deep.rcode.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -715,7 +722,8 @@ object AgentModule {
             compatibilityPolicyRepository,
             sessionUseCase,
             messagePersistenceUseCase,
-            checkpointManager
+            checkpointManager,
+            dependencyScheduler
         )
     }
 }
