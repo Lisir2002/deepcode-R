@@ -61,6 +61,9 @@ import com.deep.rcode.feature.agent.domain.container.progress.InstallProgress
 import com.deep.rcode.feature.agent.domain.container.progress.InstallProgressParsers
 import com.deep.rcode.feature.agent.domain.permission.ShellCommandParser
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.CheckCircle
+import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.XCircle
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.ChevronUp
