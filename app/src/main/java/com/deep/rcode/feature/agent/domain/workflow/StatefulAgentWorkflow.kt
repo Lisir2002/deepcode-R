@@ -27,6 +27,11 @@ import com.deep.rcode.feature.agent.domain.tool.ToolResult
 import com.deep.rcode.feature.agent.domain.tool.ToolOutputStore
 import com.deep.rcode.feature.agent.domain.tool.ToolDependencyScheduler
 import com.deep.rcode.feature.agent.domain.tool.ToolResultCache
+import com.deep.rcode.feature.agent.domain.tool.ToolEventBus
+import com.deep.rcode.feature.agent.domain.tool.ToolEvent
+import com.deep.rcode.feature.agent.domain.tool.IncrementalIndexStore
+import com.deep.rcode.feature.agent.domain.tool.ActionIndex
+import com.deep.rcode.feature.agent.domain.tool.RoundSnapshot
 import com.deep.rcode.feature.agent.domain.tool.ToolSessionState
 import com.deep.rcode.feature.agent.domain.tool.ToolOutputRecord
 import com.deep.rcode.feature.agent.domain.tool.ToolErrorClass
@@ -98,8 +103,24 @@ class StatefulAgentWorkflow @Inject constructor(
     /** L4 依赖感知调度：构建依赖图、拓扑分层、指数退避重试。 */
     private val dependencyScheduler: ToolDependencyScheduler,
     /** L5 结果缓存：纯读工具按 (toolName, argsHash) 键控复用，TTL + mtime 双机制失效。 */
-    private val toolResultCache: ToolResultCache
+    private val toolResultCache: ToolResultCache,
+    /** L7 事件总线：工具间事件驱动协作，文件变更事件联动缓存失效。 */
+    private val toolEventBus: ToolEventBus,
+    /** L6 上下文增量发布：工具动作与轮次快照的增量索引。 */
+    private val incrementalIndexStore: IncrementalIndexStore
 ) : AgentWorkflow {
+
+    init {
+        // L5 + L7 联动：文件变更事件 → 失效相关缓存（写后失效，保证缓存新鲜度）。
+        toolEventBus.subscribe { event ->
+            when (event) {
+                is ToolEvent.FileEdited -> toolResultCache.invalidateByEvent("file.edited", event.path)
+                is ToolEvent.FileWritten -> toolResultCache.invalidateByEvent("file.written", event.path)
+                is ToolEvent.FileDeleted -> toolResultCache.invalidateByEvent("file.deleted", event.path)
+                else -> Unit
+            }
+        }
+    }
 
     private companion object {
         const val TAG = "StatefulAgentWorkflow"
@@ -831,6 +852,9 @@ class StatefulAgentWorkflow @Inject constructor(
                             batchResults.add(ToolBatchResult(toolCall.id, toolCall.name, rawResult, isError, runResult.images, runResult.attachments))
                         }
 
+                        // L6 增量索引：记录本批轮次快照并持久化。
+                        recordIncrementalRound(currentContext, batchResults)
+
                         // 逐个推送完成事件（保持与 batchToolCalls 一致顺序），并进入收尾。
                         batchResults.forEach { br ->
                             send(AgentEvent.ToolCallFinished(br.id, br.toolName, br.result, br.isError, attachments = br.attachments))
@@ -864,6 +888,7 @@ class StatefulAgentWorkflow @Inject constructor(
                 val cached = toolResultCache.get(cacheKey)
                 if (cached != null) {
                     recordSessionOutput(context, toolCall.id, name, cached)
+                    recordIncrementalAction(name, toolCall, cached, context)
                     val errorClass = (cached as? ToolResult.Error)?.let { classifyError(it.code) }
                     return ToolRunResult(cached.toTransportString(), cached is ToolResult.Error, errorClass = errorClass)
                 }
@@ -910,6 +935,12 @@ class StatefulAgentWorkflow @Inject constructor(
             if (cacheKey != null && processed is ToolResult.Success) {
                 toolResultCache.put(cacheKey, processed)
             }
+            // L7 事件发布：文件写操作成功后广播事件，驱动缓存失效等联动。
+            if (processed is ToolResult.Success) {
+                publishFileEvent(name, toolCall, context)
+            }
+            // L6 增量索引：记录工具动作摘要（成功与失败均记录，作为状态变化）。
+            recordIncrementalAction(name, toolCall, processed, context)
             val errorClass = (processed as? ToolResult.Error)?.let { classifyError(it.code) }
             ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, images, attachments, errorClass)
         } catch (e: CancellationException) {
@@ -919,6 +950,61 @@ class StatefulAgentWorkflow @Inject constructor(
             recordSessionOutput(context, toolCall.id, name, error)
             ToolRunResult(error.toTransportString(), true, errorClass = classifyError(error.code))
         }
+    }
+
+    /**
+     * L7 事件发布：文件写工具成功后广播对应事件，驱动缓存失效等联动。
+     * hash/diff 等字段级详情由工具自身发布，此处先建立机制。
+     */
+    private suspend fun publishFileEvent(name: String, toolCall: ToolCall, context: AgentContext) {
+        val path = (toolCall.arguments["path"] as? JsonPrimitive)?.contentOrNull ?: return
+        val event: ToolEvent? = when (name) {
+            "editFile" -> ToolEvent.FileEdited(
+                path = path, oldHash = null, newHash = "", diffSummary = "", sessionId = context.sessionId
+            )
+            "writeFile" -> ToolEvent.FileWritten(
+                path = path, size = 0, hash = "", sessionId = context.sessionId
+            )
+            else -> null
+        }
+        event?.let { toolEventBus.publish(it) }
+    }
+
+    /**
+     * L6 增量索引：记录单个工具动作摘要（动作级索引）。
+     */
+    private suspend fun recordIncrementalAction(name: String, toolCall: ToolCall, result: ToolResult, context: AgentContext) {
+        val sessionId = context.sessionId ?: return
+        val data = JsonPrimitive(result.toTransportString())
+        incrementalIndexStore.recordAction(
+            sessionId,
+            ActionIndex(
+                actionType = name,
+                data = data,
+                dataHash = data.toString().hashCode().toString()
+            )
+        )
+    }
+
+    /**
+     * L6 增量索引：记录本批轮次快照并触发持久化（轮次级索引）。
+     */
+    private suspend fun recordIncrementalRound(context: AgentContext, batchResults: List<ToolBatchResult>) {
+        val sessionId = context.sessionId ?: return
+        if (batchResults.isEmpty()) return
+        val actions = batchResults.map { br ->
+            ActionIndex(
+                actionType = br.toolName,
+                data = JsonPrimitive(br.result),
+                dataHash = br.result.hashCode().toString()
+            )
+        }
+        val round = context.sessionState?.allOutputs()?.size ?: 0
+        incrementalIndexStore.recordRound(
+            sessionId,
+            RoundSnapshot(round, actions, "本批 ${actions.size} 个工具动作")
+        )
+        incrementalIndexStore.persist(sessionId)
     }
 
     /**

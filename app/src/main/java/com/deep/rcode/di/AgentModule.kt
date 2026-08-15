@@ -689,6 +689,18 @@ object AgentModule {
 
     @Provides
     @Singleton
+    fun provideToolEventBus(): com.deep.rcode.feature.agent.domain.tool.ToolEventBus {
+        return com.deep.rcode.feature.agent.domain.tool.ToolEventBus()
+    }
+
+    @Provides
+    @Singleton
+    fun provideIncrementalIndexStore(): com.deep.rcode.feature.agent.domain.tool.IncrementalIndexStore {
+        return com.deep.rcode.feature.agent.domain.tool.IncrementalIndexStore()
+    }
+
+    @Provides
+    @Singleton
     fun provideAgentWorkflow(
         toolRegistry: ToolRegistry,
         aiProviderRepository: AIProviderRepository,
@@ -709,7 +721,9 @@ object AgentModule {
         messagePersistenceUseCase: com.deep.rcode.feature.agent.domain.session.MessagePersistenceUseCase,
         checkpointManager: com.deep.rcode.feature.agent.domain.checkpoint.CheckpointManager,
         dependencyScheduler: com.deep.rcode.feature.agent.domain.tool.ToolDependencyScheduler,
-        toolResultCache: com.deep.rcode.feature.agent.domain.tool.ToolResultCache
+        toolResultCache: com.deep.rcode.feature.agent.domain.tool.ToolResultCache,
+        toolEventBus: com.deep.rcode.feature.agent.domain.tool.ToolEventBus,
+        incrementalIndexStore: com.deep.rcode.feature.agent.domain.tool.IncrementalIndexStore
     ): AgentWorkflow {
         return com.deep.rcode.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -731,7 +745,9 @@ object AgentModule {
             messagePersistenceUseCase,
             checkpointManager,
             dependencyScheduler,
-            toolResultCache
+            toolResultCache,
+            toolEventBus,
+            incrementalIndexStore
         )
     }
 }
