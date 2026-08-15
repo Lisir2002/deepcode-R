@@ -64,6 +64,7 @@ import com.deep.rcode.feature.agent.domain.container.progress.InstallProgress
 import com.deep.rcode.feature.agent.domain.container.progress.InstallProgressParsers
 import com.deep.rcode.feature.agent.domain.session.SessionUseCase
 import com.deep.rcode.feature.agent.presentation.AgentUIMessage
+import com.deep.rcode.feature.agent.presentation.EnvironmentSnapshot
 import com.deep.rcode.feature.agent.presentation.RunningToolOutput
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.CheckCircle
@@ -103,22 +104,24 @@ internal const val TOOL_SECTION_LINE_LIMIT = 20
 internal fun ToolMessageBody(
     message: AgentUIMessage,
     liveOutput: String? = null,
-    initiallyExpanded: Boolean = true
+    initiallyExpanded: Boolean = true,
+    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
 ) {
     val streaming = liveOutput != null
     val running = streaming || message.content.startsWith(SessionUseCase.PENDING_TOOL_MARKER) ||
         message.content.startsWith(SessionUseCase.LEGACY_PENDING_TOOL_MARKER)
 
-    // 环境探测工具：以「一行状态条 + 可折叠详情」的紧凑形态内嵌在回复气泡顶部，
+    // 模型主动调用的环境探测工具：以「一行状态条 + 可折叠详情」的紧凑形态内嵌在回复气泡顶部，
     // 不展开为普通工具气泡（避免列出全部组件造成噪音）。
     if (message.toolName == "check_environment") {
         EnvironmentStatusStrip(
-            message = message,
-            liveOutput = liveOutput,
-            running = running
+            message = message
         )
         return
     }
+
+    // 旁路环境探测快照：构建/环境变更命令执行后自动探测，绑定到触发它的 Bash 工具气泡底部。
+    val envSnapshot = environmentSnapshots[message.id]
 
     val edit = if (!running && !message.isError &&
         (message.toolName == "editFile" || message.toolName == "writeFile")
@@ -257,6 +260,11 @@ internal fun ToolMessageBody(
                 }
             }
         }
+        // 旁路环境探测状态条：绑定到触发它的 Bash 工具气泡底部（仅构建/环境变更命令触发后展示）
+        if (envSnapshot != null && !running) {
+            Spacer(Modifier.height(Spacing.xs))
+            EnvironmentStatusStrip(snapshot = envSnapshot)
+        }
         // 文件卡片：工具结束后常显在消息底部，点击用系统 app 打开。
         if (!running && message.attachments.isNotEmpty()) {
             val context = LocalContext.current
@@ -281,7 +289,8 @@ internal fun ToolCallGroup(
     toolName: String,
     messages: List<AgentUIMessage>,
     runningTool: List<RunningToolOutput>,
-    markdownCache: MarkdownRenderCache?
+    markdownCache: MarkdownRenderCache?,
+    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
 ) {
     val anyStreaming = messages.any { m ->
         runningTool.any { it.messageId == m.id }
@@ -377,7 +386,8 @@ internal fun ToolCallGroup(
                             message = message,
                             liveOutput = live,
                             markdownCache = markdownCache,
-                            initiallyExpanded = false
+                            initiallyExpanded = false,
+                            environmentSnapshots = environmentSnapshots
                         )
                     }
                 }
@@ -789,19 +799,27 @@ private fun extractCommandFromArgs(argsPreview: String?): String {
 
 /**
  * 环境探测状态条：以「一行状态条 + 可折叠详情」的紧凑形态内嵌在回复气泡顶部。
- * - 运行中：显示「正在检测构建环境…」+ 转圈；
- * - 完成：一行结论（就绪 ✓ / 缺少 X，正在安装… / 未就绪：缺少 X、Y）+ 可折叠展开 4 个构建核心组件明细。
- * 仅展示构建链路核心组件（Java/Gradle/Android SDK/NDK），不列出无关组件。
+ * - 探测中：显示「正在检测构建环境…」+ 转圈；
+ * - 完成：一行结论（就绪 ✓ / 缺少 X，正在安装… / 未就绪：缺少 X、Y）+ 可折叠展开组件明细。
+ *
+ * 两个数据来源：
+ * - 模型主动调用 check_environment → [message] 解析其 content；
+ * - 旁路探测（构建/环境变更命令后）→ [snapshot] 直接携带组件状态。
  */
 @Composable
 private fun EnvironmentStatusStrip(
-    message: AgentUIMessage,
-    liveOutput: String?,
-    running: Boolean
+    message: AgentUIMessage? = null,
+    snapshot: EnvironmentSnapshot? = null
 ) {
     val isDark = LocalAppDarkMode.current
-    var expanded by remember(message.id) { mutableStateOf(false) }
-    val components = remember(message.id, message.content) { parseEnvironmentComponents(message.content) }
+    val components = when {
+        snapshot != null -> snapshot.components
+        message != null -> remember(message.id, message.content) { parseEnvironmentComponents(message.content) }
+        else -> emptyList()
+    }
+    val running = snapshot?.probing == true
+    val key = snapshot?.key ?: message?.id ?: "env"
+    var expanded by remember(key) { mutableStateOf(false) }
     val installedCount = components.count { it.status == EnvironmentStatus.INSTALLED }
     val missing = components.filter { it.status == EnvironmentStatus.MISSING }
     val installing = components.filter { it.status == EnvironmentStatus.INSTALLING }

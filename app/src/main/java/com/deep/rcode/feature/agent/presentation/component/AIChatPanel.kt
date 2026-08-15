@@ -115,6 +115,7 @@ fun AIChatPanel(
     val sessionLastInputTokens = currentSession?.lastInputTokens ?: 0
     val messagesReady = messagesState.loaded && messagesState.sessionId == currentSessionId
     val runningTool by viewModel.runningTool.collectAsStateWithLifecycle()
+    val environmentSnapshots by viewModel.environmentSnapshots.collectAsStateWithLifecycle()
     val isCompacting by viewModel.isCompacting.collectAsStateWithLifecycle()
     val retryState by viewModel.retryState.collectAsStateWithLifecycle()
     val streamingText by viewModel.streamingText.collectAsStateWithLifecycle()
@@ -480,7 +481,8 @@ fun AIChatPanel(
                                 onEditClick = { message -> startEditMessage(message) },
                                 onNewChatClick = { message -> viewModel.newChatAndSend(message.content) },
                                 onViewChanges = { fileDiffsForSheet = it },
-                                runningTool = runningTool
+                                runningTool = runningTool,
+                                environmentSnapshots = environmentSnapshots
                             )
                         }
                         val reasoning = streamingReasoning

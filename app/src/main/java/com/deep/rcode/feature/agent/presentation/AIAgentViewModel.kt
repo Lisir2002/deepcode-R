@@ -26,6 +26,7 @@ import com.deep.rcode.feature.agent.domain.model.CodeChange
 import com.deep.rcode.feature.agent.domain.model.ReasoningEffort
 import com.deep.rcode.feature.agent.domain.model.WorkflowStatus
 import com.deep.rcode.feature.agent.domain.permission.PermissionChoice
+import com.deep.rcode.feature.agent.domain.permission.BuildCommandClassifier
 import com.deep.rcode.feature.agent.domain.workflow.AgentWorkflow
 import com.deep.rcode.feature.terminal.domain.TabFinishedEvent
 import com.deep.rcode.feature.terminal.domain.TAIL_LINES
@@ -50,6 +51,7 @@ import com.deep.rcode.feature.agent.domain.command.SlashCommandRegistry
 import com.deep.rcode.feature.agent.domain.command.SlashCommandHandler
 import com.deep.rcode.feature.agent.presentation.AgentAttachment
 import com.deep.rcode.feature.agent.presentation.component.formatTokenCount
+import com.deep.rcode.feature.agent.presentation.component.parseEnvironmentComponents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -112,6 +114,17 @@ class AIAgentViewModel @Inject constructor(
 
     private val _currentSessionId = MutableStateFlow<String?>(null)
     val currentSessionId: StateFlow<String?> = _currentSessionId.asStateFlow()
+
+    /**
+     * 旁路环境探测快照（key = 触发它的工具气泡 messageId）。
+     * 仅存内存、不落库、不进模型上下文：供 Bash 工具气泡底部渲染环境状态条。
+     * 会话切换时清空（见 [setCurrentSessionId] / [selectSession]）。
+     */
+    private val _environmentSnapshots = MutableStateFlow<Map<String, EnvironmentSnapshot>>(emptyMap())
+    val environmentSnapshots: StateFlow<Map<String, EnvironmentSnapshot>> = _environmentSnapshots.asStateFlow()
+
+    /** 旁路探测节流：记录每个触发消息最近一次探测时间（elapsedRealtime）。 */
+    private val lastProbeAt = mutableMapOf<String, Long>()
 
     private val _agentStates = MutableStateFlow<Map<String, AgentUIState>>(emptyMap())
     val agentStates: StateFlow<Map<String, AgentUIState>> = _agentStates.asStateFlow()
@@ -489,20 +502,8 @@ class AIAgentViewModel @Inject constructor(
     private companion object {
         const val TAG = "AIAgentViewModel"
 
-        /** 命中即视为「环境变更」的命令片段，触发环境总览自动重新探测。 */
-        val ENV_MUTATION_REGEX = Regex(
-            """\b(apk|apt|apt-get|pip|pip3|npm|go)\s+(add|del|remove|install|uninstall|upgrade|delete|purge|rm)\b"""
-        )
-
-        /** 命中即视为「构建类命令」，触发按需环境探测（仅构建核心组件）。 */
-        val BUILD_COMMAND_REGEX = Regex(
-            """\b(gradle|gradlew|\./gradlew|mvn|mvnw|java|javac|sdkmanager|ndk-build)\b"""
-        )
-
-        /** 构建链路核心组件：仅探测这些，避免无关组件噪音。 */
-        val BUILD_CORE_COMPONENTS: List<String> = listOf(
-            "Java", "Gradle", "Android SDK", "Android NDK"
-        )
+        /** 旁路探测节流窗口：同一触发消息 30s 内不重复探测。 */
+        const val PROBE_THROTTLE_MS = 30_000L
     }
 
     init {
@@ -863,6 +864,7 @@ class AIAgentViewModel @Inject constructor(
                     }
                     is AgentEvent.ToolCallFinished -> {
                         val msgId = "tool_${event.id}"
+                        val toolArgs = event.argsPreview ?: toolArgsByMsgId[msgId]
                         messagePersistenceUseCase.persist(
                             sessionId,
                             MessageRole.TOOL,
@@ -871,23 +873,23 @@ class AIAgentViewModel @Inject constructor(
                             taskId = taskId,
                             toolCallId = event.id,
                             toolName = event.toolName,
-                            toolArgs = event.argsPreview ?: toolArgsByMsgId[msgId],
+                            toolArgs = toolArgs,
                             isError = event.isError,
                             attachments = event.attachments
                         )
                         toolArgsByMsgId.remove(msgId)
                         removeRunningTool(sessionId, msgId)
-                        // 联动检测：环境变更命令（apk/apt/pip/npm/go 增删）执行完成后，
-                        // 自动重新探测环境并落库，让环境总览面板实时反映最新状态
-                        // （例如聊天页卸载 Python 后，面板不再残留"已装"）。
-                        if (!event.isError && isEnvironmentMutation(event.toolName, event.argsPreview)) {
-                            refreshEnvironment(taskId = taskId)
-                        }
-                        // 联动检测：构建类命令（gradle/mvn/java/javac 等）执行完成后，
-                        // 按需探测构建核心组件（Java/Gradle/Android SDK/NDK），
-                        // 为回复气泡内嵌状态条提供最新数据。
-                        if (!event.isError && isBuildCommand(event.toolName, event.argsPreview)) {
-                            refreshEnvironment(taskId = taskId, components = BUILD_CORE_COMPONENTS)
+                        // 联动检测：构建/环境变更命令执行完成后，旁路探测环境（不落库、不进上下文），
+                        // 供触发它的 Bash 工具气泡底部渲染环境状态条。
+                        if (!event.isError && (event.toolName == "Bash" || event.toolName == "execute_command")) {
+                            val command = extractCommandFromArgs(toolArgs)
+                            when (BuildCommandClassifier.classify(command)) {
+                                BuildCommandClassifier.CommandClass.BUILD ->
+                                    probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = CheckEnvironmentTool.BUILD_CORE_COMPONENTS)
+                                BuildCommandClassifier.CommandClass.ENV_MUTATION ->
+                                    probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = null)
+                                BuildCommandClassifier.CommandClass.OTHER -> Unit
+                            }
                         }
                     }
                     is AgentEvent.Failed -> {
@@ -981,25 +983,46 @@ class AIAgentViewModel @Inject constructor(
     }
 
     /**
-     * 判断工具调用是否为「环境变更」命令（apk/apt/pip/npm/go 等包管理器的增删操作）。
-     * 命中后会自动重新探测环境，保证环境总览面板与容器真实状态一致。
+     * 旁路环境探测：构建/环境变更命令执行完成后自动触发，结果写入 [environmentSnapshots]，
+     * 供触发它的 Bash 工具气泡底部渲染环境状态条。
+     *
+     * 与 [refreshEnvironment] 的区别：**不落库、不进模型上下文**，避免污染 LLM 上下文。
+     * 带节流：同一触发消息 [triggerMsgId] 在 [PROBE_THROTTLE_MS] 内不重复探测。
+     * 仅当容器已就绪时执行；失败时静默跳过（不打扰用户）。
      */
-    private fun isEnvironmentMutation(toolName: String?, argsPreview: String?): Boolean {
-        if (toolName != "Bash" && toolName != "execute_command" && !toolName.isNullOrEmpty()) return false
-        val command = extractCommandFromArgs(argsPreview)
-        if (command.isBlank()) return false
-        return ENV_MUTATION_REGEX.containsMatchIn(command)
-    }
-
-    /**
-     * 判断工具调用是否为「构建类命令」（gradle/mvn/java/javac 等）。
-     * 命中后触发按需环境探测（仅构建核心组件），让回复气泡内嵌状态条有数据可展示。
-     */
-    private fun isBuildCommand(toolName: String?, argsPreview: String?): Boolean {
-        if (toolName != "Bash" && toolName != "execute_command" && !toolName.isNullOrEmpty()) return false
-        val command = extractCommandFromArgs(argsPreview)
-        if (command.isBlank()) return false
-        return BUILD_COMMAND_REGEX.containsMatchIn(command)
+    private fun probeEnvironment(taskId: String, triggerMsgId: String, components: List<String>?) {
+        val sid = _currentSessionId.value ?: return
+        val now = android.os.SystemClock.elapsedRealtime()
+        val last = lastProbeAt[triggerMsgId] ?: 0L
+        if (now - last < PROBE_THROTTLE_MS) return
+        lastProbeAt[triggerMsgId] = now
+        // 先标记「探测中」，让状态条立即显示转圈
+        _environmentSnapshots.value = _environmentSnapshots.value + (
+            triggerMsgId to EnvironmentSnapshot(key = triggerMsgId, components = emptyList(), probedAt = now, probing = true)
+        )
+        viewModelScope.launch {
+            if (!containerEngine.isProvisioned()) {
+                _environmentSnapshots.value = _environmentSnapshots.value - triggerMsgId
+                return@launch
+            }
+            val args = if (components.isNullOrEmpty()) emptyMap() else mapOf(
+                "components" to kotlinx.serialization.json.JsonArray(components.map { kotlinx.serialization.json.JsonPrimitive(it) })
+            )
+            val result = runCatching { checkEnvironmentTool.execute(args) }.getOrNull()
+            val snapshot = if (result is ToolResult.Success) {
+                EnvironmentSnapshot(
+                    key = triggerMsgId,
+                    components = parseEnvironmentComponents(result.toTransportString()),
+                    probedAt = android.os.SystemClock.elapsedRealtime(),
+                    probing = false
+                )
+            } else {
+                // 探测失败：移除占位，避免残留「探测中」状态
+                _environmentSnapshots.value = _environmentSnapshots.value - triggerMsgId
+                return@launch
+            }
+            _environmentSnapshots.value = _environmentSnapshots.value + (triggerMsgId to snapshot)
+        }
     }
 
     /** 从工具参数 JSON 预览中提取 command 字段。 */
@@ -1113,6 +1136,8 @@ class AIAgentViewModel @Inject constructor(
     fun setCurrentSessionId(id: String) {
         if (_currentSessionId.value == id) return
         _currentSessionId.value = id
+        _environmentSnapshots.value = emptyMap()
+        lastProbeAt.clear()
     }
 
     fun setSessionMode(mode: AgentMode) {
@@ -1227,6 +1252,8 @@ class AIAgentViewModel @Inject constructor(
     fun selectSession(id: String) {
         if (_currentSessionId.value == id) return
         _currentSessionId.value = id
+        _environmentSnapshots.value = emptyMap()
+        lastProbeAt.clear()
     }
 
     fun deleteSession(id: String) = viewModelScope.launch {

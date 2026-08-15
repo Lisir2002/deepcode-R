@@ -41,7 +41,7 @@ class CheckEnvironmentTool @Inject constructor(
     private val workspaceRepository: WorkspaceRepository
 ) : AgentTool() {
 
-    private companion object {
+    companion object {
         const val TAG = "CheckEnvironmentTool"
         const val PROBE_TIMEOUT_MS = 60_000L
 
@@ -49,6 +49,14 @@ class CheckEnvironmentTool @Inject constructor(
         val DEFAULT_COMPONENTS: List<String> = listOf(
             "Java", "Gradle", "Android SDK", "Android NDK", "Maven",
             "Python", "Node", "npm", "Git", "Go", "Cargo", "Docker", "CMake"
+        )
+
+        /**
+         * 构建链路核心组件：旁路探测（构建/环境变更命令后自动触发）仅探测这些，
+         * 避免无关组件噪音。作为 [DEFAULT_COMPONENTS] 的子集，单一数据源。
+         */
+        val BUILD_CORE_COMPONENTS: List<String> = listOf(
+            "Java", "Gradle", "Android SDK", "Android NDK"
         )
     }
 

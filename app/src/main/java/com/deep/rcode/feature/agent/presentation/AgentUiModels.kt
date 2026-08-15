@@ -3,6 +3,7 @@ package com.deep.rcode.feature.agent.presentation
 import androidx.compose.runtime.Immutable
 import com.deep.rcode.feature.agent.domain.model.AgentImage
 import com.deep.rcode.feature.agent.domain.model.WorkflowStatus
+import com.deep.rcode.feature.agent.presentation.component.EnvironmentComponentState
 import kotlinx.serialization.Serializable
 
 sealed class AgentUIState {
@@ -118,6 +119,21 @@ fun CharSequence.hasVisibleContent(): Boolean = any { ch ->
  */
 @Immutable
 data class RunningToolOutput(val messageId: String, val text: String, val toolName: String = "", val toolArgs: String = "")
+
+/**
+ * 旁路环境探测快照：系统兜底探测（构建/环境变更命令后自动触发）的结果。
+ * 仅存内存、不落库、不进模型上下文：用于在触发它的 Bash 工具气泡底部渲染状态条。
+ * [key] 为触发它的工具气泡 messageId（"tool_xxx"）。
+ */
+@Immutable
+data class EnvironmentSnapshot(
+    val key: String,
+    val components: List<EnvironmentComponentState>,
+    /** 探测完成时间戳（SystemClock.elapsedRealtime），用于展示「N 秒前」等。 */
+    val probedAt: Long,
+    /** 是否仍在探测中。 */
+    val probing: Boolean = false
+)
 
 data class QueuedRequest(
     val id: String,

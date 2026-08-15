@@ -47,6 +47,7 @@ import com.deep.rcode.R
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.presentation.AgentUIMessage
+import com.deep.rcode.feature.agent.presentation.EnvironmentSnapshot
 import com.deep.rcode.feature.agent.presentation.hasVisibleContent
 import com.deep.rcode.feature.agent.presentation.MessageRole
 import compose.icons.FeatherIcons
@@ -64,7 +65,8 @@ internal fun AgentMessageItem(
     markdownCache: MarkdownRenderCache? = null,
     onEditClick: ((AgentUIMessage) -> Unit)? = null,
     onNewChatClick: ((AgentUIMessage) -> Unit)? = null,
-    initiallyExpanded: Boolean = true
+    initiallyExpanded: Boolean = true,
+    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
 ) {
     if (message.isCompactionMarker) {
         CompactionDivider()
@@ -127,7 +129,7 @@ internal fun AgentMessageItem(
                             }
                         ) {
                         if (message.role == MessageRole.TOOL) {
-                            ToolMessageBody(message, liveOutput = liveOutput, initiallyExpanded = initiallyExpanded)
+                            ToolMessageBody(message, liveOutput = liveOutput, initiallyExpanded = initiallyExpanded, environmentSnapshots = environmentSnapshots)
                         } else {
                             val textColor = when (message.role) {
                                 MessageRole.USER -> MaterialTheme.colorScheme.onPrimary

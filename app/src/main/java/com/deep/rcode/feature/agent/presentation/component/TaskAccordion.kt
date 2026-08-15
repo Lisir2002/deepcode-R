@@ -50,6 +50,7 @@ import com.deep.rcode.core.theme.LocalAppDarkMode
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.agent.presentation.AgentUIMessage
+import com.deep.rcode.feature.agent.presentation.EnvironmentSnapshot
 import com.deep.rcode.feature.agent.presentation.MessageRole
 import com.deep.rcode.feature.agent.presentation.RunningToolOutput
 import com.deep.rcode.feature.agent.presentation.TaskGroup
@@ -91,6 +92,7 @@ internal fun TaskAccordion(
     onNewChatClick: ((AgentUIMessage) -> Unit)? = null,
     onViewChanges: ((TaskChangesSheetData) -> Unit)?,
     runningTool: List<RunningToolOutput>,
+    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     val totalCount = group.subGroups.sumOf { it.messages.size }
@@ -237,7 +239,8 @@ internal fun TaskAccordion(
                             onEditClick = onEditClick,
                             onNewChatClick = onNewChatClick,
                             onViewChanges = onViewChanges,
-                            runningTool = runningTool
+                            runningTool = runningTool,
+                            environmentSnapshots = environmentSnapshots
                         )
                     }
                 }
@@ -389,7 +392,8 @@ private fun ToolSummaryRow(
 private fun EmbeddedToolAccordion(
     attachedTools: List<AgentUIMessage>,
     markdownCache: MarkdownRenderCache?,
-    runningTool: List<RunningToolOutput>
+    runningTool: List<RunningToolOutput>,
+    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
 ) {
     if (attachedTools.isEmpty()) return
     val batchFileDiffs = remember(attachedTools) { collectBatchFileDiffs(attachedTools) }
@@ -439,7 +443,8 @@ private fun EmbeddedToolAccordion(
                             toolName = toolName ?: stringResource(R.string.common_tool),
                             messages = msgs,
                             runningTool = runningTool,
-                            markdownCache = markdownCache
+                            markdownCache = markdownCache,
+                            environmentSnapshots = environmentSnapshots
                         )
                     } else {
                         val message = msgs.first()
@@ -447,7 +452,8 @@ private fun EmbeddedToolAccordion(
                         AgentMessageItem(
                             message = message,
                             liveOutput = live,
-                            markdownCache = markdownCache
+                            markdownCache = markdownCache,
+                            environmentSnapshots = environmentSnapshots
                         )
                     }
                 }
@@ -750,7 +756,8 @@ private fun SubAccordion(
     onEditClick: ((AgentUIMessage) -> Unit)?,
     onNewChatClick: ((AgentUIMessage) -> Unit)?,
     onViewChanges: ((TaskChangesSheetData) -> Unit)?,
-    runningTool: List<RunningToolOutput>
+    runningTool: List<RunningToolOutput>,
+    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
 ) {
     val label = stringResource(subGroup.type.labelRes())
     val visual = subGroupVisual(subGroup.type)
@@ -835,7 +842,8 @@ private fun SubAccordion(
                                         toolName = toolName ?: stringResource(R.string.common_tool),
                                         messages = msgs,
                                         runningTool = runningTool,
-                                        markdownCache = markdownCache
+                                        markdownCache = markdownCache,
+                                        environmentSnapshots = environmentSnapshots
                                     )
                                 } else {
                                     val message = msgs.first()
@@ -845,7 +853,8 @@ private fun SubAccordion(
                                         liveOutput = live,
                                         markdownCache = markdownCache,
                                         onEditClick = onEditClick,
-                                        onNewChatClick = onNewChatClick
+                                        onNewChatClick = onNewChatClick,
+                                        environmentSnapshots = environmentSnapshots
                                     )
                                 }
                             }
@@ -856,7 +865,8 @@ private fun SubAccordion(
                             EmbeddedToolAccordion(
                                 attachedTools = attachedTools,
                                 markdownCache = markdownCache,
-                                runningTool = runningTool
+                                runningTool = runningTool,
+                                environmentSnapshots = environmentSnapshots
                             )
                         }
                         // 消息正文
@@ -867,7 +877,8 @@ private fun SubAccordion(
                                 liveOutput = live,
                                 markdownCache = markdownCache,
                                 onEditClick = onEditClick,
-                                onNewChatClick = onNewChatClick
+                                onNewChatClick = onNewChatClick,
+                                environmentSnapshots = environmentSnapshots
                             )
                         }
                         // REPLY 片段底部：查看修改按钮（用批次数据）
