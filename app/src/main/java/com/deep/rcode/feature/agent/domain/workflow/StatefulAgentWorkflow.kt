@@ -127,6 +127,8 @@ class StatefulAgentWorkflow @Inject constructor(
         const val LIVE_TAIL_CHARS = 4_000
         const val PROGRESS_INTERVAL_MS = 250L
         const val USER_REJECTED_CODE = "USER_REJECTED"
+        /** L6 增量索引：动作摘要截断长度，避免大结果全量写入内存索引。 */
+        const val SUMMARY_CHARS = 512
 
         /**
          * 上游模型 API 返回「不支持多模态（image / image_url）」的特征关键字列表。
@@ -887,10 +889,11 @@ class StatefulAgentWorkflow @Inject constructor(
             if (cacheKey != null) {
                 val cached = toolResultCache.get(cacheKey)
                 if (cached != null) {
+                    val cachedTransport = cached.toTransportString()
                     recordSessionOutput(context, toolCall.id, name, cached)
-                    recordIncrementalAction(name, toolCall, cached, context)
+                    recordIncrementalAction(name, cachedTransport, context)
                     val errorClass = (cached as? ToolResult.Error)?.let { classifyError(it.code) }
-                    return ToolRunResult(cached.toTransportString(), cached is ToolResult.Error, errorClass = errorClass)
+                    return ToolRunResult(cachedTransport, cached is ToolResult.Error, errorClass = errorClass)
                 }
             }
             if (name == "viewImage" && !activeModelSupportsVision(context.sessionId)) {
@@ -940,9 +943,11 @@ class StatefulAgentWorkflow @Inject constructor(
                 publishToolEvent(name, toolCall, processed, context)
             }
             // L6 增量索引：记录工具动作摘要（成功与失败均记录，作为状态变化）。
-            recordIncrementalAction(name, toolCall, processed, context)
+            // 复用下方 transportString，避免对完整结果重复序列化。
+            val transportString = processed.toTransportString()
+            recordIncrementalAction(name, transportString, context)
             val errorClass = (processed as? ToolResult.Error)?.let { classifyError(it.code) }
-            ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, images, attachments, errorClass)
+            ToolRunResult(transportString, processed is ToolResult.Error, images, attachments, errorClass)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -999,17 +1004,20 @@ class StatefulAgentWorkflow @Inject constructor(
     }
 
     /**
-     * L6 增量索引：记录单个工具动作摘要（动作级索引）。
+     * L6 增量索引：记录工具动作摘要。
+     *
+     * 性能关键：接收已序列化的 [transportString]（调用方 [runToolSync] 已序列化一次，
+     * 此处复用避免对完整结果重复 toTransportString）；data 只存截断摘要，避免内存膨胀。
      */
-    private suspend fun recordIncrementalAction(name: String, toolCall: ToolCall, result: ToolResult, context: AgentContext) {
+    private suspend fun recordIncrementalAction(name: String, transportString: String, context: AgentContext) {
         val sessionId = context.sessionId ?: return
-        val data = JsonPrimitive(result.toTransportString())
+        val summary = transportString.take(SUMMARY_CHARS)
         incrementalIndexStore.recordAction(
             sessionId,
             ActionIndex(
                 actionType = name,
-                data = data,
-                dataHash = data.toString().hashCode().toString()
+                data = JsonPrimitive(summary),
+                dataHash = transportString.hashCode().toString()
             )
         )
     }
@@ -1023,11 +1031,12 @@ class StatefulAgentWorkflow @Inject constructor(
         val actions = batchResults.map { br ->
             ActionIndex(
                 actionType = br.toolName,
-                data = JsonPrimitive(br.result),
+                data = JsonPrimitive(br.result.take(SUMMARY_CHARS)),
                 dataHash = br.result.hashCode().toString()
             )
         }
-        val round = context.sessionState?.allOutputs()?.size ?: 0
+        // O(1) 读取输出计数作为轮次号，避免每次全量遍历 outputs。
+        val round = context.sessionState?.outputCount ?: 0
         incrementalIndexStore.recordRound(
             sessionId,
             RoundSnapshot(round, actions, "本批 ${actions.size} 个工具动作")

@@ -23,6 +23,11 @@ class ToolSessionState(
     /** 工具输出历史：callId -> record。 */
     private val outputs = ConcurrentHashMap<String, ToolOutputRecord>()
 
+    /** 工具输出计数（O(1) 读取，供轮次号与快照使用，避免每次全量遍历 outputs）。 */
+    @Volatile
+    var outputCount: Int = 0
+        private set
+
     /** 中间产物：type -> JsonElement（如 "file.read" -> 文件内容）。 */
     private val artifacts = ConcurrentHashMap<String, JsonElement>()
 
@@ -45,6 +50,7 @@ class ToolSessionState(
 
     fun recordOutput(record: ToolOutputRecord) {
         outputs[record.callId] = record
+        outputCount = outputs.size
     }
 
     fun getOutput(callId: String): ToolOutputRecord? = outputs[callId]
