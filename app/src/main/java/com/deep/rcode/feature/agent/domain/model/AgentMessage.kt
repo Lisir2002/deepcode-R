@@ -59,5 +59,10 @@ data class AgentContext(
     val sessionId: String? = null,
     val mode: AgentMode = AgentMode.BUILD,
     /** 思考强度（"low"/"medium"/"high"），随每次 LLM 请求传给支持的 provider。 */
-    val reasoningEffort: String? = null
+    val reasoningEffort: String? = null,
+    /**
+     * L2 共享会话状态：会话级可变状态持有器，承载完整工具输出历史与中间产物引用。
+     * 由工作流随会话创建并注入，[AgentContext] 本身保持不可变（引用同一实例）。
+     */
+    val sessionState: com.deep.rcode.feature.agent.domain.tool.ToolSessionState? = null
 )

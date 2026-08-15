@@ -31,6 +31,55 @@ fun ToolResult.toTransportString(): String {
     return ToolResultTransportJson.encodeToString(this)
 }
 
+/**
+ * L3 错误分类：驱动调度器自动重试与用户介入决策。
+ * 现有错误码按前缀推断归类（MISSING_*→INVALID_ARGS、FILE_NOT_FOUND→NOT_FOUND 等），
+ * 工具也可在 [ToolResult.Error] 中显式声明 errorClass。
+ */
+enum class ToolErrorClass {
+    /** 参数缺失/非法：MISSING_*、EMPTY_OLD_STRING、NO_OP、UNSUPPORTED_ACTION */
+    INVALID_ARGS,
+    /** 资源不存在：FILE_NOT_FOUND、MEMORY_NOT_FOUND、SKILL_NOT_FOUND、TOOL_NOT_FOUND */
+    NOT_FOUND,
+    /** 权限/状态：NO_WORKSPACE、NO_SESSION、SKILL_DISABLED、SKILL_MISSING_DEP */
+    PERMISSION_STATE,
+    /** 网络/外部服务：HTTP 错误、抓取失败、搜索失败 */
+    NETWORK,
+    /** 瞬时故障可重试：EDIT_ERROR、SAVE_FAILED、TOOL_EXECUTION_FAILED */
+    TRANSIENT,
+    /** 不可恢复：内部错误、未知异常 */
+    FATAL
+}
+
+/**
+ * L3 重试策略：默认 NETWORK/TRANSIENT 自动重试（指数退避 + 抖动，上限 3 次），
+ * 其余分类不重试直接返回给模型。工具可通过 [AgentTool.retryPolicy] 覆盖。
+ */
+data class RetryPolicy(
+    val maxRetries: Int = 3,
+    val retryable: Set<ToolErrorClass> = setOf(ToolErrorClass.NETWORK, ToolErrorClass.TRANSIENT)
+)
+
+/**
+ * 错误码 → 分类推断：显式 errorClass 优先，其次按错误码前缀推断，最后兜底 FATAL。
+ */
+fun classifyError(code: String?, explicit: ToolErrorClass? = null): ToolErrorClass {
+    explicit?.let { return it }
+    val c = code?.uppercase() ?: return ToolErrorClass.FATAL
+    return when {
+        c.startsWith("MISSING_") || c == "EMPTY_OLD_STRING" || c == "NO_OP" ||
+            c == "UNSUPPORTED_ACTION" || c == "INVALID_ARGS" -> ToolErrorClass.INVALID_ARGS
+        c.endsWith("_NOT_FOUND") || c == "TOOL_NOT_FOUND" -> ToolErrorClass.NOT_FOUND
+        c.startsWith("NO_") || c.startsWith("SKILL_") && c.contains("DISABLED") ||
+            c == "SKILL_MISSING_DEP" -> ToolErrorClass.PERMISSION_STATE
+        c.startsWith("HTTP_") || c == "NETWORK_ERROR" || c.contains("FETCH") ||
+            c.contains("SEARCH") -> ToolErrorClass.NETWORK
+        c.endsWith("_FAILED") || c == "EDIT_ERROR" || c == "TOOL_EXECUTION_FAILED" ||
+            c == "SAVE_FAILED" -> ToolErrorClass.TRANSIENT
+        else -> ToolErrorClass.FATAL
+    }
+}
+
 data class ToolParameter(
     val name: String,
     val type: ParameterType,
@@ -97,6 +146,33 @@ abstract class AgentTool {
     abstract val parameters: Map<String, ToolParameter>
     open val permissionPolicy: ToolPermissionPolicy = ToolPermissionPolicy.AUTO_APPROVE
     open val capabilities: Set<ToolCapability> = emptySet()
+
+    /**
+     * L3 结构化结果协议：本工具产出的输出类型（如 "file.read"、"todo.list"）。
+     * 由 [com.deep.rcode.feature.agent.domain.tool.ToolResultTypeRegistry] 统一登记 schema。
+     */
+    open val provides: Set<String> = emptySet()
+
+    /**
+     * L3 结构化结果协议：本工具消费的输出类型（按类型直连消费其他工具的产物）。
+     */
+    open val consumes: Set<String> = emptySet()
+
+    /**
+     * L4 依赖感知调度：本工具依赖的其他工具名（按工具名声明依赖，调度器构建依赖图）。
+     */
+    open val dependsOn: Set<String> = emptySet()
+
+    /**
+     * L3 错误分类重试：覆盖默认重试策略。为 null 时按 [ToolErrorClass] 分类默认处理
+     * （NETWORK/TRANSIENT 自动重试，其余不重试）。
+     */
+    open val retryPolicy: RetryPolicy? = null
+
+    /**
+     * L7 事件总线：本工具声明式订阅的事件类型（如 "file.edited"、"todo.updated"）。
+     */
+    open val subscribedEvents: Set<String> = emptySet()
 
     open fun effectiveCapabilities(args: Map<String, JsonElement>): Set<ToolCapability> {
         return capabilities

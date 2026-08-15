@@ -25,6 +25,9 @@ import com.deep.rcode.feature.agent.domain.tool.ToolPermissionPolicy
 import com.deep.rcode.feature.agent.domain.tool.ToolRegistry
 import com.deep.rcode.feature.agent.domain.tool.ToolResult
 import com.deep.rcode.feature.agent.domain.tool.ToolOutputStore
+import com.deep.rcode.feature.agent.domain.tool.ToolSessionState
+import com.deep.rcode.feature.agent.domain.tool.ToolOutputRecord
+import com.deep.rcode.feature.agent.domain.tool.classifyError
 import com.deep.rcode.feature.agent.domain.tool.ToolStreamEvent
 import com.deep.rcode.feature.agent.domain.tool.toTransportString
 import com.deep.rcode.feature.agent.presentation.AgentAttachment
@@ -452,6 +455,11 @@ class StatefulAgentWorkflow @Inject constructor(
         var currentContext = context
         var state = AgentSessionState()
         var currentTools = tools
+        // L2 共享会话状态：随会话创建，注入 currentContext 供所有工具共享读写。
+        val sessionState = context.sessionId?.let { ToolSessionState(it) }
+        if (sessionState != null) {
+            currentContext = currentContext.copy(sessionState = sessionState)
+        }
         val actionQueue = ArrayDeque<AgentAction>()
         actionQueue.addLast(
             AgentAction.InitRequest(
@@ -797,7 +805,9 @@ class StatefulAgentWorkflow @Inject constructor(
     private suspend fun runToolSync(tool: AgentTool?, toolCall: ToolCall, context: AgentContext): ToolRunResult {
         val name = toolCall.name
         if (tool == null) {
-            return ToolRunResult(ToolResult.Error("工具 $name 不存在", "TOOL_NOT_FOUND").toTransportString(), true)
+            val error = ToolResult.Error("工具 $name 不存在", "TOOL_NOT_FOUND")
+            recordSessionOutput(context, toolCall.id, name, error)
+            return ToolRunResult(error.toTransportString(), true)
         }
         return try {
             if (name == "viewImage" && !activeModelSupportsVision(context.sessionId)) {
@@ -805,12 +815,14 @@ class StatefulAgentWorkflow @Inject constructor(
                 val guardPolicy = compatibilityPolicyRepository.getViewImageUnknownGuardPolicy()
                 val fallbackReady = visionFallbackReady()
                 if (guardPolicy == ViewImageUnknownGuardPolicy.FAIL_FAST || !fallbackReady) {
+                    val error = ToolResult.Error(
+                        "当前聊天模型不支持「多模态识图（Vision）」能力，且未配置专用的「多模态识图（Vision）」兜底模型。请在【设置 → 默认模型 → 识图模型】中指定一个支持「多模态识图（Vision）」能力的模型后再查看图片。\n" +
+                            "💡 你也可以在【设置 → AI 提供商 → 该模型 → 能力覆盖】中手动开启「多模态识图（Vision）」复选框，一步修复。",
+                        "MODEL_VISION_UNSUPPORTED"
+                    )
+                    recordSessionOutput(context, toolCall.id, name, error)
                     return ToolRunResult(
-                        ToolResult.Error(
-                            "当前聊天模型不支持「多模态识图（Vision）」能力，且未配置专用的「多模态识图（Vision）」兜底模型。请在【设置 → 默认模型 → 识图模型】中指定一个支持「多模态识图（Vision）」能力的模型后再查看图片。\n" +
-                                "💡 你也可以在【设置 → AI 提供商 → 该模型 → 能力覆盖】中手动开启「多模态识图（Vision）」复选框，一步修复。",
-                            "MODEL_VISION_UNSUPPORTED"
-                        ).toTransportString(),
+                        error.toTransportString(),
                         true
                     )
                 }
@@ -822,6 +834,7 @@ class StatefulAgentWorkflow @Inject constructor(
                     "content" to JsonPrimitive(textResult),
                     "model" to JsonPrimitive("vision-fallback")
                 ))))
+                recordSessionOutput(context, toolCall.id, name, processed)
                 return ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, emptyList())
             }
             val result = tool.executeWithContext(toolCall.arguments, context)
@@ -833,12 +846,35 @@ class StatefulAgentWorkflow @Inject constructor(
                 else -> result
             }
             val processed = toolOutputStore.process(name, toolCall.id, transportResult)
+            recordSessionOutput(context, toolCall.id, name, processed)
             ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, images, attachments)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            ToolRunResult(ToolResult.Error("工具执行失败: ${e.message}", "TOOL_EXECUTION_FAILED").toTransportString(), true)
+            val error = ToolResult.Error("工具执行失败: ${e.message}", "TOOL_EXECUTION_FAILED")
+            recordSessionOutput(context, toolCall.id, name, error)
+            ToolRunResult(error.toTransportString(), true)
         }
+    }
+
+    /**
+     * L2 共享会话状态：把单次工具执行结果写入 [ToolSessionState.outputs]（callId 索引），
+     * 供后续工具按 callId 直连引用前序产物。成功记录 errorClass=null，失败按 [classifyError] 分类。
+     */
+    private fun recordSessionOutput(context: AgentContext, callId: String, toolName: String, result: ToolResult) {
+        val state = context.sessionState ?: return
+        val errorClass = when (result) {
+            is ToolResult.Error -> classifyError(result.code)
+            else -> null
+        }
+        state.recordOutput(
+            ToolOutputRecord(
+                callId = callId,
+                toolName = toolName,
+                result = result,
+                errorClass = errorClass
+            )
+        )
     }
 
     /**
