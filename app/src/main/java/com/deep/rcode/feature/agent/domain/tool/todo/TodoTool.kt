@@ -4,6 +4,7 @@ import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.data.local.dao.TodoItemDao
 import com.deep.rcode.feature.agent.data.local.entity.TodoItemEntity
 import com.deep.rcode.feature.agent.domain.model.AgentContext
+import com.deep.rcode.feature.agent.domain.model.TodoItem
 import com.deep.rcode.feature.agent.domain.model.TodoStatus
 import com.deep.rcode.feature.agent.domain.tool.AbstractContextualTool
 import com.deep.rcode.feature.agent.domain.tool.ParameterType
@@ -43,6 +44,9 @@ class TodoTool @Inject constructor(
 
     override val permissionPolicy = ToolPermissionPolicy.AUTO_APPROVE
     override val capabilities = setOf(ToolCapability.MODIFY_TODO_STATE)
+
+    /** L3 结构化结果协议：产出 todo.list 类型（完整待办列表）。 */
+    override val provides = setOf("todo.list")
 
     /** items 数组中单个待办项的 JSON Schema */
     private val todoItemSchema: Map<String, Any> = mapOf(
@@ -87,10 +91,33 @@ class TodoTool @Inject constructor(
             ?: return ToolResult.Error("未关联会话", "NO_SESSION")
 
         return try {
-            replaceTodos(args, sessionId)
+            val result = replaceTodos(args, sessionId)
+            // L2 共享会话状态：变更成功后刷新待办快照，供 prompt 构建与增量发布消费。
+            if (result is ToolResult.Success) {
+                refreshSnapshot(context, sessionId)
+            }
+            result
         } catch (e: Exception) {
             FileLogger.e(TAG, "todo 工具执行失败: ${e.message}", e)
             ToolResult.Error("待办操作失败: ${e.message}")
+        }
+    }
+
+    /** 刷新 [AgentContext.sessionState] 的待办快照（L2 共享会话状态）。 */
+    private suspend fun refreshSnapshot(context: AgentContext, sessionId: String) {
+        val items = todoItemDao.getBySessionOnce(sessionId)
+        context.sessionState?.todoSnapshot = items.map { entity ->
+            TodoItem(
+                id = entity.id,
+                sessionId = sessionId,
+                subject = entity.subject,
+                description = entity.description,
+                status = runCatching { TodoStatus.valueOf(entity.status) }.getOrDefault(TodoStatus.PENDING),
+                priority = entity.priority,
+                order = entity.order,
+                createdAt = entity.createdAtMs,
+                updatedAt = entity.updatedAtMs
+            )
         }
     }
 

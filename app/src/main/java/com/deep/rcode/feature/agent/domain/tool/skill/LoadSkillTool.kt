@@ -39,6 +39,9 @@ class LoadSkillTool @Inject constructor(
     override val description =
         "加载或执行指定技能（Skill）。PROMPT 技能返回完整指令内容；SCRIPT/MCP 技能按类型执行。当系统提示清单中的技能适用于当前任务时调用。"
 
+    /** L3 结构化结果协议：产出 state.skill.loaded 类型（技能加载后广播，触发工具定义与上下文刷新）。 */
+    override val provides = setOf("state.skill.loaded")
+
     override val parameters: Map<String, ToolParameter> = mapOf(
         "skill_name" to ToolParameter(
             name = "skill_name",

@@ -62,6 +62,7 @@ import com.deep.rcode.feature.agent.domain.prompt.SystemPromptProvider
 import com.deep.rcode.feature.agent.domain.workflow.AgentWorkflow
 import com.deep.rcode.feature.agent.domain.tool.ToolPermissionManager
 import com.deep.rcode.feature.agent.domain.permission.ToolPermissionPolicyEngine
+import com.deep.rcode.feature.agent.domain.tool.AgentTool
 import com.deep.rcode.feature.agent.domain.tool.ToolRegistry
 import com.deep.rcode.feature.agent.domain.tool.ToolOutputStore
 import com.deep.rcode.feature.settings.data.remote.ModelMetadataService
@@ -624,6 +625,12 @@ object AgentModule {
 
     @Provides
     @Singleton
+    fun provideToolResultTypeRegistry(): com.deep.rcode.feature.agent.domain.tool.ToolResultTypeRegistry {
+        return com.deep.rcode.feature.agent.domain.tool.ToolResultTypeRegistry()
+    }
+
+    @Provides
+    @Singleton
     fun provideToolRegistry(
         readFileTool: ReadFileTool,
         sendFileTool: SendFileTool,
@@ -643,29 +650,45 @@ object AgentModule {
         switchModeTool: com.deep.rcode.feature.agent.domain.tool.mode.SwitchModeTool,
         todoTool: TodoTool,
         memoryTool: com.deep.rcode.feature.agent.domain.tool.memory.MemoryTool,
-        generateImageTool: com.deep.rcode.feature.agent.domain.tool.image.GenerateImageTool
+        generateImageTool: com.deep.rcode.feature.agent.domain.tool.image.GenerateImageTool,
+        resultTypeRegistry: com.deep.rcode.feature.agent.domain.tool.ToolResultTypeRegistry
     ): ToolRegistry {
         return ToolRegistry().apply {
-            register("readFile", readFileTool)
-            register("sendFile", sendFileTool)
-            register("viewImage", viewImageTool)
-            register("writeFile", writeFileTool)
-            register("editFile", editFileTool)
-            register("Bash", executeCommandTool)
-            register("check_environment", checkEnvironmentTool)
-            register("terminal", terminalSessionTool)
-            register("list", listFilesTool)
-            register("search", searchCodeTool)
-            register("loadSkill", loadSkillTool)
-            register("askUserQuestion", askUserQuestionTool)
-            register("manageMcp", manageMcpTool)
-            register("websearch", webSearchTool)
-            register("webfetch", webFetchTool)
-            register("switchMode", switchModeTool)
-            register("todo", todoTool)
-            register("memory", memoryTool)
+            // L3 联动注册：工具注册到 ToolRegistry 时，同步把 provides 类型登记到中央注册表，
+            // 供依赖调度（L4）、结果缓存（L5）、增量索引（L6）按类型消费。
+            fun registerTool(name: String, tool: AgentTool) {
+                register(name, tool)
+                tool.provides.forEach { type ->
+                    resultTypeRegistry.register(
+                        type = type,
+                        schema = com.deep.rcode.feature.agent.domain.tool.TypeSchema(
+                            type = type,
+                            capability = tool.capabilities.firstOrNull()
+                        ),
+                        producer = name
+                    )
+                }
+            }
+            registerTool("readFile", readFileTool)
+            registerTool("sendFile", sendFileTool)
+            registerTool("viewImage", viewImageTool)
+            registerTool("writeFile", writeFileTool)
+            registerTool("editFile", editFileTool)
+            registerTool("Bash", executeCommandTool)
+            registerTool("check_environment", checkEnvironmentTool)
+            registerTool("terminal", terminalSessionTool)
+            registerTool("list", listFilesTool)
+            registerTool("search", searchCodeTool)
+            registerTool("loadSkill", loadSkillTool)
+            registerTool("askUserQuestion", askUserQuestionTool)
+            registerTool("manageMcp", manageMcpTool)
+            registerTool("websearch", webSearchTool)
+            registerTool("webfetch", webFetchTool)
+            registerTool("switchMode", switchModeTool)
+            registerTool("todo", todoTool)
+            registerTool("memory", memoryTool)
             // ══ RC69 T2I 文生图工具：generateImage(prompt="...", width, height, steps, hd, model)
-            register("generateImage", generateImageTool)
+            registerTool("generateImage", generateImageTool)
         }
     }
 

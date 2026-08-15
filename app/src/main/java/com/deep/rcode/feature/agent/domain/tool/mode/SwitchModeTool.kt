@@ -28,6 +28,9 @@ class SwitchModeTool @Inject constructor(
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.MODIFY_SESSION_STATE)
 
+    /** L3 结构化结果协议：产出 state.mode.changed 类型（模式切换后广播，触发上下文增量刷新）。 */
+    override val provides = setOf("state.mode.changed")
+
     override val parameters: Map<String, ToolParameter> = mapOf(
         "mode" to ToolParameter(
             name = "mode",

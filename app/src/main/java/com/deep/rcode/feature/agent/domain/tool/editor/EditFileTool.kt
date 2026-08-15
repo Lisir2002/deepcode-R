@@ -48,6 +48,10 @@ class EditFileTool @Inject constructor(
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.WRITE_WORKSPACE)
 
+    /** L3 结构化结果协议：产出 file.edited 类型，消费 file.read（编辑前需读取原内容）。 */
+    override val provides = setOf("file.edited")
+    override val consumes = setOf("file.read")
+
     /** edits 数组单个元素的结构，供 function-calling 的 items schema。 */
     private val editItemSchema: Map<String, Any> = mapOf(
         "type" to "object",

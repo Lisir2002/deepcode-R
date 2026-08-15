@@ -32,6 +32,9 @@ class MemoryTool @Inject constructor(
     override val permissionPolicy = ToolPermissionPolicy.AUTO_APPROVE
     override val capabilities = setOf(ToolCapability.READ_AGENT_CONFIG, ToolCapability.MODIFY_AGENT_CONFIG)
 
+    /** L3 结构化结果协议：产出 state.memory.updated 类型（记忆变更后广播，触发上下文增量刷新）。 */
+    override val provides = setOf("state.memory.updated")
+
     override fun effectiveCapabilities(args: Map<String, JsonElement>): Set<ToolCapability> {
         return when (args["action"]?.jsonPrimitive?.contentOrNull) {
             "read", "list" -> setOf(ToolCapability.READ_AGENT_CONFIG)
