@@ -15,9 +15,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.deep.rcode.R
 import com.deep.rcode.core.theme.Brand
@@ -53,9 +54,13 @@ import com.deep.rcode.feature.agent.domain.tool.question.UserQuestionAnswer
 import com.deep.rcode.feature.agent.presentation.AgentUIMessage
 import com.deep.rcode.feature.agent.presentation.AgentUIState
 import com.deep.rcode.feature.agent.presentation.AIAgentViewModel
+import com.deep.rcode.feature.agent.presentation.MessageRole
 import com.deep.rcode.feature.agent.presentation.hasVisibleContent
 import com.deep.rcode.feature.settings.presentation.SettingsViewModel
 import com.deep.rcode.feature.workspace.presentation.WorkspaceViewModel
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Edit2
+import compose.icons.feathericons.X
 import java.io.File
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -178,11 +183,6 @@ fun AIChatPanel(
         inputText = message.content
         viewModel.updateInputDraft(message.content)
         focusManager.clearFocus()
-        // 请求输入框获得焦点，弹出键盘方便修改
-        scope.launch {
-            kotlinx.coroutines.delay(100)
-            focusRequester.requestFocus()
-        }
     }
 
     /** 取消编辑态：清空编辑标记与输入框草稿。 */
@@ -660,7 +660,7 @@ private fun EditingMessageBanner(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = compose.icons.FeatherIcons.Edit2,
+                imageVector = FeatherIcons.Edit2,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(14.dp)
@@ -680,7 +680,7 @@ private fun EditingMessageBanner(
                 modifier = Modifier.size(24.dp)
             ) {
                 Icon(
-                    imageVector = compose.icons.FeatherIcons.X,
+                    imageVector = FeatherIcons.X,
                     contentDescription = stringResource(R.string.chat_edit_cancel),
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(14.dp)
