@@ -779,6 +779,10 @@
     <string name="env_strip_installing">缺少 %1$s，正在安装…</string>
     <string name="env_strip_missing">构建环境未就绪：缺少 %1$s</string>
     <string name="env_strip_summary">%1$d/%2$d 就绪</string>
+    <!-- Environment Status Bubble（工具调用条上的紧凑状态气泡） -->
+    <string name="env_bubble_checking">检测中</string>
+    <string name="env_bubble_ready">%1$s ✓</string>
+    <string name="env_bubble_missing">缺少 %1$s</string>
 
     <!-- File Diff Sheet -->
     <string name="file_diff_sheet_title">任务变更 (%1$d)</string>

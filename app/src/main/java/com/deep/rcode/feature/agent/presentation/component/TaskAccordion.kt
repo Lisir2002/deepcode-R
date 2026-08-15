@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -415,6 +416,7 @@ private fun EmbeddedToolAccordion(
         } else if (!expanded) {
             ToolCallCountRow(
                 tools = attachedTools,
+                environmentSnapshots = environmentSnapshots,
                 onClick = { expanded = !expanded }
             )
         }
@@ -465,15 +467,21 @@ private fun EmbeddedToolAccordion(
 /**
  * 工具调用计数行：当工具调用不涉及文件变更时（如 websearch/todo/readFile 等），
  * 在回复气泡顶部展示「N 个工具调用」可折叠摘要，避免非文件工具被完全隐藏。
+ * 若该批次中有工具触发了环境探测，则在右侧显示紧凑状态气泡。
  */
 @Composable
 private fun ToolCallCountRow(
     tools: List<AgentUIMessage>,
+    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap(),
     onClick: () -> Unit
 ) {
     val count = tools.size
     val toolNames = tools.mapNotNull { it.toolName }.distinct()
     val visual = subGroupVisual(TaskSubGroupType.TOOL)
+    // 找到该批次中触发了环境探测的消息对应的快照
+    val envSnapshot = remember(environmentSnapshots, tools) {
+        tools.firstNotNullOfOrNull { msg -> environmentSnapshots[msg.id] }
+    }
     Surface(
         shape = RoundedCornerShape(Radius.md),
         color = visual.bg,
@@ -512,11 +520,76 @@ private fun ToolCallCountRow(
                     modifier = Modifier.weight(1f, fill = false)
                 )
             }
+            // 环境探测状态气泡：紧凑展示，仅显示当前所需构建环境的检测状态
+            if (envSnapshot != null) {
+                EnvironmentStatusBubble(snapshot = envSnapshot)
+            }
             androidx.compose.material3.Icon(
                 imageVector = FeatherIcons.ChevronDown,
                 contentDescription = null,
                 tint = visual.accent.copy(alpha = 0.5f),
                 modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 构建环境状态气泡：紧凑展示当前所需构建环境的检测状态（如 `php ✓`）。
+ * 仅显示探测结果摘要，不展开细节；完整状态条由展开列表内的工具气泡提供。
+ */
+@Composable
+private fun EnvironmentStatusBubble(snapshot: EnvironmentSnapshot) {
+    val components = snapshot.components
+    if (components.isEmpty() && !snapshot.probing) return
+    val running = snapshot.probing
+    val missing = components.filter { it.status == EnvironmentStatus.MISSING }
+    val ready = missing.isEmpty() && components.isNotEmpty()
+    val statusColor = when {
+        running -> Brand.Blue
+        ready -> Color(0xFF22C55E)
+        else -> Color(0xFFEF4444)
+    }
+    val statusIcon = when {
+        running -> FeatherIcons.RefreshCw
+        ready -> FeatherIcons.CheckCircle
+        else -> FeatherIcons.XCircle
+    }
+    val label = when {
+        running -> stringResource(R.string.env_bubble_checking)
+        ready -> stringResource(R.string.env_bubble_ready, components.joinToString(", ") { it.name })
+        else -> stringResource(R.string.env_bubble_missing, missing.joinToString(", ") { it.name })
+    }
+    Surface(
+        shape = RoundedCornerShape(Radius.pill),
+        color = statusColor.copy(alpha = 0.1f),
+        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (running) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(11.dp),
+                    strokeWidth = 1.5.dp,
+                    color = statusColor
+                )
+            } else {
+                androidx.compose.material3.Icon(
+                    imageVector = statusIcon,
+                    contentDescription = null,
+                    tint = statusColor,
+                    modifier = Modifier.size(12.dp)
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = statusColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

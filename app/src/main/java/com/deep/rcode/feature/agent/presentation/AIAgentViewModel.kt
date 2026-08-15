@@ -881,14 +881,22 @@ class AIAgentViewModel @Inject constructor(
                         removeRunningTool(sessionId, msgId)
                         // 联动检测：构建/环境变更命令执行完成后，旁路探测环境（不落库、不进上下文），
                         // 供触发它的 Bash 工具气泡底部渲染环境状态条。
+                        // 开放推断：从命令本身提取所需构建环境（如 php、python3、node），不写死特定环境。
                         if (!event.isError && (event.toolName == "Bash" || event.toolName == "execute_command")) {
                             val command = extractCommandFromArgs(toolArgs)
+                            val inferred = CheckEnvironmentTool.inferComponentsFromCommand(command)
                             when (BuildCommandClassifier.classify(command)) {
                                 BuildCommandClassifier.CommandClass.BUILD ->
-                                    probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = CheckEnvironmentTool.BUILD_CORE_COMPONENTS)
+                                    // 构建命令：优先探测命令推断出的组件；推断不出时回退到构建核心组件
+                                    probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = inferred.ifEmpty { CheckEnvironmentTool.BUILD_CORE_COMPONENTS })
                                 BuildCommandClassifier.CommandClass.ENV_MUTATION ->
-                                    probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = null)
-                                BuildCommandClassifier.CommandClass.OTHER -> Unit
+                                    // 环境变更命令：优先探测推断出的组件；推断不出时探测全部默认组件
+                                    probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = inferred.ifEmpty { null })
+                                BuildCommandClassifier.CommandClass.OTHER ->
+                                    // 其他命令：只要推断出所需构建环境就探测（开放检测，不写死）
+                                    if (inferred.isNotEmpty()) {
+                                        probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = inferred)
+                                    }
                             }
                         }
                     }

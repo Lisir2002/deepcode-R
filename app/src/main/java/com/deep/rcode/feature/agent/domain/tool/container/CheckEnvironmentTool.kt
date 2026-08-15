@@ -48,16 +48,47 @@ class CheckEnvironmentTool @Inject constructor(
         /** 默认探测的组件：构建链路优先，随后是通用开发组件。 */
         val DEFAULT_COMPONENTS: List<String> = listOf(
             "Java", "Gradle", "Android SDK", "Android NDK", "Maven",
-            "Python", "Node", "npm", "Git", "Go", "Cargo", "Docker", "CMake"
+            "Python", "Node", "npm", "PHP", "Git", "Go", "Cargo", "Docker", "CMake"
         )
 
         /**
-         * 构建链路核心组件：旁路探测（构建/环境变更命令后自动触发）仅探测这些，
-         * 避免无关组件噪音。作为 [DEFAULT_COMPONENTS] 的子集，单一数据源。
+         * 构建链路核心组件：旁路探测（构建/环境变更命令后自动触发）的兜底集合，
+         * 仅在命令无法推断出所需组件时使用。作为 [DEFAULT_COMPONENTS] 的子集，单一数据源。
          */
         val BUILD_CORE_COMPONENTS: List<String> = listOf(
             "Java", "Gradle", "Android SDK", "Android NDK"
         )
+
+        /**
+         * 从命令推断「当前所需构建环境」组件列表（开放、不写死）。
+         *
+         * 复用 [com.deep.rcode.feature.agent.domain.permission.ShellCommandParser.analyze] 拆段
+         * （引号感知、`&&`/`;`/`|` 分隔、环境赋值跳过），逐段取首 token（可执行程序名，
+         * 去 `./` 前缀、取 basename、小写化）作为所需构建环境组件名。
+         *
+         * 不依赖任何硬编码映射：任何命令都能推断出所需环境（如 `php -S` → `php`、
+         * `python3 app.py` → `python3`、`node server.js` → `node`），开放支持任意构建环境。
+         * 返回去重后的程序名列表；无法推断时返回空列表。
+         */
+        fun inferComponentsFromCommand(command: String): List<String> {
+            if (command.isBlank()) return emptyList()
+            val result = LinkedHashSet<String>()
+            val analysis = com.deep.rcode.feature.agent.domain.permission.ShellCommandParser.analyze(command)
+            for (segment in analysis.segments) {
+                val effective = segment.dropWhile { ENV_ASSIGN.matches(it) }
+                val tool = effective.firstOrNull()
+                    ?.removePrefix("./")
+                    ?.substringAfterLast('/')
+                    ?.lowercase()
+                    ?.trim()
+                    ?: continue
+                if (tool.isBlank()) continue
+                result.add(tool)
+            }
+            return result.toList()
+        }
+
+        private val ENV_ASSIGN = Regex("^[A-Za-z_][A-Za-z0-9_]*=.*$")
     }
 
     override val name = "check_environment"
@@ -144,7 +175,7 @@ class CheckEnvironmentTool @Inject constructor(
         return sb.toString()
     }
 
-    /** 组件名 → 探测用的可执行文件名。 */
+    /** 组件名 → 探测用的可执行文件名。动态推断的组件名（命令首 token）直接返回自身，开放检测任意程序。 */
     private fun binFor(name: String): String? = when (name) {
         "Java" -> "java"
         "Gradle" -> "gradle"
@@ -154,12 +185,14 @@ class CheckEnvironmentTool @Inject constructor(
         "Python" -> "python3"
         "Node" -> "node"
         "npm" -> "npm"
+        "PHP" -> "php"
         "Git" -> "git"
         "Go" -> "go"
         "Cargo" -> "cargo"
         "Docker" -> "docker"
         "CMake" -> "cmake"
-        else -> null
+        // 动态推断的组件名：组件名即可执行文件名，直接探测（如 php、python3、node、composer 等）。
+        else -> name
     }
 
     /** 解析探测脚本输出为结构化 JSON。 */
