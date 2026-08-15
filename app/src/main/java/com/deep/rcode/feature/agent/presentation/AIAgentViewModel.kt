@@ -69,6 +69,10 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.io.OutputStream
 import java.util.UUID
@@ -486,6 +490,11 @@ class AIAgentViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "AIAgentViewModel"
+
+        /** 命中即视为「环境变更」的命令片段，触发环境总览自动重新探测。 */
+        val ENV_MUTATION_REGEX = Regex(
+            """\b(apk|apt|apt-get|pip|pip3|npm|go)\s+(add|del|remove|install|uninstall|upgrade|delete|purge|rm)\b"""
+        )
     }
 
     init {
@@ -893,6 +902,12 @@ class AIAgentViewModel @Inject constructor(
                         )
                         toolArgsByMsgId.remove(msgId)
                         removeRunningTool(sessionId, msgId)
+                        // 联动检测：环境变更命令（apk/apt/pip/npm/go 增删）执行完成后，
+                        // 自动重新探测环境并落库，让环境总览面板实时反映最新状态
+                        // （例如聊天页卸载 Python 后，面板不再残留"已装"）。
+                        if (!event.isError && isEnvironmentMutation(event.toolName, event.argsPreview)) {
+                            refreshEnvironment(taskId = taskId)
+                        }
                     }
                     is AgentEvent.Failed -> {
                         failed = true
@@ -959,8 +974,10 @@ class AIAgentViewModel @Inject constructor(
      * 手动刷新环境探测：重新执行 check_environment 并落库为 TOOL 消息，
      * 使环境总览卡片立即展示最新状态（Room Flow 自动触发 UI 刷新）。
      * 仅当容器已就绪时执行；失败时静默跳过（不打扰用户）。
+     *
+     * [taskId] 指定新探测消息归属的任务分组；缺省时取当前会话的 taskId。
      */
-    fun refreshEnvironment() {
+    fun refreshEnvironment(taskId: String? = null) {
         val sid = _currentSessionId.value ?: return
         viewModelScope.launch {
             if (!containerEngine.isProvisioned()) return@launch
@@ -970,13 +987,32 @@ class AIAgentViewModel @Inject constructor(
                     sid,
                     MessageRole.TOOL,
                     result.toTransportString(),
-                    taskId = currentTaskIdBySession[sid] ?: "",
+                    taskId = taskId ?: currentTaskIdBySession[sid] ?: "",
                     toolName = "check_environment",
                     toolArgs = null,
                     isError = false
                 )
             }
         }
+    }
+
+    /**
+     * 判断工具调用是否为「环境变更」命令（apk/apt/pip/npm/go 等包管理器的增删操作）。
+     * 命中后会自动重新探测环境，保证环境总览面板与容器真实状态一致。
+     */
+    private fun isEnvironmentMutation(toolName: String?, argsPreview: String?): Boolean {
+        if (toolName != "Bash" && toolName != "execute_command" && !toolName.isNullOrEmpty()) return false
+        val command = extractCommandFromArgs(argsPreview)
+        if (command.isBlank()) return false
+        return ENV_MUTATION_REGEX.containsMatchIn(command)
+    }
+
+    /** 从工具参数 JSON 预览中提取 command 字段。 */
+    private fun extractCommandFromArgs(argsPreview: String?): String {
+        if (argsPreview.isNullOrBlank()) return ""
+        return runCatching {
+            Json.parseToJsonElement(argsPreview).jsonObject["command"]?.jsonPrimitive?.contentOrNull ?: ""
+        }.getOrDefault("")
     }
 
     /**
