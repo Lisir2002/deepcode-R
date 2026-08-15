@@ -353,6 +353,7 @@ fun TerminalBundleManagerScreen(
         }
     }
 }
+}
 
 @Composable
 private fun CustomInstallCard(
