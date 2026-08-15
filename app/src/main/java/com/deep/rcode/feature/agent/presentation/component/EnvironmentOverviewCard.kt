@@ -134,12 +134,11 @@ internal fun InstallProgressRow(progress: InstallProgress) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
-            Text(
+            // 过长安装详情横向滚动展示，不再用省略号截断
+            HorizontalScrollableText(
                 text = progress.detail ?: stringResource(R.string.env_overview_installing),
-                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f)
             )
             if (etaSeconds != null && etaSeconds > 0) {
@@ -228,21 +227,19 @@ internal fun EnvironmentComponentRow(component: EnvironmentComponentState) {
             tint = badge.iconColor,
             modifier = Modifier.size(14.dp)
         )
-        Text(
+        // 过长组件名横向滚动展示，不再用省略号截断
+        HorizontalScrollableText(
             text = component.name,
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
             modifier = Modifier.weight(1f)
         )
         if (!component.version.isNullOrBlank()) {
-            Text(
+            // 过长版本号横向滚动展示，不再用省略号截断
+            HorizontalScrollableText(
                 text = component.version,
-                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                style = MaterialTheme.typography.labelSmall
             )
         }
         Surface(

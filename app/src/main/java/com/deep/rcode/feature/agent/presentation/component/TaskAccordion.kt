@@ -173,16 +173,14 @@ internal fun TaskAccordion(
                     )
                 }
 
-                // 任务标题：占据剩余空间
-                Text(
+                // 任务标题：占据剩余空间（过长横向滚动，不再用省略号截断）
+                HorizontalScrollableText(
                     text = group.title,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = if (group.isStreaming) FontWeight.SemiBold else FontWeight.Medium,
                         lineHeight = 20.sp
                     ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
 
@@ -514,12 +512,11 @@ private fun ToolCallCountRow(
                 modifier = Modifier.weight(1f)
             )
             if (toolNames.isNotEmpty()) {
-                Text(
+                // 过长工具名列表横向滚动展示，不再用省略号截断
+                HorizontalScrollableText(
                     text = toolNames.joinToString(", "),
-                    style = MaterialTheme.typography.labelSmall,
                     color = visual.accent.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.weight(1f, fill = false)
                 )
             }

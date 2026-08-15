@@ -181,12 +181,11 @@ private fun MessageFilePreview(attachment: AgentAttachment) {
             modifier = Modifier.size(22.dp)
         )
         Spacer(Modifier.height(4.dp))
-        Text(
+        // 过长文件名横向滚动展示，不再用省略号截断
+        HorizontalScrollableText(
             text = attachment.fileName,
-            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            style = MaterialTheme.typography.labelSmall
         )
         Text(
             text = formatBytes(attachment.sizeBytes),

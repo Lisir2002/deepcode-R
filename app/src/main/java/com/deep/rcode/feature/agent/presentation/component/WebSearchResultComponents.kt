@@ -224,12 +224,12 @@ private fun WebSearchResultItem(index: Int, item: ParsedWebSearchItem) {
                         )
                     }
                     Spacer(Modifier.height(2.dp))
-                    Text(
+                    // 过长 URL 横向滚动展示，不再用省略号截断
+                    HorizontalScrollableText(
                         text = item.url.toDisplayUrl(),
                         color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        style = MaterialTheme.typography.bodySmall,
+                        monospace = true
                     )
                 }
             }

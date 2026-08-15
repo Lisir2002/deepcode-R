@@ -53,7 +53,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.deep.rcode.core.theme.Brand
@@ -168,22 +167,20 @@ internal fun ToolMessageBody(
                 modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
+                // 工具名（过长横向滚动，不再用省略号截断）
+                HorizontalScrollableText(
                     text = toolLabel,
                     color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 if (edit == null && !argHint.isNullOrBlank()) {
                     Spacer(Modifier.width(Spacing.sm))
-                    Text(
+                    // 过长参数摘要横向滚动展示，不再用省略号截断
+                    HorizontalScrollableText(
                         text = argHint,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
                 }
@@ -322,13 +319,11 @@ internal fun ToolCallGroup(
                     tint = Color(0xFFD97706),
                     modifier = Modifier.size(16.dp)
                 )
-                // 工具名
-                Text(
+                // 工具名（过长横向滚动，不再用省略号截断）
+                HorizontalScrollableText(
                     text = toolName,
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                     modifier = Modifier.weight(1f)
                 )
                 // 调用次数
@@ -874,12 +869,11 @@ private fun EnvironmentStatusStrip(
                         modifier = Modifier.size(15.dp)
                     )
                 }
-                Text(
+                // 过长摘要横向滚动展示，不再用省略号截断
+                HorizontalScrollableText(
                     text = summaryText,
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                     modifier = Modifier.weight(1f)
                 )
                 if (components.isNotEmpty() && !running) {
