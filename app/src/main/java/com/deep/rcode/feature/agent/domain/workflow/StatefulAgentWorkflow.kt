@@ -56,6 +56,8 @@ import com.deep.rcode.feature.settings.domain.model.ModelMetadata
 import com.deep.rcode.feature.settings.domain.model.ProviderType
 import com.deep.rcode.feature.settings.domain.repository.AIProviderRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -485,6 +487,11 @@ class StatefulAgentWorkflow @Inject constructor(
         context: AgentContext,
         tools: List<AgentTool>
     ): Flow<AgentEvent> = channelFlow {
+        // 即时反馈：workflow 一启动立即推送一个空 reasoning 占位，
+        // 让 UI 立即进入"思考中"渲染态（ThinkingBubble），
+        // 避免首轮准备阶段（prompt 构建 / provider 解析 / 上下文压缩 / 网络建连）长时间无反馈。
+        send(AgentEvent.ReasoningDelta(""))
+
         var currentContext = context
         var state = AgentSessionState()
         var currentTools = tools
@@ -503,8 +510,20 @@ class StatefulAgentWorkflow @Inject constructor(
             )
         )
 
-        var systemPrompt = promptProvider.build(currentContext)
-        val aiProvider = getActiveProvider(currentContext.sessionId)
+        // 并行化首轮准备：prompt 构建（含文件 IO / Room 同步查询）与 provider 解析（含多次 DB 查询）
+        // 互不依赖，放到 IO 线程并行执行，避免在收集线程上串行阻塞、拖慢首字节反馈。
+        val prepared = coroutineScope {
+            val systemPromptDeferred = async(Dispatchers.IO) { promptProvider.build(currentContext) }
+            val providerDeferred = async(Dispatchers.IO) { getActiveProvider(currentContext.sessionId) }
+            systemPromptDeferred.await() to providerDeferred.await()
+        }
+        var systemPrompt = prepared.first
+        val aiProvider = prepared.second
+
+        // 预压缩任务：在工具执行间隙于后台启动，供下一轮 CallLlm 复用，
+        // 避免上下文压缩阻塞下一轮 LLM 的首字节。null 表示无待消费的预压缩结果。
+        var pendingCompaction: Deferred<List<AgentMessage>>? = null
+        var pendingCompactionBaseCount = 0
 
         while (!state.isFinished && actionQueue.isNotEmpty()) {
             val action = actionQueue.removeFirst()
@@ -519,7 +538,22 @@ class StatefulAgentWorkflow @Inject constructor(
                         val providerInUse = visionProvider ?: aiProvider
                         // 压缩轮：若配置了压缩专用模型，使用独立压缩模型压缩
                         val compactionProvider = resolveCompactionFallbackProvider(currentContext.sessionId) ?: providerInUse
-                        val compactedMessages = contextCompactor.compactIfNeeded(state.messages, compactionProvider, context.sessionId) { send(it) }
+                        // 优先消费工具执行间隙的预压缩结果；没有（首轮）则按原逻辑同步压缩。
+                        val preCompacted = try {
+                            pendingCompaction?.await()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            FileLogger.e(TAG, "预压缩任务异常，回退同步压缩", e)
+                            null
+                        }
+                        pendingCompaction = null
+                        val compactedMessages = if (preCompacted != null) {
+                            // 预压缩基于「本批工具结果之前」的消息，需把本批新增结果追加回末尾
+                            preCompacted + state.messages.drop(pendingCompactionBaseCount)
+                        } else {
+                            contextCompactor.compactIfNeeded(state.messages, compactionProvider, context.sessionId) { send(it) }
+                        }
                         if (compactedMessages !== state.messages) {
                             state = state.copy(messages = compactedMessages)
                         }
@@ -749,6 +783,20 @@ class StatefulAgentWorkflow @Inject constructor(
                                         checkpointManager.beforeFileModified(sid, path)
                                     }
                                 }
+                            }
+                        }
+
+                        // 工具执行间隙预压缩：在后台启动基于当前上下文的压缩（与工具执行并行），
+                        // 下一轮 CallLlm 直接复用结果，避免压缩阻塞下一轮 LLM 的首字节。
+                        // 注意：压缩基于「本批工具结果之前」的消息快照，本批结果由 CallLlm 侧追加回末尾；
+                        // 快照末尾必为上一轮 assistant（含 toolCalls），tail 至少保留它，追加 toolResult 不会孤立。
+                        if (pendingCompaction == null) {
+                            pendingCompactionBaseCount = state.messages.size
+                            val compactionProvider = resolveCompactionFallbackProvider(currentContext.sessionId) ?: aiProvider
+                            val messagesSnapshot = state.messages
+                            val producer = this
+                            pendingCompaction = async(Dispatchers.IO) {
+                                contextCompactor.compactIfNeeded(messagesSnapshot, compactionProvider, context.sessionId) { producer.send(it) }
                             }
                         }
 
