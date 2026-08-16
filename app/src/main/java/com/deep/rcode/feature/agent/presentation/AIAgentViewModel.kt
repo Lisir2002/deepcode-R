@@ -1431,18 +1431,18 @@ class AIAgentViewModel @Inject constructor(
     }
 
     /**
-     * 编辑并重发：更新该用户消息内容，截断其之后的所有消息，然后以新内容重新执行。
-     * 语义：从这条指令重新开始，上下文干净。
+     * 编辑并重发：保留原对话（该消息及其之后的消息标记为已截断，UI 仍可见、不再参与新一轮上下文），
+     * 然后以新内容作为新一轮对话重新执行。
+     * 语义：不删除已生成的回复与终端输出，截断后开启新一轮对话。
      */
     fun editAndResend(messageId: String, newContent: String) = viewModelScope.launch {
         try {
             val msg = agentMessageDao.getMessageById(messageId) ?: return@launch
             if (msg.role != MessageRole.USER.name) return@launch
-            // 1) 更新本条消息内容
-            messagePersistenceUseCase.updateContent(messageId, newContent)
-            // 2) 截断该消息之后的对话（含本条之后的所有消息）
-            agentMessageDao.deleteMessagesAfterTimestamp(msg.sessionId, msg.timestamp)
-            // 3) 以新内容重新执行
+            // 1) 保留原对话：把该消息及其之后的所有消息标记为已截断（isCompacted=1），
+            //    不删除，UI 仍可见；仅不再参与新一轮上下文回放。
+            agentMessageDao.markMessagesCompactedInclusiveFromTimestamp(msg.sessionId, msg.timestamp)
+            // 2) 以新内容作为新一轮对话重新执行（enqueueAgentRequest 会插入新的用户消息并开启新任务分组）
             enqueueAgentRequest(
                 request = newContent,
                 modelRequest = newContent,

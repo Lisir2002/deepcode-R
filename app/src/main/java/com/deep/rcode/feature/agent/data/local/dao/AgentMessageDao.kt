@@ -41,6 +41,11 @@ interface AgentMessageDao {
     @Query("UPDATE agent_messages SET isCompacted = 1 WHERE sessionId = :sessionId AND timestamp < :cutoffTimestamp")
     suspend fun markMessagesCompactedBeforeTimestamp(sessionId: String, cutoffTimestamp: Long)
 
+    /** 编辑重发专用：把「该用户消息及其之后的所有消息」标记为已截断（isCompacted=1）。
+     *  不删除（UI 仍可见），仅不再参与新一轮上下文回放。 */
+    @Query("UPDATE agent_messages SET isCompacted = 1 WHERE sessionId = :sessionId AND timestamp >= :cutoffTimestamp")
+    suspend fun markMessagesCompactedInclusiveFromTimestamp(sessionId: String, cutoffTimestamp: Long)
+
     @Query("DELETE FROM agent_messages")
     suspend fun deleteAllMessages()
 
