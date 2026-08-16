@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,6 +84,9 @@ internal fun MarkdownContent(
     val body = if (compact) typography.bodySmall else typography.bodyMedium
     val bodyLineHeight = if (compact) 18.sp else 20.sp
     val codeSize = if (compact) 12.sp else 13.sp
+    // 段落/列表文本：开启 LineBreak.Simple，让长 URL/长路径等无空格长文本自动换行，
+    // 替代默认只会在空白处断行的行为（会导致单行溢出被裁剪）。
+    val bodyLineBreak = LineBreak.Simple
     val mdTypography = markdownTypography(
         h1 = (if (compact) typography.titleMedium else typography.headlineSmall).copy(fontWeight = FontWeight.Bold, color = color),
         h2 = (if (compact) typography.titleSmall else typography.titleLarge).copy(fontWeight = FontWeight.Bold, color = color),
@@ -90,11 +94,11 @@ internal fun MarkdownContent(
         h4 = (if (compact) typography.bodyMedium else typography.titleSmall).copy(fontWeight = FontWeight.SemiBold, color = color),
         h5 = (if (compact) typography.bodySmall else typography.bodyLarge).copy(fontWeight = FontWeight.Medium, color = color),
         h6 = (if (compact) typography.bodySmall else typography.bodyMedium).copy(fontWeight = FontWeight.Medium, color = color),
-        paragraph = body.copy(color = color, lineHeight = bodyLineHeight),
+        paragraph = body.copy(color = color, lineHeight = bodyLineHeight, lineBreak = bodyLineBreak),
         code = TextStyle(fontFamily = FontFamily.Monospace, fontSize = codeSize, color = if (isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B)),
         inlineCode = TextStyle(fontFamily = FontFamily.Monospace, color = if (isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B)),
-        ordered = body.copy(color = color, lineHeight = bodyLineHeight),
-        bullet = body.copy(color = color, lineHeight = bodyLineHeight),
+        ordered = body.copy(color = color, lineHeight = bodyLineHeight, lineBreak = bodyLineBreak),
+        bullet = body.copy(color = color, lineHeight = bodyLineHeight, lineBreak = bodyLineBreak),
         table = typography.bodySmall.copy(color = color),
     )
 

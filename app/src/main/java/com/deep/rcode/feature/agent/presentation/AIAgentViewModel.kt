@@ -117,11 +117,13 @@ class AIAgentViewModel @Inject constructor(
 
     /**
      * 旁路环境探测快照（key = 触发它的工具气泡 messageId）。
-     * 仅存内存、不落库、不进模型上下文：供 Bash 工具气泡底部渲染环境状态条。
-     * 会话切换时清空（见 [setCurrentSessionId] / [selectSession]）。
+     * 内存 + SharedPreferences 双写：冷启动/进程被杀后能恢复气泡，避免重新进入 App 后消失。
+     * 探测中状态不落盘；仅已完成结果持久化。
      */
     private val _environmentSnapshots = MutableStateFlow<Map<String, EnvironmentSnapshot>>(emptyMap())
     val environmentSnapshots: StateFlow<Map<String, EnvironmentSnapshot>> = _environmentSnapshots.asStateFlow()
+
+    private val envSnapshotStore by lazy { EnvironmentSnapshotStore(context) }
 
     /** 旁路探测节流：记录每个触发消息最近一次探测时间（elapsedRealtime）。 */
     private val lastProbeAt = mutableMapOf<String, Long>()
@@ -1030,6 +1032,11 @@ class AIAgentViewModel @Inject constructor(
                 return@launch
             }
             _environmentSnapshots.value = _environmentSnapshots.value + (triggerMsgId to snapshot)
+            // 探测完成后持久化到磁盘，冷启动可恢复
+            val sid = _currentSessionId.value
+            if (sid != null) {
+                envSnapshotStore.save(sid, _environmentSnapshots.value)
+            }
         }
     }
 
@@ -1144,7 +1151,8 @@ class AIAgentViewModel @Inject constructor(
     fun setCurrentSessionId(id: String) {
         if (_currentSessionId.value == id) return
         _currentSessionId.value = id
-        _environmentSnapshots.value = emptyMap()
+        // 切换会话时从磁盘恢复环境快照（冷启动/进程被杀后重建气泡）
+        _environmentSnapshots.value = envSnapshotStore.load(id)
         lastProbeAt.clear()
     }
 
@@ -1260,13 +1268,16 @@ class AIAgentViewModel @Inject constructor(
     fun selectSession(id: String) {
         if (_currentSessionId.value == id) return
         _currentSessionId.value = id
-        _environmentSnapshots.value = emptyMap()
+        // 切换会话时从磁盘恢复环境快照（冷启动/进程被杀后重建气泡）
+        _environmentSnapshots.value = envSnapshotStore.load(id)
         lastProbeAt.clear()
     }
 
     fun deleteSession(id: String) = viewModelScope.launch {
         checkpointManager.clearSessionCheckpoints(id)
         sessionUseCase.deleteSession(id)
+        // 删除会话时同步清理环境快照持久化
+        envSnapshotStore.clear(id)
 
         sessionJobs[id]?.cancel()
         sessionJobs.remove(id)
