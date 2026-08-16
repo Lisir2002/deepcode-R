@@ -91,15 +91,6 @@ fun stepFunBaseUrl(protocol: StepFunProtocol, channel: StepFunChannel): String =
     }
 }
 
-/** 阶跃星辰离线兜底模型列表：实时拉取失败且当前无选择时使用（保证断网时仍可继续添加）。 */
-val STEPFUN_DEFAULT_MODELS: List<String> = listOf(
-    "step-3.7-flash",
-    "step-3.5-flash",
-    "step-3.5-flash-2603",
-    "step-router-v1",
-    "stepaudio-2.5-chat"
-)
-
 /** 内置供应商枚举：目前仅阶跃星辰。 */
 enum class BuiltInProvider(val displayName: String, val description: String) {
     STEPFUN("阶跃星辰", "原生多模态 · 识图优化 · 双协议兼容")
@@ -138,7 +129,7 @@ fun AddProviderSheet(
     var protocol by remember { mutableStateOf(StepFunProtocol.OPENAI) }
     var channel by remember { mutableStateOf(StepFunChannel.STEP_PLAN) }
     var apiKey by remember { mutableStateOf("") }
-    // 模型列表：初始为空，进入第 3 步时从服务器实时拉取；拉取失败时回退到离线兜底列表
+    // 模型列表：初始为空，进入第 3 步时从服务器实时拉取，不依赖任何硬编码列表
     var builtInModels by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // 内置供应商向导「选择模型」步骤的拉取状态（与编辑页隔离）
@@ -152,13 +143,11 @@ fun AddProviderSheet(
         }
     }
 
-    // 拉取成功后用服务器列表替换当前选择（保证不保存过时/硬编码模型）；
-    // 拉取失败且当前为空时回退到离线兜底列表，避免断网时无法继续
+    // 拉取成功后用服务器返回的列表作为唯一模型来源（保证不保存过时/硬编码模型）
     LaunchedEffect(builtInFetchState) {
-        when (val state = builtInFetchState) {
-            is FetchState.Success -> builtInModels = state.models
-            is FetchState.Error -> if (builtInModels.isEmpty()) builtInModels = STEPFUN_DEFAULT_MODELS
-            else -> Unit
+        val state = builtInFetchState
+        if (state is FetchState.Success) {
+            builtInModels = state.models
         }
     }
 
@@ -182,7 +171,7 @@ fun AddProviderSheet(
         AddProviderTab.BUILT_IN -> when (builtInStep) {
             1 -> selectedBuiltIn != null
             2 -> apiKey.isNotBlank()
-            // 步骤 3：模型列表来自实时拉取（或离线兜底），需至少保留一个才能完成
+            // 步骤 3：模型列表仅来自实时拉取，需至少保留一个才能完成
             else -> builtInModels.isNotEmpty()
         }
         AddProviderTab.CUSTOM -> when (customStep) {
@@ -753,13 +742,6 @@ private fun BuiltInModelFetchList(
                             Text(stringResource(R.string.provider_step_fetch_retry))
                         }
                     }
-                }
-                if (models.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.provider_step_fetch_fallback, models.size),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
             is FetchState.Success -> {
