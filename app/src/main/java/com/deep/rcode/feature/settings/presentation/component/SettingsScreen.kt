@@ -143,6 +143,7 @@ fun SettingsScreen(
     var section by remember { mutableStateOf(SettingsSection.Menu) }
     var logReturnSection by remember { mutableStateOf(SettingsSection.Menu) }
     var editingProvider by remember { mutableStateOf<AIProviderConfig?>(null) }
+    var showAddProviderSheet by remember { mutableStateOf(false) }
     var showMcpDialog by remember { mutableStateOf(false) }
     var editingMcp by remember { mutableStateOf<McpServerConfig?>(null) }
     var showContainerAddSheet by remember { mutableStateOf(false) }
@@ -226,7 +227,7 @@ fun SettingsScreen(
             ) {
                 when (section) {
                     SettingsSection.Providers -> IconButton(
-                        onClick = { editingProvider = null; section = SettingsSection.ProviderEditor },
+                        onClick = { showAddProviderSheet = true },
                         modifier = Modifier.size(40.dp)
                     ) {
                         Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.settings_add_provider), modifier = Modifier.size(20.dp))
@@ -421,6 +422,17 @@ fun SettingsScreen(
             currentTag = languageTag,
             onSelect = { viewModel.setLanguage(it) },
             onDismiss = { showLanguageSheet = false }
+        )
+    }
+
+    if (showAddProviderSheet) {
+        AddProviderSheet(
+            viewModel = viewModel,
+            onDismiss = { showAddProviderSheet = false },
+            onSave = { provider ->
+                viewModel.saveProvider(provider)
+                showAddProviderSheet = false
+            }
         )
     }
 }

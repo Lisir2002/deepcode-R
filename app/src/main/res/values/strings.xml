@@ -636,6 +636,16 @@
     <string name="log_file_location">日志文件位于 Android/data/&lt;包名&gt;/files/logs/。</string>
     <string name="provider_no_models_hint">未配置模型，点击编辑添加</string>
     <string name="provider_model_summary">模型：%1$s · 共 %2$s 个</string>
+    <string name="provider_step_previous">上一步</string>
+    <string name="provider_step_next">下一步</string>
+    <string name="provider_step_finish">完成</string>
+    <string name="provider_step_select_provider">选择供应商</string>
+    <string name="provider_step_configure_connection">配置连接</string>
+    <string name="provider_step_select_model">选择模型</string>
+    <string name="provider_step_basic_info">基本信息</string>
+    <string name="provider_step_protocol">兼容接口类型</string>
+    <string name="provider_step_channel">通道</string>
+    <string name="provider_step_endpoint_preview">端点预览</string>
 
     <!-- Remote Dialogs -->
     <string name="remote_edit_connection">编辑连接通道</string>

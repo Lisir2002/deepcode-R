@@ -1,0 +1,697 @@
+package com.deep.rcode.feature.settings.presentation.component
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.deep.rcode.R
+import com.deep.rcode.core.theme.Radius
+import com.deep.rcode.core.theme.Spacing
+import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
+import com.deep.rcode.feature.settings.domain.model.ProviderType
+import com.deep.rcode.feature.settings.presentation.SettingsViewModel
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Check
+import compose.icons.feathericons.ChevronLeft
+import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.Copy
+import compose.icons.feathericons.Cpu
+import compose.icons.feathericons.Key
+
+/** 阶跃星辰兼容协议。 */
+enum class StepFunProtocol(val displayName: String) {
+    OPENAI("OpenAI 兼容"),
+    CLAUDE("Claude 兼容")
+}
+
+/** 阶跃星辰通道。 */
+enum class StepFunChannel(val displayName: String) {
+    STEP_PLAN("Step Plan 通道"),
+    STANDARD("标准通道")
+}
+
+/** 阶跃星辰端点映射：协议 × 通道 → baseUrl。 */
+fun stepFunBaseUrl(protocol: StepFunProtocol, channel: StepFunChannel): String = when (protocol) {
+    StepFunProtocol.OPENAI -> when (channel) {
+        StepFunChannel.STEP_PLAN -> "https://api.stepfun.com/step_plan/v1"
+        StepFunChannel.STANDARD -> "https://api.stepfun.com/v1"
+    }
+    StepFunProtocol.CLAUDE -> when (channel) {
+        StepFunChannel.STEP_PLAN -> "https://api.stepfun.com/step_plan"
+        StepFunChannel.STANDARD -> "https://api.stepfun.com"
+    }
+}
+
+/** 阶跃星辰内置预填模型列表。 */
+val STEPFUN_DEFAULT_MODELS: List<String> = listOf(
+    "step-3.7-flash",
+    "step-3.5-flash",
+    "step-3.5-flash-2603",
+    "step-router-v1",
+    "stepaudio-2.5-chat"
+)
+
+/** 内置供应商枚举：目前仅阶跃星辰。 */
+enum class BuiltInProvider(val displayName: String, val description: String) {
+    STEPFUN("阶跃星辰", "原生多模态 · 识图优化 · 双协议兼容")
+}
+
+/** 弹窗内部 Tab。 */
+private enum class AddProviderTab(val displayName: String) {
+    BUILT_IN("内置供应商"),
+    CUSTOM("自定义供应商")
+}
+
+/**
+ * 添加供应商底部弹窗（屏占比 9/10）。
+ *
+ * 结构：
+ * - 顶部 Tab：「内置供应商」|「自定义供应商」
+ * - 内容区：按 Tab 与步骤切换
+ * - 底部固定按钮：「上一步」（第 1 步置灰）|「下一步」，两 Tab 共用
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddProviderSheet(
+    viewModel: SettingsViewModel,
+    onDismiss: () -> Unit,
+    onSave: (AIProviderConfig) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+
+    var selectedTab by remember { mutableStateOf(AddProviderTab.BUILT_IN) }
+
+    // 内置供应商状态
+    var builtInStep by remember { mutableIntStateOf(1) }
+    var selectedBuiltIn by remember { mutableStateOf<BuiltInProvider?>(null) }
+    var protocol by remember { mutableStateOf(StepFunProtocol.OPENAI) }
+    var channel by remember { mutableStateOf(StepFunChannel.STEP_PLAN) }
+    var apiKey by remember { mutableStateOf("") }
+    var builtInModels by remember { mutableStateOf(STEPFUN_DEFAULT_MODELS) }
+
+    // 自定义供应商状态
+    var customStep by remember { mutableIntStateOf(1) }
+    var customName by remember { mutableStateOf("") }
+    var customType by remember { mutableStateOf(ProviderType.OPENAI) }
+    var customApiKey by remember { mutableStateOf("") }
+    var customBaseUrl by remember { mutableStateOf("") }
+    var customModels by remember { mutableStateOf(listOf<String>()) }
+
+    // 当前 Tab 的步骤与总步数
+    val currentStep = if (selectedTab == AddProviderTab.BUILT_IN) builtInStep else customStep
+    val totalSteps = if (selectedTab == AddProviderTab.BUILT_IN) 3 else 2
+
+    // 「上一步」可用性：第 1 步置灰
+    val canGoBack = currentStep > 1
+
+    // 「下一步」可用性
+    val canGoNext = when (selectedTab) {
+        AddProviderTab.BUILT_IN -> when (builtInStep) {
+            1 -> selectedBuiltIn != null
+            2 -> apiKey.isNotBlank()
+            else -> true
+        }
+        AddProviderTab.CUSTOM -> when (customStep) {
+            1 -> customName.isNotBlank() || customApiKey.isNotBlank() || customBaseUrl.isNotBlank()
+            else -> true
+        }
+    }
+
+    fun goBack() {
+        when (selectedTab) {
+            AddProviderTab.BUILT_IN -> if (builtInStep > 1) builtInStep--
+            AddProviderTab.CUSTOM -> if (customStep > 1) customStep--
+        }
+    }
+
+    fun goNext() {
+        when (selectedTab) {
+            AddProviderTab.BUILT_IN -> {
+                if (builtInStep < 3) {
+                    builtInStep++
+                } else {
+                    // 完成：组装阶跃星辰配置并保存
+                    val provider = AIProviderConfig(
+                        id = System.currentTimeMillis().toString(),
+                        name = selectedBuiltIn?.displayName ?: "阶跃星辰",
+                        type = if (protocol == StepFunProtocol.OPENAI) ProviderType.OPENAI else ProviderType.ANTHROPIC,
+                        apiKey = apiKey,
+                        baseUrl = stepFunBaseUrl(protocol, channel),
+                        defaultModel = builtInModels.firstOrNull().orEmpty(),
+                        isActive = false,
+                        models = builtInModels,
+                        selectedModel = builtInModels.firstOrNull().orEmpty(),
+                        isEnabled = true
+                    )
+                    onSave(provider)
+                    onDismiss()
+                }
+            }
+            AddProviderTab.CUSTOM -> {
+                if (customStep < 2) {
+                    customStep++
+                } else {
+                    // 完成：组装自定义配置并保存
+                    val provider = AIProviderConfig(
+                        id = System.currentTimeMillis().toString(),
+                        name = customName.ifEmpty { "自定义供应商" },
+                        type = customType,
+                        apiKey = customApiKey,
+                        baseUrl = customBaseUrl.ifBlank { defaultProviderBaseUrl(customType) },
+                        defaultModel = customModels.firstOrNull().orEmpty(),
+                        isActive = false,
+                        models = customModels,
+                        selectedModel = customModels.firstOrNull().orEmpty(),
+                        isEnabled = true
+                    )
+                    onSave(provider)
+                    onDismiss()
+                }
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = null,
+        tonalElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+        ) {
+            // ── 顶部 Tab ──
+            TabRow(
+                selectedTabIndex = selectedTab.ordinal,
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                AddProviderTab.entries.forEach { tab ->
+                    Tab(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        text = { Text(tab.displayName) }
+                    )
+                }
+            }
+
+            // ── 内容区 ──
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = Spacing.lg)
+            ) {
+                when (selectedTab) {
+                    AddProviderTab.BUILT_IN -> BuiltInProviderContent(
+                        step = builtInStep,
+                        selected = selectedBuiltIn,
+                        onSelect = { selectedBuiltIn = it },
+                        protocol = protocol,
+                        onProtocolChange = { protocol = it },
+                        channel = channel,
+                        onChannelChange = { channel = it },
+                        apiKey = apiKey,
+                        onApiKeyChange = { apiKey = it },
+                        models = builtInModels,
+                        onModelsChange = { builtInModels = it },
+                        viewModel = viewModel
+                    )
+                    AddProviderTab.CUSTOM -> CustomProviderContent(
+                        step = customStep,
+                        name = customName,
+                        onNameChange = { customName = it },
+                        type = customType,
+                        onTypeChange = { customType = it },
+                        apiKey = customApiKey,
+                        onApiKeyChange = { customApiKey = it },
+                        baseUrl = customBaseUrl,
+                        onBaseUrlChange = { customBaseUrl = it },
+                        models = customModels,
+                        onModelsChange = { customModels = it },
+                        viewModel = viewModel
+                    )
+                }
+            }
+
+            // ── 底部按钮 ──
+            HorizontalDivider()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.lg),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = { goBack() },
+                    enabled = canGoBack,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(FeatherIcons.ChevronLeft, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text(stringResource(R.string.provider_step_previous))
+                }
+                TextButton(
+                    onClick = { goNext() },
+                    enabled = canGoNext,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        if (currentStep == totalSteps) stringResource(R.string.provider_step_finish)
+                        else stringResource(R.string.provider_step_next)
+                    )
+                    Spacer(Modifier.width(Spacing.xs))
+                    Icon(FeatherIcons.ChevronRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
+/** 内置供应商内容区：3 步向导。 */
+@Composable
+private fun BuiltInProviderContent(
+    step: Int,
+    selected: BuiltInProvider?,
+    onSelect: (BuiltInProvider) -> Unit,
+    protocol: StepFunProtocol,
+    onProtocolChange: (StepFunProtocol) -> Unit,
+    channel: StepFunChannel,
+    onChannelChange: (StepFunChannel) -> Unit,
+    apiKey: String,
+    onApiKeyChange: (String) -> Unit,
+    models: List<String>,
+    onModelsChange: (List<String>) -> Unit,
+    viewModel: SettingsViewModel
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+    ) {
+        // 步骤指示器
+        StepIndicator(current = step, total = 3)
+
+        when (step) {
+            1 -> {
+                Text(
+                    stringResource(R.string.provider_step_select_provider),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                BuiltInProviderCard(
+                    provider = BuiltInProvider.STEPFUN,
+                    selected = selected == BuiltInProvider.STEPFUN,
+                    onClick = { onSelect(BuiltInProvider.STEPFUN) }
+                )
+            }
+            2 -> {
+                Text(
+                    stringResource(R.string.provider_step_configure_connection),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                // 协议选择
+                Text(
+                    stringResource(R.string.provider_step_protocol),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    StepFunProtocol.entries.forEach { p ->
+                        FilterChip(
+                            selected = protocol == p,
+                            onClick = { onProtocolChange(p) },
+                            label = { Text(p.displayName) }
+                        )
+                    }
+                }
+                // 通道选择
+                Text(
+                    stringResource(R.string.provider_step_channel),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    StepFunChannel.entries.forEach { c ->
+                        FilterChip(
+                            selected = channel == c,
+                            onClick = { onChannelChange(c) },
+                            label = { Text(c.displayName) }
+                        )
+                    }
+                }
+                // 端点预览
+                val baseUrl = stepFunBaseUrl(protocol, channel)
+                Text(
+                    stringResource(R.string.provider_step_endpoint_preview),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Surface(
+                    shape = RoundedCornerShape(Radius.md),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            baseUrl,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            FeatherIcons.Copy,
+                            contentDescription = stringResource(R.string.common_copy),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                // API Key
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = onApiKeyChange,
+                    label = { Text("API Key") },
+                    placeholder = { Text("sk-...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            3 -> {
+                Text(
+                    stringResource(R.string.provider_step_select_model),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                BuiltInModelList(
+                    models = models,
+                    onModelsChange = onModelsChange,
+                    viewModel = viewModel
+                )
+            }
+        }
+    }
+}
+
+/** 自定义供应商内容区：2 步向导。 */
+@Composable
+private fun CustomProviderContent(
+    step: Int,
+    name: String,
+    onNameChange: (String) -> Unit,
+    type: ProviderType,
+    onTypeChange: (ProviderType) -> Unit,
+    apiKey: String,
+    onApiKeyChange: (String) -> Unit,
+    baseUrl: String,
+    onBaseUrlChange: (String) -> Unit,
+    models: List<String>,
+    onModelsChange: (List<String>) -> Unit,
+    viewModel: SettingsViewModel
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+    ) {
+        StepIndicator(current = step, total = 2)
+
+        when (step) {
+            1 -> {
+                Text(
+                    stringResource(R.string.provider_step_basic_info),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = onNameChange,
+                    label = { Text(stringResource(R.string.common_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    ProviderType.entries.forEach { t ->
+                        FilterChip(
+                            selected = type == t,
+                            onClick = { onTypeChange(t) },
+                            label = { Text(t.name) }
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = onApiKeyChange,
+                    label = { Text("API Key") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = onBaseUrlChange,
+                    label = { Text("Base URL") },
+                    placeholder = { Text(defaultProviderBaseUrl(type)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            2 -> {
+                Text(
+                    stringResource(R.string.provider_step_select_model),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                CustomModelList(
+                    models = models,
+                    onModelsChange = onModelsChange
+                )
+            }
+        }
+    }
+}
+
+/** 步骤指示器（圆点）。 */
+@Composable
+private fun StepIndicator(current: Int, total: Int) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(total) { index ->
+            val stepNo = index + 1
+            val active = stepNo == current
+            val done = stepNo < current
+            Box(
+                modifier = Modifier
+                    .size(if (active) 10.dp else 8.dp)
+                    .background(
+                        color = when {
+                            active -> MaterialTheme.colorScheme.primary
+                            done -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        shape = CircleShape
+                    )
+            )
+        }
+    }
+}
+
+/** 内置供应商卡片。 */
+@Composable
+private fun BuiltInProviderCard(
+    provider: BuiltInProvider,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(Radius.md),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.lg),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        FeatherIcons.Cpu,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(Spacing.md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    provider.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    provider.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (selected) {
+                Icon(
+                    FeatherIcons.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+/** 内置供应商模型列表（支持测试）。 */
+@Composable
+private fun BuiltInModelList(
+    models: List<String>,
+    onModelsChange: (List<String>) -> Unit,
+    viewModel: SettingsViewModel
+) {
+    val testResults by viewModel.testResults.collectAsStateWithLifecycle()
+    val testing by viewModel.testing.collectAsStateWithLifecycle()
+
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        models.forEach { model ->
+            ProviderModelRow(
+                model = model,
+                metadata = null,
+                hasOverride = false,
+                testing = model in testing,
+                result = testResults[model],
+                onTest = {
+                    // 测试需要完整配置；这里用当前内置配置
+                    val provider = AIProviderConfig(
+                        id = "builtin-test",
+                        name = "阶跃星辰",
+                        type = ProviderType.OPENAI,
+                        apiKey = "",
+                        baseUrl = stepFunBaseUrl(StepFunProtocol.OPENAI, StepFunChannel.STEP_PLAN),
+                        defaultModel = model,
+                        isActive = false,
+                        models = models,
+                        selectedModel = model,
+                        isEnabled = true
+                    )
+                    viewModel.testModel(provider, model)
+                },
+                onRemove = { onModelsChange(models - model) },
+                onOpenCapabilityOverride = {}
+            )
+        }
+    }
+}
+
+/** 自定义供应商模型列表。 */
+@Composable
+private fun CustomModelList(
+    models: List<String>,
+    onModelsChange: (List<String>) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        if (models.isEmpty()) {
+            Text(
+                stringResource(R.string.providers_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        models.forEach { model ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    FeatherIcons.Cpu,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(Spacing.sm))
+                Text(model, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onModelsChange(models - model) }) {
+                    Text(stringResource(R.string.common_delete))
+                }
+            }
+        }
+    }
+}
