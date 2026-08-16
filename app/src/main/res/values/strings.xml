@@ -646,6 +646,12 @@
     <string name="provider_step_protocol">兼容接口类型</string>
     <string name="provider_step_channel">通道</string>
     <string name="provider_step_endpoint_preview">端点预览</string>
+    <string name="provider_step_fetch_models">正在从服务器拉取模型列表…</string>
+    <string name="provider_step_fetch_idle">即将进入模型选择…</string>
+    <string name="provider_step_fetch_retry">重试</string>
+    <string name="provider_step_fetch_fallback">已保留 %1$d 个模型（可继续测试/编辑）</string>
+    <string name="provider_step_fetch_count">已从服务器获取 %1$d 个模型</string>
+    <string name="provider_step_models_empty">暂无可用模型，请重试或切换自定义供应商</string>
 
     <!-- Remote Dialogs -->
     <string name="remote_edit_connection">编辑连接通道</string>

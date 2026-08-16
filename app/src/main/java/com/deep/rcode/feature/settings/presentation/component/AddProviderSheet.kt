@@ -21,10 +21,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -35,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +55,7 @@ import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
 import com.deep.rcode.feature.settings.domain.model.AIProviderConfig
 import com.deep.rcode.feature.settings.domain.model.ProviderType
+import com.deep.rcode.feature.settings.presentation.FetchState
 import com.deep.rcode.feature.settings.presentation.SettingsViewModel
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Check
@@ -59,6 +63,8 @@ import compose.icons.feathericons.ChevronLeft
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Cpu
+import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.X
 import java.util.UUID
 
 /** 阶跃星辰兼容协议。 */
@@ -85,7 +91,7 @@ fun stepFunBaseUrl(protocol: StepFunProtocol, channel: StepFunChannel): String =
     }
 }
 
-/** 阶跃星辰内置预填模型列表。 */
+/** 阶跃星辰离线兜底模型列表：实时拉取失败且当前无选择时使用（保证断网时仍可继续添加）。 */
 val STEPFUN_DEFAULT_MODELS: List<String> = listOf(
     "step-3.7-flash",
     "step-3.5-flash",
@@ -132,7 +138,29 @@ fun AddProviderSheet(
     var protocol by remember { mutableStateOf(StepFunProtocol.OPENAI) }
     var channel by remember { mutableStateOf(StepFunChannel.STEP_PLAN) }
     var apiKey by remember { mutableStateOf("") }
-    var builtInModels by remember { mutableStateOf(STEPFUN_DEFAULT_MODELS) }
+    // 模型列表：初始为空，进入第 3 步时从服务器实时拉取；拉取失败时回退到离线兜底列表
+    var builtInModels by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // 内置供应商向导「选择模型」步骤的拉取状态（与编辑页隔离）
+    val builtInFetchState by viewModel.builtInFetchState.collectAsStateWithLifecycle()
+
+    // 进入第 3 步（或切换协议/通道/Key）时实时拉取模型列表，不再依赖硬编码
+    LaunchedEffect(selectedTab, builtInStep, protocol, channel, apiKey) {
+        if (selectedTab == AddProviderTab.BUILT_IN && builtInStep == 3 && apiKey.isNotBlank()) {
+            val type = if (protocol == StepFunProtocol.OPENAI) ProviderType.OPENAI else ProviderType.ANTHROPIC
+            viewModel.fetchBuiltInModels(stepFunBaseUrl(protocol, channel), apiKey, type)
+        }
+    }
+
+    // 拉取成功后用服务器列表替换当前选择（保证不保存过时/硬编码模型）；
+    // 拉取失败且当前为空时回退到离线兜底列表，避免断网时无法继续
+    LaunchedEffect(builtInFetchState) {
+        when (val state = builtInFetchState) {
+            is FetchState.Success -> builtInModels = state.models
+            is FetchState.Error -> if (builtInModels.isEmpty()) builtInModels = STEPFUN_DEFAULT_MODELS
+            else -> Unit
+        }
+    }
 
     // 自定义供应商状态
     var customStep by remember { mutableIntStateOf(1) }
@@ -154,7 +182,8 @@ fun AddProviderSheet(
         AddProviderTab.BUILT_IN -> when (builtInStep) {
             1 -> selectedBuiltIn != null
             2 -> apiKey.isNotBlank()
-            else -> true
+            // 步骤 3：模型列表来自实时拉取（或离线兜底），需至少保留一个才能完成
+            else -> builtInModels.isNotEmpty()
         }
         AddProviderTab.CUSTOM -> when (customStep) {
             1 -> customName.isNotBlank() || customApiKey.isNotBlank() || customBaseUrl.isNotBlank()
@@ -221,13 +250,38 @@ fun AddProviderSheet(
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = null,
-        tonalElevation = 0.dp
+        tonalElevation = 0.dp,
+        // 禁用下滑手势：多步骤表单内容较长，误触下滑会直接关闭丢失已填内容；
+        // 关闭统一走顶部 X 按钮（或系统返回键），保证有明确的退出操作
+        sheetGesturesEnabled = false
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.9f)
         ) {
+            // ── 标题栏：标题 + 关闭按钮 ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.provider_add),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        FeatherIcons.X,
+                        contentDescription = stringResource(R.string.common_close),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
             // ── 顶部 Tab ──
             TabRow(
                 selectedTabIndex = selectedTab.ordinal,
@@ -262,6 +316,11 @@ fun AddProviderSheet(
                         onApiKeyChange = { apiKey = it },
                         models = builtInModels,
                         onModelsChange = { builtInModels = it },
+                        fetchState = builtInFetchState,
+                        onRetryFetchModels = {
+                            val type = if (protocol == StepFunProtocol.OPENAI) ProviderType.OPENAI else ProviderType.ANTHROPIC
+                            viewModel.fetchBuiltInModels(stepFunBaseUrl(protocol, channel), apiKey, type)
+                        },
                         viewModel = viewModel
                     )
                     AddProviderTab.CUSTOM -> CustomProviderContent(
@@ -330,6 +389,8 @@ private fun BuiltInProviderContent(
     onApiKeyChange: (String) -> Unit,
     models: List<String>,
     onModelsChange: (List<String>) -> Unit,
+    fetchState: FetchState,
+    onRetryFetchModels: () -> Unit,
     viewModel: SettingsViewModel
 ) {
     Column(
@@ -434,12 +495,14 @@ private fun BuiltInProviderContent(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                BuiltInModelList(
+                BuiltInModelFetchList(
+                    fetchState = fetchState,
                     models = models,
                     onModelsChange = onModelsChange,
                     apiKey = apiKey,
                     protocol = protocol,
                     channel = channel,
+                    onRetryFetchModels = onRetryFetchModels,
                     viewModel = viewModel
                 )
             }
@@ -622,46 +685,140 @@ private fun BuiltInProviderCard(
     }
 }
 
-/** 内置供应商模型列表（支持测试）。 */
+/** 内置供应商模型列表（支持实时拉取 + 离线降级 + 测试）。 */
 @Composable
-private fun BuiltInModelList(
+private fun BuiltInModelFetchList(
+    fetchState: FetchState,
     models: List<String>,
     onModelsChange: (List<String>) -> Unit,
     apiKey: String,
     protocol: StepFunProtocol,
     channel: StepFunChannel,
+    onRetryFetchModels: () -> Unit,
     viewModel: SettingsViewModel
 ) {
     val testResults by viewModel.testResults.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
 
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        models.forEach { model ->
-            ProviderModelRow(
-                model = model,
-                metadata = null,
-                hasOverride = false,
-                testing = model in testing,
-                result = testResults[model],
-                onTest = {
-                    // 测试使用当前向导第 2 步已填的 API Key 与所选协议/通道端点，使「测试」真正可用。
-                    val provider = AIProviderConfig(
-                        id = "builtin-test",
-                        name = "阶跃星辰",
-                        type = if (protocol == StepFunProtocol.OPENAI) ProviderType.OPENAI else ProviderType.ANTHROPIC,
-                        apiKey = apiKey,
-                        baseUrl = stepFunBaseUrl(protocol, channel),
-                        defaultModel = model,
-                        isActive = false,
-                        models = models,
-                        selectedModel = model,
-                        isEnabled = true
+        // ── 拉取状态指示 ──
+        when (fetchState) {
+            is FetchState.Loading -> {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(Radius.md),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(Spacing.md))
+                        Text(
+                            stringResource(R.string.provider_step_fetch_models),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            is FetchState.Error -> {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(Radius.md),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            stringResource(R.string.provider_fetch_failed, fetchState.message),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(Spacing.sm))
+                        TextButton(onClick = onRetryFetchModels) {
+                            Icon(
+                                FeatherIcons.RefreshCw,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(Spacing.xs))
+                            Text(stringResource(R.string.provider_step_fetch_retry))
+                        }
+                    }
+                }
+                if (models.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.provider_step_fetch_fallback, models.size),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    viewModel.testModel(provider, model)
-                },
-                onRemove = { onModelsChange(models - model) },
-                onOpenCapabilityOverride = {}
-            )
+                }
+            }
+            is FetchState.Success -> {
+                // 拉取成功：显示服务器返回的模型数
+                if (models.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.provider_step_fetch_count, models.size),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            is FetchState.Idle -> {
+                if (models.isEmpty()) {
+                    Text(
+                        stringResource(R.string.provider_step_fetch_idle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // ── 模型列表（空时友好提示） ──
+        if (models.isEmpty()) {
+            if (fetchState !is FetchState.Loading) {
+                Text(
+                    stringResource(R.string.provider_step_models_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            models.forEach { model ->
+                ProviderModelRow(
+                    model = model,
+                    metadata = null,
+                    hasOverride = false,
+                    testing = model in testing,
+                    result = testResults[model],
+                    onTest = {
+                        val provider = AIProviderConfig(
+                            id = "builtin-test",
+                            name = "阶跃星辰",
+                            type = if (protocol == StepFunProtocol.OPENAI) ProviderType.OPENAI else ProviderType.ANTHROPIC,
+                            apiKey = apiKey,
+                            baseUrl = stepFunBaseUrl(protocol, channel),
+                            defaultModel = model,
+                            isActive = false,
+                            models = models,
+                            selectedModel = model,
+                            isEnabled = true
+                        )
+                        viewModel.testModel(provider, model)
+                    },
+                    onRemove = { onModelsChange(models - model) },
+                    onOpenCapabilityOverride = {}
+                )
+            }
         }
     }
 }
