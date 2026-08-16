@@ -59,6 +59,7 @@ import compose.icons.feathericons.ChevronLeft
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Cpu
+import java.util.UUID
 
 /** 阶跃星辰兼容协议。 */
 enum class StepFunProtocol(val displayName: String) {
@@ -176,7 +177,7 @@ fun AddProviderSheet(
                 } else {
                     // 完成：组装阶跃星辰配置并保存
                     val provider = AIProviderConfig(
-                        id = System.currentTimeMillis().toString(),
+                        id = UUID.randomUUID().toString(),
                         name = selectedBuiltIn?.displayName ?: "阶跃星辰",
                         type = if (protocol == StepFunProtocol.OPENAI) ProviderType.OPENAI else ProviderType.ANTHROPIC,
                         apiKey = apiKey,
@@ -197,7 +198,7 @@ fun AddProviderSheet(
                 } else {
                     // 完成：组装自定义配置并保存
                     val provider = AIProviderConfig(
-                        id = System.currentTimeMillis().toString(),
+                        id = UUID.randomUUID().toString(),
                         name = customName.ifEmpty { "自定义供应商" },
                         type = customType,
                         apiKey = customApiKey,
@@ -436,6 +437,9 @@ private fun BuiltInProviderContent(
                 BuiltInModelList(
                     models = models,
                     onModelsChange = onModelsChange,
+                    apiKey = apiKey,
+                    protocol = protocol,
+                    channel = channel,
                     viewModel = viewModel
                 )
             }
@@ -623,6 +627,9 @@ private fun BuiltInProviderCard(
 private fun BuiltInModelList(
     models: List<String>,
     onModelsChange: (List<String>) -> Unit,
+    apiKey: String,
+    protocol: StepFunProtocol,
+    channel: StepFunChannel,
     viewModel: SettingsViewModel
 ) {
     val testResults by viewModel.testResults.collectAsStateWithLifecycle()
@@ -637,13 +644,13 @@ private fun BuiltInModelList(
                 testing = model in testing,
                 result = testResults[model],
                 onTest = {
-                    // 测试需要完整配置；这里用当前内置配置
+                    // 测试使用当前向导第 2 步已填的 API Key 与所选协议/通道端点，使「测试」真正可用。
                     val provider = AIProviderConfig(
                         id = "builtin-test",
                         name = "阶跃星辰",
-                        type = ProviderType.OPENAI,
-                        apiKey = "",
-                        baseUrl = stepFunBaseUrl(StepFunProtocol.OPENAI, StepFunChannel.STEP_PLAN),
+                        type = if (protocol == StepFunProtocol.OPENAI) ProviderType.OPENAI else ProviderType.ANTHROPIC,
+                        apiKey = apiKey,
+                        baseUrl = stepFunBaseUrl(protocol, channel),
                         defaultModel = model,
                         isActive = false,
                         models = models,

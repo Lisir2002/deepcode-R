@@ -99,6 +99,7 @@ import compose.icons.feathericons.DownloadCloud
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Sliders
 import compose.icons.feathericons.Trash2
+import java.util.UUID
 import androidx.compose.ui.res.stringResource
 import com.deep.rcode.R
 
@@ -120,7 +121,7 @@ fun ProviderEditorScreen(
     var useResponseApi by remember { mutableStateOf(initialProvider?.useResponseApi ?: false) }
     var isEnabled by remember { mutableStateOf(initialProvider?.isEnabled ?: true) }
     var type by remember { mutableStateOf(initialProvider?.type ?: ProviderType.OPENAI) }
-    val providerId = remember { initialProvider?.id ?: System.currentTimeMillis().toString() }
+    val providerId = remember { initialProvider?.id ?: UUID.randomUUID().toString() }
     val models = remember { mutableStateListOf<String>().apply { addAll(initialProvider?.models ?: emptyList()) } }
     var showAddModelSheet by remember { mutableStateOf(false) }
     var showFetchDialog by remember { mutableStateOf(false) }
