@@ -1074,7 +1074,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _builtInFetchState.value = FetchState.Loading
             modelApiService.fetchModels(baseUrl, apiKey, type)
-                .onSuccess { _builtInFetchState.value = FetchState.Success(it) }
+                .onSuccess {
+                    _builtInFetchState.value = FetchState.Success(it)
+                    // 与编辑页一致：解析模型元数据，向导第 3 步才能展示真实能力标签（识图/工具/思考）
+                    resolveModelMetadata(type, it)
+                }
                 .onFailure { _builtInFetchState.value = FetchState.Error(it.message ?: "拉取失败") }
         }
     }

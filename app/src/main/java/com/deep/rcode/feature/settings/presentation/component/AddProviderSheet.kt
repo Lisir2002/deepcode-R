@@ -688,6 +688,7 @@ private fun BuiltInModelFetchList(
 ) {
     val testResults by viewModel.testResults.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
+    val modelMetadata by viewModel.modelMetadata.collectAsStateWithLifecycle()
 
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         // ── 拉取状态指示 ──
@@ -766,7 +767,20 @@ private fun BuiltInModelFetchList(
         }
 
         // ── 模型列表（空时友好提示） ──
-        if (models.isEmpty()) {
+        // 完整候选列表取自拉取成功的结果；拉取失败/Idle 时退回到父级传入的已选列表（可能为空或离线兜底）。
+        val displayModels = when (val state = fetchState) {
+            is FetchState.Success -> state.models
+            else -> models
+        }
+        // 已拉取成功但用户把勾选全部取消时给出引导
+        if (fetchState is FetchState.Success && models.isEmpty() && displayModels.isNotEmpty()) {
+            Text(
+                stringResource(R.string.provider_step_model_select_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        if (displayModels.isEmpty()) {
             if (fetchState !is FetchState.Loading) {
                 Text(
                     stringResource(R.string.provider_step_models_empty),
@@ -775,13 +789,23 @@ private fun BuiltInModelFetchList(
                 )
             }
         } else {
-            models.forEach { model ->
+            displayModels.forEach { model ->
+                val meta = modelMetadata[model]
+                val isSelected = model in models
                 ProviderModelRow(
                     model = model,
-                    metadata = null,
+                    // 传入 resolved 元数据后，ModelMetadataTags 会展示真实能力标签（识图/工具/思考/Input/Output）
+                    // 而非仅固定「Chat」标签。启发式逻辑参考 step-* 规则（ModelMetadataService.default）。
+                    metadata = meta,
                     hasOverride = false,
                     testing = model in testing,
                     result = testResults[model],
+                    // 内置向导：复选框即「选择」，勾选=入库、取消=不入库；
+                    // 不需要删除/能力覆盖按钮（编辑页才保留），传 null 隐藏
+                    selected = isSelected,
+                    onToggleSelected = { checked ->
+                        onModelsChange(if (checked) models + model else models - model)
+                    },
                     onTest = {
                         val provider = AIProviderConfig(
                             id = "builtin-test",
@@ -797,8 +821,8 @@ private fun BuiltInModelFetchList(
                         )
                         viewModel.testModel(provider, model)
                     },
-                    onRemove = { onModelsChange(models - model) },
-                    onOpenCapabilityOverride = {}
+                    onRemove = null,
+                    onOpenCapabilityOverride = null
                 )
             }
         }

@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -172,8 +173,10 @@ internal fun ProviderModelRow(
     testing: Boolean,
     result: ModelTestResult?,
     onTest: () -> Unit,
-    onRemove: () -> Unit,
-    onOpenCapabilityOverride: () -> Unit
+    onRemove: (() -> Unit)? = null,
+    onOpenCapabilityOverride: (() -> Unit)? = null,
+    selected: Boolean? = null,
+    onToggleSelected: (Boolean) -> Unit = {}
 ) {
     var showErrorDetail by remember { mutableStateOf(false) }
 
@@ -183,6 +186,12 @@ internal fun ProviderModelRow(
             .padding(horizontal = Spacing.xs, vertical = Spacing.sm)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // 选择复选框：仅内置供应商向导（已拉取候选列表）使用，勾选=入库；
+            // 编辑页传 null 不显示（编辑页的模型本身已入库，语义不同）。
+            selected?.let { checked ->
+                Checkbox(checked = checked, onCheckedChange = onToggleSelected)
+                Spacer(Modifier.width(Spacing.xs))
+            }
             ModelLogoIcon(modelName = model, size = 24.dp)
             Spacer(Modifier.width(Spacing.md))
 
@@ -203,17 +212,19 @@ internal fun ProviderModelRow(
 
             Spacer(Modifier.width(Spacing.sm))
 
-            // RC63 ④ 能力覆盖齿轮按钮
-            IconButton(
-                onClick = onOpenCapabilityOverride,
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    FeatherIcons.Settings,
-                    contentDescription = "手动覆盖模型能力（识图Vision/工具Tools/思考Reasoning）",
-                    tint = if (hasOverride) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
+            // RC63 ④ 能力覆盖齿轮按钮（编辑页使用；向导传 null 隐藏，避免无意义死按钮）
+            onOpenCapabilityOverride?.let { onOpen ->
+                IconButton(
+                    onClick = onOpen,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        FeatherIcons.Settings,
+                        contentDescription = "手动覆盖模型能力（识图Vision/工具Tools/思考Reasoning）",
+                        tint = if (hasOverride) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
 
             // Right Actions
@@ -229,13 +240,16 @@ internal fun ProviderModelRow(
                     }
                 }
             }
-            IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    FeatherIcons.X,
-                    contentDescription = stringResource(R.string.common_delete),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
+            // 删除按钮（编辑页使用；向导传 null 隐藏，取消选择走复选框）
+            onRemove?.let { onDel ->
+                IconButton(onClick = onDel, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        FeatherIcons.X,
+                        contentDescription = stringResource(R.string.common_delete),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
 
