@@ -42,7 +42,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -60,7 +59,6 @@ import compose.icons.feathericons.ChevronLeft
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.Key
 
 /** 阶跃星辰兼容协议。 */
 enum class StepFunProtocol(val displayName: String) {
@@ -413,7 +411,7 @@ private fun BuiltInProviderContent(
                         )
                         Icon(
                             FeatherIcons.Copy,
-                            contentDescription = stringResource(R.string.common_copy),
+                            contentDescription = stringResource(R.string.chat_copy),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )
