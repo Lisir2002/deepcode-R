@@ -899,8 +899,8 @@ class AIAgentViewModel @Inject constructor(
                                     // 构建命令：优先探测命令推断出的组件；推断不出时回退到构建核心组件
                                     probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = inferred.ifEmpty { CheckEnvironmentTool.BUILD_CORE_COMPONENTS })
                                 BuildCommandClassifier.CommandClass.ENV_MUTATION ->
-                                    // 环境变更命令：优先探测推断出的组件；推断不出时探测全部默认组件
-                                    probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = inferred.ifEmpty { null })
+                                    // 环境变更命令：仅探测能明确从命令推断出的组件；推断不出时不做无意义全量探测
+                                    probeEnvironment(taskId = taskId, triggerMsgId = msgId, components = inferred.ifEmpty { emptyList() })
                                 BuildCommandClassifier.CommandClass.OTHER ->
                                     // 其他命令：只要推断出所需构建环境就探测（开放检测，不写死）
                                     if (inferred.isNotEmpty()) {
@@ -1009,6 +1009,11 @@ class AIAgentViewModel @Inject constructor(
      */
     private fun probeEnvironment(taskId: String, triggerMsgId: String, components: List<String>?) {
         val sid = _currentSessionId.value ?: return
+        // 关键修复：明确传入空集合时不做任何探测，避免空组件集合 → 触发默认全量探测
+        if (components != null && components.isEmpty()) {
+            _environmentSnapshots.value = _environmentSnapshots.value - triggerMsgId
+            return
+        }
         val now = android.os.SystemClock.elapsedRealtime()
         val last = lastProbeAt[triggerMsgId] ?: 0L
         if (now - last < PROBE_THROTTLE_MS) return
@@ -1022,6 +1027,7 @@ class AIAgentViewModel @Inject constructor(
                 _environmentSnapshots.value = _environmentSnapshots.value - triggerMsgId
                 return@launch
             }
+            // components==null 走默认组件探测（项目栈启发式）；components 非空且非空列表 → 精准探测指定组件
             val args = if (components.isNullOrEmpty()) emptyMap() else mapOf(
                 "components" to kotlinx.serialization.json.JsonArray(components.map { kotlinx.serialization.json.JsonPrimitive(it) })
             )
