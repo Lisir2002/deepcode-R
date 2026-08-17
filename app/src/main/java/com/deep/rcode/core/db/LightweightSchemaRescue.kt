@@ -9,9 +9,11 @@ import com.deep.rcode.feature.agent.data.local.entity.AgentMessageEntity
 import com.deep.rcode.feature.agent.data.local.entity.ChatSessionEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
+import com.deep.rcode.feature.agent.data.local.entity.FileEditHunkEntity
 import com.deep.rcode.feature.agent.data.local.entity.HallucinationFuseEntity
 import com.deep.rcode.feature.agent.data.local.entity.HardConstraintDeleteAuditEntity
 import com.deep.rcode.feature.agent.data.local.entity.L0SoftCompactRestoreLogEntity
+import com.deep.rcode.feature.agent.data.local.entity.ModeSwitchHistoryEntity
 import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.deep.rcode.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
 import com.deep.rcode.feature.agent.data.local.entity.SkillStateEntity
@@ -104,6 +106,9 @@ object LightweightSchemaRescue {
         GitCredentialEntity::class.java,
         CheckpointEntity::class.java,
         CheckpointFileSnapshotEntity::class.java,
+        // ══ v46 工具系统优化新增：同步 AgentDatabase.kt @Database entities[9..10] ══
+        FileEditHunkEntity::class.java,
+        ModeSwitchHistoryEntity::class.java,
         CredentialEncryptionStateEntity::class.java,
         RemoteAuditLogEntity::class.java,
         ModelCapabilityOverrideEntity::class.java,
