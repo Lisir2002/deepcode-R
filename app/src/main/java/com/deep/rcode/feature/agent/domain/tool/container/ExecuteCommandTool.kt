@@ -212,7 +212,7 @@ class ExecuteCommandTool @Inject constructor(
             val saved = accumulated.build()
             val result = if (strict) {
                 // strict 模式：执行失败即视为错误，错误信息带已捕获的末尾输出帮助 AI 定位。
-                val tail = saved.trimEnd().lineSequence().takeLast(STRICT_ERROR_TAIL_LINES).joinToString("\n")
+                val tail = saved.trimEnd().split("\n").takeLast(STRICT_ERROR_TAIL_LINES).joinToString("\n")
                 ToolResult.Error(
                     if (tail.isNotBlank()) "执行命令失败: ${e.message}\n末尾输出...\n$tail"
                     else "执行命令失败: ${e.message}"
@@ -239,7 +239,7 @@ class ExecuteCommandTool @Inject constructor(
 
     /** strict 模式错误信息：附退出码 + 末尾若干行输出，帮助 AI 定位失败点。 */
     private fun strictExitError(exitCode: Int?, output: String): String {
-        val tail = output.trimEnd().lineSequence().takeLast(STRICT_ERROR_TAIL_LINES).joinToString("\n")
+        val tail = output.trimEnd().split("\n").takeLast(STRICT_ERROR_TAIL_LINES).joinToString("\n")
         val reason = if (exitCode != null) "命令退出码非零(exit=$exitCode)" else "命令未正常结束(超时或异常)"
         return if (tail.isNotBlank()) "$reason: 末尾输出...\n$tail" else reason
     }
