@@ -44,7 +44,7 @@ class DbSCHIELDPreflightTest {
     }
 
     private val agentDatabaseKt: File by lazy {
-        val p = projectRoot.resolve("app/src/main/java/com/deep/rcode/feature/agent/data/local/database/AgentDatabase.kt")
+        val p = projectRoot.resolve("app/src/main/java/com/R/codecore/feature/agent/data/local/database/AgentDatabase.kt")
         assertTrue("AgentDatabase.kt 不存在: ${p.path}", p.isFile)
         p
     }
@@ -556,7 +556,7 @@ class DbSCHIELDPreflightTest {
         // assets.open("schemas/...") 找不到文件 → Funnel 2 抢救失效 → 线上升级崩到 Funnel 3/4。
         // 若将来改为保留 schemas/ 前缀（如改用 copy 任务），必须同步改此处与代码常量。
         val rescueKt = projectRoot.resolve(
-            "app/src/main/java/com/deep/rcode/core/db/LightweightSchemaRescue.kt"
+            "app/src/main/java/com/R/codecore/core/db/LightweightSchemaRescue.kt"
         )
         assertTrue("LightweightSchemaRescue.kt 不存在: ${rescueKt.path}", rescueKt.isFile)
         val rescueSrc = rescueKt.readText()
