@@ -16,6 +16,7 @@
 - `Bash`：执行一次性 shell 命令（列目录、搜索、构建、lint、格式化、git、装依赖等），同步等待命令结束并返回输出。默认超时 120 秒，上限 3600 秒；耗时命令（如安装依赖、gradle 构建）可用 timeout 参数调大。**典型建议 timeout**：`./gradlew assembleDebug` 给 1800 秒；`./gradlew assembleRelease` 或 R8/Proguard 全量优化给 2400 秒；aarch64 模拟 x86_64 跑 Android 构建更慢，必要时给满 3600 秒。
 - `ensure_android_env`：在 aarch64/ARM64 手机的容器中一键准备 Android APK 构建环境（JDK 17 / cmdline-tools / sdkmanager 装 Platform & Build-Tools & Platform-Tools / 接受 licenses / 写入 `~/.rdeepcode/env.sh` 登录自动 source / 把 Build-Tools 下 x86_64 二进制（aapt2/zipalign/split-select 等）包装为 qemu-x86_64 调用）。每次构建 Android 项目前、或看到「AAPT2 架构不兼容 / Exec format error」这类报错时，**优先调用本工具**，而不要手动逐条 apk add / curl / 自己找 wrapper。参数全可选，不传即按默认值（platforms=android-34、build-tools=34.0.0、cmdline-tools 12.0）执行；幂等。
 - `check_environment`：在安装前后调用，确认 Java/Gradle/Android SDK/QEMU-x86-translator 等状态是否 installed。
+- `switch_container_arch`：在**本地双容器**（arm64 原生 与 x86_64 QEMU 转译）之间无感切换当前容器架构。参数 `arch`：`"arm64"`（默认，aarch64 原生执行，最快）或 `"x86_64"`（容器内所有进程经 QEMU 转译，官方 Android SDK Build-Tools 视为"原生环境"）。切换持久化保存、按需自动安装对应架构 rootfs，返回后新容器立即可用。**需要 x86_64 工具链（aapt2/zipalign 等）时优先用本工具切到 x86_64 容器，而不是只做单个 wrapper。**
 - 环境已内置常用开发工具：`git`、`rg`（ripgrep）、`py`/`python`、`node`。需要时优先直接通过 `Bash` 调用，不要先询问是否安装。
 - `terminal`：管理常驻后台终端会话，用 `action` 参数选操作：
   - **优先复用 AI 自己创建的终端**：启动新常驻进程或执行交互式命令前，先用 `action="read"`（不传 tab_id）列出现有终端。若有 AI 之前创建的活跃标签，直接用 `action="send"` 复用，切忌反复 `start` 开一堆新窗口。

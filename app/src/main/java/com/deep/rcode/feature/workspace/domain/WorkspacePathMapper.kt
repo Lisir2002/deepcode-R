@@ -63,9 +63,10 @@ class WorkspacePathMapper @Inject constructor(
         }
     }
 
-    private suspend fun resolveProfile(id: String): ContainerProfile {
-        if (id == ContainerProfile.BUILTIN_ID) return ContainerProfile.BUILTIN_ALPINE
-        return containerSettingsRepository.customProfilesFlow
+    private suspend fun resolveProfile(id: String): ContainerProfile = when (id) {
+        ContainerProfile.BUILTIN_ID -> ContainerProfile.BUILTIN_ALPINE
+        ContainerProfile.BUILTIN_X86_ID -> ContainerProfile.BUILTIN_ALPINE_X86
+        else -> containerSettingsRepository.customProfilesFlow
             .first()
             .firstOrNull { it.id == id } ?: ContainerProfile.BUILTIN_ALPINE
     }

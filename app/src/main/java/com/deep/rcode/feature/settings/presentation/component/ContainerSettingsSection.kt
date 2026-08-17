@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
+import com.deep.rcode.feature.agent.domain.container.ContainerArch
 import com.deep.rcode.feature.agent.domain.container.ContainerProfile
 import com.deep.rcode.feature.agent.domain.container.RootfsSource
 import com.deep.rcode.feature.settings.data.repository.ExecutionMode
@@ -83,7 +84,7 @@ internal fun ContainerSection(
     onEditCustom: (ContainerProfile) -> Unit,
     onDeleteCustom: (ContainerProfile) -> Unit,
     onSwitchConfirmed: () -> Unit = {},
-    onResetBuiltin: () -> Unit = {},
+    onResetBuiltin: (ContainerProfile) -> Unit = {},
     remoteConnections: List<RemoteConnection> = emptyList()
 ) {
     val context = LocalContext.current
@@ -92,7 +93,7 @@ internal fun ContainerSection(
     var editingProfile by remember { mutableStateOf<ContainerProfile?>(null) }
     var deletingProfile by remember { mutableStateOf<ContainerProfile?>(null) }
     var pendingSwitch by remember { mutableStateOf<ContainerProfile?>(null) }
-    var pendingReset by remember { mutableStateOf(false) }
+    var pendingReset by remember { mutableStateOf<ContainerProfile?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -157,7 +158,7 @@ internal fun ContainerSection(
                             )
                         }
                     } else {
-                        IconButton(onClick = { pendingReset = true }) {
+                        IconButton(onClick = { pendingReset = profile }) {
                             Icon(
                                 imageVector = FeatherIcons.RefreshCw,
                                 contentDescription = stringResource(R.string.container_reset),
@@ -236,18 +237,18 @@ internal fun ContainerSection(
         )
     }
 
-    if (pendingReset) {
+    pendingReset?.let { resetting ->
         AlertDialog(
-            onDismissRequest = { pendingReset = false },
+            onDismissRequest = { pendingReset = null },
             title = { Text(stringResource(R.string.container_reset_builtin)) },
-            text = { Text(stringResource(R.string.container_reset_confirm)) },
+            text = { Text(stringResource(R.string.container_reset_confirm, resetting.name)) },
             confirmButton = {
                 TextButton(onClick = {
-                    onResetBuiltin()
-                    pendingReset = false
+                    onResetBuiltin(resetting)
+                    pendingReset = null
                 }) { Text(stringResource(R.string.container_reset)) }
             },
-            dismissButton = { TextButton(onClick = { pendingReset = false }) { Text(stringResource(R.string.common_cancel)) } }
+            dismissButton = { TextButton(onClick = { pendingReset = null }) { Text(stringResource(R.string.common_cancel)) } }
         )
     }
 }
@@ -255,6 +256,8 @@ internal fun ContainerSection(
 /** 镜像列表项副标题：按 mode 与来源类型描述。 */
 private fun profileSubtitle(context: Context, profile: ContainerProfile, connections: List<RemoteConnection>): String {
     return when {
+        profile.isBuiltin && profile.arch == ContainerArch.X86_64 ->
+            context.getString(R.string.container_builtin_x86)
         profile.isBuiltin -> context.getString(R.string.container_builtin_auto)
         profile.mode == ExecutionMode.REMOTE_SSH -> {
             val ssh = profile.rootfsSource as? RootfsSource.RemoteSsh

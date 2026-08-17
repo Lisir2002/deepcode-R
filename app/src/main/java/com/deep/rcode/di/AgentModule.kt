@@ -53,6 +53,7 @@ import com.deep.rcode.feature.agent.domain.tool.editor.EditFileTool
 import com.deep.rcode.feature.agent.domain.tool.container.ExecuteCommandTool
 import com.deep.rcode.feature.agent.domain.tool.container.CheckEnvironmentTool
 import com.deep.rcode.feature.agent.domain.tool.container.EnsureAndroidEnvTool
+import com.deep.rcode.feature.agent.domain.tool.container.SwitchContainerArchTool
 import com.deep.rcode.feature.agent.domain.tool.container.TerminalSessionTool
 import com.deep.rcode.feature.agent.domain.tool.explorer.ListFilesTool
 import com.deep.rcode.feature.agent.domain.tool.explorer.SearchCodeTool
@@ -641,6 +642,7 @@ object AgentModule {
         executeCommandTool: ExecuteCommandTool,
         checkEnvironmentTool: CheckEnvironmentTool,
         ensureAndroidEnvTool: EnsureAndroidEnvTool,
+        switchContainerArchTool: SwitchContainerArchTool,
         terminalSessionTool: TerminalSessionTool,
         listFilesTool: ListFilesTool,
         searchCodeTool: SearchCodeTool,
@@ -679,6 +681,7 @@ object AgentModule {
             registerTool("Bash", executeCommandTool)
             registerTool("check_environment", checkEnvironmentTool)
             registerTool("ensure_android_env", ensureAndroidEnvTool)
+            registerTool("switch_container_arch", switchContainerArchTool)
             registerTool("terminal", terminalSessionTool)
             registerTool("list", listFilesTool)
             registerTool("search", searchCodeTool)

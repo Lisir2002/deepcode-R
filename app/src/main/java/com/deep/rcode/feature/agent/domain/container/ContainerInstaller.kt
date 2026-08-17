@@ -19,9 +19,10 @@ import javax.inject.Singleton
 /**
  * 负责把打进 assets 的 Alpine rootfs 与 PRoot 二进制安装到 App 私有目录。
  *
- * 当前发布构建为 arm64-v8a 真机单架构：ASSET_DIR 固定指向 container/arm（aarch64 版本），
- * assets/container/x86 不再被打进 APK（sourceSets 已移除）。targetSdk 锁定 28，
- * 数据目录文件才可执行（见 build.gradle.kts）。
+ * 支持双容器架构：arm64（默认，aarch64 rootfs，原生执行）与 x86_64（x86_64 rootfs，
+ * 经 proot `-q` 注入静态 qemu-x86_64-static 转译）。proot/loader/libtalloc 等宿主侧
+ * 二进制为 arm64 版，两架构共用。x86_64 额外安装 qemu-user-linux-arm64-x86_64 静态
+ * 二进制（宿主 arm64 运行，翻译 x86_64 用户态指令）。
  */
 @Singleton
 class ContainerInstaller @Inject constructor(
@@ -119,10 +120,19 @@ class ContainerInstaller @Inject constructor(
          * 与 assets 里实际放的 Alpine 版本保持一致以便排查。
          */
         private const val INSTALL_VERSION = "alpine-3.21.3-v6"
+
+        /**
+         * 内置 x86_64 容器的安装版本。与 [INSTALL_VERSION] 独立：x86_64 rootfs 是另一个
+         * Alpine 发行（x86_64 架构），版本标记独立，避免与 arm64 互相覆盖触发误重装。
+         */
+        private const val INSTALL_VERSION_X86 = "alpine-3.21.3-x86-v1"
     }
 
-    /** assets 内的架构特定目录（固定 container/arm，真机单架构 arm64-v8a 发布） */
+    /** assets 内的 arm64 内置容器目录（aarch64 rootfs + arm64 proot 全套） */
     val ASSET_DIR: String = "container/arm"
+
+    /** assets 内的 x86_64 内置容器目录（x86_64 rootfs + arm64 静态 qemu 转译器） */
+    val ASSET_DIR_X86: String = "container/x86_64"
 
     /** 轻量探测某 asset 路径是否被打进当前 APK（对外保留以备扩展使用） */
     private fun assetExists(path: String): Boolean =
@@ -138,9 +148,23 @@ class ContainerInstaller @Inject constructor(
     // 导致运行时 open("...tar.gz") 找不到文件。.bin 让它当普通二进制原样打包。
     val ASSET_ROOTFS: String get() = "$ASSET_DIR/alpine-rootfs.bin"
 
-    /** rootfs 解压根目录 */
+    /** x86_64 内置容器的 rootfs 资产（Alpine x86_64 minirootfs，gzip 压缩存为 .bin） */
+    val ASSET_ROOTFS_X86: String get() = "$ASSET_DIR_X86/alpine-rootfs-x86_64.bin"
+
+    /** x86_64 内置容器的 qemu 转译器资产（宿主 arm64 + 目标 x86_64，静态链接） */
+    val ASSET_QEMU_X86: String get() = "$ASSET_DIR_X86/qemu-user-linux-arm64-x86_64"
+
+    /** rootfs 解压根目录（内置 arm64） */
     val rootfsDir: File
         get() = File(context.filesDir, "rootfs")
+
+    /** 内置 x86_64 容器的 rootfs 解压根目录（与 arm64 隔离，互不删除） */
+    val rootfsX86Dir: File
+        get() = File(context.filesDir, "rootfs-x86_64")
+
+    /** x86_64 容器的 qemu 转译器可执行文件（宿主侧，proot `-q` 使用） */
+    val qemuX86Bin: File
+        get() = File(context.filesDir, "container/qemu/qemu-x86_64-static")
 
     /**
      * AI 配置数据根目录（skill 指令 + MCP 配置），固定在 app 私有 filesDir。
@@ -170,15 +194,22 @@ class ContainerInstaller @Inject constructor(
     val prootTmpDir: File
         get() = File(context.cacheDir, "proot_tmp")
 
-    /** 标记文件，内容是已安装的版本号 */
+    /** 标记文件，内容是已安装的版本号（内置 arm64） */
     private val installedMarker: File
         get() = File(rootfsDir, ".installed")
 
-    /** 检查 rootfs 与 proot 是否已按当前版本安装就绪 */
+    /** 检查 rootfs 与 proot 是否已按当前版本安装就绪（内置 arm64） */
     fun isInstalled(): Boolean {
         if (!prootBin.exists() || !rootfsDir.isDirectory) return false
         val marker = installedMarker
         return marker.exists() && marker.readText().trim() == INSTALL_VERSION
+    }
+
+    /** 检查内置 x86_64 容器是否就绪：rootfs + proot + qemu 转译器均到位且版本匹配 */
+    fun isInstalledX86(): Boolean {
+        if (!prootBin.exists() || !rootfsX86Dir.isDirectory || !qemuX86Bin.exists()) return false
+        val marker = File(rootfsX86Dir, ".installed")
+        return marker.exists() && marker.readText().trim() == INSTALL_VERSION_X86
     }
 
     /**
@@ -200,8 +231,8 @@ class ContainerInstaller @Inject constructor(
         onProgress(ContainerInitState.DeployingProot)
         installProot()
         extractRootfs(onProgress)
-        configureResolvConf()
-        configureApkRepositories()
+        configureResolvConf(rootfsDir)
+        configureApkRepositories(rootfsDir)
         prootTmpDir.mkdirs()
 
         installedMarker.writeText(INSTALL_VERSION)
@@ -209,29 +240,61 @@ class ContainerInstaller @Inject constructor(
     }
 
     /**
-     * 按 [profile] 返回 rootfs 目录：内置仍是 [rootfsDir]（不动），自定义本地镜像用 filesDir/rootfs_<id>。
+     * 安装内置 x86_64 容器：proot 全套（与 arm64 共用）+ 静态 qemu 转译器 + x86_64 rootfs + DNS/apk 源。
+     */
+    private suspend fun installRootfsX86(
+        onProgress: (ContainerInitState) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        if (isInstalledX86()) return@withContext
+
+        FileLogger.i(TAG, "开始安装 x86_64 容器 rootfs（版本 $INSTALL_VERSION_X86）")
+
+        if (rootfsX86Dir.exists()) rootfsX86Dir.deleteRecursively()
+        rootfsX86Dir.mkdirs()
+
+        onProgress(ContainerInitState.DeployingProot)
+        installProot()
+        // 静态 qemu 转译器（宿主 arm64）：proot 启动 x86_64 容器时用 -q 注入
+        copyAsset(ASSET_QEMU_X86, qemuX86Bin, executable = true)
+        extractRootfsTo(rootfsX86Dir, context.assets.open(ASSET_ROOTFS_X86), null, onProgress)
+        configureResolvConf(rootfsX86Dir)
+        configureApkRepositories(rootfsX86Dir)
+        prootTmpDir.mkdirs()
+
+        File(rootfsX86Dir, ".installed").writeText(INSTALL_VERSION_X86)
+        FileLogger.i(TAG, "x86_64 容器 rootfs 安装完成")
+    }
+
+    /**
+     * 按 [profile] 返回 rootfs 目录：内置 arm64 仍是 [rootfsDir]（不动），内置 x86_64 用
+     * [rootfsX86Dir]，自定义本地镜像用 filesDir/rootfs_<id>。
      * 远程 SSH profile 无本地 rootfs，返回一个占位目录（不会被使用/创建）。
-     * 目录隔离——内置与自定义互不共享、互不删除，切回内置时其 rootfs 原封不动。
+     * 目录隔离——各架构/自定义互不共享、互不删除，切回时其 rootfs 原封不动。
      */
     fun rootfsDirFor(profile: ContainerProfile): File =
-        if (profile.isBuiltin) rootfsDir
-        else File(context.filesDir, "rootfs_${profile.id}")
+        when {
+            !profile.isBuiltin -> File(context.filesDir, "rootfs_${profile.id}")
+            profile.arch == ContainerArch.X86_64 -> rootfsX86Dir
+            else -> rootfsDir
+        }
 
     /** 自定义镜像的已安装标记（独立于内置 .installed，避免混淆）。 */
     private fun customInstalledMarker(profile: ContainerProfile): File =
         File(rootfsDirFor(profile), ".installed_custom")
 
-    /** 按 [profile] 判断是否已安装就绪：内置走现有版本校验，自定义本地看目录与标记，远程 SSH 恒就绪。 */
+    /** 按 [profile] 判断是否已安装就绪：内置按架构走各自版本校验，自定义本地看目录与标记，远程 SSH 恒就绪。 */
     fun isInstalledFor(profile: ContainerProfile): Boolean =
         when {
+            profile.isBuiltin && profile.arch == ContainerArch.X86_64 -> isInstalledX86()
             profile.isBuiltin -> isInstalled()
             profile.rootfsSource is RootfsSource.RemoteSsh -> true
             else -> prootBin.exists() && rootfsDirFor(profile).isDirectory && customInstalledMarker(profile).exists()
         }
 
     /**
-     * 按 [profile] 解压安装 rootfs。内置调现有全流程（proot/resolv/apk 源）；自定义本地镜像只解压 tar.gz
-     * + 装 proot，**不写 resolv.conf / apk 源、不 provision**——镜像源与所需工具由用户自行在容器内处理。
+     * 按 [profile] 解压安装 rootfs。内置按架构分流（arm64 走 [installRootfsIfNeed]，x86_64 走
+     * [installRootfsX86]，均含 proot/resolv/apk 源）；自定义本地镜像只解压 tar.gz + 装 proot，
+     * **不写 resolv.conf / apk 源、不 provision**——镜像源与所需工具由用户自行在容器内处理。
      * 远程 SSH profile 无本地 rootfs，直接返回（命令执行走 [RemoteSshEngine]，不需本地 rootfs）。
      */
     suspend fun installRootfsIfNeed(
@@ -241,7 +304,8 @@ class ContainerInstaller @Inject constructor(
         if (isInstalledFor(profile)) return@withContext
 
         if (profile.isBuiltin) {
-            installRootfsIfNeed(onProgress)
+            if (profile.arch == ContainerArch.X86_64) installRootfsX86(onProgress)
+            else installRootfsIfNeed(onProgress)
             return@withContext
         }
 
@@ -283,11 +347,16 @@ class ContainerInstaller @Inject constructor(
     }
 
     /**
-     * 重置内置 Alpine 容器：删除其 rootfs 目录（含 .installed / .provisioned 标记），
+     * 重置内置 Alpine 容器（arm64）：删除其 rootfs 目录（含 .installed / .provisioned 标记），
      * 下次 [ensureInstalled] 会重新解压 + provision。供内置镜像「重置」按钮调用。
      */
     fun resetBuiltinRootfs() {
         if (rootfsDir.exists()) rootfsDir.deleteRecursively()
+    }
+
+    /** 重置内置 x86_64 容器：删除其 rootfs 目录，下次初始化会重新解压 + 部署 qemu 转译器。 */
+    fun resetBuiltinX86Rootfs() {
+        if (rootfsX86Dir.exists()) rootfsX86Dir.deleteRecursively()
     }
 
     init {
@@ -478,8 +547,8 @@ class ContainerInstaller @Inject constructor(
      * 写入容器内 DNS，否则 apk/npm 等联网操作会因无法解析域名而失败。
      * 用阿里云公共 DNS：国内解析更快/更稳，8.8.8.8 在部分网络环境会被拦截。
      */
-    private fun configureResolvConf() {
-        val etc = File(rootfsDir, "etc").apply { mkdirs() }
+    private fun configureResolvConf(targetRootfs: File = rootfsDir) {
+        val etc = File(targetRootfs, "etc").apply { mkdirs() }
         File(etc, "resolv.conf").writeText("nameserver 223.5.5.5\nnameserver 223.6.6.6\n")
     }
 
@@ -489,8 +558,8 @@ class ContainerInstaller @Inject constructor(
      *
      * 用 http 的原因见 [ALPINE_MIRROR] 注释。provision 流程会再幂等覆盖一次以兜底存量（已解压旧 rootfs）设备。
      */
-    private fun configureApkRepositories() {
-        val apkDir = File(rootfsDir, "etc/apk").apply { mkdirs() }
+    private fun configureApkRepositories(targetRootfs: File = rootfsDir) {
+        val apkDir = File(targetRootfs, "etc/apk").apply { mkdirs() }
         File(apkDir, "repositories").writeText(
             "$ALPINE_MIRROR/$ALPINE_BRANCH/main\n" +
                 "$ALPINE_MIRROR/$ALPINE_BRANCH/community\n"

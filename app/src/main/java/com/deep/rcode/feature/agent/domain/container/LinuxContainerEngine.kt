@@ -124,10 +124,12 @@ class LinuxContainerEngine @Inject constructor(
         }
     }
 
-    /** 按 id 解析 profile：内置返回 [ContainerProfile.BUILTIN_ALPINE]，否则从自定义列表找，找不到回退内置。 */
-    private suspend fun resolveProfile(id: String): ContainerProfile {
-        if (id == ContainerProfile.BUILTIN_ID) return ContainerProfile.BUILTIN_ALPINE
-        return containerSettingsRepository.customProfilesFlow.first()
+    /** 按 id 解析 profile：内置返回 [ContainerProfile.BUILTIN_ALPINE] 或 [ContainerProfile.BUILTIN_ALPINE_X86]，
+     *  否则从自定义列表找，找不到回退内置（arm64）。 */
+    private suspend fun resolveProfile(id: String): ContainerProfile = when (id) {
+        ContainerProfile.BUILTIN_ID -> ContainerProfile.BUILTIN_ALPINE
+        ContainerProfile.BUILTIN_X86_ID -> ContainerProfile.BUILTIN_ALPINE_X86
+        else -> containerSettingsRepository.customProfilesFlow.first()
             .firstOrNull { it.id == id } ?: ContainerProfile.BUILTIN_ALPINE
     }
 
@@ -1071,6 +1073,36 @@ class LinuxContainerEngine @Inject constructor(
         }
     }
 
+    /**
+     * 运行时切换容器 profile（如 arm64 ↔ x86_64 双架构无感切换），由 AI 的
+     * `switch_container_arch` 工具与设置页调用。
+     *
+     * 流程：
+     * 1. 立即更新内存 [currentProfile]（不必等 DataStore flow collector 异步刷新），新命令即刻生效；
+     * 2. 持久化选中 id（[ContainerSettingsRepository.setActiveProfile]，重启后保持）；
+     * 3. 若目标架构 rootfs 未安装，复用 [initScope]/[initMutex] 后台 job 一次性安装并等待完成，
+     *    保证切换返回后新容器立即可用（首次切到 x86_64 会解压 x86_64 rootfs + 部署 qemu 转译器）。
+     *
+     * @return 切换后的目标 profile（调用方可据 [ContainerProfile.arch] 回显）
+     */
+    suspend fun switchToProfile(id: String): ContainerProfile {
+        val target = resolveProfile(id)
+        if (target.id == currentProfile.id) return target
+        FileLogger.i(TAG, "切换容器 profile: ${currentProfile.id} -> ${target.id} (arch=${target.arch})")
+        currentProfile = target
+        containerSettingsRepository.setActiveProfile(target.id)
+        val job = initMutex.withLock {
+            val existing = initJob
+            if (existing == null || !existing.isActive) {
+                initJob = initScope.launch { doInit(target) }
+            }
+            initJob!!
+        }
+        job.join()
+        refreshContainerHome()
+        return target
+    }
+
     /** 在 [initScope] 中真正执行一次性初始化：只解压 rootfs + 部署 proot。 */
     private suspend fun doInit(profile: ContainerProfile) {
         // installRootfsIfNeed 在真正解压/部署时回调更新进度（已安装则快路径不回调）
@@ -1182,6 +1214,19 @@ class LinuxContainerEngine @Inject constructor(
             "-b", "/system",  // 绑定 /system 让宿主动态库可用
             "-0"              // 伪 root，apk 等需要
         )
+
+        // x86_64 容器：proot 的 -q 注入静态 qemu 转译器（宿主 arm64 运行，翻译容器内 x86_64 用户态指令）。
+        // -q 后的路径是「宿主侧」绝对路径（qemu 本体跑在 proot 之外，需宿主 loader 加载），
+        // 且 qemu 二进制须在 rootfs 之外可见——proot 自身直接 exec 它，不走 rootfs 翻译。
+        if (profile.arch == ContainerArch.X86_64) {
+            val qemu = containerInstaller.qemuX86Bin
+            if (qemu.exists()) {
+                argv.add("-q")
+                argv.add(qemu.absolutePath)
+            } else {
+                FileLogger.w(TAG, "x86_64 profile 已选但 qemu 转译器缺失（${qemu.absolutePath}），按原生 aarch64 启动将失败，请重新初始化容器")
+            }
+        }
 
         // 把当前工作区目录绑定到容器内 ~/workspace（即 /root/workspace），使命令与文件工具作用于同一目录
         if (projectPath != null) {

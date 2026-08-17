@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.core.util.LogLevel
 import com.deep.rcode.feature.agent.domain.container.ConnectionState
+import com.deep.rcode.feature.agent.domain.container.ContainerArch
 import com.deep.rcode.feature.agent.domain.container.ContainerInstaller
 import com.deep.rcode.feature.agent.domain.container.ContainerProfile
 import com.deep.rcode.feature.agent.domain.container.RemoteSshConnection
@@ -275,10 +276,14 @@ class SettingsViewModel @Inject constructor(
     private val _customProfiles = MutableStateFlow<List<ContainerProfile>>(emptyList())
     val customProfiles: StateFlow<List<ContainerProfile>> = _customProfiles.asStateFlow()
 
-    /** 全部 profile（内置 + 自定义），供 UI 列出。 */
+    /** 全部 profile（内置 arm64 + 内置 x86_64 + 自定义），供 UI 列出。 */
     val profiles: StateFlow<List<ContainerProfile>> = customProfiles
-        .map { listOf(ContainerProfile.BUILTIN_ALPINE) + it }
-        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, listOf(ContainerProfile.BUILTIN_ALPINE))
+        .map { listOf(ContainerProfile.BUILTIN_ALPINE, ContainerProfile.BUILTIN_ALPINE_X86) + it }
+        .stateIn(
+            viewModelScope,
+            kotlinx.coroutines.flow.SharingStarted.Eagerly,
+            listOf(ContainerProfile.BUILTIN_ALPINE, ContainerProfile.BUILTIN_ALPINE_X86)
+        )
 
     /** 当前执行模式（本地 PRoot / 远程 SSH），供 UI 判断是否显示远程连接指示器。 */
     val executionMode: StateFlow<ExecutionMode> = executionModeHolder.mode
@@ -864,8 +869,11 @@ class SettingsViewModel @Inject constructor(
     fun setActiveContainerProfile(id: String) {
         viewModelScope.launch {
             val profile = _customProfiles.value.firstOrNull { it.id == id }
-                ?: ContainerProfile.BUILTIN_ALPINE.takeIf { it.id == id }
-                ?: return@launch
+                ?: when (id) {
+                    ContainerProfile.BUILTIN_ID -> ContainerProfile.BUILTIN_ALPINE
+                    ContainerProfile.BUILTIN_X86_ID -> ContainerProfile.BUILTIN_ALPINE_X86
+                    else -> null
+                } ?: return@launch
             containerSettingsRepository.setActiveProfile(id)
             when (profile.mode) {
                 ExecutionMode.LOCAL_PROOT -> {
@@ -910,10 +918,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** 重置内置 Alpine 容器：删除其 rootfs，下次启动重新解压 + provision。 */
-    fun resetBuiltinContainer() {
+    /** 重置内置容器（arm64 或 x86_64）：删除对应架构 rootfs，下次初始化重新解压 + provision。 */
+    fun resetBuiltinContainer(profile: ContainerProfile) {
         viewModelScope.launch {
-            containerInstaller.resetBuiltinRootfs()
+            when (profile.arch) {
+                ContainerArch.X86_64 ->
+                    containerInstaller.resetBuiltinX86Rootfs()
+                else -> containerInstaller.resetBuiltinRootfs()
+            }
         }
     }
 

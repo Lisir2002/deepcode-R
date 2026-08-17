@@ -54,7 +54,8 @@ suspend fun RemoteConnectionSettings.resolveSshConfigOrNull(
         val customProfiles = containerSettingsRepository.customProfilesFlow.first()
         val profile: ContainerProfile? =
             (customProfiles.firstOrNull { it.id == activeProfileId }
-                ?: ContainerProfile.BUILTIN_ALPINE.takeIf { it.id == activeProfileId })
+                ?: ContainerProfile.BUILTIN_ALPINE.takeIf { it.id == activeProfileId }
+                ?: ContainerProfile.BUILTIN_ALPINE_X86.takeIf { it.id == activeProfileId })
         val sshRootfs = (profile?.rootfsSource as? RootfsSource.RemoteSsh)
             ?.takeIf { it.connectionId == connectionId }
         val workspacePath =

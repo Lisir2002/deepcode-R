@@ -333,7 +333,7 @@ fun SettingsScreen(
                     onEditCustom = { viewModel.editCustomContainerProfile(it) },
                     onDeleteCustom = { viewModel.deleteCustomContainerProfile(it) },
                     onSwitchConfirmed = onStopAllAndCloseTerminal,
-                    onResetBuiltin = { viewModel.resetBuiltinContainer() },
+                    onResetBuiltin = { viewModel.resetBuiltinContainer(it) },
                     remoteConnections = remoteConnections
                 )
                 SettingsSection.Logs -> LogsSection(

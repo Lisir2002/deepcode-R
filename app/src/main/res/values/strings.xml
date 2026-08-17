@@ -376,8 +376,9 @@
     <string name="container_switch_image">切换容器镜像</string>
     <string name="container_switch_confirm">切换到「%1$s」后，当前正在运行的 AI 会话将被停止、终端标签将被关闭。是否继续切换？</string>
     <string name="container_reset_builtin">重置内置容器</string>
-    <string name="container_reset_confirm">将删除内置 Alpine 容器的 rootfs 目录（含已安装的工具与配置），下次启动容器时会重新解压并初始化。是否继续？</string>
+    <string name="container_reset_confirm">将删除内置容器「%1$s」的 rootfs 目录（含已安装的工具与配置），下次启动容器时会重新解压并初始化。是否继续？</string>
     <string name="container_builtin_auto">内置镜像 · 自动 (bash/sh)</string>
+    <string name="container_builtin_x86">内置镜像 x86_64 · QEMU 转译 (aapt2/zipalign 原生兼容)</string>
     <string name="container_remote_ssh_desc">远程 SSH · %1$s · %2$s</string>
     <string name="container_imported_desc">导入的 tar.gz · shell: %1$s</string>
     <string name="container_edit_image">编辑镜像</string>
