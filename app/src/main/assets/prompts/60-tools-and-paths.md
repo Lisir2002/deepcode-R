@@ -66,6 +66,14 @@
 - `websearch`：通过互联网搜索引擎获取实时信息，突破知识库时间截断。回答时效性问题或寻找最新资料时，必须优先调用。
 - `webfetch`：抓取并读取指定 HTTP/HTTPS 网页内容。支持提取为纯文本（读正文）或原始 HTML（解析页面结构）。
 
+## 内置服务浏览器（用户与模型共享的浏览会话）
+- `browser`：操作内置服务浏览器。**与用户共享同一个浏览会话与登录态**——用户手动登录后模型自动复用；模型浏览/操作在浏览器页实时可见。
+  - 典型流程：`browser(action="navigate", url=...)` 打开页面 → `browser(action="snapshot")` 提取可交互元素树 + 页面文本 → `browser(action="click"/"type"/"select_option"/"submit")` 操作 → `browser(action="screenshot")` 多模态查看效果。
+  - 外网与容器服务均可访问：外网直接给 URL；容器内开发服务用 `http://localhost:端口`（如 `http://localhost:8080`），PRoot 与宿主机共享网络栈，容器服务地址在浏览器里同样可达。
+  - 页面需要登录时，`snapshot` 返回 `login_page=true` 与 `login_hint`：若密码框已在凭据库（模型之前代填过），直接 `browser(action="login")` 自动代填提交；若未保存，`login` 会请用户在浏览器页输入账号密码并加密保存，下次自动代填。
+  - 页面 alert/confirm 弹窗：用 `browser(action="handle_dialog", accept=true/false)` 处理；等待元素出现用 `browser(action="wait_for", selector=...)`；读元素属性用 `browser(action="get_attribute", element_id=..., attribute=...)`；需要更复杂交互时用 `browser(action="evaluate", js=...)` 执行任意 JS。
+  - 优先让用户看到你的操作过程：模型每步操作都会在浏览器页底部状态条展示，用户可随时接管（地址栏手动导航）。发现页面与预期不符时，先 `snapshot` 看清楚再行动。
+
 ## 在手机 (aarch64/ARM64) 上构建 Android APK 的标准作业流程（SOP）
 
 **背景**：当前容器常见地跑在 aarch64 Android 手机上（通过 PRoot 隔离）。Android SDK 官方 Build-Tools 只提供 x86_64 二进制，直接调用 aapt2/zipalign/split-select 等会出现 `Exec format error`、或被上层包装成「AAPT2 架构不兼容」这类报错。**本容器已内置 QEMU 用户态转译链路 + 一键环境工具，按下列步骤走即可构建成功。**

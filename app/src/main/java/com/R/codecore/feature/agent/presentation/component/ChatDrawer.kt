@@ -56,6 +56,7 @@ import com.R.codecore.feature.agent.presentation.AgentUIState
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Download
 import compose.icons.feathericons.Edit2
+import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Grid
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Settings
@@ -79,6 +80,7 @@ fun ChatDrawerContent(
     onExport: (ChatSession) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToCapabilityCenter: () -> Unit,
+    onNavigateToBrowser: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var pendingDelete by remember { mutableStateOf<ChatSession?>(null) }
@@ -184,6 +186,27 @@ fun ChatDrawerContent(
             Spacer(Modifier.width(Spacing.md))
             Text(
                 text = stringResource(R.string.capability_center_title),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radius.sm))
+                .clickable { onNavigateToBrowser() }
+                .padding(horizontal = Spacing.md, vertical = Spacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                FeatherIcons.Globe,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(Spacing.md))
+            Text(
+                text = stringResource(R.string.chat_open_browser),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )

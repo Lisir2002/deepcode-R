@@ -34,6 +34,7 @@ import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.settings.presentation.component.ModelLogoIcon
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
+import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Menu
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Star
@@ -60,6 +61,7 @@ internal fun ChatHeader(
     onNewChat: () -> Unit,
     onNavigateToTerminal: () -> Unit,
     onNavigateToGit: () -> Unit,
+    onNavigateToBrowser: () -> Unit = {},
     connectionState: com.R.codecore.feature.agent.domain.container.ConnectionState? = null
 ) {
     Surface(
@@ -137,6 +139,16 @@ internal fun ChatHeader(
                     Icon(
                         FeatherIcons.Terminal,
                         contentDescription = stringResource(R.string.chat_open_terminal),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp))
+                }
+                IconButton(
+                    onClick = onNavigateToBrowser,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        FeatherIcons.Globe,
+                        contentDescription = stringResource(R.string.chat_open_browser),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp))
                 }

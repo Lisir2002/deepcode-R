@@ -93,6 +93,7 @@ fun AIChatPanel(
     onNavigateToSettings: () -> Unit,
     onNavigateToTerminal: () -> Unit = {},
     onNavigateToGit: () -> Unit = {},
+    onNavigateToBrowser: () -> Unit = {},
     settingsViewModel: SettingsViewModel? = null,
     workspaceViewModel: WorkspaceViewModel? = null,
     drawerState: DrawerState,
@@ -445,6 +446,7 @@ fun AIChatPanel(
                 onNewChat = { viewModel.newSession() },
                 onNavigateToTerminal = onNavigateToTerminal,
                 onNavigateToGit = onNavigateToGit,
+                onNavigateToBrowser = onNavigateToBrowser,
                 connectionState = connectionState?.takeIf { isRemote }
             )
         }

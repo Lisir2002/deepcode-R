@@ -61,6 +61,7 @@ import com.R.codecore.feature.agent.domain.tool.explorer.ListFilesTool
 import com.R.codecore.feature.agent.domain.tool.explorer.SearchCodeTool
 import com.R.codecore.feature.agent.domain.tool.skill.LoadSkillTool
 import com.R.codecore.feature.agent.domain.tool.question.AskUserQuestionTool
+import com.R.codecore.feature.agent.domain.tool.browser.BrowserAgentTool
 import com.R.codecore.feature.agent.domain.tool.todo.TodoTool
 import com.R.codecore.feature.agent.domain.prompt.SystemPromptProvider
 import com.R.codecore.feature.agent.domain.workflow.AgentWorkflow
@@ -670,6 +671,7 @@ object AgentModule {
         todoTool: TodoTool,
         memoryTool: com.R.codecore.feature.agent.domain.tool.memory.MemoryTool,
         generateImageTool: com.R.codecore.feature.agent.domain.tool.image.GenerateImageTool,
+        browserTool: BrowserAgentTool,
         resultTypeRegistry: com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
     ): ToolRegistry {
         return ToolRegistry().apply {
@@ -710,6 +712,8 @@ object AgentModule {
             registerTool("memory", memoryTool)
             // ══ RC69 T2I 文生图工具：generateImage(prompt="...", width, height, steps, hd, model)
             registerTool("generateImage", generateImageTool)
+            // ══ 内置服务浏览器：模型在共享 WebView 会话中浏览/操作网页（含容器服务与登录站点）
+            registerTool("browser", browserTool)
         }
     }
 

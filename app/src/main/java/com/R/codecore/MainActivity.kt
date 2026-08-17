@@ -100,6 +100,14 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var credentialRequestBridge: com.R.codecore.feature.credentials.data.CredentialRequestBridge
 
+    /** 内置服务浏览器：用户与模型共享的 WebView 会话（浏览器页/模型工具共用）。 */
+    @Inject
+    lateinit var browserController: com.R.codecore.feature.browser.domain.BrowserController
+
+    /** 浏览器登录凭据输入流程（模型登录时请求用户提供账号密码）。 */
+    @Inject
+    lateinit var browserLoginPromptManager: com.R.codecore.feature.browser.domain.BrowserLoginPromptManager
+
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -192,7 +200,10 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        AppNavigation()
+                        AppNavigation(
+                            browserController = browserController,
+                            browserLoginPromptManager = browserLoginPromptManager
+                        )
                         // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
                         com.R.codecore.feature.credentials.presentation.component.GlobalCredentialDialogHost(
                             bridge = credentialRequestBridge
@@ -249,7 +260,10 @@ class MainActivity : ComponentActivity() {
  * ViewModel 提升到这一层创建，以便 Drawer 内容和 AIChatPanel 共享同一实例。
  */
 @Composable
-fun AppNavigation() {
+fun AppNavigation(
+    browserController: com.R.codecore.feature.browser.domain.BrowserController,
+    browserLoginPromptManager: com.R.codecore.feature.browser.domain.BrowserLoginPromptManager
+) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -345,6 +359,10 @@ fun AppNavigation() {
                     onNavigateToCapabilityCenter = {
                         scope.launch { drawerState.close() }
                         navController.navigate("capability_center")
+                    },
+                    onNavigateToBrowser = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate("browser")
                     }
                 )
             }
@@ -386,7 +404,8 @@ fun AppNavigation() {
                     drawerState = drawerState,
                     onNavigateToSettings = { navController.navigate("settings") },
                     onNavigateToTerminal = { navController.navigate("terminal") },
-                    onNavigateToGit = { navController.navigate("git") }
+                    onNavigateToGit = { navController.navigate("git") },
+                    onNavigateToBrowser = { navController.navigate("browser") }
                 )
             }
             composable("settings") {
@@ -466,6 +485,13 @@ fun AppNavigation() {
                 GitScreen(
                     viewModel = gitViewModel,
                     credentialViewModel = credentialViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("browser") {
+                com.R.codecore.feature.browser.presentation.ServiceBrowserScreen(
+                    browserController = browserController,
+                    loginPromptManager = browserLoginPromptManager,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

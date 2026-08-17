@@ -301,6 +301,7 @@
     <string name="chat_history">历史记录</string>
     <string name="chat_no_sessions_hint">暂无会话，点击「新建会话」开始</string>
     <string name="chat_settings">设置</string>
+    <string name="chat_open_browser">内置浏览器</string>
     <string name="chat_delete_session">删除会话</string>
     <string name="chat_delete_session_confirm">确定删除「%1$s」？该会话的所有消息都将被清除，且无法恢复。</string>
     <string name="chat_rename_session">重命名会话</string>
@@ -308,6 +309,21 @@
     <string name="chat_export_session">导出会话</string>
     <string name="chat_export_session_done">会话已导出</string>
     <string name="chat_export_session_failed">导出失败</string>
+
+    <!-- Browser -->
+    <string name="browser_title">内置浏览器</string>
+    <string name="browser_address_hint">输入网址或容器服务地址（如 http://localhost:8080）</string>
+    <string name="browser_go">前往</string>
+    <string name="browser_back">后退</string>
+    <string name="browser_forward">前进</string>
+    <string name="browser_refresh">刷新</string>
+    <string name="browser_agent_working">模型正在操作浏览器…</string>
+    <string name="browser_dialog_alert">网页提示</string>
+    <string name="browser_dialog_confirm_title">网页确认</string>
+    <string name="browser_login_title">需要登录</string>
+    <string name="browser_login_hint">模型需要登录 %1$s 以继续操作，请输入该站点的登录凭据（将加密保存，下次自动代填）。</string>
+    <string name="browser_login_password">密码</string>
+    <string name="browser_login_confirm">登录</string>
 
     <!-- Chat Input Bar -->
     <string name="chat_input_placeholder">输入消息与 AI 聊天…</string>
