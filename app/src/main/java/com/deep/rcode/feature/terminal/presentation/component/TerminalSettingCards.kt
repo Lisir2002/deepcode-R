@@ -42,6 +42,7 @@ import com.deep.rcode.core.theme.Brand
 import com.deep.rcode.core.theme.Elevation
 import com.deep.rcode.core.theme.Radius
 import com.deep.rcode.core.theme.Spacing
+import com.deep.rcode.feature.agent.domain.container.ContainerArch
 import com.deep.rcode.feature.agent.domain.container.ContainerInitState
 import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
 import com.deep.rcode.feature.terminal.data.bundle.TerminalBundle
@@ -130,12 +131,17 @@ internal fun SharedContainerEnvCard(
     containerInstalled: Boolean,
     initProgress: ContainerInitState,
     storageUsedMb: Long,
+    profileArch: ContainerArch = ContainerArch.ARM64,
     mode: ContainerCardMode = ContainerCardMode.FULL,
     customInstallState: BundleInstallState? = null,
     onInit: () -> Unit = {},
     onReset: () -> Unit = {},
     onPickMirror: () -> Unit = {}
 ) {
+    val archLabel: String = when (profileArch) {
+        ContainerArch.ARM64 -> "arm64-v8a · PRoot"
+        ContainerArch.X86_64 -> "x86_64 · QEMU 转译 · PRoot"
+    }
     val processingTextWhenReady: String? = run {
         // 安装/卸载功能包时，initProgress 会是 BundleInstalling / BundleUninstalling（而非 Ready），
         // 所以不能用「先判断 !Ready 就 return」，那样后面 Installing 的分支永远进不去。
@@ -211,7 +217,7 @@ internal fun SharedContainerEnvCard(
             Spacer(modifier = Modifier.height(Spacing.xs))
             Text(
                 text = when {
-                    containerInstalled -> "占用 $storageUsedMb MB · Alpine 3.21 · arm64-v8a · PRoot"
+                    containerInstalled -> "占用 $storageUsedMb MB · Alpine 3.21 · $archLabel"
                     else -> "rootfs 解压后约 150 MB，按需安装 Bundle 后 300-500 MB"
                 },
                 style = MaterialTheme.typography.bodySmall,

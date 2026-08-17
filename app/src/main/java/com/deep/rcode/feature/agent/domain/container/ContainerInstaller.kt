@@ -205,9 +205,12 @@ class ContainerInstaller @Inject constructor(
         return marker.exists() && marker.readText().trim() == INSTALL_VERSION
     }
 
-    /** 检查内置 x86_64 容器是否就绪：rootfs + proot + qemu 转译器均到位且版本匹配 */
+    /** 检查内置 x86_64 容器是否就绪：rootfs 版本标记 + proot 全套到位即可。
+     *  不把 qemuX86Bin.exists 作为硬条件——proot 进程仍占用旧 qemu 二进制导致 Text file busy
+     *  时 qemux 可稍后由 deployQemuX86() 重试部署；若这里把它绑进 isInstalled，会让系统
+     *  误以为整个 rootfs 未装而重复解压，反而更容易撞上正在运行的 qemu 转译进程。 */
     fun isInstalledX86(): Boolean {
-        if (!prootBin.exists() || !rootfsX86Dir.isDirectory || !qemuX86Bin.exists()) return false
+        if (!prootBin.exists() || !rootfsX86Dir.isDirectory) return false
         val marker = File(rootfsX86Dir, ".installed")
         return marker.exists() && marker.readText().trim() == INSTALL_VERSION_X86
     }
@@ -254,8 +257,9 @@ class ContainerInstaller @Inject constructor(
 
         onProgress(ContainerInitState.DeployingProot)
         installProot()
-        // 静态 qemu 转译器（宿主 arm64）：proot 启动 x86_64 容器时用 -q 注入
-        copyAsset(ASSET_QEMU_X86, qemuX86Bin, executable = true)
+        // 静态 qemu 转译器（宿主 arm64）：proot 启动 x86_64 容器时用 -q 注入；
+        // copyAsset 内部已做原子 rename + IOException 捕获，旧 qemu 仍被占用时不会崩。
+        deployQemuX86()
         extractRootfsTo(rootfsX86Dir, context.assets.open(ASSET_ROOTFS_X86), null, onProgress)
         configureResolvConf(rootfsX86Dir)
         configureApkRepositories(rootfsX86Dir)
@@ -383,15 +387,72 @@ class ContainerInstaller @Inject constructor(
         copyAsset(ASSET_LIBSHMEM, File(prootLibDir, "libandroid-shmem.so"), executable = true)
     }
 
-    /** 把单个 asset 复制到目标文件，按需赋「对所有用户」的可执行位（proot 进程以 App uid 运行）。 */
+    /** 把单个 asset 复制到目标文件，按需赋「对所有用户」的可执行位。
+     *
+     *  为避免「重置后立即点初始化」撞上 proot / qemu 仍持有旧二进制的 inode（Linux 写打开
+     *  运行中二进制会抛 ETXTBSY / Text file busy，直接崩 app），这里做 4 层保护：
+     *   1. 快路径：dest 已存在且 asset 字节长度一致就跳过（避免无谓写入）。
+     *   2. 原子替换：先写到 dest.tmp，再 renameTo 覆盖——in-use 进程继续跑旧 inode，不报错。
+     *   3. 兜底：rename 或 open 仍然 IOException（极少数厂商内核把 rename 也当 busy），
+     *      就尝试 dest.renameTo(dest.bak) 把旧文件移走，再写新文件；成功与否都不崩。
+     *   4. 所有 IO 异常都降级为 FileLogger.w，不抛出、不中止初始化。
+     */
     private fun copyAsset(assetPath: String, dest: File, executable: Boolean) {
         dest.parentFile?.mkdirs()
-        context.assets.open(assetPath).use { input ->
-            dest.outputStream().use { output -> input.copyTo(output) }
+
+        // 1) 快路径：长度一致就视为已部署（asset 打包时版本不可变，这足够做幂等判定）
+        runCatching {
+            context.assets.openFd(assetPath).use { afd ->
+                if (dest.exists() && dest.length() == afd.length) {
+                    if (executable && !dest.canExecute()) dest.setExecutable(true, false)
+                    return
+                }
+            }
         }
-        if (executable && !dest.setExecutable(true, false)) {
-            FileLogger.w(TAG, "setExecutable 返回 false: ${dest.absolutePath}")
+
+        // 2) 原子替换：写到 .tmp 再 rename
+        val tmp = File(dest.parentFile, "${dest.name}.tmp.${System.currentTimeMillis()}")
+        val movedOld = File(dest.parentFile, "${dest.name}.bak")
+        var wroteTmp = false
+        try {
+            context.assets.open(assetPath).use { input ->
+                tmp.outputStream().use { output -> input.copyTo(output) }
+            }
+            wroteTmp = true
+            if (executable) tmp.setExecutable(true, false)
+
+            if (!tmp.renameTo(dest)) {
+                // 3) 兜底：先尝试移走旧文件再 rename 一次（极少数 ROM 对覆盖 in-use inode 不友好）
+                runCatching { if (dest.exists()) dest.renameTo(movedOld) }
+                if (!tmp.renameTo(dest)) {
+                    // 最终兜底：逐字节拷贝覆盖；Text file busy 不崩，记为警告并返回
+                    FileLogger.w(TAG, "copyAsset: rename 失败，退化为逐字节覆盖（可能失败但不抛：${dest.absolutePath}）")
+                    runCatching {
+                        context.assets.open(assetPath).use { input ->
+                            dest.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }.onFailure { t ->
+                        FileLogger.w(TAG, "copyAsset fallback copy 也失败: ${dest.absolutePath}, err=${t.message}")
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            // 4) 任何异常只记日志，不崩；重置/并发/低内存都不该让 app 因 asset 拷贝死
+            FileLogger.w(TAG, "copyAsset 失败 (asset=$assetPath -> dest=${dest.absolutePath}): ${t.message}")
+        } finally {
+            if (wroteTmp && tmp.exists()) tmp.delete()
+            // .bak 不主动删，下次 reset 会整体清目录
         }
+        if (executable && dest.exists() && !dest.canExecute()) {
+            if (!dest.setExecutable(true, false)) {
+                FileLogger.w(TAG, "setExecutable 返回 false: ${dest.absolutePath}")
+            }
+        }
+    }
+
+    /** 单独幂等部署 qemu-x86_64-static，供重置/初始化/确保容器就绪随时重试而不重解压 rootfs。 */
+    fun deployQemuX86() {
+        copyAsset(ASSET_QEMU_X86, qemuX86Bin, executable = true)
     }
 
     /** 解压 alpine-minirootfs，自动按流头部 magic 识别 gzip/xz 格式 */

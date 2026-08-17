@@ -3,8 +3,11 @@ package com.deep.rcode.feature.terminal.presentation
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.deep.rcode.feature.agent.domain.container.ContainerArch
+import com.deep.rcode.feature.agent.domain.container.ContainerProfile
 import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
 import com.deep.rcode.feature.agent.domain.container.progress.AggregateProgressState
+import com.deep.rcode.feature.settings.data.repository.ContainerSettingsRepository
 import com.deep.rcode.feature.terminal.data.bundle.BundleInstallState
 import com.deep.rcode.feature.terminal.data.bundle.TerminalBundle
 import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
@@ -18,6 +21,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -40,7 +44,8 @@ class TerminalSettingsViewModel @Inject constructor(
     application: Application,
     private val settingsRepo: TerminalSettingsRepository,
     private val bundleRepo: TerminalBundleRepository,
-    private val containerEngine: LinuxContainerEngine
+    private val containerEngine: LinuxContainerEngine,
+    private val containerSettingsRepository: ContainerSettingsRepository
 ) : AndroidViewModel(application) {
 
     private val appContext get() = getApplication<Application>().applicationContext
@@ -125,19 +130,52 @@ class TerminalSettingsViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    /** 容器占用（MB）：rootfs 目录大小 /data/data/<pkg>/files/rootfs。懒读 + 状态变更触发刷新。 */
+    /**
+     * 当前激活的容器 CPU 架构：
+     * - arm64（默认，原生执行 aarch64）
+     * - x86_64（容器内所有进程经 QEMU 静态转译执行）
+     * 由 ContainerSettingsRepository.activeProfileIdFlow 动态推导，profile 切换即自动刷新 UI。
+     */
+    val activeProfileArch: StateFlow<ContainerArch> = combine(
+        containerSettingsRepository.activeProfileIdFlow,
+        containerSettingsRepository.customProfilesFlow
+    ) { activeId, customProfiles ->
+        val profile = customProfiles.firstOrNull { it.id == activeId }
+            ?: when (activeId) {
+                ContainerProfile.BUILTIN_ID -> ContainerProfile.BUILTIN_ALPINE
+                ContainerProfile.BUILTIN_X86_ID -> ContainerProfile.BUILTIN_ALPINE_X86
+                else -> ContainerProfile.BUILTIN_ALPINE
+            }
+        profile.arch
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ContainerArch.ARM64)
+
+    private suspend fun currentProfileId() = containerSettingsRepository.activeProfileIdFlow.first()
+
+    private suspend fun rootfsDirFor(profileId: String): File {
+        val customProfiles = containerSettingsRepository.customProfilesFlow.first()
+        val profile = customProfiles.firstOrNull { it.id == profileId }
+            ?: when (profileId) {
+                ContainerProfile.BUILTIN_ID -> ContainerProfile.BUILTIN_ALPINE
+                ContainerProfile.BUILTIN_X86_ID -> ContainerProfile.BUILTIN_ALPINE_X86
+                else -> ContainerProfile.BUILTIN_ALPINE
+            }
+        return when (profile.arch) {
+            ContainerArch.X86_64 -> File(appContext.filesDir, "rootfs-x86_64")
+            else -> if (profile.isBuiltin) File(appContext.filesDir, "rootfs")
+            else File(appContext.filesDir, "rootfs_${profile.id}")
+        }
+    }
+
+    /** 容器占用（MB）：当前选中 profile 的 rootfs 目录大小。懒读 + 状态变更触发刷新。 */
     private val _storageUsedMb = kotlinx.coroutines.flow.MutableStateFlow(0L)
     val storageUsedMb: StateFlow<Long> = _storageUsedMb
 
     private suspend fun computeRootfsSizeMb(): Long {
-        // ContainerInstaller.rootfsDir = File(context.filesDir, "rootfs")（ContainerInstaller.kt#L142-L143 约定）
-        val rootfsDir = File(appContext.filesDir, "rootfs")
-        if (!rootfsDir.exists() || !rootfsDir.isDirectory) return 0L
-        // 用 walkTopDown().sumOf 统计目录总字节（递归，符号链接按自身条目算，与「du」的语义近似）
-        // 结果 MB（1024×1024），与卡片文案「150 MB」量级一致。
+        val dir = rootfsDirFor(currentProfileId())
+        if (!dir.exists() || !dir.isDirectory) return 0L
         val bytes = runCatching {
             var acc = 0L
-            rootfsDir.walkTopDown().forEach { f ->
+            dir.walkTopDown().forEach { f ->
                 if (!f.isDirectory) acc += runCatching { f.length() }.getOrDefault(0L)
             }
             acc
@@ -158,15 +196,10 @@ class TerminalSettingsViewModel @Inject constructor(
                 }
             }
         }
-        // 启动时先填一次（如果 rootfs 早已就位），避免冷启动卡片永远 0M，直到下一次状态跳变。
-        // 注：containerEngine.containerInstaller / currentProfile 都是 private，这里用「rootfs 目录存在」
-        // 作为容器物理已安装的代理判定——与 ContainerInstaller.isInstalledFor 的核心条件一致。
+        // 首次渲染 + profile 切换时同步刷新一次存储统计；冷启动 rootfs 早已就位时也能拿到正确数字。
+        // 这里也作为「容器是否物理安装好」的代理判定——与 ContainerInstaller.isInstalledFor 的核心条件一致。
         viewModelScope.launch {
-            val containerInstalledCached = containerInstalled.replayCache.firstOrNull()
-                ?: File(appContext.filesDir, "rootfs").isDirectory
-            if (containerInstalledCached) {
-                _storageUsedMb.value = computeRootfsSizeMb()
-            }
+            activeProfileArch.collect { _ -> _storageUsedMb.value = computeRootfsSizeMb() }
         }
     }
 

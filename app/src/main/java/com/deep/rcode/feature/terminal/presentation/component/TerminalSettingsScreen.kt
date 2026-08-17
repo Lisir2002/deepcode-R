@@ -116,6 +116,7 @@ fun TerminalSettingsScreen(
     val containerInit by viewModel.containerInit.collectAsStateWithLifecycle()
     val containerInstalled by viewModel.containerInstalled.collectAsStateWithLifecycle()
     val storageUsedMb by viewModel.storageUsedMb.collectAsStateWithLifecycle()
+    val activeProfileArch by viewModel.activeProfileArch.collectAsStateWithLifecycle()
     val bundleStates by viewModel.bundleStates.collectAsStateWithLifecycle()
     val aiAllInstalled by viewModel.aiRecommendedAllInstalled.collectAsStateWithLifecycle()
 
@@ -177,6 +178,7 @@ fun TerminalSettingsScreen(
                 containerInstalled = containerInstalled,
                 initProgress = containerInit,
                 storageUsedMb = storageUsedMb,
+                profileArch = activeProfileArch,
                 mode = ContainerCardMode.FULL,
                 onInit = viewModel::ensureContainerInstalled,
                 onReset = { showResetConfirm = true },

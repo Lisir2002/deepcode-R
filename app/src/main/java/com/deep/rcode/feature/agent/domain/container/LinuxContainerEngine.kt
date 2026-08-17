@@ -863,7 +863,7 @@ class LinuxContainerEngine @Inject constructor(
         runCatching { refreshCustomPackagesSnapshot() }
     }
 
-    /** 重置容器：物理删除 rootfs + proot 目录，bundleRepo 状态重置。高风险操作。 */
+    /** 重置容器：物理删除 rootfs + proot 全套 + qemu（按当前 profile 架构），bundleRepo 状态重置。高风险操作。 */
     suspend fun resetContainer() {
         // initMutex 保护：不与正在初始化的 job 并发
         initMutex.withLock {
@@ -871,10 +871,19 @@ class LinuxContainerEngine @Inject constructor(
             initJob = null
         }
         bundleRepository.resetAllToNotInstalled()
-        runCatching { containerInstaller.rootfsDir.deleteRecursively() }
+        val profile = currentProfile
+        runCatching {
+            containerInstaller.rootfsDirFor(profile).deleteRecursively()
+        }
+        // 清理宿主侧可执行（跨 profile 共用的 proot 全套，都清；x86_64 专用 qemu 只在当前或 x86_64 架构下清）
         runCatching { containerInstaller.prootBin.delete() }
         runCatching { containerInstaller.prootLoader.delete() }
         runCatching { containerInstaller.prootLoader32.delete() }
+        if (profile.arch == ContainerArch.X86_64) {
+            runCatching { containerInstaller.rootfsX86Dir.deleteRecursively() }
+            runCatching { containerInstaller.qemuX86Bin.delete() }
+            runCatching { containerInstaller.qemuX86Bin.parentFile?.listFiles { f -> f.name.startsWith("qemu-") }?.forEach { it.delete() } }
+        }
         _initProgress.value = ContainerInitState.Idle
     }
 
@@ -1107,6 +1116,19 @@ class LinuxContainerEngine @Inject constructor(
     private suspend fun doInit(profile: ContainerProfile) {
         // installRootfsIfNeed 在真正解压/部署时回调更新进度（已安装则快路径不回调）
         containerInstaller.installRootfsIfNeed(profile) { _initProgress.value = it }
+
+        // x86_64 容器：无论 rootfs 是否已安装，都要补一遍 qemu 转译器部署（幂等）
+        // 原因：isInstalledX86 为了避免 ETXTBSY 循环不把 qemu 存在性当硬条件，此处做"
+        // 最后一英里"同步；copyAsset 内部有原子 rename + ETXTBSY 捕获，不会崩。
+        if (profile.arch == ContainerArch.X86_64) {
+            runCatching { containerInstaller.deployQemuX86() }
+                .onFailure { t -> FileLogger.w(TAG, "doInit: deployQemuX86 失败 (不抛): ${t.message}") }
+            // 若 qemu 仍然缺失则打告警，buildBaseProotArgv 也会同步打，两边齐提醒用户。
+            if (!containerInstaller.qemuX86Bin.exists()) {
+                FileLogger.w(TAG, "doInit: x86_64 profile 但 qemu 仍缺失（${containerInstaller.qemuX86Bin.absolutePath}），请再次点击初始化或重启 App")
+            }
+        }
+
         // RC61f：rootfs 装好后，异步清理上一次 APP crash/kill 遗留下来的 /var/cache/apk/*.part 半截文件
         // （用户反馈：安装失败不删垃圾，点按钮重试 N 次，手机存储里越堆越多几 MB 的 .apk.part 占空间）
         runCatching {
