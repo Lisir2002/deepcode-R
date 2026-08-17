@@ -19,10 +19,13 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
+import javax.inject.Provider
 
 class ManageMcpTool @Inject constructor(
     private val mcpConfigRepository: McpConfigRepository,
-    private val mcpManager: McpManager
+    // S-2：用 Provider<McpManager> 懒加载打破 Dagger 循环依赖
+    //   （ManageMcpTool → McpManager → ToolRegistry → ManageMcpTool），与 SkillExecutor→ToolRegistry 同款模式。
+    private val mcpManagerProvider: Provider<McpManager>
 ) : AgentTool() {
     private companion object {
         const val TAG = "ManageMcpTool"
@@ -137,7 +140,7 @@ class ManageMcpTool @Inject constructor(
                     mcpConfigRepository.setServers(servers)
 
                     // S-2：add 后立即测连通性（stdio 全测：容器就绪 + 启动握手 + 列工具）
-                    val err = mcpManager.testConnection(newServer)
+                    val err = mcpManagerProvider.get().testConnection(newServer)
                     if (err.isBlank()) {
                         ToolResult.Success(JsonPrimitive("成功添加本地 MCP server: $name，并已通过连通性测试（握手成功）。配置将在下一次会话正式生效；若命令依赖 Node/Python 等运行时，请通过命令工具在用户确认后安装。"))
                     } else {
@@ -161,7 +164,7 @@ class ManageMcpTool @Inject constructor(
                     mcpConfigRepository.setServers(servers)
 
                     // S-2：add 后立即测连通性（HTTP 全测：握手 + 列工具）
-                    val err = mcpManager.testConnection(newServer)
+                    val err = mcpManagerProvider.get().testConnection(newServer)
                     if (err.isBlank()) {
                         ToolResult.Success(JsonPrimitive("成功添加 HTTP MCP server: $name，并已通过连通性测试（握手成功）。配置将在下一次会话正式生效。"))
                     } else {
