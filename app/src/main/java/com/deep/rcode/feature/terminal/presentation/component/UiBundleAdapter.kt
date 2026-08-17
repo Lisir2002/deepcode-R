@@ -44,6 +44,7 @@ private fun TerminalBundle.iconVector(): ImageVector = when (id) {
     TerminalBundleId.GIT -> FeatherIcons.GitBranch
     TerminalBundleId.BASH -> FeatherIcons.Terminal
     TerminalBundleId.NET -> FeatherIcons.Globe
+    TerminalBundleId.QEMU_X86_TRANSLATOR -> FeatherIcons.Cpu
 }
 
 internal fun bundleIconVector(id: TerminalBundleId): ImageVector = when (id) {
@@ -53,4 +54,5 @@ internal fun bundleIconVector(id: TerminalBundleId): ImageVector = when (id) {
     TerminalBundleId.GIT -> FeatherIcons.GitBranch
     TerminalBundleId.BASH -> FeatherIcons.Terminal
     TerminalBundleId.NET -> FeatherIcons.Globe
+    TerminalBundleId.QEMU_X86_TRANSLATOR -> FeatherIcons.Cpu
 }

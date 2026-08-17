@@ -316,12 +316,12 @@ object TerminalBundles {
             # 扫描 ANDROID_HOME/build-tools 下所有版本目录，把 x86/x86_64 静态/动态 ELF 改成同名 qemu wrapper。
             # 原二进制改名 <name>.x86bin（若已存在则跳过），新同名脚本 exec /usr/local/bin/qemu-x86_64 <原二进制> "${'$'}@"。
             set +e
-            QEMU="${RDEEPCODE_QEMU_X86:-/usr/local/bin/qemu-x86_64}"
+            QEMU="${'$'}{RDEEPCODE_QEMU_X86:-/usr/local/bin/qemu-x86_64}"
             if [ ! -x "${'$'}QEMU" ]; then
               echo "[ERROR] qemu-x86_64 未找到：${'$'}QEMU。请确认「x86 构建转译器」bundle 已安装。"
               exit 2
             fi
-            SDK="${ANDROID_HOME:-${'$'}ANDROID_SDK_ROOT}"
+            SDK="${'$'}{ANDROID_HOME:-${'$'}ANDROID_SDK_ROOT}"
             if [ -z "${'$'}SDK" ] || [ ! -d "${'$'}SDK/build-tools" ]; then
               echo "[WARN] 未发现 ANDROID_HOME/build-tools：SDK=${'$'}SDK。未安装或未导出环境变量，跳过 wrapper。"
               exit 0

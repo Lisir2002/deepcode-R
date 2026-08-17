@@ -1184,6 +1184,7 @@ fun containerInitMessage(context: Context, state: ContainerInitState): String = 
                 com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.GIT -> "Git"
                 com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.BASH -> "Bash 环境"
                 com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.NET -> "网络工具"
+                com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId.QEMU_X86_TRANSLATOR -> "x86 构建转译器"
             }
         } ?: "环境"
         val tail = state.line?.takeIf { it.isNotBlank() }?.let { "\n$it" } ?: ""

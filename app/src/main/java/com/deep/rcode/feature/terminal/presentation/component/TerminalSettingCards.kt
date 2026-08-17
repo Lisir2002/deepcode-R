@@ -421,6 +421,7 @@ private fun sharedBundleIcon(b: TerminalBundle): ImageVector = when (b.id) {
     TerminalBundleId.GIT -> FeatherIcons.GitBranch
     TerminalBundleId.BASH -> FeatherIcons.Terminal
     TerminalBundleId.NET -> FeatherIcons.Globe
+    TerminalBundleId.QEMU_X86_TRANSLATOR -> FeatherIcons.Cpu
 }
 
 // ================================================================
