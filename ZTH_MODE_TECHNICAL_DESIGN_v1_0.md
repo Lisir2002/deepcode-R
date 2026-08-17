@@ -48,7 +48,7 @@
 ### 1.1 推荐 Kotlin 包结构（按三层 7 子系统拆分）
 
 ```
-com.deep.rcode.feature.agent.zth                 ← ZTH 顶层包（与 feature/agent 平级或子包）
+com.R.codecore.feature.agent.zth                 ← ZTH 顶层包（与 feature/agent 平级或子包）
 ├─ invariants                                     ← 0 章铁律：断言类 + 异常类型
 │   ├─ AgentZthInvariants.kt                       静态 assertZthXxx(state, op) 12 个断言
 │   └─ ZthInvariantViolationException.kt          class ZthInvariantViolationException(reason: String, invId: String) : IllegalStateException
@@ -593,8 +593,8 @@ val MIGRATION_36_37 = object : Migration(36, 37) { /* 3 张表 ALTER ADD 列共 
 
 ```protobuf
 syntax = "proto3";
-package com.deep.rcode.zth.datastore;
-option java_package = "com.deep.rcode.feature.agent.zth.model.datastore";
+package com.R.codecore.zth.datastore;
+option java_package = "com.R.codecore.feature.agent.zth.model.datastore";
 
 enum PresetId {
   PRESET_UNSPECIFIED = 0;

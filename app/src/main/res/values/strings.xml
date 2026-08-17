@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">R-DeepCode</string>
+    <string name="app_name">R-CodeCore</string>
 
     <!-- 设置页菜单标题 -->
     <string name="settings_title">设置</string>
@@ -937,8 +937,8 @@
     <string name="about_http_error">HTTP %1$d 错误</string>
 
     <!-- About - Share -->
-    <string name="about_share_title">分享 R-DeepCode</string>
-    <string name="about_share_text">R-DeepCode - Android 上的 AI 代码编辑器：\n%1$s</string>
+    <string name="about_share_title">分享 R-CodeCore</string>
+    <string name="about_share_text">R-CodeCore - Android 上的 AI 代码编辑器：\n%1$s</string>
 
     <!-- About - Copyright -->
     <string name="about_copyright">© 2025 Lisir2002 · Made with ❤ for mobile developers</string>

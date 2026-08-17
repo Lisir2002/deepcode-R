@@ -1,12 +1,12 @@
-# R-DeepCode 工程经验文档（Android · 启动稳定性 / 升级兼容性 / CI 守卫）
+# R-CodeCore 工程经验文档（Android · 启动稳定性 / 升级兼容性 / CI 守卫）
 
-> **文档定位**：专属于 R-DeepCode 项目的「教训 & Bug 修补经验手册」。
+> **文档定位**：专属于 R-CodeCore 项目的「教训 & Bug 修补经验手册」。
 > 本手册只收录**踩过坑、交过学费、有具体修复落地代码位置**的经验，不收录任何泛泛而谈的"最佳实践"空话。
 >
 > - **RC61 主事件**（v0.1.0-rc60 → v0.1.0-rc61b）：升级用户启动 1-2 秒无弹窗闪退、卸载重装就好、日志拿不到。
 > - **历史融合经验**（ExperienceRecall 479976 / 291148 / 1498720）：Android 构建 / ABI / 崩溃证据链 / 补丁最小化 / 反模式。
 >
-> 维护者：R-DeepCode 项目全体 · **每次发布 RC 或正式版本前，发布负责人必须通读 §6 的 Checklist**。
+> 维护者：R-CodeCore 项目全体 · **每次发布 RC 或正式版本前，发布负责人必须通读 §6 的 Checklist**。
 
 ---
 
@@ -37,10 +37,10 @@
 
 | 资源 | 升级路径（旧用户 = 闪退） | 首次安装（新用户/重装 = 不闪退） |
 |---|---|---|
-| `databases/rdeepcode_agent_db` | SCHEMA_VERSION ≤ 31 → 必须走 migration 32 + Room 全 schema 字节级校验 | fallbackCreateFromScratch 直接按 Entity 建 32，0 迁移 0 校验 |
+| `databases/rcodecore_agent_db` | SCHEMA_VERSION ≤ 31 → 必须走 migration 32 + Room 全 schema 字节级校验 | fallbackCreateFromScratch 直接按 Entity 建 32，0 迁移 0 校验 |
 | `shared_prefs/execution_mode_prefs.xml`（DataStore） | `PASSWORD_KEY` 有 legacy 明文/中间态 V2 密文 → `decryptCredentialCompat` 真会跑 | 全 key 为空 → `decryptCredentialCompat` 直接 `return ""`，**连调用都不会做** |
 | `filesDir/credential_encryption_state`（Room 表） | 存在旧行 → `ensureInitialized` 读 → MasterKey fingerprint 核对 / unwrapDek / Keystore 服务调用 | 表空 → 生成新 MasterKey+DEK 直接写入，0 对比 0 失败 |
-| Android Keystore 别名 `rdeepcode_credential_masterkey` | 存在旧 MasterKey（可能是 RC60 旧版本生成 / ROM 升级后 Keystore 变脏 / 用户改锁屏 / StrongBox 异常） | 包名删除 = Keystore 条目系统自动清 → 新 MasterKey 0 对比 |
+| Android Keystore 别名 `rcodecore_credential_masterkey` | 存在旧 MasterKey（可能是 RC60 旧版本生成 / ROM 升级后 Keystore 变脏 / 用户改锁屏 / StrongBox 异常） | 包名删除 = Keystore 条目系统自动清 → 新 MasterKey 0 对比 |
 
 ### 1.3 根因链（按触发概率排序）
 
@@ -323,7 +323,7 @@
 - [ ] APK unzip -l：ABI 目录符合预期（arm64-v8a only）。
 - [ ] apksigner verify：v2/v3 签名 OK、证书指纹正确。
 - [ ] zipalign -c 4：对齐 OK。
-- [ ] 命名 `rdeepcode-arm64-v<version>.apk`、SHA256 在 Release body 中附出。
+- [ ] 命名 `rcodecore-arm64-v<version>.apk`、SHA256 在 Release body 中附出。
 - [ ] prerelease flag 已对 RC 版本置 True。
 
 ### 6.4 最终人工回归

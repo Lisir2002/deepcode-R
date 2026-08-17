@@ -1,4 +1,4 @@
-# R-DeepCode 全量代码深度阅读总结文档（v2）
+# R-CodeCore 全量代码深度阅读总结文档（v2）
 
 > 生成时间：2026-08-16
 > 代码库：`https://github.com/Lisir2002/deepcode-R`（本地路径 `/workspace/deepcode-R`）
@@ -39,7 +39,7 @@
 
 ## 一、项目定位与设计哲学
 
-**R-DeepCode** 是一款在 **Android 手机上运行的 AI 编程工具（AI Coding Agent App）**，把大语言模型与本地 Linux 开发环境深度集成：
+**R-CodeCore** 是一款在 **Android 手机上运行的 AI 编程工具（AI Coding Agent App）**，把大语言模型与本地 Linux 开发环境深度集成：
 
 - 内置 **Alpine Linux 容器**（PRoot 实现）与 **终端模拟器**（Termux 组件），让 AI 能直接读写文件、执行 Shell 命令、运行构建工具；
 - 支持 **远程 SSH 服务器**作为执行后端，把手机变成远程项目的移动工作站；
@@ -98,7 +98,7 @@
 
 ```
 rootProject "app"
-├── :app                 # 主应用（com.deep.rcode）
+├── :app                 # 主应用（com.R.codecore）
 ├── :terminal-emulator   # Termux 终端仿真核心（Java）
 └── :terminal-view       # Termux 终端视图渲染（Java）
 ```
@@ -148,7 +148,7 @@ app/src/main/java/com/deep/rcode/
 1. `registerBouncyCastle()`：用 `addProvider`（非 insert 到第 1 位，避免抢占 OkHttp/Conscrypt 的 SSLContext KeyStore 查找导致 `BKS not found`）；
 2. `createNotificationChannels()`：terminal_service 渠道；
 3. `credentialRequestBridge.start()`：主线程启动 git 缺凭据文件 IPC 监听；
-4. `appScope.launch` 后台任务：`extractDocs` / `extractPrompts`（释放内置提示词到 `~/.rdeepcode/prompts/`，用户自定义在 `prompts.custom/` 不被覆盖）/ `gitCredentialsFileSync.syncAll()` / `modelMetadataService.refreshFromNetworkIfStale()` / 日志等级生效；
+4. `appScope.launch` 后台任务：`extractDocs` / `extractPrompts`（释放内置提示词到 `~/.rcodecore/prompts/`，用户自定义在 `prompts.custom/` 不被覆盖）/ `gitCredentialsFileSync.syncAll()` / `modelMetadataService.refreshFromNetworkIfStale()` / 日志等级生效；
 5. **RC61b 关键**：首帧优先，延后重活 —— `credentialEncryptor.ensureInitialized()` 后台预热（失败只记日志）→ `delay(500)` → 执行模式读取 → REMOTE_SSH 时 `withTimeout(15s)` 连接并 `syncDocsToRemote()` + 注册重连 supervisor；每段 `runCatching` 隔离；
 6. `mcpManager.start()`：连接已配置 MCP server 并注册工具。
 
@@ -654,9 +654,9 @@ RemoteConnection/RemoteMount/RemoteAuditLog 领域模型 + Room DAO；RemoteServ
 
 app-settings-guide / backup-and-restore / checkpointing / container-image / custom-prompts / environment-guides / git-page / logs-and-private-dir / mcp-and-skills / providers-and-models / remote-servers。
 
-### 21.3 git-credential-rdeepcode 脚本（[assets/rdeepcode](file:///workspace/deepcode-R/app/src/main/assets/rdeepcode/git-credential-rdeepcode)）
+### 21.3 git-credential-rcodecore 脚本（[assets/rcodecore](file:///workspace/deepcode-R/app/src/main/assets/rcodecore/git-credential-rcodecore)）
 
-Git credential helper：只处理 `get`；自检 `~/.rdeepcode/git-credentials`；未命中写 `cred-req-<RID>` 触发 App FileObserver；阻塞轮询 `cred-resp-<RID>`（200ms × 7500 次 ≈ 25 分钟）；原子写（先 .tmp 再 mv）；经 PRoot -b 绑定共享；仅 HTTPS 生效。
+Git credential helper：只处理 `get`；自检 `~/.rcodecore/git-credentials`；未命中写 `cred-req-<RID>` 触发 App FileObserver；阻塞轮询 `cred-resp-<RID>`（200ms × 7500 次 ≈ 25 分钟）；原子写（先 .tmp 再 mv）；经 PRoot -b 绑定共享；仅 HTTPS 生效。
 
 ### 21.4 api.official.json
 
@@ -671,7 +671,7 @@ Git credential helper：只处理 `get`；自检 `~/.rdeepcode/git-credentials`�
 | 工作流 | 触发 | 内容 |
 |--------|------|------|
 | ci.yml | push/PR 到 main | fetch-depth 0、JDK17+SDK36、生成 debug keystore、assembleRelease + testReleaseUnitTest |
-| android-release.yml | `v*` Tag 或手动 | 固定 debug keystore（base64 硬编码保跨 run 签名一致）、versionCode 单调校验、尝试还原正式 keystore、构建 Release APK → `rdeepcode-arm64-<ver>.apk`、changelog、GitHub Release + SHA256 |
+| android-release.yml | `v*` Tag 或手动 | 固定 debug keystore（base64 硬编码保跨 run 签名一致）、versionCode 单调校验、尝试还原正式 keystore、构建 Release APK → `rcodecore-arm64-<ver>.apk`、changelog、GitHub Release + SHA256 |
 | auto-cleanup.yml | 每周日 20:00 UTC | 清理 30 天前 workflow runs / 过期 artifacts |
 | ci-failure-alert.yml | CI 失败 workflow_run | 自动创建 Issue 追踪（ci-failure/bug 标签） |
 | dependency-audit.yml | 每周三 00:00 UTC | 依赖更新检查、Gradle wrapper 版本、审计摘要 |

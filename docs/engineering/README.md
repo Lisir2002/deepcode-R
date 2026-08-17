@@ -1,4 +1,4 @@
-# docs/engineering — R-DeepCode 工程经验索引
+# docs/engineering — R-CodeCore 工程经验索引
 
 > 定位：只收录**在本项目里踩过坑、付过真实代价、有具体修复锚点**的经验手册。
 > 不收录任何"工程最佳实践"类的泛泛而谈。

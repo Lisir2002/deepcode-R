@@ -1,4 +1,4 @@
-# DeepCode-R 完整技术架构文档 v1.0
+# CodeCore-R 完整技术架构文档 v1.0
 > 含现有代码结构详解 + ZTH 零幻觉容忍模式模块设计 + 模块关联图 + 精确函数签名
 > 代码库根目录：[/workspace/deepcode-R](file:///workspace/deepcode-R)
 
@@ -83,10 +83,10 @@
 | 终端 | Termux Emulator + View | 独立 terminal-emulator / terminal-view 模块 |
 | 打包 | Gradle + AGP | multi-module（app / terminal-emulator / terminal-view） |
 
-### 0.2 顶层包结构（`com.deep.rcode`）
+### 0.2 顶层包结构（`com.R.codecore`）
 
 ```
-com.deep.rcode
+com.R.codecore
 ├─ core/                               ← 跨 feature 通用能力
 │  ├─ db/MigrationLoader.kt             32 份 SQL 文件迁移加载器
 │  ├─ security/                         DEK/HostKey/Credential 加密套件（4 文件）
@@ -1152,7 +1152,7 @@ SwitchModeTool.executeWithContext()  （PLAN → BUILD 切换请求）
 ### 7.1 ZTH 包结构全景（7 子系统 40+ 文件）
 
 ```
-com.deep.rcode.feature.agent.zth
+com.R.codecore.feature.agent.zth
 ├─ ZthFacade.kt                              ← 门面：StatefulAgentWorkflow 只访问这一个
 │
 ├─ invariants/                                ← 0 章铁律：断言 + 异常
@@ -3086,7 +3086,7 @@ interface FeatureFlagRepository {
 1. **串行不变性**：步骤 [3] 的 ZTH Card 必须在步骤 [4] 的所有权限弹窗之前。禁止在 ZTH Card 未确认时先弹任何权限弹窗（防用户被多次打断不知所谓）。
 2. **总卡不可省**：即使 PLAN 中所有单个工具都 PASS_BY_ALWAYS_RULE（即所有工具都不用弹权限弹窗），**ZTH 汇总 Card 依然必须弹**（ZTH-0 合规：用户至少确认一次完整 Plan，不能因为用户之前选过「始终允许 git push」就不告知本次 Plan 要 push 什么 commit）。
 3. **GLOBAL DENY 最高优先级**：PermissionScope.GLOBAL DENY 的规则命中时，ZTH 审查中**直接标红跳过**，不会走到步骤 [4] 的权限弹窗（省时间 + 安全优先：全局禁的东西不用再问用户一次）。
-4. **ALWAYS 不写 GLOBAL**：ZTH 流程中用户在权限弹窗点「始终允许」= 写 PROJECT 级规则（路径 `workspace/.rdeepcode/permissions.json`），永远不会自动写 GLOBAL 级。用户要升级为全局只能去「权限管理」设置页手动操作（防误操作大范围放行）。
+4. **ALWAYS 不写 GLOBAL**：ZTH 流程中用户在权限弹窗点「始终允许」= 写 PROJECT 级规则（路径 `workspace/.rcodecore/permissions.json`），永远不会自动写 GLOBAL 级。用户要升级为全局只能去「权限管理」设置页手动操作（防误操作大范围放行）。
 
 ---
 
@@ -5053,12 +5053,12 @@ SYNC-INV 跨设备同步（本次讨论新增）：SYNC-INV-1（shared_sync_key 
 
 | 编号 | 文档 C.4.x 中错误假设包路径 | 真实代码实际路径（Glob/Grep/Read 验证） | 影响的 C.4.x 章节 |
 |---|---|---|---|
-| P1 | `com.deep.rcode.database.*Dao.kt`（错误）→ 假设统一放在 `database` 包 | `com.deep.rcode.feature.agent.data.local.dao.*`（真实 9 个 DAO）+ `com.deep.rcode.feature.credentials.data.local.dao.*` + `com.deep.rcode.feature.settings.data.local.dao.*` + `com.deep.rcode.feature.workspace.data.local.dao.*`（按功能子域分包，非大一统 database 包） | C.4.6 / C.4.10 / C.4.11 / C.4.16 / C.4.18：新增 6 个 ZTH DAO 必须进 `feature/agent/data/local/dao/`，不能建独立 `database/` 包 |
-| P2 | `com.deep.rcode.database.*Entity.kt`（错误）→ 假设统一放在 `database` 包 | `com.deep.rcode.feature.agent.data.local.entity.*`（真实 6 个 Entity）+ `credentials/settings/workspace` 对应子域 entity 包 | C.4.8 / C.4.10 / C.4.18：6 个 ZTH Entity（5 张表 + telemetry）必须放 `feature/agent/data/local/entity/`，且 `@Database(entities=[...])`（AgentDatabase.kt L28）数组必须加上对应的 `class` 引用 |
-| P3 | `AgentDatabase` 位于 `com.deep.rcode.database.AgentDatabase`（错误） | **真实**：`com.deep.rcode.feature.agent.data.local.database.AgentDatabase`（AgentModule.kt L16 import）；SCHEMA_VERSION 真实值 = 33（AgentDatabase.kt L47）→ v33 → v37（+1 次/每张新表）共 4 次 Migration 必须在 `core.db.MigrationLoader`（AgentModule.kt L67 import）中注册 | C.4.11 / C.4.18：v33→v37 SQL + MigrationLoader.register() |
+| P1 | `com.R.codecore.database.*Dao.kt`（错误）→ 假设统一放在 `database` 包 | `com.R.codecore.feature.agent.data.local.dao.*`（真实 9 个 DAO）+ `com.R.codecore.feature.credentials.data.local.dao.*` + `com.R.codecore.feature.settings.data.local.dao.*` + `com.R.codecore.feature.workspace.data.local.dao.*`（按功能子域分包，非大一统 database 包） | C.4.6 / C.4.10 / C.4.11 / C.4.16 / C.4.18：新增 6 个 ZTH DAO 必须进 `feature/agent/data/local/dao/`，不能建独立 `database/` 包 |
+| P2 | `com.R.codecore.database.*Entity.kt`（错误）→ 假设统一放在 `database` 包 | `com.R.codecore.feature.agent.data.local.entity.*`（真实 6 个 Entity）+ `credentials/settings/workspace` 对应子域 entity 包 | C.4.8 / C.4.10 / C.4.18：6 个 ZTH Entity（5 张表 + telemetry）必须放 `feature/agent/data/local/entity/`，且 `@Database(entities=[...])`（AgentDatabase.kt L28）数组必须加上对应的 `class` 引用 |
+| P3 | `AgentDatabase` 位于 `com.R.codecore.database.AgentDatabase`（错误） | **真实**：`com.R.codecore.feature.agent.data.local.database.AgentDatabase`（AgentModule.kt L16 import）；SCHEMA_VERSION 真实值 = 33（AgentDatabase.kt L47）→ v33 → v37（+1 次/每张新表）共 4 次 Migration 必须在 `core.db.MigrationLoader`（AgentModule.kt L67 import）中注册 | C.4.11 / C.4.18：v33→v37 SQL + MigrationLoader.register() |
 | P4 | `HallucinationCircuitBreakerFactory` 提供单独 ZthModule.kt（错误：假设新建 Zth DI Module） | 真实只有 3 个 Module：`AgentModule.kt` / `BackupModule.kt` / `RepositoryModule.kt`（Glob 验证）→ **不新建 ZthModule.kt**，所有 ZTH 20+ @Provides 全部追加在**现有 AgentModule 对象内**（L71 `object AgentModule` 内加 @Provides 函数） | C.4.2 / C.4.6：FeatureFlag/HallucinationCircuitBreakerFactory/ZthFirestoreSyncer 必须在 AgentModule.kt 原文件内扩展 |
-| P5 | `FeatureFlagRepository` 假设 package 顶层独立 | 真实所有 Repository 按子域分包：`feature/settings/data/repository/` + `feature/agent/data/repository/` + `feature/workspace/domain/repository/` → FeatureFlagRepository 属于设置功能，**真实路径必须是** `com.deep.rcode.feature.settings.data.repository.FeatureFlagRepository` | C.4.2：新建文件路径必须对齐，不能放 `core/data/` 等 |
-| P6 | `ZthSensitiveColumnCrypto` 假设放 `feature/agent/domain/`（错误）| 真实加密工具放在 `com.deep.rcode.core.util.*` / `com.deep.rcode.core.db.*`（核心工具类子域）→ **真实路径必须是** `com.deep.rcode.core.crypto.ZthSensitiveColumnCrypto`（新建 `core/crypto` 包，和 core.util/core.db 对齐） | C.4.8：Keystore 加密实现必须放 `core/crypto/` 跨 feature 可复用 |
+| P5 | `FeatureFlagRepository` 假设 package 顶层独立 | 真实所有 Repository 按子域分包：`feature/settings/data/repository/` + `feature/agent/data/repository/` + `feature/workspace/domain/repository/` → FeatureFlagRepository 属于设置功能，**真实路径必须是** `com.R.codecore.feature.settings.data.repository.FeatureFlagRepository` | C.4.2：新建文件路径必须对齐，不能放 `core/data/` 等 |
+| P6 | `ZthSensitiveColumnCrypto` 假设放 `feature/agent/domain/`（错误）| 真实加密工具放在 `com.R.codecore.core.util.*` / `com.R.codecore.core.db.*`（核心工具类子域）→ **真实路径必须是** `com.R.codecore.core.crypto.ZthSensitiveColumnCrypto`（新建 `core/crypto` 包，和 core.util/core.db 对齐） | C.4.8：Keystore 加密实现必须放 `core/crypto/` 跨 feature 可复用 |
 | P7 | StatefulAgentWorkflow 当前真实构造函数参数 = 20 个（L67~L90 验证），文档 C.4.2 中假设只加 `featureFlags` 1 个参数 → 错误地忽略 ExecutionModeHolder/PerformanceClass/ConnectivityWatcher/PkgMgrCommandTransformer 4 个**必须新增的注入** | 真实 StatefulAgentWorkflow.kt L67~L90：`@Inject constructor(toolRegistry, aiProviderRepository, openAIApi, anthropicApi, geminiApi, promptProvider, permissionManager, policyEngine, contextCompactor, planApprovalManager, toolOutputStore, modelMetadataService, visionModelSettingsRepository, compactionModelSettingsRepository, compatibilityPolicyRepository, sessionUseCase, messagePersistenceUseCase, checkpointManager)`（共 18 个）→ 要追加的参数 = **5 个**：① featureFlags ② performanceClass ③ connectivityWatcher ④ zthGuardAggregateFacade（CapabilityGuard+FailureClassifier+ToolOutputGuard+PlanApproval 门面包 1 个，避免构造函数变成 30+ 参数）⑤ pkgMgrTransformer（C.4.14）→ 共 23 个构造参数 | C.4.1 / C.4.9 / C.4.12 / C.4.14：所有 ZTH 钩子不要拆成 8 个独立 inject → 用门面 ZthGuardAggregateFacade 聚合，避免构造爆炸 |
 
 #### C.6.3 Phase 1~5 执行顺序（按耦合度 & 真实依赖分层）

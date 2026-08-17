@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">R-DeepCode</h1>
+  <h1 align="center">R-CodeCore</h1>
   <p align="center">
     AI-powered coding assistant for Android · Built-in Linux terminal · AI Agent · MCP · Git integration
     <br />
@@ -20,8 +20,8 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/screenshots/home.png" alt="R-DeepCode home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/terminal.png" alt="R-DeepCode terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/home.png" alt="R-CodeCore home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/terminal.png" alt="R-CodeCore terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
     </tr>
     <tr>
       <td align="center">Home · AI Chat</td>
@@ -34,7 +34,7 @@
 
 ## Overview
 
-R-DeepCode is an AI-powered coding assistant that runs natively on Android. It integrates large language models with a local Linux development environment. The built-in Alpine Linux container and terminal emulator let the AI directly read/write files, execute shell commands, and run build tools. It also supports remote SSH servers as the execution backend, turning your phone into a mobile workstation for remote projects.
+R-CodeCore is an AI-powered coding assistant that runs natively on Android. It integrates large language models with a local Linux development environment. The built-in Alpine Linux container and terminal emulator let the AI directly read/write files, execute shell commands, and run build tools. It also supports remote SSH servers as the execution backend, turning your phone into a mobile workstation for remote projects.
 
 ## Features
 
@@ -98,13 +98,13 @@ R-DeepCode is an AI-powered coding assistant that runs natively on Android. It i
 Add to `app/keystore.properties`:
 
 ```properties
-storeFile=rdeepcode.jks
+storeFile=rcodecore.jks
 storePassword=your_password
 keyAlias=your_alias
 keyPassword=your_key_password
 ```
 
-> `storeFile` path is customizable (filename not fixed). CI restores it from secrets to `app/rdeepcode.jks`. When signing config is not present, release build auto-falls back to the debug keystore, so `assembleRelease` always produces an APK.
+> `storeFile` path is customizable (filename not fixed). CI restores it from secrets to `app/rcodecore.jks`. When signing config is not present, release build auto-falls back to the debug keystore, so `assembleRelease` always produces an APK.
 
 </details>
 
@@ -119,7 +119,7 @@ keyPassword=your_key_password
 
 ### Cloud build (GitHub Actions release automation)
 
-Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push origin v0.1.0-rc1` / `v0.1.0`) and [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) takes over automatically → unit tests → `assembleRelease` → production signing → upload R8 mapping → create GitHub Release → attach `rdeepcode-arm64-<tag>.apk` → write Run Summary. RC tags (containing `-rc`) are auto-marked as prerelease.
+Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push origin v0.1.0-rc1` / `v0.1.0`) and [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) takes over automatically → unit tests → `assembleRelease` → production signing → upload R8 mapping → create GitHub Release → attach `rcodecore-arm64-<tag>.apk` → write Run Summary. RC tags (containing `-rc`) are auto-marked as prerelease.
 
 - **Production-signing prerequisite**: the repository `Settings → Secrets → Actions` must define 4 secrets — `AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`. Missing any one silently falls back to the debug keystore, and the artifact cannot be published.
 - **Real-time monitoring & artifact verification** (mandatory after pushing a tag): poll `workflow_runs` + `jobs` via the GitHub API until `conclusion` settles → download the APK → `unzip -l` to confirm only `lib/arm64-v8a/*.so` → `keytool -printcert` to confirm it is not `CN=Android Debug` → `sha256sum` to record the fingerprint.

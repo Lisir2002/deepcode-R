@@ -1,6 +1,6 @@
 # 自定义容器镜像
 
-R-DeepCode 默认使用内置的 Alpine rootfs 通过 PRoot 运行 Linux 容器。如果需要不同的发行版或预装特定工具链的环境，可以导入自定义 rootfs 镜像。
+R-CodeCore 默认使用内置的 Alpine rootfs 通过 PRoot 运行 Linux 容器。如果需要不同的发行版或预装特定工具链的环境，可以导入自定义 rootfs 镜像。
 
 ---
 
@@ -55,7 +55,7 @@ cd rootfs-dir && tar czf ../debian-rootfs.tar.gz .
 
 ---
 
-## 在 R-DeepCode 中导入自定义镜像
+## 在 R-CodeCore 中导入自定义镜像
 
 1. 进入「设置」->「容器镜像」
 2. 点击右上角「+」号，选择「本地镜像」
@@ -73,6 +73,6 @@ cd rootfs-dir && tar czf ../debian-rootfs.tar.gz .
 
 - 自定义镜像**不会自动安装工具**：内置 Alpine 会在首次启动时自动安装 python3、git 等基础工具，自定义镜像不会执行此步骤，所需工具需在镜像中预装或手动进入容器安装
 - 自定义镜像**不会配置镜像源**：如果需要包管理器，确保镜像内的源配置正确
-- 首次使用自定义镜像时，R-DeepCode 会解压 rootfs 到 App 私有目录，耗时取决于镜像大小
+- 首次使用自定义镜像时，R-CodeCore 会解压 rootfs 到 App 私有目录，耗时取决于镜像大小
 - 删除自定义镜像会一并清理其解压的 rootfs 目录，释放存储空间
 - 内置 Alpine 镜像不可删除，随时可以切回

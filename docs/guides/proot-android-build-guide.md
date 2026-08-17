@@ -2,7 +2,7 @@
 
 本指南介绍如何在 ARM64 设备的 PRoot Linux 容器中，搭建 JDK + Android SDK 环境并从源码编译 Android 应用。本文以 Debian 12 (bookworm) aarch64 为例进行示范，实际也适用于 Ubuntu、Arch 等其他 Linux 发行版容器。
 
-> **提示**：R-DeepCode 内置的 Alpine 容器因其 musl libc 与 PRoot 的特殊交互限制，编译 Android 应用时需要额外特殊处理（见末尾补充说明）。若要顺畅编译 Android 应用，推荐在 R-DeepCode 中导入自定义 Debian/Ubuntu 镜像使用。
+> **提示**：R-CodeCore 内置的 Alpine 容器因其 musl libc 与 PRoot 的特殊交互限制，编译 Android 应用时需要额外特殊处理（见末尾补充说明）。若要顺畅编译 Android 应用，推荐在 R-CodeCore 中导入自定义 Debian/Ubuntu 镜像使用。
 
 ---
 

@@ -42,7 +42,7 @@ jobs:
       #   但只要签名证书稳定，用户从 rc23→rc24→rc25→正式版之间都能 OTA 式覆盖升级，不用每次清数据。
       #
       # 如果有正式 keystore（secrets.AICODE_KEYSTORE_BASE64），下面的 "Restore release keystore" 步骤会
-      # 用 AICODE_KEYSTORE_BASE64 在 app/rdeepcode.jks 生成一份不同的 keystore，并写 app/keystore.properties
+      # 用 AICODE_KEYSTORE_BASE64 在 app/rcodecore.jks 生成一份不同的 keystore，并写 app/keystore.properties
       # 指向它 → Gradle 的 signingConfigs.release 会优先生效 → 产物为正式签名（SHA256 另算但同样稳定）。
       #
       # 若 secrets 未配置（绝大多数测试/迭代场景）：Restore release keystore 跳过 → 本步骤写的
@@ -138,8 +138,8 @@ jobs:
         run: |
           # 如果 Secrets 未配置则跳过，后续 assembleRelease 会回退到 debug keystore。
           if [[ -n "$KEYSTORE_BASE64" ]]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > app/rdeepcode.jks
-            echo "keystore restored ($(stat -c%s app/rdeepcode.jks) bytes)"
+            echo "$KEYSTORE_BASE64" | base64 -d > app/rcodecore.jks
+            echo "keystore restored ($(stat -c%s app/rcodecore.jks) bytes)"
           else
             echo "AICODE_KEYSTORE_BASE64 not set — skipping release keystore restore, will use debug keystore fallback."
           fi
@@ -153,7 +153,7 @@ jobs:
         run: |
           # 仅当 release keystore 存在时才生成 properties 文件。
           if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
-            printf 'storeFile=rdeepcode.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            printf 'storeFile=rcodecore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
               "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > app/keystore.properties
             echo "app/keystore.properties generated"
           else
@@ -173,14 +173,14 @@ jobs:
         run: ./gradlew --warning-mode=all assembleRelease --stacktrace
 
       # 重命名 APK 为「品牌-arm64-版本」格式（真机单架构，显式带 ABI 标签）：
-      #   rdeepcode-arm64-v1.0.0-rc1.apk
+      #   rcodecore-arm64-v1.0.0-rc1.apk
       - name: Rename APK
         run: |
           mkdir -p dist
           ver="${GITHUB_REF_NAME:-manual}"   # tag 如 v1.0.0-rc1；手动触发时为 manual-N
           src="app/build/outputs/apk/release/app-release.apk"
           if [[ -f "$src" ]]; then
-            out="dist/rdeepcode-arm64-${ver}.apk"
+            out="dist/rcodecore-arm64-${ver}.apk"
             cp "$src" "$out"
             echo "packaged $out"
             ls -lh "$out"
@@ -207,7 +207,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-apk-${{ github.ref_name }}
-          path: dist/rdeepcode-arm64-*.apk
+          path: dist/rcodecore-arm64-*.apk
           if-no-files-found: warn
           retention-days: 90
 
@@ -273,9 +273,9 @@ jobs:
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           fail_on_unmatched_files: true
           generate_release_notes: false
-          # 产物名约定 rdeepcode-arm64-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
+          # 产物名约定 rcodecore-arm64-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
           files: |
-            dist/rdeepcode-arm64-*.apk
+            dist/rcodecore-arm64-*.apk
         env:
           # RC70 修复：softprops action 对 tag/release 写操作 + 附件 upload 用 GH_RELEASE_TOKEN (细粒度 PAT)，
           # 避免默认 secrets.GITHUB_TOKEN 在 tag 已经存在 + repo 限制 Release write / tag push 时竞态失败。
@@ -291,13 +291,13 @@ jobs:
           IS_PRERELEASE: ${{ steps.prerelease.outputs.is_prerelease }}
           REPO: ${{ github.repository }}
         run: |
-          apk="dist/rdeepcode-arm64-${TAG}.apk"
+          apk="dist/rcodecore-arm64-${TAG}.apk"
           sha256="$(sha256sum "$apk" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
           {
-            echo "## R-DeepCode Release — ${TAG}"
+            echo "## R-CodeCore Release — ${TAG}"
             echo ""
             echo "- **Prerelease**: ${IS_PRERELEASE}"
-            echo "- **APK**: \`rdeepcode-arm64-${TAG}.apk\`"
+            echo "- **APK**: \`rcodecore-arm64-${TAG}.apk\`"
             echo "- **SHA256**: \`${sha256}\`"
             echo "- **Release page**: https://github.com/${REPO}/releases/tag/${TAG}"
             echo "- **Artifact**: r8-mapping-${TAG} (Run artifact, 90d retention)"

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">R-DeepCode</string>
+    <string name="app_name">R-CodeCore</string>
 
     <!-- Settings menu titles -->
     <string name="settings_search_hint">Search settings…</string>
@@ -894,8 +894,8 @@
     <string name="about_http_error">HTTP %1$d error</string>
 
     <!-- About - Share text -->
-    <string name="about_share_title">Share R-DeepCode</string>
-    <string name="about_share_text">R-DeepCode - AI code editor on Android:\n%1$s</string>
+    <string name="about_share_title">Share R-CodeCore</string>
+    <string name="about_share_text">R-CodeCore - AI code editor on Android:\n%1$s</string>
 
     <!-- About - Open Source Credits -->
     <string name="about_credits">Powered by Open Source</string>

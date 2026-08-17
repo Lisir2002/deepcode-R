@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文件为 R-DeepCode 项目的 **AI 协同开发规范**，是任意 AI Agent（Claude Code / Trae / Cursor / 自研 Agent 等）在本仓库工作时的唯一权威纪律源。App 运行时由 `SystemPromptProvider` 自动加载本项目规则（优先 `AGENTS.md`），拼入 System Prompt。
+本文件为 R-CodeCore 项目的 **AI 协同开发规范**，是任意 AI Agent（Claude Code / Trae / Cursor / 自研 Agent 等）在本仓库工作时的唯一权威纪律源。App 运行时由 `SystemPromptProvider` 自动加载本项目规则（优先 `AGENTS.md`），拼入 System Prompt。
 
 ## 总则
 - 永远使用中文回复。
@@ -80,10 +80,10 @@ Tag 推送到 GitHub 后，由 `.github/workflows/android-release.yml` 自动接
 > workflow 实际是**单 job 多 step**结构（jobs.build），下述 6 个阶段是按职责划分的逻辑阶段，对应 step 序列。
 
 1. **variables** → `Display release tag info` + `Verify versionCode monotonic`（versionCode 单调递增校验）+ `Determine release name`（手动触发用 `manual-<run_number>`）+ `Determine prerelease flag`（tag 含 `-rc/-dev/-beta/-alpha` 后缀自动标记 prerelease）
-2. **build** → `:app:testReleaseUnitTest`（发版质量门禁）→ `:app:assembleRelease` → `Restore release keystore`（还原 `AICODE_KEYSTORE_BASE64` 到 `app/rdeepcode.jks`）→ `Generate keystore.properties`（用 4 个签名 secrets 生成临时 `keystore.properties`）→ **正式签名**构建 APK 到 `app/build/outputs/apk/release/app-release.apk` → `Rename APK` 重命名为 `dist/rdeepcode-arm64-<tag>.apk`
+2. **build** → `:app:testReleaseUnitTest`（发版质量门禁）→ `:app:assembleRelease` → `Restore release keystore`（还原 `AICODE_KEYSTORE_BASE64` 到 `app/rcodecore.jks`）→ `Generate keystore.properties`（用 4 个签名 secrets 生成临时 `keystore.properties`）→ **正式签名**构建 APK 到 `app/build/outputs/apk/release/app-release.apk` → `Rename APK` 重命名为 `dist/rcodecore-arm64-<tag>.apk`
 3. **upload-mapping** → `Upload R8 mapping`（`actions/upload-artifact@v4`，artifact 名 `r8-mapping-<tag>`，90 天保留，`if-no-files-found: ignore` 不阻塞）
 4. **create-release** → `Generate changelog from git log` + `Create GitHub Release & Upload assets`（`softprops/action-gh-release@v2`，prerelease 取决于 tag 是否含预发布后缀）
-5. **upload-apk** → 与 create-release 同 step 完成（`files: dist/rdeepcode-arm64-*.apk` 挂到 Release Assets）
+5. **upload-apk** → 与 create-release 同 step 完成（`files: dist/rcodecore-arm64-*.apk` 挂到 Release Assets）
 6. **summary** → `Write download URLs to Run Summary`（写入 Tag / Prerelease / APK 文件名 / SHA256 / Release 页面 / mapping artifact 名到 `$GITHUB_STEP_SUMMARY`）
 
 ### 实时监控命令（GitHub API）
@@ -107,7 +107,7 @@ curl -s -u "<owner>:<token>" \
 
 ### 产物校验清单（构建完成后必跑）
 
-1. **下载 APK** → `curl -sL -u "<owner>:<token>" -o rdeepcode-arm64-<tag>.apk "<browser_download_url>"`
+1. **下载 APK** → `curl -sL -u "<owner>:<token>" -o rcodecore-arm64-<tag>.apk "<browser_download_url>"`
 2. **ABI 校验** → `unzip -l <apk> | grep lib/` 必须只有 `lib/arm64-v8a/*.so`，无 x86_64
 3. **签名校验** → `keytool -printcert -jarfile <apk>` → Owner 必须为正式签名（非 `CN=Android Debug`）
 4. **SHA256** → `sha256sum <apk>` 记录指纹
@@ -119,7 +119,7 @@ curl -s -u "<owner>:<token>" \
 
 | Secret 名称 | 取值 |
 |---|---|
-| `AICODE_KEYSTORE_BASE64` | `app/rdeepcode.jks` 文件的 base64 编码 |
+| `AICODE_KEYSTORE_BASE64` | `app/rcodecore.jks` 文件的 base64 编码 |
 | `AICODE_KEYSTORE_PASSWORD` | keystore 的 storePassword |
 | `AICODE_KEY_ALIAS` | 签名 key 的 keyAlias |
 | `AICODE_KEY_PASSWORD` | key 的 keyPassword |
@@ -149,7 +149,7 @@ curl -s -u "<owner>:<token>" \
 ### Release 签名配置
 
 签名配置在 `app/build.gradle.kts` 中自动处理：
-- **Keystore 文件**：路径由 `app/keystore.properties` 的 `storeFile` 字段指定（文件名可自定义，不固定为 `aicode.jks`）。本地通常不存放签名文件，CI 从 GitHub secret 还原到 `app/rdeepcode.jks`。
+- **Keystore 文件**：路径由 `app/keystore.properties` 的 `storeFile` 字段指定（文件名可自定义，不固定为 `aicode.jks`）。本地通常不存放签名文件，CI 从 GitHub secret 还原到 `app/rcodecore.jks`。
 - **凭据**：从 `app/keystore.properties` 加载（`storeFile`、`storePassword`、`keyAlias`、`keyPassword`）。
 - **目标 ABI**：单架构 `arm64-v8a` 真机；x86_64 模拟器不做正式支持。
 

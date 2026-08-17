@@ -1,0 +1,49 @@
+package com.R.codecore.feature.agent.domain.memory
+
+import com.R.codecore.core.util.FileLogger
+import com.R.codecore.feature.agent.domain.container.ContainerInstaller
+import java.io.File
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class GlobalMemorySource @Inject constructor(
+    private val containerInstaller: ContainerInstaller
+) : MemorySource {
+
+    private val memoryRoot: File by lazy {
+        File(containerInstaller.rcodecoreDir, "memory").also { it.mkdirs() }
+    }
+
+    override fun listMemories(): List<Memory> {
+        if (!memoryRoot.exists()) return emptyList()
+        val files = memoryRoot.listFiles { file -> file.isFile && file.extension == "md" } ?: return emptyList()
+        
+        // M-4：访问次数多的优先，其次按名称排序，保证常用记忆优先展示/注入。
+        return files.mapNotNull { file -> MemoryParser.parse(file, MemoryScope.GLOBAL) }
+            .sortedWith(compareByDescending<Memory> { it.accessCount }.thenBy { it.name.lowercase() })
+    }
+
+    override fun loadContent(name: String): String? {
+        return listMemories()
+            .firstOrNull { it.name.equals(name, ignoreCase = true) }
+            ?.content
+    }
+
+    override fun saveMemory(name: String, description: String, content: String, tags: List<String>): Boolean {
+        return try {
+            if (!memoryRoot.exists()) memoryRoot.mkdirs()
+            val file = MemorySource.resolveMemoryFile(memoryRoot, name)
+            file.writeText(MemoryParser.format(MemorySource.sanitizeName(name), description, content, tags))
+            true
+        } catch (e: Exception) {
+            FileLogger.e("GlobalMemorySource", "Failed to save memory: $name", e)
+            false
+        }
+    }
+
+    override fun deleteMemory(name: String): Boolean {
+        val file = MemorySource.resolveMemoryFile(memoryRoot, name)
+        return if (file.exists()) file.delete() else false
+    }
+}

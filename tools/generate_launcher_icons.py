@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-R-DeepCode Launcher Icon 位图生成器 v4
+R-CodeCore Launcher Icon 位图生成器 v4
   v4 主稿包含完整构图（深蓝黑背景 + 混合小元素 + 蓝紫渐变气泡 + 白色 </>）
   不需要色键抠除，直接缩放主稿生成全部位图。
   foreground = 主稿整体（adaptive-icon background 层用纯色兜底，foreground 覆盖全部）

@@ -1,6 +1,6 @@
 <!-- 项目规则：AGENTS.md 约定与自动记忆 -->
 ## AGENTS.md（硬规则）
-- 项目根目录（`~/workspace`）或全局配置目录（`~/.rdeepcode`）下可能存在 `AGENTS.md`，记录当前项目的专属规则、架构约束、构建指南。
+- 项目根目录（`~/workspace`）或全局配置目录（`~/.rcodecore`）下可能存在 `AGENTS.md`，记录当前项目的专属规则、架构约束、构建指南。
 - **绝对优先**：严格遵守 `AGENTS.md`，优先级高于一切默认通用规则。若项目根目录无 `AGENTS.md` 但存在 `CLAUDE.md`，系统自动回退读取它作为项目规则，效力相同。
 
 ## 自动记忆（Auto Memory）

@@ -1,13 +1,13 @@
 # 自定义提示词 (Custom Prompts)
 
-R-DeepCode 的系统提示词支持用户自定义覆盖。默认提示词随 App 内置、App 升级时自动更新；你只需把想改的片段放进自定义目录即可覆盖，无需改动 App 本体。
+R-CodeCore 的系统提示词支持用户自定义覆盖。默认提示词随 App 内置、App 升级时自动更新；你只需把想改的片段放进自定义目录即可覆盖，无需改动 App 本体。
 
 ## 1. 目录结构
 
-提示词文件存放在 App 私有配置目录 `~/.rdeepcode/`（容器内路径 `/root/.rdeepcode/`，Android 宿主对应 `filesDir/rdeepcode/`），结构如下：
+提示词文件存放在 App 私有配置目录 `~/.rcodecore/`（容器内路径 `/root/.rcodecore/`，Android 宿主对应 `filesDir/rcodecore/`），结构如下：
 
 ```
-~/.rdeepcode/
+~/.rcodecore/
 ├── prompts/          默认提示词（App 启动时从内置全量释放，升级自动覆盖）
 │   ├── 00-identity.md
 │   ├── 10-communication.md
@@ -30,8 +30,8 @@ R-DeepCode 的系统提示词支持用户自定义覆盖。默认提示词随 Ap
 
 对每个片段文件，按以下顺序查找，命中即用，不再往后找：
 
-1. `~/.rdeepcode/prompts.custom/<同名文件>` —— 用户自定义覆盖（最高优先级）
-2. `~/.rdeepcode/prompts/<同名文件>` —— 本地默认副本
+1. `~/.rcodecore/prompts.custom/<同名文件>` —— 用户自定义覆盖（最高优先级）
+2. `~/.rcodecore/prompts/<同名文件>` —— 本地默认副本
 3. App 内置 `assets/prompts/<同名文件>` —— 兜底
 
 也就是说：`prompts.custom/` 里有的片段用你的版本；没有的片段自动回落到 `prompts/` 里的默认版本。
@@ -39,7 +39,7 @@ R-DeepCode 的系统提示词支持用户自定义覆盖。默认提示词随 Ap
 ## 3. 如何自定义
 
 ### 只想改某几个片段（推荐）
-1. 在 `~/.rdeepcode/prompts.custom/` 目录下（不存在则手动创建）放入你想覆盖的片段文件，文件名必须与默认片段**完全一致**（如 `50-safety.md`）。
+1. 在 `~/.rcodecore/prompts.custom/` 目录下（不存在则手动创建）放入你想覆盖的片段文件，文件名必须与默认片段**完全一致**（如 `50-safety.md`）。
 2. 编辑文件内容为你想要的提示词。
 3. **重启 App 后生效**。提示词在 App 进程启动时加载并缓存，新开会话不会重新读取——必须重启 App 才会加载修改后的自定义提示词。
 
@@ -73,13 +73,13 @@ R-DeepCode 的系统提示词支持用户自定义覆盖。默认提示词随 Ap
 
 ## 6. 编辑方式
 
-* **终端内编辑**：在 R-DeepCode 终端中直接用 `vi` / `nano` 等编辑器修改 `~/.rdeepcode/prompts.custom/` 下的文件。
+* **终端内编辑**：在 R-CodeCore 终端中直接用 `vi` / `nano` 等编辑器修改 `~/.rcodecore/prompts.custom/` 下的文件。
 * **AI 协助**：在会话中让 AI 帮你创建或修改自定义提示词文件（AI 的文件工具可直接读写该目录）。
 * **外部文件管理器**：通过 Android 系统文件管理器访问 App 私有目录（需拥有 root 权限，路径见第 1 节）。
 
 ## 7. 重置
 
-删除 `~/.rdeepcode/prompts.custom/<对应文件>` 即可恢复该片段为默认版本。删除整个 `prompts.custom/` 目录则全部恢复默认。
+删除 `~/.rcodecore/prompts.custom/<对应文件>` 即可恢复该片段为默认版本。删除整个 `prompts.custom/` 目录则全部恢复默认。
 
 ## 8. 注意事项
 

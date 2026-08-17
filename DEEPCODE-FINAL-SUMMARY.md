@@ -1,6 +1,6 @@
-# R-DeepCode 项目深度总结文档（经源码核验的最终版 2026-08-09）
+# R-CodeCore 项目深度总结文档（经源码核验的最终版 2026-08-09）
 
-> **文档权威性声明**：本文档是 R-DeepCode 项目的**唯一官方深度总结文档**，全部声明均以实际源码逐行核验为依据；不存在其他"旧版总结"作为并行来源。  
+> **文档权威性声明**：本文档是 R-CodeCore 项目的**唯一官方深度总结文档**，全部声明均以实际源码逐行核验为依据；不存在其他"旧版总结"作为并行来源。  
 > 每一次代码改动涉及的同步范围见 §十六，请在后续提交前回查并更新对应章节。
 
 ---
@@ -8,7 +8,7 @@
 ## 一、项目设计哲学与定位
 
 ### 1.1 产品定位
-R-DeepCode 是**原生 Android 上的 AI 编程 IDE**，核心是让 **AI Agent 拥有真实的执行环境**——直接读写项目文件、执行 Shell、跑构建/测试、管理 Git、操作交互式终端，且所有动作都发生在**同一个工作区**里（本地 PRoot Alpine 容器或同一台远程 SSH 服务器）。
+R-CodeCore 是**原生 Android 上的 AI 编程 IDE**，核心是让 **AI Agent 拥有真实的执行环境**——直接读写项目文件、执行 Shell、跑构建/测试、管理 Git、操作交互式终端，且所有动作都发生在**同一个工作区**里（本地 PRoot Alpine 容器或同一台远程 SSH 服务器）。
 
 ### 1.2 核心设计决策与权衡（实际核验确认）
 
@@ -20,10 +20,10 @@ R-DeepCode 是**原生 Android 上的 AI 编程 IDE**，核心是让 **AI Agent 
 | **BouncyCastle 注册到 Provider 末尾** | `Security.removeProvider("BC")` → `Security.addProvider(...)` → `SecurityUtils.setSecurityProvider("BC")` 还要告诉 sshj 用 BC | sshj 0.38.0 X25519 需要完整版 BC；放首位会抢占 BKS 实现导致 OkHttp "BKS not found" | - |
 | **RemoteSftpFileAccess 不用真 SFTP** | exec channel + `cat`/`printf` + `base64` | sshj 0.38.0 SFTP 在 Android Dalvik 上 Buffer 溢出必崩 | 读写性能略低，但稳定 |
 | **SQL 文件驱动迁移** | `assets/migrations/{VERSION}_{desc}.sql` | DBA 直接编辑 SQL，不需改 Kotlin；升级只加新文件（共 24 个 SQL，v8→v31） | SQL 字符串字面量里不能出现 `;`（用 `char(59)`） |
-| **凭据/配置独立于 rootfs 挂载** | `filesDir/rdeepcode/`（宿主）↔ `~/.rdeepcode`（容器内 PRoot `-b`） | 升级 rootfs/切 profile 不丢 prompts、docs、git 凭据、权限规则、记忆 | - |
+| **凭据/配置独立于 rootfs 挂载** | `filesDir/rcodecore/`（宿主）↔ `~/.rcodecore`（容器内 PRoot `-b`） | 升级 rootfs/切 profile 不丢 prompts、docs、git 凭据、权限规则、记忆 | - |
 | **Git 页 UI 直连 CommandEngine、不经工具链** | GitRepository 直接注入 `CommandEngine` 跑 `git` CLI | 用户主动点 UI 不应再经 AI 工具权限审批；与 AI Bash/终端 git 共用同 credential helper | - |
-| **Git 凭据不走环境变量、走 `credential.helper=store`** | `git-credentials` 文件 + `git-credential-rdeepcode` helper 文件 IPC 桥 | 三端（UI Git / AI Bash / 终端 git）共用同一份凭据；`GIT_ASKPASS` 在 AI 后台子进程无 tty 时不可用 | 容器初始化和 UI 启动时需 sync |
-| **System Prompt 三优先级加载** | `prompts.custom`（用户）> `rdeepcode/prompts`（释放副本）> `assets/prompts`（内置兜底） | 用户自定义 system prompt 能跨 rootfs 升级保留；用 `ContainerInstaller.extractPrompts(context)` 释放 | - |
+| **Git 凭据不走环境变量、走 `credential.helper=store`** | `git-credentials` 文件 + `git-credential-rcodecore` helper 文件 IPC 桥 | 三端（UI Git / AI Bash / 终端 git）共用同一份凭据；`GIT_ASKPASS` 在 AI 后台子进程无 tty 时不可用 | 容器初始化和 UI 启动时需 sync |
+| **System Prompt 三优先级加载** | `prompts.custom`（用户）> `rcodecore/prompts`（释放副本）> `assets/prompts`（内置兜底） | 用户自定义 system prompt 能跨 rootfs 升级保留；用 `ContainerInstaller.extractPrompts(context)` 释放 | - |
 
 ---
 
@@ -40,7 +40,7 @@ deepcode-R/
 ├── .githooks/commit-msg                # Conventional Commits 校验钩子
 ├── .github/workflows/
 │   ├── ci.yml                          # main 推送/PR：assembleRelease + testReleaseUnitTest（release classpath 做门禁）
-│   └── android-release.yml             # Tag 打 v*：assembleRelease → 单 APK rdeepcode-arm64-<ver>.apk → GitHub Release
+│   └── android-release.yml             # Tag 打 v*：assembleRelease → 单 APK rcodecore-arm64-<ver>.apk → GitHub Release
 │
 ├── build.gradle.kts                    # AGP 8.9.3 / Kotlin 2.2.21 / Hilt 2.56.1 / KSP 2.2.21-2.0.5
 ├── settings.gradle.kts                 # 含腾讯云/阿里镜像 + JitPack + MavenCentral
@@ -55,7 +55,7 @@ deepcode-R/
 │       │   ├── AndroidManifest.xml
 │       │   ├── assets/
 │       │   │   ├── api.official.json           # 预置模型元数据
-│       │   │   ├── rdeepcode/git-credential-rdeepcode  # Git 凭据 helper 脚本
+│       │   │   ├── rcodecore/git-credential-rcodecore  # Git 凭据 helper 脚本
 │       │   │   ├── migrations/8_add_remote_servers.sql … 31_add_encrypted_fields.sql
 │       │   │   │                             # 24 个 SQL（v8 → v31）
 │       │   │   ├── prompts/                   # 11 段系统提示词
@@ -108,7 +108,7 @@ deepcode-R/
 4. 并行后台任务（均走 `appScope.launch`）：
    - **ContainerInstaller.extractDocs(this)**
    - **ContainerInstaller.extractPrompts(this)**
-   - **gitCredentialsFileSync.syncAll()**：写 `~/.rdeepcode/git-credentials`（store 格式）+ sync 署名
+   - **gitCredentialsFileSync.syncAll()**：写 `~/.rcodecore/git-credentials`（store 格式）+ sync 署名
    - **modelMetadataService.refreshFromNetworkIfStale()**（24h 缓存；失败静默，兜底 assets/api.official.json）
    - **logSettings.levelFlow.collectLatest { FileLogger.setMinLevel(it) }**：持久化等级实时同步
    - 执行模式初始化：`executionModeRepository.executionModeFlow.first()` → `executionModeHolder.setMode(mode)`；若 REMOTE_SSH → `remoteSshConnection.connect(Password(settings.password))`（目前密码路径为实际唯一场景）→ **syncDocsToRemote()**（SSH 连接成功同步 assets/docs 到远程）；失败静默首命令自动重试
@@ -354,12 +354,12 @@ feature/agent/domain/provider/
 Room GitCredentialEntity (App 私有 DB)
    └── GitCredentialsFileSync.syncAll() ──┐
                                            ▼
-        filesDir/rdeepcode/git-credentials  ←── PRoot -b 绑定 → 容器内 ~/.rdeepcode/git-credentials
+        filesDir/rcodecore/git-credentials  ←── PRoot -b 绑定 → 容器内 ~/.rcodecore/git-credentials
                                            │
         容器 ~/.gitconfig [credential] helper=store --file=<上者路径>
                                            │ (git 自带 store helper 先查，命中直接用，无弹窗)
                                            │
-                    未命中 → fallback 用 /root/.rdeepcode/git-credential-rdeepcode
+                    未命中 → fallback 用 /root/.rcodecore/git-credential-rcodecore
                                            │
                helper 写 cred-req-<pid> (host=xxx)  ← 原子写 .tmp → rename
                      │
@@ -414,8 +414,8 @@ class GitRepository @Inject constructor(engine: CommandEngine, workspaceRepo: Wo
 ### 8.1 LinuxContainerEngine（PRoot 本地）
 
 - **ContainerInstaller 四步**：Mutex + initScope(SupervisorJob+IO) 防并发与页面取消 → 查 `provisioned.flag` → 复制 `_armAssets/container/{arch}/` 到 `app.getDir("container")` → 解压 rootfs（Commons Compress 1.26.2 + XZ 1.10）→ Deploy proot 二进制 chmod 755 → apk add 基础工具 → 写 credential helper → 建 ~/workspace → 写 flag
-- **buildPRootCommand 拼装**：`proot --link2symlink -0 -r <rootfs> -b /dev -b /proc -b /sys -b workspace -b ~/.rdeepcode <extraBindings> -w <cwd> /bin/sh -c "<cmd>"`
-- **执行模式**：`runCommandSync`（去 ANSI，BoundedOutput 头 20k+尾 20k）+ `runCommandStream`（Flow<Line|Exit>；完整输出另存 `~/.rdeepcode/tool-output/<ts>.log`）
+- **buildPRootCommand 拼装**：`proot --link2symlink -0 -r <rootfs> -b /dev -b /proc -b /sys -b workspace -b ~/.rcodecore <extraBindings> -w <cwd> /bin/sh -c "<cmd>"`
+- **执行模式**：`runCommandSync`（去 ANSI，BoundedOutput 头 20k+尾 20k）+ `runCommandStream`（Flow<Line|Exit>；完整输出另存 `~/.rcodecore/tool-output/<ts>.log`）
 - **看门狗**：超时 kill -9；promptInFlight>0 时临时延长
 
 ### 8.2 RemoteSshConnection 共享单连接（sshj 0.38.0）

@@ -65,7 +65,7 @@
 
 | 编号 | 决策点 | 最终选择 | 说明 |
 |------|--------|----------|------|
-| Q5.1 | 产物目录 | **`context.filesDir/generated_images/{sessionId}/{taskId}_{idx}.png`** 作为默认；用户点 UI 💾 按钮时**再写一次**到 `MediaStore` 相册（`DCIM/RDeepCode/`）。 | 不默认进相册骚扰用户；filesDir 随应用升级保留、卸载才删。 |
+| Q5.1 | 产物目录 | **`context.filesDir/generated_images/{sessionId}/{taskId}_{idx}.png`** 作为默认；用户点 UI 💾 按钮时**再写一次**到 `MediaStore` 相册（`DCIM/RCodeCore/`）。 | 不默认进相册骚扰用户；filesDir 随应用升级保留、卸载才删。 |
 | Q5.2 | 图片格式 | **全 PNG 无损** | 尊重生成图质量；单张 1024x1024 ≈ 1.2MB 可接受。缩略图 256px 同 PNG（约 100KB）。 |
 | Q5.3 | 后台清理策略 | **用户高度自定义**：DataStore 字段 `cleanupUnfavoredAfterDays` + `cleanupTotalSizeCapMB`，旁边"永不清理"按钮一键把 days 设 0。⭐️收藏 = 永留。 | 默认值在最后规格细化阶段由 UI 初始值决定。 |
 
@@ -142,7 +142,7 @@ T2I 功能在现有 7 层 Android Clean Architecture 基础上作为**增量平�
 │  路径规范：
 │    filesDir/generated_images/{sessionId}/{taskId}_{idx}.png   ← 原图（PNG 无损）
 │    filesDir/generated_images/{sessionId}/{taskId}_{idx}.thumb.png  ← 256px 缩略图
-│    （用户点💾时再写一份到 MediaStore → DCIM/RDeepCode/IMG_yyyyMMdd_HHmmss_{taskId前8}.png）
+│    （用户点💾时再写一份到 MediaStore → DCIM/RCodeCore/IMG_yyyyMMdd_HHmmss_{taskId前8}.png）
 │  BackupManagerImpl 增量：
 │    exportZip 新增段落 "t2i_tasks.jsonl" + "generated_images/..." 子目录一起打包 zip
 │    importZip 时反向恢复 3 张 Room 表 + 解图到 filesDir
@@ -978,7 +978,7 @@ suspend fun LocalFileImageStorage.saveToMediaStore(
     val values = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, fname)
         put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
-        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DCIM + "/RDeepCode/")
+        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DCIM + "/RCodeCore/")
         put(MediaStore.MediaColumns.IS_PENDING, 1)  // 先标记 PENDING，写完后置 0（Android Q+ 要求）
     }
     val uri = resolver.insert(collection, values) ?: return@withContext null
