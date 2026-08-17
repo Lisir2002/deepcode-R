@@ -15,12 +15,14 @@ interface TerminalSessionProvider {
     /** 后台命令结束时 emit 的事件，供 ViewModel 订阅后通知 AI。 */
     val tabFinishedEvents: SharedFlow<TabFinishedEvent>
 
-    /** 把一条命令挂后台跑（如 `npm run dev`），返回唯一 tabId。 */
+    /** 把一条命令挂后台跑（如 `npm run dev`），返回唯一 tabId。
+     *  [workdir] 为命令初始工作目录（容器内路径）；null 时由实现回退到默认工作区。 */
     suspend fun startBackgroundCommand(
         command: String,
         title: String? = null,
         notify: Boolean = false,
-        sourceSessionId: String? = null
+        sourceSessionId: String? = null,
+        workdir: String? = null
     ): String
 
     /** 按 id 向标签发送输入并回车执行。返回是否命中标签且仍活跃。 */

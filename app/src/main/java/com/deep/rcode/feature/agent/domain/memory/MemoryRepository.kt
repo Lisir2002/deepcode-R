@@ -38,14 +38,34 @@ class MemoryRepository @Inject constructor(
         return globalMemorySource.loadContent(name)
     }
 
-    fun saveMemory(name: String, description: String, content: String, scope: MemoryScope, projectRoot: String?): Boolean {
+    fun saveMemory(
+        name: String,
+        description: String,
+        content: String,
+        scope: MemoryScope,
+        projectRoot: String?,
+        tags: List<String> = emptyList()
+    ): Boolean {
         return when (scope) {
-            MemoryScope.GLOBAL -> globalMemorySource.saveMemory(name, description, content)
+            MemoryScope.GLOBAL -> globalMemorySource.saveMemory(name, description, content, tags)
             MemoryScope.PROJECT -> {
                 if (projectRoot.isNullOrBlank()) false
-                else ProjectMemorySource(projectRoot).saveMemory(name, description, content)
+                else ProjectMemorySource(projectRoot).saveMemory(name, description, content, tags)
             }
         }
+    }
+
+    /** M-4：记录一次记忆访问命中（read 命中时递增访问次数）。项目级优先，未命中回退全局。 */
+    fun recordAccess(name: String, projectRoot: String?) {
+        if (!projectRoot.isNullOrBlank()) {
+            val projectSource = ProjectMemorySource(projectRoot)
+            val exists = projectSource.listMemories().any { it.name.equals(name, ignoreCase = true) }
+            if (exists) {
+                projectSource.recordAccess(name)
+                return
+            }
+        }
+        globalMemorySource.recordAccess(name)
     }
 
     fun editMemory(name: String, edits: List<MemoryEdit>, scope: MemoryScope, projectRoot: String?): MemoryEditResult {

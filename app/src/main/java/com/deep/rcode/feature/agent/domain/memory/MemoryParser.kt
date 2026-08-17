@@ -22,19 +22,46 @@ object MemoryParser {
         val name = frontmatter["name"]?.toString()?.takeIf { it.isNotBlank() } ?: file.nameWithoutExtension
         val description = (frontmatter["description"]?.toString() ?: "").take(MAX_DESC_CHARS)
 
+        // M-3：tags 支持两种形态——YAML 列表或逗号分隔字符串，逐项清洗空白。
+        val tags = when (val raw = frontmatter["tags"]) {
+            is List<*> -> raw.mapNotNull { it?.toString()?.trim()?.takeIf { t -> t.isNotBlank() } }
+            is String -> raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            else -> emptyList()
+        }
+        // M-4：access_count 为可选中继字段，缺失视为 0。
+        val accessCount = (frontmatter["access_count"] as? Number)?.toInt() ?: 0
+
         return Memory(
             name = name,
             description = description,
             scope = scope,
             file = file,
-            content = body.trim()
+            content = body.trim(),
+            tags = tags,
+            accessCount = accessCount
         )
     }
 
-    fun format(name: String, description: String, content: String): String {
+    fun format(
+        name: String,
+        description: String,
+        content: String,
+        tags: List<String> = emptyList(),
+        accessCount: Int = 0
+    ): String {
         val safeName = yamlScalar(name)
         val safeDesc = yamlScalar(description)
-        return "---\nname: $safeName\ndescription: $safeDesc\n---\n$content"
+        val sb = StringBuilder("---\nname: $safeName\ndescription: $safeDesc\n")
+        // M-3：tags 写成 YAML 流式列表，便于 parse 回读为 List。
+        if (tags.isNotEmpty()) {
+            sb.append("tags: [").append(tags.joinToString(", ") { yamlScalar(it) }).append("]\n")
+        }
+        // M-4：accessCount 大于 0 时才落盘；新记忆从 0 起，旧文件缺省也为 0。
+        if (accessCount > 0) {
+            sb.append("access_count: $accessCount\n")
+        }
+        sb.append("---\n").append(content)
+        return sb.toString()
     }
 
     /** 把任意字符串转成安全的 YAML 标量，避免冒号/引号/换行破坏 frontmatter。 */

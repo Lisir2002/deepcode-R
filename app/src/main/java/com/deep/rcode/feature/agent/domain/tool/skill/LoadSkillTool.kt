@@ -1,6 +1,7 @@
 package com.deep.rcode.feature.agent.domain.tool.skill
 
 import com.deep.rcode.core.util.FileLogger
+import com.deep.rcode.feature.agent.domain.container.CommandEngine
 import com.deep.rcode.feature.agent.domain.skill.SkillExecutor
 import com.deep.rcode.feature.agent.domain.skill.SkillExecutionResult
 import com.deep.rcode.feature.agent.domain.skill.SkillStateRepository
@@ -28,10 +29,13 @@ import javax.inject.Inject
  */
 class LoadSkillTool @Inject constructor(
     private val skillStateRepository: SkillStateRepository,
-    private val skillExecutor: SkillExecutor
+    private val skillExecutor: SkillExecutor,
+    private val commandEngine: CommandEngine
 ) : AgentTool() {
     private companion object {
         const val TAG = "LoadSkillTool"
+        /** S-3：运行时预检查超时（毫秒）。 */
+        const val RUNTIME_PROBE_TIMEOUT_MS = 15_000L
     }
 
     override val name = "loadSkill"
@@ -48,6 +52,12 @@ class LoadSkillTool @Inject constructor(
             type = ParameterType.STRING,
             description = "要加载的技能名称（与系统提示「可用技能」清单中的名称一致）。",
             required = true
+        ),
+        "version" to ToolParameter(
+            name = "version",
+            type = ParameterType.STRING,
+            description = "S-1：技能版本锁定（semver，如 \"1.2.0\"）。省略时使用当前安装的最新版本；指定后若安装版本不一致会返回明确错误，避免在不同版本上执行同一技能。",
+            required = false
         ),
         "args" to ToolParameter(
             name = "args",
@@ -74,6 +84,16 @@ class LoadSkillTool @Inject constructor(
                 )
             }
 
+        // S-1：版本锁——AI 指定版本时校验安装版本是否一致（忽略大小写），不一致给出明确报错
+        val requestedVersion = args["version"]?.jsonPrimitive?.contentOrNull?.trim()
+        if (!requestedVersion.isNullOrEmpty() && !skill.version.equals(requestedVersion, ignoreCase = true)) {
+            return ToolResult.Error(
+                "技能「${skill.name}」当前安装版本为 v${skill.version}，与请求锁定的 v$requestedVersion 不一致。" +
+                    "请省略 version 使用当前版本，或先更新/安装目标版本后再执行。",
+                "SKILL_VERSION_MISMATCH"
+            )
+        }
+
         if (!skill.enabled) {
             return ToolResult.Error("技能「${skill.name}」已被禁用，请在设置-技能中心启用后再使用", "SKILL_DISABLED")
         }
@@ -96,6 +116,19 @@ class LoadSkillTool @Inject constructor(
             )
         }
 
+        // S-3：运行时依赖预检查——SCRIPT 技能声明的 requires_runtime 在容器内逐一探测，
+        // 缺失时在执行前给出明确报错（而非执行到一半才失败）
+        if (skill.type == SkillType.SCRIPT && skill.requiresRuntime.isNotEmpty()) {
+            val missing = skill.requiresRuntime.filter { !runtimeAvailable(it) }
+            if (missing.isNotEmpty()) {
+                return ToolResult.Error(
+                    "技能「${skill.name}」需要运行时依赖: ${missing.joinToString(", ")}，但容器内未找到。" +
+                        "请先安装对应运行时（如通过命令工具安装 node/python）后再执行。",
+                    "SKILL_MISSING_RUNTIME"
+                )
+            }
+        }
+
         // 提取参数（args 为 JSON 对象 → Map<String,String>）
         val execArgs = mutableMapOf<String, String>()
         (args["args"] as? kotlinx.serialization.json.JsonObject)?.forEach { (k, v) ->
@@ -112,6 +145,21 @@ class LoadSkillTool @Inject constructor(
                 FileLogger.w(TAG, "load_skill 执行失败: ${skill.name} - ${result.message}")
                 ToolResult.Error(result.message, result.code)
             }
+        }
+    }
+
+    /** S-3：在容器内探测指定命令是否可用（command -v），失败/超时视为缺失。 */
+    private suspend fun runtimeAvailable(command: String): Boolean {
+        return try {
+            val result = commandEngine.runCommandSyncWithExit(
+                command = "command -v $command >/dev/null 2>&1",
+                projectPath = null,
+                timeoutMs = RUNTIME_PROBE_TIMEOUT_MS
+            )
+            result.exitCode == 0
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "运行时探测失败: $command - ${e.message}")
+            false
         }
     }
 }

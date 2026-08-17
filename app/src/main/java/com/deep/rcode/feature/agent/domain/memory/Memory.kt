@@ -10,13 +10,17 @@ import java.io.File
  * @param scope 记忆的作用域（GLOBAL 或 PROJECT）
  * @param file 记忆对应的本地文件
  * @param content 记忆正文（剥离 Frontmatter 后的详细内容）
+ * @param tags 记忆标签（M-3：save 时声明，list 按 tag 过滤）
+ * @param accessCount 访问次数（M-4：read/注入命中时递增，列表按降序展示）
  */
 data class Memory(
     val name: String,
     val description: String,
     val scope: MemoryScope,
     val file: File? = null,
-    val content: String
+    val content: String,
+    val tags: List<String> = emptyList(),
+    val accessCount: Int = 0
 )
 
 enum class MemoryScope {

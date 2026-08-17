@@ -121,6 +121,7 @@
     <string name="common_allow">Allow</string>
     <string name="common_close">Close</string>
     <string name="common_other">Other</string>
+    <string name="common_recommended">Recommended</string>
     <string name="common_switch">Switch</string>
     <string name="common_create">Create</string>
     <string name="common_delete">Delete</string>

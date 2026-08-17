@@ -2,6 +2,7 @@ package com.deep.rcode.feature.agent.domain.tool.mcp
 
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.domain.mcp.McpConfigRepository
+import com.deep.rcode.feature.agent.domain.mcp.McpManager
 import com.deep.rcode.feature.agent.domain.mcp.McpServerConfig
 import com.deep.rcode.feature.agent.domain.tool.AgentTool
 import com.deep.rcode.feature.agent.domain.tool.ParameterType
@@ -20,7 +21,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
 class ManageMcpTool @Inject constructor(
-    private val mcpConfigRepository: McpConfigRepository
+    private val mcpConfigRepository: McpConfigRepository,
+    private val mcpManager: McpManager
 ) : AgentTool() {
     private companion object {
         const val TAG = "ManageMcpTool"
@@ -133,8 +135,14 @@ class ManageMcpTool @Inject constructor(
                     servers.removeIf { it.name == name }
                     servers.add(newServer)
                     mcpConfigRepository.setServers(servers)
-                    
-                    ToolResult.Success(JsonPrimitive("成功添加本地 MCP server: $name。配置将在下一次会话生效。若命令依赖 Node/Python 等运行时，请通过命令工具在用户确认后安装。"))
+
+                    // S-2：add 后立即测连通性（stdio 全测：容器就绪 + 启动握手 + 列工具）
+                    val err = mcpManager.testConnection(newServer)
+                    if (err.isBlank()) {
+                        ToolResult.Success(JsonPrimitive("成功添加本地 MCP server: $name，并已通过连通性测试（握手成功）。配置将在下一次会话正式生效；若命令依赖 Node/Python 等运行时，请通过命令工具在用户确认后安装。"))
+                    } else {
+                        ToolResult.Success(JsonPrimitive("已保存 MCP server: $name，但连通性测试未通过：$err。配置将在下一次会话生效，请检查命令/参数/运行时是否正确，或稍后重试。"))
+                    }
                 }
                 "add_http" -> {
                     val name = args["server_name"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("add_http 缺少 server_name")
@@ -151,8 +159,14 @@ class ManageMcpTool @Inject constructor(
                     servers.removeIf { it.name == name }
                     servers.add(newServer)
                     mcpConfigRepository.setServers(servers)
-                    
-                    ToolResult.Success(JsonPrimitive("成功添加 HTTP MCP server: $name. 配置将在下一次会话生效。"))
+
+                    // S-2：add 后立即测连通性（HTTP 全测：握手 + 列工具）
+                    val err = mcpManager.testConnection(newServer)
+                    if (err.isBlank()) {
+                        ToolResult.Success(JsonPrimitive("成功添加 HTTP MCP server: $name，并已通过连通性测试（握手成功）。配置将在下一次会话正式生效。"))
+                    } else {
+                        ToolResult.Success(JsonPrimitive("已保存 HTTP MCP server: $name，但连通性测试未通过：$err。配置将在下一次会话生效，请检查地址/鉴权头是否正确，或稍后重试。"))
+                    }
                 }
                 else -> ToolResult.Error("未知的 action: $action")
             }

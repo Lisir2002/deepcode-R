@@ -11,6 +11,7 @@ import com.deep.rcode.feature.agent.domain.tool.ToolPermissionPolicy
 import com.deep.rcode.feature.agent.domain.tool.ToolResult
 import com.deep.rcode.feature.agent.domain.tool.ToolStreamEvent
 import com.deep.rcode.feature.terminal.domain.TerminalSessionProvider
+import com.deep.rcode.feature.workspace.data.repository.WorkspaceRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -49,7 +50,8 @@ private fun JsonElement.asPlainString(): String? =
  * send 动作按输入内容匹配，key/read/close 按整工具匹配。
  */
 class TerminalSessionTool @Inject constructor(
-    private val sessionManager: TerminalSessionProvider
+    private val sessionManager: TerminalSessionProvider,
+    private val workspaceRepository: WorkspaceRepository
 ) : AgentTool(), StreamingAgentTool {
     private companion object {
         const val TAG = "TerminalSessionTool"
@@ -269,7 +271,7 @@ class TerminalSessionTool @Inject constructor(
         val title = args["title"]?.asPlainString()
         val notify = args["notify"]?.asPlainString()?.toBooleanStrictOrNull() ?: false
         val tabId = try {
-            withContext(Dispatchers.Main) { sessionManager.startBackgroundCommand(command, title, notify, context.sessionId) }
+            withContext(Dispatchers.Main) { sessionManager.startBackgroundCommand(command, title, notify, context.sessionId, workspaceRepository.currentPath()) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -351,7 +353,7 @@ class TerminalSessionTool @Inject constructor(
         val title = args["title"]?.asPlainString()
         val notify = args["notify"]?.asPlainString()?.toBooleanStrictOrNull() ?: false
         try {
-            val tabId = sessionManager.startBackgroundCommand(command, title, notify)
+            val tabId = sessionManager.startBackgroundCommand(command, title, notify, null, workspaceRepository.currentPath())
             FileLogger.i(TAG, "后台命令已启动 tab=$tabId: $command")
 
             // 轮询捕获初始输出：命令退出则提前结束，否则最多等满 START_CAPTURE_MS。

@@ -26,6 +26,9 @@ class MemoryTool @Inject constructor(
 ) : AbstractContextualTool() {
     private companion object {
         const val TAG = "MemoryTool"
+
+        /** M-1：单条记忆大小上限（字符数），防止超大记忆撑爆系统提示。 */
+        const val MAX_CONTENT_CHARS = 50 * 1024
     }
 
     override val name = "memory"
@@ -104,6 +107,20 @@ class MemoryTool @Inject constructor(
             description = "作用域：project=当前项目专属；global=跨项目通用。默认为 project。",
             enum = listOf("project", "global"),
             required = false
+        ),
+        // M-3：save 的 tags 标签数组
+        "tags" to ToolParameter(
+            name = "tags",
+            type = ParameterType.ARRAY,
+            description = "save 可选：标签数组（字符串），用于按主题分类记忆，如 [\"android\", \"build\"]；list 时可按 tag 过滤。",
+            required = false
+        ),
+        // M-3：list 的 tag 过滤
+        "tag" to ToolParameter(
+            name = "tag",
+            type = ParameterType.STRING,
+            description = "list 可选：只列出包含该标签的记忆。省略则列出全部。",
+            required = false
         )
     )
 
@@ -120,7 +137,7 @@ class MemoryTool @Inject constructor(
 
         return try {
             when (action) {
-                "list" -> handleList(context.projectRoot)
+                "list" -> handleList(context.projectRoot, args["tag"]?.jsonPrimitive?.contentOrNull?.trim())
                 "read" -> handleRead(memoryName, context.projectRoot)
                 "save" -> handleSave(args, memoryName, scope, context.projectRoot)
                 "edit" -> handleEdit(args, memoryName, scope, context.projectRoot)
@@ -133,11 +150,21 @@ class MemoryTool @Inject constructor(
         }
     }
 
-    private fun handleList(projectRoot: String?): ToolResult {
+    private fun handleList(projectRoot: String?, tag: String?): ToolResult {
         val memories = memoryRepository.listMemories(projectRoot)
-        if (memories.isEmpty()) return ToolResult.Success(JsonPrimitive("当前没有任何记忆。"))
-        
-        val list = memories.joinToString("\n") { "- ${it.name} (${it.scope.name.lowercase()}): ${it.description}" }
+        // M-3：按 tag 过滤（忽略大小写）
+        val filtered = if (tag.isNullOrBlank()) memories
+        else memories.filter { it.tags.any { t -> t.equals(tag, ignoreCase = true) } }
+        if (filtered.isEmpty()) {
+            return if (tag.isNullOrBlank()) ToolResult.Success(JsonPrimitive("当前没有任何记忆。"))
+            else ToolResult.Success(JsonPrimitive("当前没有带标签「$tag」的记忆。"))
+        }
+
+        // M-4：展示访问次数，便于 AI 判断常用记忆
+        val list = filtered.joinToString("\n") {
+            val tagNote = if (it.tags.isNotEmpty()) " [${it.tags.joinToString(", ")}]" else ""
+            "- ${it.name} (${it.scope.name.lowercase()}，访问 ${it.accessCount} 次): ${it.description}$tagNote"
+        }
         return ToolResult.Success(JsonPrimitive("当前记忆列表：\n$list"))
     }
 
@@ -145,6 +172,8 @@ class MemoryTool @Inject constructor(
         if (name.isNullOrEmpty()) return ToolResult.Error("read 操作需要 name 参数", "MISSING_NAME")
         val content = memoryRepository.loadContent(name, projectRoot)
             ?: return ToolResult.Error("未找到记忆「$name」", "MEMORY_NOT_FOUND")
+        // M-4：read 命中即递增访问次数（静默，失败不影响返回内容）
+        memoryRepository.recordAccess(name, projectRoot)
         return ToolResult.Success(JsonPrimitive(content))
     }
 
@@ -152,6 +181,18 @@ class MemoryTool @Inject constructor(
         if (name.isNullOrEmpty()) return ToolResult.Error("save 操作需要 name 参数", "MISSING_NAME")
         val content = args["content"]?.jsonPrimitive?.contentOrNull?.trim()
             ?: return ToolResult.Error("save 操作需要 content 参数", "MISSING_CONTENT")
+
+        // M-1：单条大小上限，超出给出明确报错并引导拆分/精简。
+        if (content.length > MAX_CONTENT_CHARS) {
+            return ToolResult.Error(
+                "记忆正文超过单条上限 $MAX_CONTENT_CHARS 字符（当前 ${content.length} 字符）。" +
+                    "请按主题拆分为多条记忆分别保存，或精简冗余内容后再试。",
+                "MEMORY_TOO_LARGE"
+            )
+        }
+
+        // M-3：解析 tags 标签数组
+        val tags = parseTags(args)
 
         // M-2：description 缺省时自动从正文生成一句话摘要，不再强制必填
         val explicitDescription = args["description"]?.jsonPrimitive?.contentOrNull?.trim()
@@ -162,15 +203,24 @@ class MemoryTool @Inject constructor(
             return ToolResult.Error("当前未选择工作区，无法保存项目级记忆。请改用 scope=global", "NO_WORKSPACE")
         }
 
-        val success = memoryRepository.saveMemory(name, description, content, scope, projectRoot)
+        val success = memoryRepository.saveMemory(name, description, content, scope, projectRoot, tags)
         return if (success) {
             val summaryNote = if (autoSummarized) "\ndescription 未提供，已自动生成摘要：$description" else ""
+            val tagNote = if (tags.isNotEmpty()) "\n已标记标签：${tags.joinToString(", ")}" else ""
             ToolResult.Success(JsonPrimitive(
-                "已成功保存记忆「$name」到 ${scope.name.lowercase()} 作用域。它将在下一次会话启动时自动注入摘要。当前会话若需立即使用，请通过 read 操作读取。$summaryNote"
+                "已成功保存记忆「$name」到 ${scope.name.lowercase()} 作用域。它将在下一次会话启动时自动注入摘要。当前会话若需立即使用，请通过 read 操作读取。$summaryNote$tagNote"
             ))
         } else {
             ToolResult.Error("保存记忆失败，请查看日志。", "SAVE_FAILED")
         }
+    }
+
+    /** M-3：解析 save 的 tags 参数（JsonArray → 清洗去重后的字符串列表，上限 10 个防异常参数）。 */
+    private fun parseTags(args: Map<String, JsonElement>): List<String> {
+        val arr = args["tags"] as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { t -> t.isNotEmpty() } }
+            .distinct()
+            .take(10)
     }
 
     /**

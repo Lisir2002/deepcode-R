@@ -43,6 +43,7 @@ enum class SkillSourceType {
  * @param enabled 是否启用（运行时状态，由 Room skill_state 表持久化，不写回技能文件）。
  * @param source 来源类型（BUILTIN/LOCAL）。
  * @param requiredTools 该技能所需的专属工具列表（可选）。
+ * @param requiresRuntime 运行时依赖：容器内必须存在的可执行命令，如 [\"node\", \"python\"]，加载时预检查。
  * @param dir 技能所在的本地目录。
  * @param entry SCRIPT 类型：入口脚本相对路径（相对技能目录）。
  * @param mcpTool MCP 类型：绑定的 MCP 工具名（命名空间化，如 mcp__server__tool）。
@@ -62,6 +63,7 @@ data class Skill(
     val enabled: Boolean = true,
     val source: SkillSourceType = SkillSourceType.LOCAL,
     val requiredTools: List<String> = emptyList(),
+    val requiresRuntime: List<String> = emptyList(),
     val dir: File? = null,
     val entry: String? = null,
     val mcpTool: String? = null,

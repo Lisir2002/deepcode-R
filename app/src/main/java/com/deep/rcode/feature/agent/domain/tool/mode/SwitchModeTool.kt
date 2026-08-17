@@ -1,6 +1,8 @@
 package com.deep.rcode.feature.agent.domain.tool.mode
 
 import com.deep.rcode.feature.agent.data.local.dao.ChatSessionDao
+import com.deep.rcode.feature.agent.data.local.dao.ModeSwitchHistoryDao
+import com.deep.rcode.feature.agent.data.local.entity.ModeSwitchHistoryEntity
 import com.deep.rcode.feature.agent.domain.model.AgentContext
 import com.deep.rcode.feature.agent.domain.model.AgentMode
 import com.deep.rcode.feature.agent.domain.tool.AbstractContextualTool
@@ -20,7 +22,8 @@ import javax.inject.Inject
  * 让 AI 可以主动申请切换当前会话的模式（PLAN / BUILD）。
  */
 class SwitchModeTool @Inject constructor(
-    private val chatSessionDao: ChatSessionDao
+    private val chatSessionDao: ChatSessionDao,
+    private val modeSwitchHistoryDao: ModeSwitchHistoryDao
 ) : AbstractContextualTool() {
 
     private companion object {
@@ -101,6 +104,17 @@ class SwitchModeTool @Inject constructor(
 
         // 切换模式并保存到数据库。UI 层通过 flow 监听，会自动更新外观与后续流程的上下文
         chatSessionDao.upsert(sessionEntity.copy(mode = targetMode.name))
+
+        // G-1：记录本次切换历史到数据库（持久化，可用于回溯和频率统计）
+        modeSwitchHistoryDao.insert(
+            ModeSwitchHistoryEntity(
+                sessionId = sessionId,
+                fromMode = context.mode.name,
+                toMode = targetMode.name,
+                reason = reason,
+                timestampMs = System.currentTimeMillis()
+            )
+        )
 
         return ToolResult.Success(JsonPrimitive("成功切换至 ${targetMode.name} 模式。"))
     }

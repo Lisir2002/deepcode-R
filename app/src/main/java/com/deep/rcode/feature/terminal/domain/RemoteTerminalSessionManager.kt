@@ -108,10 +108,11 @@ class RemoteTerminalSessionManager @Inject constructor(
         command: String,
         title: String?,
         notify: Boolean,
-        sourceSessionId: String?
+        sourceSessionId: String?,
+        workdir: String?
     ): String {
         if (!ensureRemote()) throw IllegalStateException("非远程模式或 SSH 未连接")
-        val id = openShellTab(command, isBackground = true, notify = notify, title = title, sourceSessionId = sourceSessionId)
+        val id = openShellTab(command, isBackground = true, notify = notify, title = title, sourceSessionId = sourceSessionId, workdir = workdir)
         FileLogger.i(TAG, "后台命令标签 $id: $command")
         return id
     }
@@ -125,7 +126,8 @@ class RemoteTerminalSessionManager @Inject constructor(
         isBackground: Boolean,
         notify: Boolean,
         title: String?,
-        sourceSessionId: String?
+        sourceSessionId: String?,
+        workdir: String? = null
     ): String {
         val id = nextId()
         // sshj startSession/startShell 走网络 I/O，必须离开主线程，否则 NetworkOnMainThreadException。
@@ -137,9 +139,10 @@ class RemoteTerminalSessionManager @Inject constructor(
         val backend = SshShellBackend(shell)
         val termSession = TerminalSession(TRANSCRIPT_ROWS, AppRemoteSessionClient(), backend)
         termSession.updateSize(DEFAULT_COLUMNS, DEFAULT_ROWS)
-        // shell 登录后默认在 home，先 cd 到当前工作区，与命令执行链路（RemoteSshEngine.buildCdCommand）保持一致：
-        // 优先 ~/workspace 符号链接，失败回退到真实工作区路径。
-        val wsPath = workspaceRepository.currentPath()
+        // shell 登录后默认在 home，先 cd 到工作区，与命令执行链路（RemoteSshEngine.buildCdCommand）保持一致：
+        // 优先 ~/workspace 符号链接，失败回退到真实工作区路径；工具传入 workdir（T-5）时优先用它。
+        val wsPath = workdir?.takeIf { it.isNotBlank() }
+            ?: workspaceRepository.currentPath()
         if (wsPath.isNotBlank() && wsPath != "/") {
             termSession.write("cd ~/workspace 2>/dev/null || cd '${wsPath.trimEnd('/')}' 2>/dev/null\n")
         }

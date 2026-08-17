@@ -31,10 +31,13 @@ data class QuestionItem(
  *
  * @param label 选项标签（简短 1-5 个词），如「OkHttp（推荐）」。
  * @param description 选项说明，解释选它的含义或利弊。
+ * @param default 是否为默认/推荐选项（Q-1）。UI 渲染时默认高亮并预选中；
+ *        多选问题可对多个选项设 true（均预选）。
  */
 data class QuestionOption(
     val label: String,
-    val description: String
+    val description: String,
+    val default: Boolean = false
 )
 
 /**

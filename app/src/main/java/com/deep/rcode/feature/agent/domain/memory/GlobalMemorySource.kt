@@ -19,8 +19,9 @@ class GlobalMemorySource @Inject constructor(
         if (!memoryRoot.exists()) return emptyList()
         val files = memoryRoot.listFiles { file -> file.isFile && file.extension == "md" } ?: return emptyList()
         
+        // M-4：访问次数多的优先，其次按名称排序，保证常用记忆优先展示/注入。
         return files.mapNotNull { file -> MemoryParser.parse(file, MemoryScope.GLOBAL) }
-            .sortedBy { it.name.lowercase() }
+            .sortedWith(compareByDescending<Memory> { it.accessCount }.thenBy { it.name.lowercase() })
     }
 
     override fun loadContent(name: String): String? {
@@ -29,11 +30,11 @@ class GlobalMemorySource @Inject constructor(
             ?.content
     }
 
-    override fun saveMemory(name: String, description: String, content: String): Boolean {
+    override fun saveMemory(name: String, description: String, content: String, tags: List<String>): Boolean {
         return try {
             if (!memoryRoot.exists()) memoryRoot.mkdirs()
             val file = MemorySource.resolveMemoryFile(memoryRoot, name)
-            file.writeText(MemoryParser.format(MemorySource.sanitizeName(name), description, content))
+            file.writeText(MemoryParser.format(MemorySource.sanitizeName(name), description, content, tags))
             true
         } catch (e: Exception) {
             FileLogger.e("GlobalMemorySource", "Failed to save memory: $name", e)

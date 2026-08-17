@@ -9,6 +9,9 @@ import com.deep.rcode.feature.agent.domain.tool.ToolPermissionPolicy
 import com.deep.rcode.feature.agent.domain.tool.ToolResult
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.core.util.LineDiff
+import com.deep.rcode.feature.agent.data.local.dao.FileEditHunkDao
+import com.deep.rcode.feature.agent.data.local.entity.FileEditHunkEntity
+import com.deep.rcode.feature.agent.domain.model.AgentContext
 import com.deep.rcode.feature.workspace.domain.FileAccessProvider
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -18,7 +21,10 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.UUID
 import javax.inject.Inject
+import kotlin.math.max
+import kotlin.math.min
 
 private const val TAG = "EditFileTool"
 
@@ -46,7 +52,8 @@ private const val MAX_LCS_CELLS = 4_000_000L
  * 上下文，或对该编辑显式设置 replace_all=true 才会全部替换。
  */
 class EditFileTool @Inject constructor(
-    private val fileAccess: FileAccessProvider
+    private val fileAccess: FileAccessProvider,
+    private val fileEditHunkDao: FileEditHunkDao
 ) : AgentTool() {
     override val name = "editFile"
     override val description =
@@ -113,7 +120,14 @@ class EditFileTool @Inject constructor(
         )
     }
 
-    override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
+    override suspend fun execute(args: Map<String, JsonElement>): ToolResult = executeInternal(args, null)
+
+    /** F-3：优先走 executeWithContext 以获得会话 ID，用于 hunk 落库；无上下文时降级为不落库。 */
+    override suspend fun executeWithContext(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
+        return executeInternal(args, context.sessionId)
+    }
+
+    private suspend fun executeInternal(args: Map<String, JsonElement>, sessionId: String?): ToolResult {
         return try {
             val path = args["path"]?.jsonPrimitive?.contentOrNull
                 ?: return ToolResult.Error("路径参数缺失", "MISSING_PATH")
@@ -139,6 +153,8 @@ class EditFileTool @Inject constructor(
 
             // 先在内存里顺序应用所有编辑；任一失败立刻返回、绝不写盘（全有或全无）。
             var content = fileAccess.readFile(path)
+            // F-3：留存编辑前的原文，供 hunk 落库回溯。
+            val originalContent = content
             val hunks = ArrayList<Hunk>(edits.size)
             var totalReplacements = 0
 
@@ -146,8 +162,9 @@ class EditFileTool @Inject constructor(
                 val occurrences = content.split(e.oldString).size - 1
                 if (occurrences == 0) {
                     FileLogger.w(TAG, "edit_file 第 ${i + 1} 个编辑未匹配: $path")
+                    // F-1：未匹配时给出 Top-N 相似候选，帮助 AI 修正 old_string
                     return ToolResult.Error(
-                        "第 ${i + 1} 个编辑未在文件中找到 old_string，请确认内容（含缩进/换行）与当前文件完全一致",
+                        buildNoMatchMessage(i + 1, content, e.oldString),
                         "NO_MATCH"
                     )
                 }
@@ -186,6 +203,26 @@ class EditFileTool @Inject constructor(
                     "diff" to JsonPrimitive(h.diff)
                 ))
             })
+
+            // F-3：edit 落库快照（operation=edit，含差异 hunk），支撑「撤销编辑」。
+            if (sessionId != null) {
+                try {
+                    fileEditHunkDao.upsert(
+                        FileEditHunkEntity(
+                            id = "hunk_${UUID.randomUUID().toString().replace("-", "")}",
+                            sessionId = sessionId,
+                            filePath = path,
+                            operation = "edit",
+                            hunk = hunksJson.toString(),
+                            oldContent = originalContent.take(HUNK_SNAPSHOT_MAX_CHARS),
+                            newContent = content.take(HUNK_SNAPSHOT_MAX_CHARS),
+                            createdAtMs = System.currentTimeMillis()
+                        )
+                    )
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "记录文件 hunk 失败: $path", e)
+                }
+            }
 
             FileLogger.v(TAG, "edit_file 成功 path=$path edits=${edits.size} replacements=$totalReplacements")
             ToolResult.Success(
@@ -236,5 +273,135 @@ class EditFileTool @Inject constructor(
         oldText.split("\n").forEach { sb.append('-').append(it).append('\n') }
         newText.split("\n").forEach { sb.append('+').append(it).append('\n') }
         return sb.toString()
+    }
+
+    /**
+     * F-1：构建「未匹配」错误信息，附 Top-N 相似候选行，帮助 AI 对照修正 old_string。
+     * 候选基于「行的空白归一化后是否出现」+「字符级相似度」双维度打分，
+     * 兼顾「仅缩进/空格差异」与「拼写/大小写笔误」两类常见场景。
+     */
+    private fun buildNoMatchMessage(editIndex: Int, content: String, oldString: String): String {
+        val sb = StringBuilder()
+        sb.append("第 $editIndex 个编辑未在文件中找到 old_string，请确认内容（含缩进/换行）与当前文件完全一致。")
+        val candidates = findSimilarCandidates(content, oldString, topN = SIMILAR_CANDIDATES)
+        if (candidates.isNotEmpty()) {
+            sb.append("文件中的相似候选：\n")
+            candidates.forEachIndexed { idx, c ->
+                sb.append("  ").append(idx + 1).append(". 行 ").append(c.lineNo)
+                    .append("（相似度 ").append((c.score * 100).toInt()).append("%）：")
+                val preview = c.line.trim().take(80)
+                sb.append(if (preview.isNotEmpty()) "「$preview」" else "（空行）").append('\n')
+            }
+            sb.append("提示：若目标行较长，请用整行原文作 old_string；若为局部短语，请带上唯一上下文。")
+        }
+        return sb.toString()
+    }
+
+    /**
+     * F-1：在 [content] 中找出与 [needle] 最相似的行候选，按相关度降序返回前 [topN] 个。
+     *
+     * 打分 = 空白归一化完全一致(1.0) / 包含关系(0.9) / 否则按归一化 Levenshtein 相似度。
+     * 只对足够相近的行（相似度 ≥ [SIMILAR_THRESHOLD]）返回，避免噪声。
+     */
+    private fun findSimilarCandidates(content: String, needle: String, topN: Int): List<SimilarCandidate> {
+        val needleNorm = needle.trim()
+        if (needleNorm.isEmpty() || needleNorm.length > MAX_CANDIDATE_NEEDLE_CHARS) return emptyList()
+        // 空白归一化（连续空白压成单个空格）：能匹配仅「空格/换行差异」的整行场景。
+        val needleWs = normalizeWhitespace(needleNorm)
+
+        val candidates = mutableListOf<SimilarCandidate>()
+        var lineNo = 0
+        for (rawLine in content.split('\n')) {
+            lineNo++
+            val line = rawLine.trim()
+            if (line.isEmpty()) continue
+            // 跳过过长行：超长行相似度计算性价比低且易误报。
+            if (line.length > MAX_CANDIDATE_LINE_CHARS) continue
+            val lineWs = normalizeWhitespace(line)
+
+            val score = when {
+                lineWs == needleWs -> 1.0
+                lineWs.contains(needleWs) || needleWs.contains(lineWs) -> 0.9
+                else -> similarity(lineWs, needleWs)
+            }
+            if (score >= SIMILAR_THRESHOLD) {
+                candidates.add(SimilarCandidate(lineNo = lineNo, line = rawLine, score = score))
+            }
+        }
+        candidates.sortWith(
+            compareByDescending<SimilarCandidate> { it.score }
+                .thenBy { it.line.length }
+                .thenBy { it.lineNo }
+        )
+        return candidates.take(topN)
+    }
+
+    /** 相似度阈值：低于此值的行不列为候选。 */
+    private fun similarity(a: String, b: String): Double {
+        if (a == b) return 1.0
+        val maxLen = max(a.length, b.length)
+        if (maxLen == 0) return 1.0
+        val dist = boundedLevenshtein(a, b, maxDist = (maxLen * (1 - SIMILAR_THRESHOLD)).toInt().coerceAtLeast(1))
+            ?: return 0.0 // 超出阈值直接判为不相似，避免大行 O(n·m)
+        return 1.0 - dist.toDouble() / maxLen
+    }
+
+    /**
+     * 归一化 Levenshtein：仅在距离不超过 [maxDist] 时返回精确距离（提前终止），
+     * 超过返回 null。边界：任一为空串时直接按长度判定，不做 DP。
+     */
+    private fun boundedLevenshtein(a: String, b: String, maxDist: Int): Int? {
+        if (a.isEmpty()) return if (b.length <= maxDist) b.length else null
+        if (b.isEmpty()) return if (a.length <= maxDist) a.length else null
+        val n = a.length
+        val m = b.length
+        if (kotlin.math.abs(n - m) > maxDist) return null
+
+        var prev = IntArray(m + 1) { it }
+        var curr = IntArray(m + 1)
+        for (i in 1..n) {
+            curr[0] = i
+            var rowMin = curr[0]
+            for (j in 1..m) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                curr[j] = min(min(prev[j] + 1, curr[j - 1] + 1), prev[j - 1] + cost)
+                if (curr[j] < rowMin) rowMin = curr[j]
+            }
+            if (rowMin > maxDist) return null // 当前行最小值已超阈值，可提前终止
+            val tmp = prev; prev = curr; curr = tmp
+        }
+        return if (prev[m] <= maxDist) prev[m] else null
+    }
+
+    /** 把连续空白（空格/制表/换行）压成单个空格，用于「忽略空白差异」的整行比对。 */
+    private fun normalizeWhitespace(s: String): String {
+        val sb = StringBuilder(s.length)
+        var pendingSpace = false
+        for (c in s) {
+            if (c == ' ' || c == '\t') {
+                pendingSpace = true
+            } else {
+                if (pendingSpace && sb.isNotEmpty()) sb.append(' ')
+                pendingSpace = false
+                sb.append(c)
+            }
+        }
+        return sb.toString().trim()
+    }
+
+    /** F-1：相似候选（行号 + 原行 + 相关度）。 */
+    private data class SimilarCandidate(val lineNo: Int, val line: String, val score: Double)
+
+    private companion object {
+        /** F-1：返回的相似候选数量上限。 */
+        const val SIMILAR_CANDIDATES = 3
+        /** F-1：相似度阈值，低于此值不列为候选。 */
+        const val SIMILAR_THRESHOLD = 0.6
+        /** F-1：参与比对的 needle 长度上限，超出不做候选（代价高且易误报）。 */
+        const val MAX_CANDIDATE_NEEDLE_CHARS = 300
+        /** F-1：参与比对的单行长度上限。 */
+        const val MAX_CANDIDATE_LINE_CHARS = 300
+        /** F-3：hunk 落库时单条快照（old/new content）保存的最大字符数，防止超大文件撑爆数据库。 */
+        const val HUNK_SNAPSHOT_MAX_CHARS = 50_000
     }
 }

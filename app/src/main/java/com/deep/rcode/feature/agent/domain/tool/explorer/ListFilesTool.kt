@@ -34,6 +34,9 @@ class ListFilesTool @Inject constructor(
     private companion object {
         const val TAG = "ListTool"
         const val MAX_ENTRIES = 500
+
+        /** E-3：默认隐藏的噪音目录，避免干扰 AI 探查；传 `-a` 显示全部时放行。 */
+        val NOISE_DIRS = setOf(".git", ".gradle", "build", "node_modules", "venv")
     }
 
     override val name = "list"
@@ -256,6 +259,8 @@ class ListFilesTool @Inject constructor(
         }
         val children = fileAccess.listFiles(dirPath)
             .filter { options.showAll || options.showAlmostAll || !it.name.startsWith(".") }
+            // E-3：默认隐藏噪音目录（build/node_modules/.git 等），`-a` 显示全部时放行。
+            .filter { options.showAll || !NOISE_DIRS.contains(it.name) }
             .map {
                 LsEntry(
                     name = it.name,

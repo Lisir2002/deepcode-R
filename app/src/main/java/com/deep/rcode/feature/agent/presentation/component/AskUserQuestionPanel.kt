@@ -73,9 +73,14 @@ fun AskUserQuestionPanel(
     onSkip: () -> Unit
 ) {
     // 每个问题的已选 label 集合
+    // Q-1：初始即预选中标记了 default=true 的选项（默认/推荐项高亮），用户可直接确认或再调整
     val selectedMap = remember(question.id) {
         mutableStateMapOf<Int, MutableList<String>>().apply {
-            question.questions.forEachIndexed { idx, _ -> this[idx] = mutableStateListOf() }
+            question.questions.forEachIndexed { idx, q ->
+                this[idx] = mutableStateListOf<String>().apply {
+                    addAll(q.options.filter { it.default }.map { it.label })
+                }
+            }
         }
     }
     // 每个问题的「其他」自由文本
@@ -202,11 +207,12 @@ private fun QuestionCard(
                 }
                 Spacer(Modifier.width(Spacing.sm))
             }
-            Text(
+            // Q-2：问题文本支持轻量 markdown（**加粗**、`代码`、链接等）
+            MarkdownContent(
                 text = item.question,
-                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium
+                modifier = Modifier.weight(1f),
+                compact = true
             )
         }
 
@@ -218,16 +224,28 @@ private fun QuestionCard(
         allOptions.forEachIndexed { optIdx, label ->
             val isOther = label == OTHER_LABEL
             val isSelected = label in selected
+            // Q-1：是否为默认/推荐选项（"其他" 不是）
+            val isDefault = !isOther && (item.options.getOrNull(optIdx)?.default == true)
             val description = if (!isOther) {
                 item.options.getOrNull(optIdx)?.description ?: ""
             } else {
                 stringResource(R.string.ask_custom_answer)
             }
 
+            // Q-1：默认选项用主色底 + 细边框高亮，让推荐项一眼可见
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(Radius.xs))
+                    .then(
+                        if (isDefault) {
+                            Modifier
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(Radius.xs))
+                        } else {
+                            Modifier
+                        }
+                    )
                     .clickable {
                         val newSelection = if (item.multiSelect) {
                             if (isSelected) selected - label else selected + label
@@ -257,17 +275,36 @@ private fun QuestionCard(
                 }
                 Spacer(Modifier.width(Spacing.sm))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (isOther) stringResource(R.string.common_other) else label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                    )
-                    if (description.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
+                            text = if (isOther) stringResource(R.string.common_other) else label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                        )
+                        // Q-1：推荐角标
+                        if (isDefault) {
+                            Spacer(Modifier.width(Spacing.xs))
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(Radius.xs)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.common_recommended),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                    if (description.isNotBlank()) {
+                        Spacer(Modifier.height(1.dp))
+                        // Q-2：选项说明支持轻量 markdown
+                        MarkdownContent(
                             text = description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            compact = true
                         )
                     }
                 }

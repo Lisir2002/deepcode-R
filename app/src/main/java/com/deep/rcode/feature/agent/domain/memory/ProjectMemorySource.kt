@@ -17,7 +17,8 @@ class ProjectMemorySource(private val projectRoot: String) : MemorySource {
         val files = memoryRoot.listFiles { file -> file.isFile && file.extension == "md" } ?: return emptyList()
         
         return files.mapNotNull { file -> MemoryParser.parse(file, MemoryScope.PROJECT) }
-            .sortedBy { it.name.lowercase() }
+            // M-4：访问次数多的优先，其次按名称排序，保证常用记忆优先展示/注入。
+            .sortedWith(compareByDescending<Memory> { it.accessCount }.thenBy { it.name.lowercase() })
     }
 
     override fun loadContent(name: String): String? {
@@ -27,12 +28,12 @@ class ProjectMemorySource(private val projectRoot: String) : MemorySource {
             ?.content
     }
 
-    override fun saveMemory(name: String, description: String, content: String): Boolean {
+    override fun saveMemory(name: String, description: String, content: String, tags: List<String>): Boolean {
         if (projectRoot.isBlank()) return false
         return try {
             if (!memoryRoot.exists()) memoryRoot.mkdirs()
             val file = MemorySource.resolveMemoryFile(memoryRoot, name)
-            file.writeText(MemoryParser.format(MemorySource.sanitizeName(name), description, content))
+            file.writeText(MemoryParser.format(MemorySource.sanitizeName(name), description, content, tags))
             true
         } catch (e: Exception) {
             FileLogger.e("ProjectMemorySource", "Failed to save memory: $name", e)

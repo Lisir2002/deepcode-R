@@ -163,7 +163,8 @@ class TerminalSessionManager @Inject constructor(
         command: String,
         title: String?,
         notify: Boolean,
-        sourceSessionId: String?
+        sourceSessionId: String?,
+        workdir: String?
     ): String {
         val installed = runCatching { ensureContainer(); containerEngine.isContainerInstalled() }
             .getOrDefault(false)
@@ -171,7 +172,10 @@ class TerminalSessionManager @Inject constructor(
         val shellCommand: String
         if (installed) {
             val afterCommand = if (notify) "; exit \$ec" else "; exec ${containerEngine.defaultShell()}"
-            shellCommand = "cd ~/workspace 2>/dev/null; export ENV=/etc/profile; " +
+            // T-5：继承工具传入的工作区目录（与 Bash 一致）。本地容器把当前工作区根 bind 到
+            // /root/workspace（=~/workspace），传入的 workdir 即工作区根（宿主路径）时换算为容器内 ~/workspace。
+            val cdTarget = resolveCdTarget(workdir)
+            shellCommand = "cd '$cdTarget' 2>/dev/null; export ENV=/etc/profile; " +
                 "$command; ec=\$?; echo \"[command exited: \$ec]\"$afterCommand"
         } else {
             // 容器未安装时，AI 发起的后台命令不真正执行：直接 echo 错误 + exit，提醒用户先初始化容器。
@@ -203,6 +207,14 @@ class TerminalSessionManager @Inject constructor(
         startKeepaliveService()
         FileLogger.i(TAG, "后台命令标签 $id: $command")
         return id
+    }
+
+    /** T-5：把工具传入的 workdir 换算成容器内 cd 目标；null/空白时回退默认工作区 ~/workspace。 */
+    private fun resolveCdTarget(workdir: String?): String {
+        if (workdir.isNullOrBlank()) return "~/workspace"
+        // 本地容器把当前工作区根 bind 到 /root/workspace（=~/workspace）；传入的 workdir 即工作区根
+        // （宿主路径）时指向 bind 目标，其余情况按调用方提供的容器内路径原样 cd。
+        return if (workdir == workspaceRepository.currentPath()) "~/workspace" else workdir
     }
 
     /** 按 id 向标签发送输入并回车执行（AI 持续发命令的入口）。返回是否命中标签且仍活跃。 */

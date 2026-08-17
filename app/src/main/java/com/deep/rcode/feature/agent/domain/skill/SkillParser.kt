@@ -95,6 +95,16 @@ object SkillParser {
         val mcpTool = frontmatter["mcp_tool"]?.toString()?.takeIf { it.isNotBlank() }
         val icon = frontmatter["icon"]?.toString()?.takeIf { it.isNotBlank() }
 
+        // S-3：requires_runtime 运行时依赖列表，如 ["node", "python3"]
+        val requiresRuntime = try {
+            val raw = frontmatter["requires_runtime"]
+            if (raw is List<*>) raw.filterIsInstance<String>().map { it.trim() }.filter { it.isNotBlank() }
+            else if (raw is String) raw.split(',').map { it.trim() }.filter { it.isNotBlank() }
+            else emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
         return Skill(
             id = dir.name,
             name = name,
@@ -108,6 +118,7 @@ object SkillParser {
             enabled = true,
             source = source,
             requiredTools = requiredTools,
+            requiresRuntime = requiresRuntime,
             dir = dir,
             entry = entry,
             mcpTool = mcpTool,

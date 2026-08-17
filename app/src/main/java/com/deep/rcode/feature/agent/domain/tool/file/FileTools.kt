@@ -1,5 +1,8 @@
 package com.deep.rcode.feature.agent.domain.tool.file
 
+import com.deep.rcode.feature.agent.data.local.dao.FileEditHunkDao
+import com.deep.rcode.feature.agent.data.local.entity.FileEditHunkEntity
+import com.deep.rcode.feature.agent.domain.model.AgentContext
 import com.deep.rcode.feature.agent.domain.tool.AgentTool
 import com.deep.rcode.feature.agent.domain.tool.ParameterType
 import com.deep.rcode.feature.agent.domain.tool.PendingToolPermission
@@ -18,12 +21,17 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.UUID
 import javax.inject.Inject
 
 private const val TAG = "FileTools"
 
+/** F-3：hunk 落库时单条快照（old/new content）保存的最大字符数，防止超大文件撑爆数据库。 */
+private const val HUNK_SNAPSHOT_MAX_CHARS = 50_000
+
 class ReadFileTool @Inject constructor(
-    private val fileAccess: FileAccessProvider
+    private val fileAccess: FileAccessProvider,
+    private val fileEditHunkDao: FileEditHunkDao
 ) : AgentTool() {
     override val name = "readFile"
     override val description = "读取指定路径的文件内容。支持工作区文件或容器绝对路径的系统文件。单次读取受文件大小限制，超大文件可通过 start_line 分段读取。"
@@ -34,10 +42,18 @@ class ReadFileTool @Inject constructor(
     override val parameters = mapOf(
         "path" to ToolParameter("path", ParameterType.STRING, "文件路径：~/workspace/... 为项目文件；其它绝对路径（如 /etc/...、/root/...）为容器系统文件。", required = true),
         "start_line" to ToolParameter("start_line", ParameterType.INTEGER, "开始行号（从 1 计）。", required = false),
-        "end_line" to ToolParameter("end_line", ParameterType.INTEGER, "结束行号；与 start_line 的跨度最多 2000 行，超出按 2000 行截断。", required = false)
+        "end_line" to ToolParameter("end_line", ParameterType.INTEGER, "结束行号；与 start_line 的跨度最多 2000 行，超出按 2000 行截断。", required = false),
+        "force_total_lines" to ToolParameter("force_total_lines", ParameterType.BOOLEAN, "F-4：是否强制统计并返回文件总行数。默认按文件大小自动决策（≤1MB 统计，大文件跳过）；设 true 则始终统计（大文件代价较高）。", required = false)
     )
 
-    override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
+    override suspend fun execute(args: Map<String, JsonElement>): ToolResult = executeInternal(args, null)
+
+    /** F-3：优先走 executeWithContext 以获得会话 ID，用于 hunk 落库；无上下文时降级为不落库。 */
+    override suspend fun executeWithContext(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
+        return executeInternal(args, context.sessionId)
+    }
+
+    private suspend fun executeInternal(args: Map<String, JsonElement>, sessionId: String?): ToolResult {
         return try {
             val path = args["path"]?.jsonPrimitive?.contentOrNull ?: run {
                 FileLogger.w(TAG, "read_file 缺少 path 参数")
@@ -52,24 +68,29 @@ class ReadFileTool @Inject constructor(
 
             val startLine = args["start_line"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(1) ?: 1
             val requestedEnd = args["end_line"]?.jsonPrimitive?.intOrNull
-            // 行窗口上界：显式 end_line 与 start_line+MAX_LINES 取较小值，缺省则按 MAX_LINES 上限。
+            // F-4：行窗口上界——显式 end_line 与 start_line+MAX_LINES 取较小值，缺省则按 MAX_LINES 上限。
             val lineCap = startLine + MAX_LINES - 1
             val endCap = if (requestedEnd != null) minOf(requestedEnd, lineCap) else lineCap
+
+            // F-4：total_lines 自动决策——文件 ≤ AUTO_TOTAL_LINES_BYTES 时才统计总行数，
+            // 大文件跳过统计（返回 -1），避免为求一个展示数字把整个大文件读一遍。
+            val forceTotalLines = args["force_total_lines"]?.jsonPrimitive?.booleanOrNull ?: false
+            val countTotalLines = forceTotalLines || fileAccess.fileSize(path) <= AUTO_TOTAL_LINES_BYTES
+            var totalLines = if (countTotalLines) 0 else -1
 
             // 逐行流式读取，避免 readText() 整篇进内存导致移动端 OOM；
             // 只保留 [startLine, endCap] 窗口，并在累计字节超过 MAX_BYTES 时提前停止。
             val sb = StringBuilder()
-            var totalLines = 0
             var emittedLines = 0
             var byteCount = 0
             var truncatedByBytes = false
             var lineNo = 0
             fileAccess.readLines(path).forEach { line ->
                 lineNo++
-                totalLines = lineNo
+                if (countTotalLines) totalLines = lineNo
                 if (lineNo < startLine) return@forEach
                 if (lineNo > endCap) {
-                    // 已越过窗口，但仍需继续计数以得到准确 total_lines。
+                    // 已越过窗口，但仍需继续计数以得到准确 total_lines（仅在需统计时）。
                     return@forEach
                 }
                 if (!truncatedByBytes) {
@@ -88,11 +109,17 @@ class ReadFileTool @Inject constructor(
             val lastEmittedLine = startLine + emittedLines - 1
             // 用户想要的窗口末行：给了 end_line 取 min(end_line, EOF)，否则到 EOF。
             // 我们只发到了 lastEmittedLine，若它落在窗口末行之前，说明被截断、还有内容可读。
-            val wantedEnd = if (requestedEnd != null) minOf(requestedEnd, totalLines) else totalLines
+            val wantedEnd = if (countTotalLines) {
+                if (requestedEnd != null) minOf(requestedEnd, totalLines) else totalLines
+            } else {
+                // F-4：未统计总行数时无法精确判断是否读到 EOF，统一按「已截断」提示分页续读。
+                requestedEnd ?: Int.MAX_VALUE
+            }
             val truncated = emittedLines > 0 && lastEmittedLine < wantedEnd
             val note = when {
                 !truncated -> null
                 truncatedByBytes -> "已达 ${MAX_BYTES / 1024}KB 上限被截断；从第 ${lastEmittedLine + 1} 行起用 start_line 继续读取。"
+                !countTotalLines -> "文件较大，未统计总行数；如内容被截断，从第 ${lastEmittedLine + 1} 行起用 start_line 继续读取。"
                 else -> "已达 $MAX_LINES 行上限被截断；从第 ${lastEmittedLine + 1} 行起用 start_line 继续读取。"
             }
 
@@ -106,10 +133,41 @@ class ReadFileTool @Inject constructor(
                 "truncated" to JsonPrimitive(truncated)
             )
             if (note != null) resultMap["note"] = JsonPrimitive(note)
+
+            // F-3：read 落库快照（operation=read，无差异），支撑「撤销编辑」时回溯读前内容。
+            if (sessionId != null) recordHunk(sessionId, path, operation = "read", hunk = "", oldContent = sb.toString(), newContent = sb.toString())
+
             ToolResult.Success(JsonObject(resultMap))
         } catch (e: Exception) {
             FileLogger.e(TAG, "read_file 异常", e)
             ToolResult.Error(e.message ?: "读取文件失败", "READ_ERROR")
+        }
+    }
+
+    /** F-3：写入一条 hunk 记录，失败静默不阻塞主流程。 */
+    private suspend fun recordHunk(
+        sessionId: String,
+        path: String,
+        operation: String,
+        hunk: String,
+        oldContent: String,
+        newContent: String
+    ) {
+        try {
+            fileEditHunkDao.upsert(
+                FileEditHunkEntity(
+                    id = "hunk_${UUID.randomUUID().toString().replace("-", "")}",
+                    sessionId = sessionId,
+                    filePath = path,
+                    operation = operation,
+                    hunk = hunk,
+                    oldContent = oldContent.take(HUNK_SNAPSHOT_MAX_CHARS),
+                    newContent = newContent.take(HUNK_SNAPSHOT_MAX_CHARS),
+                    createdAtMs = System.currentTimeMillis()
+                )
+            )
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "记录文件 hunk 失败: $path", e)
         }
     }
 
@@ -118,6 +176,8 @@ class ReadFileTool @Inject constructor(
         const val MAX_LINES = 2000
         /** 单次最多返回的字节数（UTF-8，约 200KB），防止超大行撑爆内存/上下文。 */
         const val MAX_BYTES = 200 * 1024
+        /** F-4：文件大小超过此值（字节，1MB）时默认不统计总行数。 */
+        const val AUTO_TOTAL_LINES_BYTES = 1024 * 1024L
     }
 }
 
@@ -128,7 +188,8 @@ class ReadFileTool @Inject constructor(
  * overwrite=false 且目标已存在时报错，可用于安全地新建文件。
  */
 class WriteFileTool @Inject constructor(
-    private val fileAccess: FileAccessProvider
+    private val fileAccess: FileAccessProvider,
+    private val fileEditHunkDao: FileEditHunkDao
 ) : AgentTool() {
     override val name = "writeFile"
     override val description = "向指定路径写入完整文件内容。若文件存在则根据 overwrite 决定是否覆盖。支持写入工作区文件或容器系统文件。局部修改推荐使用 editFile。"
@@ -161,7 +222,14 @@ class WriteFileTool @Inject constructor(
         )
     }
 
-    override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
+    override suspend fun execute(args: Map<String, JsonElement>): ToolResult = executeInternal(args, null)
+
+    /** F-3：优先走 executeWithContext 以获得会话 ID，用于 hunk 落库；无上下文时降级为不落库。 */
+    override suspend fun executeWithContext(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
+        return executeInternal(args, context.sessionId)
+    }
+
+    private suspend fun executeInternal(args: Map<String, JsonElement>, sessionId: String?): ToolResult {
         return try {
             val path = args["path"]?.jsonPrimitive?.contentOrNull ?: run {
                 FileLogger.w(TAG, "write_file 缺少 path 参数")
@@ -196,6 +264,26 @@ class WriteFileTool @Inject constructor(
                     "diff" to JsonPrimitive(diff)
                 ))
             ))
+
+            // F-3：write 落库快照（operation=write，含旧→新差异），支撑「撤销编辑」。
+            if (sessionId != null) {
+                try {
+                    fileEditHunkDao.upsert(
+                        FileEditHunkEntity(
+                            id = "hunk_${UUID.randomUUID().toString().replace("-", "")}",
+                            sessionId = sessionId,
+                            filePath = path,
+                            operation = "write",
+                            hunk = diff,
+                            oldContent = oldContent.take(HUNK_SNAPSHOT_MAX_CHARS),
+                            newContent = content.take(HUNK_SNAPSHOT_MAX_CHARS),
+                            createdAtMs = System.currentTimeMillis()
+                        )
+                    )
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "记录文件 hunk 失败: $path", e)
+                }
+            }
 
             FileLogger.v(TAG, "write_file 成功 path=$path created=${!existed} lines=${content.lines().size} (+$added -$removed)")
             ToolResult.Success(

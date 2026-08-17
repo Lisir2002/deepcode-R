@@ -69,6 +69,15 @@ class ExecuteCommandTool @Inject constructor(
 
         /** 命中即视为「改动了 apk 世界」的命令片段，触发 bundle 状态联动刷新。 */
         private val APK_MUTATION_REGEX = Regex("""\bapk\s+(add|del|remove|fix|upgrade|delete)\b""")
+
+        /**
+         * T-2：只读命令白名单。这些命令无副作用，偶发失败（网络抖动、容器瞬态问题）时允许自动重试一次；
+         * 其余命令（可能产生副作用）一律不重试，避免重复执行造成意外影响。
+         */
+        private val READ_ONLY_COMMAND_REGEX = Regex(
+            """^\s*(?:ls|pwd|cat|head|tail|wc|echo|date|whoami|which|type|uname|env|printenv|du|df|stat|file|find|grep|rg|git\s+(?:status|log|diff|branch|remote|rev-parse|show|ls-files|stash\s+list))\b.*""",
+            RegexOption.IGNORE_CASE
+        )
     }
 
     /** 联动刷新用的后台作用域：fire-and-forget，不阻塞工具结果返回。 */
@@ -154,7 +163,12 @@ class ExecuteCommandTool @Inject constructor(
             FileLogger.d(TAG, "execute_command (timeout=${timeoutMs}ms, strict=$strict): $command")
             // 用 runCommandSyncWithExit 拿真实退出码（超时/异常时为 null），供 strict 模式判定失败；
             // 其 output 与旧 runCommandSync 返回的同一份 BoundedOutput 限幅结果，非 strict 行为不变。
-            val result: CommandResult = commandEngine.runCommandSyncWithExit(command, workdir, timeoutMs)
+            var result: CommandResult = commandEngine.runCommandSyncWithExit(command, workdir, timeoutMs)
+            // T-2：只读命令偶发失败时自动重试一次（白名单外 / 成功执行不重试，避免副作用与浪费）。
+            if (isReadOnlyCommand(command) && result.exitCode != 0) {
+                FileLogger.w(TAG, "只读命令失败(exit=${result.exitCode})，自动重试一次: $command")
+                result = commandEngine.runCommandSyncWithExit(command, workdir, timeoutMs)
+            }
             FileLogger.v(TAG, "execute_command 完成，输出 ${result.output.length} 字符，exit=${result.exitCode}")
             maybeSyncBundleStates(command)
             aggregateResult(result.output, result.exitCode, strict)
@@ -183,22 +197,32 @@ class ExecuteCommandTool @Inject constructor(
         val strict = resolveStrict(args)
 
         // 限幅累积：喂回模型的最终结果只保留开头+结尾，避免超大输出撑爆上下文。
-        val accumulated = BoundedOutput()
+        var accumulated = BoundedOutput()
         // 记录命令真实退出码：CommandEvent.Exit 是流结束前最后一个事件，超时/异常时为 null。
         var exitCode: Int? = null
         try {
             val workdir = workspaceRepository.currentPath()
             val timeoutMs = resolveTimeoutMs(args)
             FileLogger.d(TAG, "execute_command(流式, timeout=${timeoutMs}ms, strict=$strict): $command")
-            commandEngine.runCommandStream(command, workdir, timeoutMs).collect { event ->
-                when (event) {
-                    is CommandEvent.Line -> {
-                        accumulated.append(event.text)
-                        accumulated.append("\n")
-                        emit(ToolStreamEvent.Progress(event.text))
+            // 单次流式执行；@retry 时复用同一累积器，使重试输出并入结果。
+            suspend fun runOnce() {
+                commandEngine.runCommandStream(command, workdir, timeoutMs).collect { event ->
+                    when (event) {
+                        is CommandEvent.Line -> {
+                            accumulated.append(event.text)
+                            accumulated.append("\n")
+                            emit(ToolStreamEvent.Progress(event.text))
+                        }
+                        is CommandEvent.Exit -> { exitCode = event.code }
                     }
-                    is CommandEvent.Exit -> { exitCode = event.code }
                 }
+            }
+            runOnce()
+            // T-2：只读命令偶发失败时自动重试一次（白名单外 / 成功执行不重试）。
+            if (isReadOnlyCommand(command) && exitCode != 0) {
+                FileLogger.w(TAG, "只读命令失败(exit=$exitCode)，自动重试一次: $command")
+                exitCode = null
+                runOnce()
             }
             FileLogger.v(TAG, "execute_command(流式) 完成，输出 ${accumulated.totalChars} 字符，exit=$exitCode")
             maybeSyncBundleStates(command)
@@ -225,6 +249,10 @@ class ExecuteCommandTool @Inject constructor(
             emit(ToolStreamEvent.Completed(result))
         }
     }
+
+    /** T-2：命令是否命中只读白名单，决定是否允许自动重试。 */
+    private fun isReadOnlyCommand(command: String): Boolean =
+        READ_ONLY_COMMAND_REGEX.containsMatchIn(command.trim())
 
     /**
      * 按 strict 聚合最终结果：strict=true 且命令未以退出码 0 结束（非零，或超时/异常导致的 null）

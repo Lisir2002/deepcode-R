@@ -53,7 +53,13 @@ class AskUserQuestionTool @Inject constructor(
             ),
             "description" to mapOf(
                 "type" to "string",
-                "description" to "选项说明，解释选它意味着什么或有什么利弊。"
+                "description" to "选项说明，解释选它意味着什么或有什么利弊。支持轻量 Markdown（**加粗**、`代码`、链接等）。"
+            ),
+            // Q-1：默认/推荐选项标记，UI 渲染时默认高亮并预选中
+            "default" to mapOf(
+                "type" to "boolean",
+                "description" to "Q-1：是否为默认/推荐选项。设为 true 时 UI 会默认高亮并预选中该选项；" +
+                    "多选问题可对多个选项设 true（均预选）。单选问题请至多标记一个。"
             )
         ),
         "required" to listOf("label", "description")
@@ -151,10 +157,15 @@ class AskUserQuestionTool @Inject constructor(
                     )
                 val label = runCatching { optObj["label"]?.jsonPrimitive?.contentOrNull }.getOrNull()?.trim().orEmpty()
                 if (label.isNotEmpty()) {
+                    // Q-1：解析 default 标记（容错，非法值视为 false）
+                    val isDefault = optObj["default"]?.let { el ->
+                        runCatching { el.jsonPrimitive.boolean }.getOrNull()
+                    } ?: false
                     options.add(
                         QuestionOption(
                             label = label,
-                            description = runCatching { optObj["description"]?.jsonPrimitive?.contentOrNull }.getOrNull()?.trim().orEmpty()
+                            description = runCatching { optObj["description"]?.jsonPrimitive?.contentOrNull }.getOrNull()?.trim().orEmpty(),
+                            default = isDefault
                         )
                     )
                 }

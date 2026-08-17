@@ -32,8 +32,8 @@ interface MemorySource {
     /** 读取指定 memory 的完整指令正文；不存在或解析失败时返回 null。 */
     fun loadContent(name: String): String?
 
-    /** 保存一条记忆（创建或覆盖） */
-    fun saveMemory(name: String, description: String, content: String): Boolean
+    /** 保存一条记忆（创建或覆盖）。tags 为可选的标签列表（M-3）。 */
+    fun saveMemory(name: String, description: String, content: String, tags: List<String> = emptyList()): Boolean
 
     /**
      * 对已有记忆的正文做局部编辑（old_string/new_string 精确匹配），语义与 editFile 一致。
@@ -74,11 +74,28 @@ interface MemorySource {
         }
 
         return try {
-            file.writeText(MemoryParser.format(memory.name, memory.description, content))
+            // M-3/M-4：编辑只改正文，保留原 tags 与 accessCount。
+            file.writeText(MemoryParser.format(memory.name, memory.description, content, memory.tags, memory.accessCount))
             MemoryEditResult.Success
         } catch (e: Exception) {
             FileLogger.e("MemorySource", "Failed to edit memory: $name", e)
             MemoryEditResult.Error("EDIT_WRITE_FAILED", "写入记忆文件失败: ${e.message}")
+        }
+    }
+
+    /**
+     * M-4：记录一次访问命中，将记忆的 accessCount 递增并持久化。
+     * 幂等静默：记忆不存在或写盘失败时不抛异常。
+     */
+    fun recordAccess(name: String) {
+        val memory = listMemories().firstOrNull { it.name.equals(name, ignoreCase = true) } ?: return
+        val file = memory.file ?: return
+        try {
+            file.writeText(
+                MemoryParser.format(memory.name, memory.description, memory.content, memory.tags, memory.accessCount + 1)
+            )
+        } catch (e: Exception) {
+            FileLogger.e("MemorySource", "Failed to record access for memory: $name", e)
         }
     }
 

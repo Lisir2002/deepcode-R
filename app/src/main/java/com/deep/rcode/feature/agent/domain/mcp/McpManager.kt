@@ -144,4 +144,42 @@ class McpManager @Inject constructor(
             activeClients.clear()
         }
     }
+
+    /**
+     * S-2：测试 MCP server 连通性。
+     *
+     * 用传入的配置创建一个临时 client，完成 initialize → tools/list 握手后立即关闭，不注册工具。
+     * 用于 [ManageMcpTool] 在 add 后立即验证配置正确性，避免等到下次会话才暴露连接错误。
+     *
+     * @return 成功返回空字符串；失败返回错误消息。
+     */
+    suspend fun testConnection(cfg: McpServerConfig): String = withContext(Dispatchers.IO) {
+        try {
+            val transport = if (cfg.isStdio) {
+                containerEngine.notReadyHint()?.let { return@withContext it }
+                StdioTransport(
+                    serverName = cfg.name,
+                    engine = containerEngine,
+                    program = cfg.command!!,
+                    programArgs = cfg.args,
+                    projectPath = workspaceRepository.currentPath(),
+                    extraEnv = cfg.env
+                )
+            } else {
+                StreamableHttpTransport(
+                    endpoint = cfg.url.orEmpty(),
+                    client = okHttpClient,
+                    extraHeaders = cfg.headers
+                )
+            }
+            val client = McpClient(serverName = cfg.name, transport = transport)
+            val toolCount = client.connect()
+            client.close()
+            FileLogger.i(TAG, "[${cfg.name}] 连接测试成功，发现 $toolCount 个工具")
+            ""
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "[${cfg.name}] 连接测试失败: ${e.message}")
+            e.message ?: "未知错误"
+        }
+    }
 }

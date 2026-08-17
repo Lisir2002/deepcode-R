@@ -18,6 +18,7 @@ import com.deep.rcode.feature.t2i.data.local.dao.T2ITaskDao
 import com.deep.rcode.feature.t2i.data.local.entity.T2ITaskEntity
 import com.deep.rcode.feature.t2i.data.remote.ImageGenerator
 import com.deep.rcode.feature.t2i.domain.permission.T2IPermissionPolicyEngine
+import com.deep.rcode.feature.workspace.domain.WorkspacePathMapper
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -47,6 +48,7 @@ class GenerateImageTool @Inject constructor(
     private val permission: T2IPermissionPolicyEngine,
     private val imageGenerator: ImageGenerator,
     private val credentialEncryptor: CredentialEncryptor,
+    private val pathMapper: WorkspacePathMapper,
 ) : AgentTool(), StreamingAgentTool {
 
     private companion object {
@@ -95,6 +97,12 @@ class GenerateImageTool @Inject constructor(
         "model" to ToolParameter(
             "model", ParameterType.STRING,
             "可选：指定 T2I 模型 ID（如 dall-e-3 / stable-diffusion-xl-1.0）；为空则用当前激活 T2I Provider 的默认模型。",
+            required = false
+        ),
+        "output_path" to ToolParameter(
+            "output_path", ParameterType.STRING,
+            "V-3：可选：生成完成后把图片额外保存到工作区的目标路径，如 ~/workspace/assets/hero.png 或 assets/hero.png（相对路径基于工作区根）。" +
+                "省略则只保存到 App 私有目录；传入后图片会同时出现在工作区，便于在项目中使用（如引用到代码/文档）。",
             required = false
         ),
     )
@@ -247,6 +255,18 @@ class GenerateImageTool @Inject constructor(
             }
             refundable = false
 
+            // V-3：output_path 存在时把图片复制到工作区，便于 AI 在项目中使用（私有目录副本保留）。
+            var workspaceCopyPath: String? = null
+            var copyNote: String? = null
+            val outputPathArg = args["output_path"]?.asStringOrNull()?.trim()
+            if (!outputPathArg.isNullOrBlank()) {
+                val copyResult = copyToWorkspace(outputPathArg, File(res.imagePath))
+                if (copyResult != null) {
+                    workspaceCopyPath = copyResult.first
+                    copyNote = copyResult.second
+                }
+            }
+
             val mdPreview = buildPreviewMarkdown(res.imagePath, prompt)
             // V-1：重试元数据——attempts=本次成功后累计尝试次数（=retryCount+1），failures=累计失败次数
             emit(ToolStreamEvent.Completed(ToolResult.Success(buildJsonObject {
@@ -256,6 +276,9 @@ class GenerateImageTool @Inject constructor(
                 put("markdown", mdPreview)
                 put("attempts", pending.retryCount + 1)
                 put("failures", pending.retryCount)
+                // V-3：工作区副本路径（容器视角）与提示信息
+                workspaceCopyPath?.let { put("outputPath", it) }
+                copyNote?.let { put("note", it) }
             })))
         } catch (pe: ImageGenerator.ProviderException) {
             FileLogger.w(TAG, "Provider 异常 code=${pe.errorCode} refundable=${pe.refundable} msg=${pe.message}")
@@ -313,6 +336,26 @@ class GenerateImageTool @Inject constructor(
 
     private fun buildPreviewMarkdown(imagePath: String, prompt: String): String {
         return "![generated-image](file://$imagePath)\n\n*生成提示：$prompt*"
+    }
+
+    /**
+     * V-3：把生成的图片复制到工作区目标路径。
+     * @return Pair(容器视角路径, 提示语)；源文件缺失或复制失败返回 null（不中断生成流程）。
+     */
+    private fun copyToWorkspace(outputPathArg: String, source: File): Pair<String, String>? {
+        return try {
+            val target = pathMapper.toHostFile(outputPathArg)
+            if (target.absolutePath == source.absolutePath) return null
+            if (!source.exists()) return null
+            target.parentFile?.mkdirs()
+            source.copyTo(target, overwrite = true)
+            val containerPath = pathMapper.toContainerPath(target.absolutePath)
+            FileLogger.d(TAG, "V-3 复制到工作区: $containerPath")
+            containerPath to "图片已同时保存到工作区 $containerPath"
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "V-3 复制到工作区失败: ${e.message}", e)
+            null
+        }
     }
 
     private fun JsonElement.asIntSafe(): Int? = runCatching { jsonPrimitive.int }.getOrNull()
