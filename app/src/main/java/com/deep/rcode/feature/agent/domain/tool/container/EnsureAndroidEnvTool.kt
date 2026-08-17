@@ -2,16 +2,21 @@ package com.deep.rcode.feature.agent.domain.tool.container
 
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.domain.container.CommandEngine
+import com.deep.rcode.feature.agent.domain.container.CommandEvent
 import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
 import com.deep.rcode.feature.agent.domain.tool.AgentTool
 import com.deep.rcode.feature.agent.domain.tool.ParameterType
+import com.deep.rcode.feature.agent.domain.tool.StreamingAgentTool
 import com.deep.rcode.feature.agent.domain.tool.ToolCapability
 import com.deep.rcode.feature.agent.domain.tool.ToolParameter
 import com.deep.rcode.feature.agent.domain.tool.ToolPermissionPolicy
 import com.deep.rcode.feature.agent.domain.tool.ToolResult
+import com.deep.rcode.feature.agent.domain.tool.ToolStreamEvent
 import com.deep.rcode.feature.terminal.data.bundle.TerminalBundleId
 import com.deep.rcode.feature.workspace.data.repository.WorkspaceRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -39,7 +44,7 @@ class EnsureAndroidEnvTool @Inject constructor(
     private val commandEngine: CommandEngine,
     private val workspaceRepository: WorkspaceRepository,
     private val containerEngine: LinuxContainerEngine,
-) : AgentTool() {
+) : AgentTool(), StreamingAgentTool {
 
     companion object {
         const val TAG = "EnsureAndroidEnvTool"
@@ -166,12 +171,97 @@ class EnsureAndroidEnvTool @Inject constructor(
     }
 
     private suspend fun containerInstalledSnap(id: TerminalBundleId): Boolean {
-        return runCatching {
-            val repoField = containerEngine.javaClass.getDeclaredField("bundleRepository").apply { isAccessible = true }
-            val repo = repoField.get(containerEngine) as? com.deep.rcode.feature.terminal.data.repository.TerminalBundleRepository
-                ?: return false
-            repo.isInstalledSnapshot(id)
-        }.getOrDefault(false)
+        return containerEngine.isBundleInstalled(id)
+    }
+
+    /**
+     * 流式执行：把 [buildScript] 产出的脚本经 [CommandEngine.runCommandStream] 逐行收集，
+     * 每行若以 `[STEP|...]` 开头则实时转成 [ToolStreamEvent.Progress]（去掉 STEP 方括号标记，
+     * 展示如「[java|ok] 已安装 openjdk17...」），脚本结束后聚合 [parseResult] 作为
+     * [ToolStreamEvent.Completed] 结果喂回模型（与 [execute] 的最终结果一致）。
+     * [execute] 作为非流式兜底保留。
+     */
+    override fun executeStream(
+        args: Map<String, JsonElement>,
+        context: com.deep.rcode.feature.agent.domain.model.AgentContext
+    ): Flow<ToolStreamEvent> = flow {
+        val installJava = args["install_java"]?.jsonPrimitive?.booleanOrNull ?: true
+        val installSdk = args["install_sdk"]?.jsonPrimitive?.booleanOrNull ?: true
+        val applyWrapper = args["apply_wrapper"]?.jsonPrimitive?.booleanOrNull ?: true
+        val writeEnvSh = args["write_env_sh"]?.jsonPrimitive?.booleanOrNull ?: true
+        val acceptLicenses = args["accept_licenses"]?.jsonPrimitive?.booleanOrNull ?: true
+        val cmdlineVer = args["cmdline_tools_version"]?.jsonPrimitive?.contentOrNull
+            ?: DEFAULT_CMDLINE_TOOLS_VERSION
+        val pkgsArg = (args["sdk_packages"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }
+            ?.filter { it.isNotBlank() }?.distinct()
+        val sdkPackages = if (pkgsArg.isNullOrEmpty()) {
+            listOf(
+                "platforms;$DEFAULT_PLATFORM",
+                "build-tools;$DEFAULT_BUILD_TOOLS",
+                "platform-tools"
+            )
+        } else pkgsArg
+
+        val script = buildScript(
+            installJava = installJava,
+            installSdk = installSdk,
+            applyWrapper = applyWrapper,
+            writeEnvSh = writeEnvSh,
+            acceptLicenses = acceptLicenses,
+            cmdlineVer = cmdlineVer,
+            sdkPackages = sdkPackages,
+        )
+        // 全量收集输出：parseResult 依赖完整内容解析 STEP/ENV/ARCH 行。
+        val accumulated = StringBuilder()
+        try {
+            commandEngine.runCommandStream(
+                command = script,
+                projectPath = workspaceRepository.currentPath(),
+                timeoutMs = TIMEOUT_MS,
+            ).collect { event ->
+                when (event) {
+                    is CommandEvent.Line -> {
+                        accumulated.append(event.text).append('\n')
+                        stepLineToDisplay(event.text)?.let { emit(ToolStreamEvent.Progress(it)) }
+                    }
+                    is CommandEvent.Exit -> { /* 结束在流完成后统一聚合 */ }
+                }
+            }
+
+            // 异步确保 QEMU 转译器 bundle 已安装（独立于容器内 apk 包）
+            if (applyWrapper) {
+                runCatching {
+                    containerEngine.ensureInstalled()
+                    if (!containerInstalledSnap(TerminalBundleId.QEMU_X86_TRANSLATOR)) {
+                        runCatching { containerEngine.installBundle(TerminalBundleId.QEMU_X86_TRANSLATOR) }
+                            .onFailure { FileLogger.w(TAG, "自动安装 QEMU_X86_TRANSLATOR bundle 失败：${it.message}", it) }
+                    }
+                }
+            }
+            emit(ToolStreamEvent.Completed(ToolResult.Success(parseResult(accumulated.toString()))))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "ensure_android_env(流式) 失败", e)
+            emit(ToolStreamEvent.Completed(ToolResult.Error("prepare android env failed: ${e.message}", code = "ENV_PREP_FAILED")))
+        }
+    }
+
+    /**
+     * 把一行 `[STEP|id|status|msg]` 转成进度展示文本（去掉 STEP 方括号标记），
+     * 展示如「[java|ok] 已安装 openjdk17...」；非 STEP 行返回 null。
+     */
+    private fun stepLineToDisplay(line: String): String? {
+        val trimmed = line.trim()
+        if (!trimmed.startsWith("[STEP|") || !trimmed.contains(']')) return null
+        val inside = trimmed.substringAfter('[').substringBefore(']')
+        val rest = trimmed.substringAfter(']').trim()
+        val parts = inside.split('|', limit = 4)
+        if (parts.size < 2 || parts[0] != "STEP") return null
+        val id = parts.getOrElse(1) { "?" }
+        val status = parts.getOrElse(2) { "unknown" }
+        val msg = parts.getOrElse(3) { rest }
+        return "[$id|$status] $msg"
     }
 
     /**

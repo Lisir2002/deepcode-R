@@ -96,9 +96,13 @@ class AskUserQuestionTool @Inject constructor(
     )
 
     override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
-        val questionsJson = args["questions"]?.jsonArray
+        // Q-4：questions 必须是数组，容错解析，避免强转抛异常被上层吞成模糊错误
+        val questionsJson = runCatching { args["questions"]?.jsonArray }.getOrNull()
         if (questionsJson == null || questionsJson.isEmpty()) {
-            return ToolResult.Error("缺少必需参数: questions（至少包含一个问题）", "MISSING_QUESTIONS")
+            return ToolResult.Error(
+                "缺少必需参数: questions（需为一个包含 1-$MAX_QUESTIONS 个问题的数组）",
+                "MISSING_QUESTIONS"
+            )
         }
 
         if (questionsJson.size > MAX_QUESTIONS) {
@@ -111,16 +115,20 @@ class AskUserQuestionTool @Inject constructor(
         // 解析每个问题
         val questions = mutableListOf<QuestionItem>()
         for ((idx, qElement) in questionsJson.withIndex()) {
-            val qObj = qElement.jsonObject
+            val qObj = runCatching { qElement.jsonObject }.getOrNull()
+                ?: return ToolResult.Error(
+                    "第 ${idx + 1} 个问题必须是对象（含 question/header/options 字段）",
+                    "INVALID_QUESTION_TYPE"
+                )
 
-            val questionText = qObj["question"]?.jsonPrimitive?.contentOrNull?.trim()
+            val questionText = runCatching { qObj["question"]?.jsonPrimitive?.contentOrNull }.getOrNull()?.trim()
             if (questionText.isNullOrEmpty()) {
                 return ToolResult.Error("第 ${idx + 1} 个问题缺少 question 字段", "INVALID_QUESTION")
             }
 
-            val header = qObj["header"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val header = runCatching { qObj["header"]?.jsonPrimitive?.contentOrNull }.getOrNull()?.trim() ?: ""
 
-            val optionsJson = qObj["options"]?.jsonArray
+            val optionsJson = runCatching { qObj["options"]?.jsonArray }.getOrNull()
             if (optionsJson == null || optionsJson.size < MIN_OPTIONS) {
                 return ToolResult.Error(
                     "第 ${idx + 1} 个问题至少需要 $MIN_OPTIONS 个选项",
@@ -134,13 +142,23 @@ class AskUserQuestionTool @Inject constructor(
                 )
             }
 
-            val options = optionsJson.map { optElement ->
-                val optObj = optElement.jsonObject
-                QuestionOption(
-                    label = optObj["label"]?.jsonPrimitive?.contentOrNull?.trim() ?: "",
-                    description = optObj["description"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
-                )
-            }.filter { it.label.isNotEmpty() }
+            val options = mutableListOf<QuestionOption>()
+            for ((optIdx, optElement) in optionsJson.withIndex()) {
+                val optObj = runCatching { optElement.jsonObject }.getOrNull()
+                    ?: return ToolResult.Error(
+                        "第 ${idx + 1} 个问题的第 ${optIdx + 1} 个选项必须是对象（含 label/description 字段）",
+                        "INVALID_OPTION_TYPE"
+                    )
+                val label = runCatching { optObj["label"]?.jsonPrimitive?.contentOrNull }.getOrNull()?.trim().orEmpty()
+                if (label.isNotEmpty()) {
+                    options.add(
+                        QuestionOption(
+                            label = label,
+                            description = runCatching { optObj["description"]?.jsonPrimitive?.contentOrNull }.getOrNull()?.trim().orEmpty()
+                        )
+                    )
+                }
+            }
 
             if (options.size < MIN_OPTIONS) {
                 return ToolResult.Error(
@@ -149,8 +167,8 @@ class AskUserQuestionTool @Inject constructor(
                 )
             }
 
-            val multiSelect = qObj["multiSelect"]?.jsonPrimitive?.let {
-                runCatching { it.boolean }.getOrNull()
+            val multiSelect = qObj["multiSelect"]?.let { el ->
+                runCatching { el.jsonPrimitive.boolean }.getOrNull()
             } ?: false
 
             questions.add(
@@ -176,7 +194,7 @@ class AskUserQuestionTool @Inject constructor(
         // 将用户回答序列化为 JSON 字符串，喂回给模型
         val resultText = buildString {
             if (answer.answers.isEmpty()) {
-                append("用户未在预设选项中做出选择，想补充说明。请根据用户后续补充的内容继续，或换一种方式提问。")
+                append("用户未在预设选项中做出选择（可能已超时或想补充说明）。请根据用户后续补充的内容继续，或换一种方式提问。")
             } else {
                 for (a in answer.answers) {
                     append("「${a.question}」= ")

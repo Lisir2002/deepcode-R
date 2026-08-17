@@ -60,6 +60,15 @@ class TerminalSessionTool @Inject constructor(
         /** 轮询命令是否退出的间隔（毫秒）。 */
         const val START_POLL_INTERVAL_MS = 200L
 
+        /** read 未提供分页参数时的行数阈值：输出超过则首尾截断，防上下文溢出。 */
+        const val READ_TRUNCATE_THRESHOLD_LINES = 2_000
+
+        /** 未分页自动截断时保留的开头行数。 */
+        const val READ_HEAD_LINES = 1_000
+
+        /** 未分页自动截断时保留的结尾行数。 */
+        const val READ_TAIL_LINES = 500
+
         val SUPPORTED_KEYS = listOf(
             "ctrl+c",
             "ctrl+d",
@@ -139,6 +148,18 @@ class TerminalSessionTool @Inject constructor(
             name = "submit",
             type = ParameterType.BOOLEAN,
             description = "send 可选：是否在末尾追加回车以执行该命令，默认 true",
+            required = false
+        ),
+        "start_line" to ToolParameter(
+            name = "start_line",
+            type = ParameterType.INTEGER,
+            description = "read 可选：起始行号（0 基），与 max_lines 配合做分页读取；不填则从第 0 行开始",
+            required = false
+        ),
+        "max_lines" to ToolParameter(
+            name = "max_lines",
+            type = ParameterType.INTEGER,
+            description = "read 可选：最多返回多少行。未提供分页参数但输出超过 $READ_TRUNCATE_THRESHOLD_LINES 行时，自动保留前 $READ_HEAD_LINES 行 + 省略标记 + 后 $READ_TAIL_LINES 行（首尾截断），并在结果中标注 truncated=true 与 total_lines",
             required = false
         )
     )
@@ -427,7 +448,12 @@ class TerminalSessionTool @Inject constructor(
         }
     }
 
-    /** 读取终端输出；省略 tab_id 则列出所有标签。TerminalSessionManager 需主线程。 */
+    /** 读取终端输出；省略 tab_id 则列出所有标签。TerminalSessionManager 需主线程。
+     *
+     *  支持长输出限幅 + 分页：
+     *  - 提供 `start_line` / `max_lines` 时按行切片分页，返回该区间内容并附 `total_lines` / `start_line` / `max_lines`；
+     *  - 未提供分页参数但输出超过 [READ_TRUNCATE_THRESHOLD_LINES] 行时，自动保留前 [READ_HEAD_LINES] 行 + 省略标记 + 后 [READ_TAIL_LINES] 行，并在结果中标注 `truncated=true`。
+     */
     private suspend fun read(args: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.Main) {
         val tabId = args["tab_id"]?.asPlainString()
         if (tabId.isNullOrBlank()) {
@@ -443,7 +469,40 @@ class TerminalSessionTool @Inject constructor(
         val output = sessionManager.getTabOutput(tabId)
             ?: return@withContext ToolResult.Error("未找到终端标签: $tabId")
         FileLogger.v(TAG, "读取 $tabId 输出 ${output.length} 字符")
-        ToolResult.Success(JsonPrimitive(output))
+
+        val lines = output.lines()
+        val totalLines = lines.size
+        val startLine = args["start_line"]?.asPlainString()?.toIntOrNull()
+        val maxLines = args["max_lines"]?.asPlainString()?.toIntOrNull()
+
+        val fields = mutableMapOf<String, JsonElement>("total_lines" to JsonPrimitive(totalLines))
+
+        if (startLine != null || maxLines != null) {
+            // 显式分页：取 [from, from+count) 行切片
+            val from = (startLine ?: 0).coerceAtLeast(0)
+            val count = (maxLines ?: Int.MAX_VALUE).coerceAtLeast(0)
+            val page = if (from >= totalLines || count == 0) emptyList()
+            else lines.subList(from, minOf(from + count, totalLines))
+            fields["output"] = JsonPrimitive(page.joinToString("\n"))
+            fields["truncated"] = JsonPrimitive(false)
+            fields["start_line"] = JsonPrimitive(from)
+            if (maxLines != null) fields["max_lines"] = JsonPrimitive(maxLines)
+        } else if (totalLines > READ_TRUNCATE_THRESHOLD_LINES) {
+            // 未分页但输出超长：默认 BoundedOutput 式首尾截断
+            val head = lines.take(READ_HEAD_LINES)
+            val tail = lines.takeLast(READ_TAIL_LINES)
+            val omitted = totalLines - head.size - tail.size
+            val text = head.joinToString("\n") +
+                "\n\n…[输出过长，已省略中间 $omitted 行；仅保留开头与结尾]…\n\n" +
+                tail.joinToString("\n")
+            fields["output"] = JsonPrimitive(text)
+            fields["truncated"] = JsonPrimitive(true)
+        } else {
+            fields["output"] = JsonPrimitive(output)
+            fields["truncated"] = JsonPrimitive(false)
+        }
+
+        ToolResult.Success(JsonObject(fields))
     }
 
     /** 关闭指定终端标签。TerminalSessionManager 需主线程。 */

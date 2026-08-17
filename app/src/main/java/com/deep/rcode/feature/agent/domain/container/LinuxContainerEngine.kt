@@ -415,6 +415,13 @@ class LinuxContainerEngine @Inject constructor(
     }
 
     /**
+     * 某个 bundle 是否已安装（同步快照，避免协程）。
+     * 供工具层（如 EnsureAndroidEnvTool）做只读判断，替代原先反射访问私有字段的方式。
+     */
+    fun isBundleInstalled(id: TerminalBundleId): Boolean =
+        bundleRepository.isInstalledSnapshot(id)
+
+    /**
      * 安装一个 Bundle（配置国内镜像源（幂等）+ apk update + apk add --no-cache <packages> + postInstallHook）。
      *
      * 前置要求：rootfs + proot 已安装（[ensureInstalled] 已完成、返回过 Ready）。

@@ -3,6 +3,7 @@ package com.deep.rcode.feature.agent.domain.tool.container
 import com.deep.rcode.feature.agent.domain.container.BoundedOutput
 import com.deep.rcode.feature.agent.domain.container.CommandEngine
 import com.deep.rcode.feature.agent.domain.container.CommandEvent
+import com.deep.rcode.feature.agent.domain.container.CommandResult
 import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.domain.tool.AgentTool
@@ -63,6 +64,9 @@ class ExecuteCommandTool @Inject constructor(
          */
         const val MAX_TIMEOUT_SECONDS = 3_600L
 
+        /** strict 模式错误信息中附带的末尾输出行数，用于帮助 AI 定位失败点。 */
+        private const val STRICT_ERROR_TAIL_LINES = 20
+
         /** 命中即视为「改动了 apk 世界」的命令片段，触发 bundle 状态联动刷新。 */
         private val APK_MUTATION_REGEX = Regex("""\bapk\s+(add|del|remove|fix|upgrade|delete)\b""")
     }
@@ -100,6 +104,12 @@ class ExecuteCommandTool @Inject constructor(
             type = ParameterType.INTEGER,
             description = "命令最长执行时间（秒），超时将被强制终止。默认 $DEFAULT_TIMEOUT_SECONDS 秒，上限 $MAX_TIMEOUT_SECONDS 秒。耗时命令（如安装依赖）可适当调大。",
             required = false
+        ),
+        "strict" to ToolParameter(
+            name = "strict",
+            type = ParameterType.BOOLEAN,
+            description = "strict=true 时命令非零退出码返回 ToolResult.Error（错误信息附末尾输出），便于 AI 快速感知失败；默认 false 时保持旧行为（非零退出码仍返回 Success 并含完整输出）。",
+            required = false
         )
     )
 
@@ -109,6 +119,10 @@ class ExecuteCommandTool @Inject constructor(
         return seconds.coerceIn(1L, MAX_TIMEOUT_SECONDS) * 1000L
     }
 
+    /** 解析 strict 参数：缺省 false，保持旧行为兼容。 */
+    private fun resolveStrict(args: Map<String, JsonElement>): Boolean =
+        args["strict"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+
     override fun buildPermissionRequest(
         callId: String,
         args: Map<String, JsonElement>,
@@ -116,12 +130,14 @@ class ExecuteCommandTool @Inject constructor(
     ): PendingToolPermission {
         val command = args["command"]?.jsonPrimitive?.contentOrNull ?: "未知命令"
         val timeoutSeconds = resolveTimeoutMs(args) / 1000L
+        val strict = resolveStrict(args)
         return PendingToolPermission(
             id = callId,
             toolName = name,
             title = "确认执行命令",
             summary = command,
-            details = "将在当前执行环境中执行。\n超时：${timeoutSeconds} 秒",
+            details = "将在当前执行环境中执行。\n超时：${timeoutSeconds} 秒" +
+                if (strict) "\n严格模式：非零退出码将按失败返回" else "",
             argsPreview = argsPreview
         )
     }
@@ -134,11 +150,14 @@ class ExecuteCommandTool @Inject constructor(
             // 在当前工作区目录内执行，与文件工具保持同一根目录
             val workdir = workspaceRepository.currentPath()
             val timeoutMs = resolveTimeoutMs(args)
-            FileLogger.d(TAG, "execute_command (timeout=${timeoutMs}ms): $command")
-            val output = commandEngine.runCommandSync(command, workdir, timeoutMs)
-            FileLogger.v(TAG, "execute_command 完成，输出 ${output.length} 字符")
+            val strict = resolveStrict(args)
+            FileLogger.d(TAG, "execute_command (timeout=${timeoutMs}ms, strict=$strict): $command")
+            // 用 runCommandSyncWithExit 拿真实退出码（超时/异常时为 null），供 strict 模式判定失败；
+            // 其 output 与旧 runCommandSync 返回的同一份 BoundedOutput 限幅结果，非 strict 行为不变。
+            val result: CommandResult = commandEngine.runCommandSyncWithExit(command, workdir, timeoutMs)
+            FileLogger.v(TAG, "execute_command 完成，输出 ${result.output.length} 字符，exit=${result.exitCode}")
             maybeSyncBundleStates(command)
-            ToolResult.Success(JsonPrimitive(output))
+            aggregateResult(result.output, result.exitCode, strict)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -161,13 +180,16 @@ class ExecuteCommandTool @Inject constructor(
             emit(ToolStreamEvent.Completed(ToolResult.Error("缺少必需参数: command")))
             return@flow
         }
+        val strict = resolveStrict(args)
 
         // 限幅累积：喂回模型的最终结果只保留开头+结尾，避免超大输出撑爆上下文。
         val accumulated = BoundedOutput()
+        // 记录命令真实退出码：CommandEvent.Exit 是流结束前最后一个事件，超时/异常时为 null。
+        var exitCode: Int? = null
         try {
             val workdir = workspaceRepository.currentPath()
             val timeoutMs = resolveTimeoutMs(args)
-            FileLogger.d(TAG, "execute_command(流式, timeout=${timeoutMs}ms): $command")
+            FileLogger.d(TAG, "execute_command(流式, timeout=${timeoutMs}ms, strict=$strict): $command")
             commandEngine.runCommandStream(command, workdir, timeoutMs).collect { event ->
                 when (event) {
                     is CommandEvent.Line -> {
@@ -175,12 +197,12 @@ class ExecuteCommandTool @Inject constructor(
                         accumulated.append("\n")
                         emit(ToolStreamEvent.Progress(event.text))
                     }
-                    is CommandEvent.Exit -> { /* 结束在流完成后统一聚合 */ }
+                    is CommandEvent.Exit -> { exitCode = event.code }
                 }
             }
-            FileLogger.v(TAG, "execute_command(流式) 完成，输出 ${accumulated.totalChars} 字符")
+            FileLogger.v(TAG, "execute_command(流式) 完成，输出 ${accumulated.totalChars} 字符，exit=$exitCode")
             maybeSyncBundleStates(command)
-            emit(ToolStreamEvent.Completed(ToolResult.Success(JsonPrimitive(accumulated.build()))))
+            emit(ToolStreamEvent.Completed(aggregateResult(accumulated.build(), exitCode, strict)))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -188,12 +210,37 @@ class ExecuteCommandTool @Inject constructor(
             // 而不是被这里抛出的空 Error 覆盖掉（否则模型只看到“执行失败”，之前展示的输出全丢）。
             FileLogger.e(TAG, "execute_command(流式) 异常(已保留此前输出 ${accumulated.totalChars} 字符): $command", e)
             val saved = accumulated.build()
-            val result = if (saved.isNotEmpty()) {
+            val result = if (strict) {
+                // strict 模式：执行失败即视为错误，错误信息带已捕获的末尾输出帮助 AI 定位。
+                val tail = saved.trimEnd().lineSequence().takeLast(STRICT_ERROR_TAIL_LINES).joinToString("\n")
+                ToolResult.Error(
+                    if (tail.isNotBlank()) "执行命令失败: ${e.message}\n末尾输出...\n$tail"
+                    else "执行命令失败: ${e.message}"
+                )
+            } else if (saved.isNotEmpty()) {
                 ToolResult.Success(JsonPrimitive(saved))
             } else {
                 ToolResult.Error("执行命令失败: ${e.message}")
             }
             emit(ToolStreamEvent.Completed(result))
         }
+    }
+
+    /**
+     * 按 strict 聚合最终结果：strict=true 且命令未以退出码 0 结束（非零，或超时/异常导致的 null）
+     * → [ToolResult.Error]（错误信息附末尾输出）；否则保持旧行为 [ToolResult.Success]（纯文本输出）。
+     */
+    private fun aggregateResult(output: String, exitCode: Int?, strict: Boolean): ToolResult =
+        if (strict && exitCode != 0) {
+            ToolResult.Error(strictExitError(exitCode, output))
+        } else {
+            ToolResult.Success(JsonPrimitive(output))
+        }
+
+    /** strict 模式错误信息：附退出码 + 末尾若干行输出，帮助 AI 定位失败点。 */
+    private fun strictExitError(exitCode: Int?, output: String): String {
+        val tail = output.trimEnd().lineSequence().takeLast(STRICT_ERROR_TAIL_LINES).joinToString("\n")
+        val reason = if (exitCode != null) "命令退出码非零(exit=$exitCode)" else "命令未正常结束(超时或异常)"
+        return if (tail.isNotBlank()) "$reason: 末尾输出...\n$tail" else reason
     }
 }

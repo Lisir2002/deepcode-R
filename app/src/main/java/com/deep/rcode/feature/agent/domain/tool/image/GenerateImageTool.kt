@@ -248,24 +248,34 @@ class GenerateImageTool @Inject constructor(
             refundable = false
 
             val mdPreview = buildPreviewMarkdown(res.imagePath, prompt)
+            // V-1：重试元数据——attempts=本次成功后累计尝试次数（=retryCount+1），failures=累计失败次数
             emit(ToolStreamEvent.Completed(ToolResult.Success(buildJsonObject {
                 put("imagePath", res.imagePath)
                 put("thumbnailPath", res.thumbnailPath)
                 put("taskId", taskId)
                 put("markdown", mdPreview)
+                put("attempts", pending.retryCount + 1)
+                put("failures", pending.retryCount)
             })))
         } catch (pe: ImageGenerator.ProviderException) {
             FileLogger.w(TAG, "Provider 异常 code=${pe.errorCode} refundable=${pe.refundable} msg=${pe.message}")
             refundable = pe.refundable
-            handleFailure(taskId, pending, perm.tokensToDeduct, pe.errorCode, pe.message,
-                maxRetries = 3)
-            emit(ToolStreamEvent.Completed(ToolResult.Error(pe.message, pe.errorCode)))
+            val maxRetries = 3
+            val nextRetry = handleFailure(taskId, pending, perm.tokensToDeduct, pe.errorCode, pe.message,
+                maxRetries = maxRetries)
+            // V-1：错误信息附带重试次数提示
+            emit(ToolStreamEvent.Completed(ToolResult.Error(
+                pe.message + "（第 $nextRetry/$maxRetries 次尝试失败）", pe.errorCode)))
         } catch (t: Throwable) {
             FileLogger.e(TAG, "生成时未预期异常: ${t.message}", t)
             refundable = true
-            handleFailure(taskId, pending, perm.tokensToDeduct, "UNEXPECTED",
-                t.message?.take(200) ?: "未知错误", maxRetries = 3)
-            emit(ToolStreamEvent.Completed(ToolResult.Error(t.message?.take(200) ?: "未知错误", "UNEXPECTED")))
+            val maxRetries = 3
+            val fallbackMsg = t.message?.take(200) ?: "未知错误"
+            val nextRetry = handleFailure(taskId, pending, perm.tokensToDeduct, "UNEXPECTED",
+                fallbackMsg, maxRetries = maxRetries)
+            // V-1：错误信息附带重试次数提示
+            emit(ToolStreamEvent.Completed(ToolResult.Error(
+                fallbackMsg + "（第 $nextRetry/$maxRetries 次尝试失败）", "UNEXPECTED")))
         } finally {
             if (refundable && perm.tokensToDeduct > 0) {
                 runCatching {
@@ -280,11 +290,14 @@ class GenerateImageTool @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
+    /**
+     * 落盘失败/待重试任务行，返回本次尝试序号（nextRetry = retryCount + 1），供调用方拼接错误提示。
+     */
     private suspend fun handleFailure(
         taskId: String, pending: T2ITaskEntity,
         tokensDeducted: Int, code: String, msg: String,
         maxRetries: Int,
-    ) {
+    ): Int {
         val nextRetry = pending.retryCount + 1
         val finalStatus = if (nextRetry < maxRetries) "PENDING_RETRY" else "FAILED"
         taskDao.markFailedOrRetry(
@@ -295,6 +308,7 @@ class GenerateImageTool @Inject constructor(
             retryCount = nextRetry,
             updatedAtMs = System.currentTimeMillis()
         )
+        return nextRetry
     }
 
     private fun buildPreviewMarkdown(imagePath: String, prompt: String): String {

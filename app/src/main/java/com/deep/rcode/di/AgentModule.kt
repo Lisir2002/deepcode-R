@@ -13,6 +13,8 @@ import com.deep.rcode.feature.agent.data.local.dao.AgentMessageDao
 import com.deep.rcode.feature.agent.data.local.dao.ChatSessionDao
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointDao
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointFileSnapshotDao
+import com.deep.rcode.feature.agent.data.local.dao.FileEditHunkDao
+import com.deep.rcode.feature.agent.data.local.dao.ModeSwitchHistoryDao
 import com.deep.rcode.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.deep.rcode.feature.agent.data.local.dao.TodoItemDao
 import com.deep.rcode.feature.agent.data.local.dao.UserConfirmedSentinelDao
@@ -518,6 +520,19 @@ object AgentModule {
     @Singleton
     fun provideSkillStateDao(database: AgentDatabase): SkillStateDao {
         return database.skillStateDao()
+    }
+
+    // ══ v46 工具系统优化：file_edit_hunks（F-3）/ mode_switch_history（G-1）DAO 绑定
+    @Provides
+    @Singleton
+    fun provideFileEditHunkDao(database: AgentDatabase): FileEditHunkDao {
+        return database.fileEditHunkDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideModeSwitchHistoryDao(database: AgentDatabase): ModeSwitchHistoryDao {
+        return database.modeSwitchHistoryDao()
     }
 
     // ══ RC69 T2I：ImageGenerator（interface）→ OpenAiCompatibleImageGenerator（实现）绑定

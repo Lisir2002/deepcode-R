@@ -6,11 +6,15 @@ import com.deep.rcode.feature.agent.domain.container.ContainerProfile
 import com.deep.rcode.feature.agent.domain.container.LinuxContainerEngine
 import com.deep.rcode.feature.agent.domain.tool.AgentTool
 import com.deep.rcode.feature.agent.domain.tool.ParameterType
+import com.deep.rcode.feature.agent.domain.tool.StreamingAgentTool
 import com.deep.rcode.feature.agent.domain.tool.ToolCapability
 import com.deep.rcode.feature.agent.domain.tool.ToolParameter
 import com.deep.rcode.feature.agent.domain.tool.ToolPermissionPolicy
 import com.deep.rcode.feature.agent.domain.tool.ToolResult
+import com.deep.rcode.feature.agent.domain.tool.ToolStreamEvent
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -31,7 +35,7 @@ import javax.inject.Inject
  */
 class SwitchContainerArchTool @Inject constructor(
     private val containerEngine: LinuxContainerEngine
-) : AgentTool() {
+) : AgentTool(), StreamingAgentTool {
 
     companion object {
         private const val TAG = "SwitchContainerArchTool"
@@ -89,6 +93,53 @@ class SwitchContainerArchTool @Inject constructor(
         } catch (e: Exception) {
             FileLogger.e(TAG, "切换容器架构失败", e)
             ToolResult.Error("切换容器架构失败: ${e.message}", "TOOL_EXECUTION_FAILED")
+        }
+    }
+
+    /**
+     * 流式切换：先 emit 一条开始进度（首次切 x86_64 需解压 rootfs/部署 QEMU 转译器，耗时），
+     * 然后 await [LinuxContainerEngine.switchToProfile]（suspend、无流式事件源），
+     * 完成后 emit [ToolStreamEvent.Completed]（成功结果）；切换失败 emit Completed(Error)。
+     * [execute] 作为非流式兜底保留，两者最终结果一致。
+     */
+    override fun executeStream(
+        args: Map<String, JsonElement>,
+        context: com.deep.rcode.feature.agent.domain.model.AgentContext
+    ): Flow<ToolStreamEvent> = flow {
+        val arch = args["arch"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()
+        val profile = profileFor(arch)
+        if (profile == null) {
+            emit(ToolStreamEvent.Completed(ToolResult.Error("不支持的容器架构: $arch（可选 arm64 / x86_64）", "INVALID_ARGS")))
+            return@flow
+        }
+        emit(ToolStreamEvent.Progress("正在切换到 $arch 容器，可能需要解压 rootfs 并部署 QEMU 转译器…"))
+        try {
+            FileLogger.i(TAG, "切换容器架构(流式): $arch -> ${profile.id}")
+            val switched = containerEngine.switchToProfile(profile.id)
+            val translated = switched.arch == ContainerArch.X86_64
+            FileLogger.i(TAG, "容器已切换完成(流式): ${switched.name} (${switched.arch}, translated=$translated)")
+            emit(
+                ToolStreamEvent.Completed(
+                    ToolResult.Success(
+                        JsonObject(
+                            mapOf(
+                                "arch" to JsonPrimitive(switched.arch.name.lowercase()),
+                                "profileId" to JsonPrimitive(switched.id),
+                                "profileName" to JsonPrimitive(switched.name),
+                                "translated" to JsonPrimitive(translated),
+                                "message" to JsonPrimitive(
+                                    "已切换到 ${switched.name}（${if (translated) "x86_64 QEMU 转译执行" else "arm64 原生执行"}）。后续命令将在此容器内执行。"
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "切换容器架构(流式)失败", e)
+            emit(ToolStreamEvent.Completed(ToolResult.Error("切换容器架构失败: ${e.message}", "TOOL_EXECUTION_FAILED")))
         }
     }
 }

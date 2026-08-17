@@ -23,6 +23,12 @@ import javax.inject.Inject
 private const val TAG = "EditFileTool"
 
 /**
+ * F-2：LCS DP 表单元格上限。LineDiff.diff 构建 (n+1)×(m+1) 的 Int 表，
+ * 当 old/new 行数乘积超过此值时（约 16MB：4M 格 × 4B），跳过 O(n·m) 计算，防超大编辑在移动端 OOM。
+ */
+private const val MAX_LCS_CELLS = 4_000_000L
+
+/**
  * 基于「精确字符串匹配」的文件编辑工具，取代旧的按行号 insert/replace/delete 三件套。
  *
  * 选择字符串匹配而非行号的原因：连续编辑时，第一次修改会让后续所有行号发生漂移，
@@ -158,7 +164,7 @@ class EditFileTool @Inject constructor(
                 val matchIndex = content.indexOf(e.oldString)
                 val startLine = if (matchIndex >= 0) content.substring(0, matchIndex).count { it == '\n' } + 1 else 1
 
-                val diff = LineDiff.toUnified(e.oldString, e.newString)
+                val diff = safeToUnified(e.oldString, e.newString)
                 val added = diff.lines().count { it.startsWith("+") }
                 val removed = diff.lines().count { it.startsWith("-") }
                 hunks.add(Hunk(startLine = startLine, added = added, removed = removed, diff = diff))
@@ -213,5 +219,22 @@ class EditFileTool @Inject constructor(
             val all = obj["replace_all"]?.jsonPrimitive?.booleanOrNull ?: false
             Edit(old, new, all)
         }.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * F-2：生成 old→new 的统一差异。当 old/new 行数乘积超过阈值时跳过 O(n·m) 的 LCS DP 表，
+     * 退化为「整段删除+新增」的粗粒度差异（不构建 Int 表），防止超大编辑在移动端 OOM。
+     */
+    private fun safeToUnified(oldText: String, newText: String): String {
+        val n = oldText.split("\n").size.toLong()
+        val m = newText.split("\n").size.toLong()
+        if (n * m <= MAX_LCS_CELLS) {
+            return LineDiff.toUnified(oldText, newText)
+        }
+        FileLogger.w(TAG, "edit_file LCS 过大 ($n x $m)，跳过 DP 退化为整体替换差异")
+        val sb = StringBuilder()
+        oldText.split("\n").forEach { sb.append('-').append(it).append('\n') }
+        newText.split("\n").forEach { sb.append('+').append(it).append('\n') }
+        return sb.toString()
     }
 }

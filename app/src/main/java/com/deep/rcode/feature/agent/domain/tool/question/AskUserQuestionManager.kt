@@ -1,11 +1,14 @@
 package com.deep.rcode.feature.agent.domain.tool.question
 
+import com.deep.rcode.core.util.FileLogger
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,6 +23,12 @@ import javax.inject.Singleton
  */
 @Singleton
 class AskUserQuestionManager @Inject constructor() {
+
+    private companion object {
+        const val TAG = "AskUserQuestionManager"
+        // Q-3：用户回答超时时间，超时放行避免会话无限阻塞
+        const val ANSWER_TIMEOUT_MS = 3 * 60 * 1000L
+    }
 
     private val requestMutex = Mutex()
 
@@ -42,7 +51,11 @@ class AskUserQuestionManager @Inject constructor() {
         _pendingQuestion.value = question
 
         try {
-            decision.await()
+            // Q-3：加超时，用户长时间未回答时放行，防止会话被无限挂起阻塞
+            withTimeout(ANSWER_TIMEOUT_MS) { decision.await() }
+        } catch (e: TimeoutCancellationException) {
+            FileLogger.w(TAG, "ask_user_question 等待用户回答超时(${ANSWER_TIMEOUT_MS}ms)，放行")
+            UserQuestionAnswer(answers = emptyList())
         } finally {
             if (currentId == question.id) {
                 currentId = null

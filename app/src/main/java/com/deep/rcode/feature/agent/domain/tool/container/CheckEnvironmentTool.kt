@@ -41,9 +41,20 @@ class CheckEnvironmentTool @Inject constructor(
     private val workspaceRepository: WorkspaceRepository
 ) : AgentTool() {
 
+    // ── C-1 结果缓存：环境少变，同一 components 请求在 TTL 内直接复用上次探测结果 ──
+    @Volatile
+    private var cachedComponents: List<String>? = null
+    @Volatile
+    private var cachedResult: ToolResult? = null
+    @Volatile
+    private var cachedAtMs: Long = 0L
+
     companion object {
         const val TAG = "CheckEnvironmentTool"
         const val PROBE_TIMEOUT_MS = 60_000L
+
+        /** 探测结果缓存 TTL：避免 AI 在 30s 内重复执行 60s 的批量探测。 */
+        const val CACHE_TTL_MS = 30_000L
 
         /** 默认探测的组件：构建链路优先，随后是通用开发组件。 */
         val DEFAULT_COMPONENTS: List<String> = listOf(
@@ -111,6 +122,15 @@ class CheckEnvironmentTool @Inject constructor(
             val requested = (args["components"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }
                 ?.filter { it.isNotBlank() }?.distinct()
             val components = if (requested.isNullOrEmpty()) DEFAULT_COMPONENTS else requested
+
+            // C-1 缓存命中：components 一致且未超过 TTL，直接复用上次探测结果（附 cached=true 标记）
+            val now = System.currentTimeMillis()
+            val cachedData = (cachedResult as? ToolResult.Success)?.data as? JsonObject
+            if (cachedComponents == components && cachedData != null && now - cachedAtMs < CACHE_TTL_MS) {
+                FileLogger.d(TAG, "环境探测缓存命中 (components=${components.joinToString(",")})")
+                return ToolResult.Success(withCachedFlag(cachedData, cached = true))
+            }
+
             val script = buildProbeScript(components)
             FileLogger.d(TAG, "探测环境组件: ${components.joinToString(",")}")
             val output = commandEngine.runCommandSync(
@@ -120,7 +140,11 @@ class CheckEnvironmentTool @Inject constructor(
             )
             val parsed = parseProbeOutput(output, components)
             FileLogger.v(TAG, "探测完成: ${parsed.size} 个组件")
-            ToolResult.Success(parsed)
+            val result = ToolResult.Success(withCachedFlag(parsed, cached = false))
+            cachedComponents = components
+            cachedResult = result
+            cachedAtMs = now
+            result
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -128,6 +152,10 @@ class CheckEnvironmentTool @Inject constructor(
             ToolResult.Error("环境探测失败: ${e.message}")
         }
     }
+
+    /** 给探测结果 JSON 附加 "cached" 布尔字段（缓存命中为 true）。 */
+    private fun withCachedFlag(json: JsonObject, cached: Boolean): JsonObject =
+        JsonObject(json + ("cached" to JsonPrimitive(cached)))
 
     /** 构建批量探测脚本：一次往返探测全部组件，输出 `NAME|STATUS|PATH|VERSION` 行。 */
     private fun buildProbeScript(components: List<String>): String {

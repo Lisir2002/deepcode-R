@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -255,7 +256,17 @@ class ListFilesTool @Inject constructor(
         }
         val children = fileAccess.listFiles(dirPath)
             .filter { options.showAll || options.showAlmostAll || !it.name.startsWith(".") }
-            .map { LsEntry(it.name, "$dirPath/${it.name}".trimEnd('/'), it.isDirectory, it.size, it.lastModified, it.permissions) }
+            .map {
+                LsEntry(
+                    name = it.name,
+                    fullPath = "$dirPath/${it.name}".trimEnd('/'),
+                    isDir = it.isDirectory,
+                    size = it.size,
+                    lastModified = it.lastModified,
+                    permissions = it.permissions,
+                    localFile = it.localFile
+                )
+            }
         entries.addAll(children)
 
         if (!options.noSort) {
@@ -285,13 +296,34 @@ class ListFilesTool @Inject constructor(
 
     private fun longFormat(entry: LsEntry, options: LsOptions): String {
         val type = if (entry.isDir) "d" else "-"
-        val perms = entry.permissions
+        // 优先读取宿主文件真实权限位（owner 三组 rwx）；取不到（远程 / 无法解析）时回退 entry.permissions。
+        val perms = entry.localFile?.absolutePath
+            ?.let { realPermissions(it, entry.isDir) }
+            ?.takeIf { it.length == 3 }
+            ?: entry.permissions
         val owner = perms
         val group = "---"
         val other = "---"
         val size = if (options.humanReadable) humanSize(entry.size) else entry.size.toString()
         val time = SimpleDateFormat("MMM dd HH:mm", Locale.US).format(Date(entry.lastModified))
         return "$type$owner$group$other 1 user group ${size.padStart(8)} $time ${entry.name}"
+    }
+
+    /**
+     * 读取宿主文件真实 POSIX 权限位（当前用户的 owner 三组 rwx 位）。
+     * 文件不存在 / 不可读 / 访问失败时返回 "-"（不伪造），由调用方回退到 entry.permissions。
+     */
+    private fun realPermissions(path: String, isDir: Boolean): String {
+        return try {
+            val file = File(path)
+            if (!file.canRead()) return "-"
+            val read = "r"
+            val write = if (file.canWrite()) "w" else "-"
+            val execute = if (file.canExecute() || isDir) "x" else "-"
+            read + write + execute
+        } catch (e: Exception) {
+            "-"
+        }
     }
 
     private fun naturalOrderKey(s: String): String {
@@ -345,6 +377,8 @@ class ListFilesTool @Inject constructor(
         val isDir: Boolean = false,
         val size: Long = 0,
         val lastModified: Long = 0,
-        val permissions: String = "---"
+        val permissions: String = "---",
+        /** 本地模式下对应的宿主 [File]（远程模式为 null），用于读取真实权限位。 */
+        val localFile: File? = null
     )
 }

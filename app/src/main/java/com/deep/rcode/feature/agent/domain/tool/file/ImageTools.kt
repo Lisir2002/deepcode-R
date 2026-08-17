@@ -2,6 +2,8 @@ package com.deep.rcode.feature.agent.domain.tool.file
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.util.Base64
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.domain.tool.AgentTool
@@ -10,6 +12,8 @@ import com.deep.rcode.feature.agent.domain.tool.ToolCapability
 import com.deep.rcode.feature.agent.domain.tool.ToolParameter
 import com.deep.rcode.feature.agent.domain.tool.ToolResult
 import com.deep.rcode.feature.workspace.domain.FileAccessProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -48,77 +52,87 @@ class ViewImageTool @Inject constructor(
     )
 
     override suspend fun execute(args: Map<String, kotlinx.serialization.json.JsonElement>): ToolResult {
-        return try {
-            val path = args["path"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-            if (path.isBlank()) {
-                return ToolResult.Error("路径参数缺失", "MISSING_PATH")
-            }
+        // V-4：整条解码/缩放/编码链路（含文件拷贝）放 IO 线程，避免大图 CPU 密集操作阻塞收集线程（主线程）导致卡顿/ANR
+        return withContext(Dispatchers.IO) {
+            try {
+                val path = args["path"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                if (path.isBlank()) {
+                    return@withContext ToolResult.Error("路径参数缺失", "MISSING_PATH")
+                }
 
-            val detail = args["detail"]?.jsonPrimitive?.contentOrNull
-                ?.trim()
-                ?.lowercase()
-                ?.takeIf { it in SUPPORTED_DETAILS }
-                ?: "high"
+                val detail = args["detail"]?.jsonPrimitive?.contentOrNull
+                    ?.trim()
+                    ?.lowercase()
+                    ?.takeIf { it in SUPPORTED_DETAILS }
+                    ?: "high"
 
-            val file = fileAccess.copyToLocal(path)
-            FileLogger.d(TAG, "viewImage path=$path -> ${file.absolutePath}, detail=$detail")
+                val file = fileAccess.copyToLocal(path)
+                FileLogger.d(TAG, "viewImage path=$path -> ${file.absolutePath}, detail=$detail")
 
-            if (!fileAccess.exists(path)) return ToolResult.Error("文件不存在: $path", "FILE_NOT_FOUND")
-            if (!fileAccess.isFile(path)) return ToolResult.Error("路径不是文件: $path", "NOT_A_FILE")
-            val fileSize = fileAccess.fileSize(path)
-            if (fileSize <= 0L) return ToolResult.Error("图片文件为空: $path", "EMPTY_FILE")
+                if (!fileAccess.exists(path)) return@withContext ToolResult.Error("文件不存在: $path", "FILE_NOT_FOUND")
+                if (!fileAccess.isFile(path)) return@withContext ToolResult.Error("路径不是文件: $path", "NOT_A_FILE")
+                val fileSize = fileAccess.fileSize(path)
+                if (fileSize <= 0L) return@withContext ToolResult.Error("图片文件为空: $path", "EMPTY_FILE")
 
-            val bounds = decodeBounds(file)
-                ?: return ToolResult.Error("无法识别图片格式: $path", "UNSUPPORTED_IMAGE")
-            val sourceMime = guessMimeType(file)
-            if (!sourceMime.startsWith("image/")) {
-                return ToolResult.Error("不是支持的图片文件: $path", "UNSUPPORTED_IMAGE")
-            }
+                val bounds = decodeBounds(file)
+                    ?: return@withContext ToolResult.Error("无法识别图片格式: $path", "UNSUPPORTED_IMAGE")
+                // V-2：读取 EXIF 朝向；90/270 旋转后真实宽高互换，仅用于展示
+                val exifOrientation = readOrientation(file)
+                val displayBounds = if (isRotated90Or270(exifOrientation)) {
+                    ImageBounds(bounds.height, bounds.width)
+                } else {
+                    bounds
+                }
+                val sourceMime = guessMimeType(file)
+                if (!sourceMime.startsWith("image/")) {
+                    return@withContext ToolResult.Error("不是支持的图片文件: $path", "UNSUPPORTED_IMAGE")
+                }
 
-            val encoded = if (detail == "original" && fileSize <= MAX_ORIGINAL_BYTES && sourceMime in ORIGINAL_MIME_TYPES) {
-                EncodedImage(
-                    mimeType = sourceMime,
-                    base64Data = Base64.encodeToString(fileAccess.readBytes(path), Base64.NO_WRAP),
-                    width = bounds.width,
-                    height = bounds.height,
-                    detail = "original",
-                    encodedBytes = fileSize
-                )
-            } else {
-                encodePreview(file, bounds, detail)
-            }
+                val encoded = if (detail == "original" && fileSize <= MAX_ORIGINAL_BYTES && sourceMime in ORIGINAL_MIME_TYPES) {
+                    EncodedImage(
+                        mimeType = sourceMime,
+                        base64Data = Base64.encodeToString(fileAccess.readBytes(path), Base64.NO_WRAP),
+                        width = bounds.width,
+                        height = bounds.height,
+                        detail = "original",
+                        encodedBytes = fileSize
+                    )
+                } else {
+                    encodePreview(file, bounds, detail)
+                }
 
-            ToolResult.Success(
-                JsonObject(
-                    mapOf(
-                        "content" to JsonPrimitive(
-                            "已加载图片 ${fileAccess.toDisplayPath(path)} " +
-                                "(${bounds.width}x${bounds.height}, ${sourceMime}, ${fileSize} bytes)，" +
-                                "并作为视觉输入附加到下一轮模型上下文。"
-                        ),
-                        "path" to JsonPrimitive(fileAccess.toDisplayPath(path)),
-                        "mime_type" to JsonPrimitive(sourceMime),
-                        "width" to JsonPrimitive(bounds.width),
-                        "height" to JsonPrimitive(bounds.height),
-                        "byte_size" to JsonPrimitive(fileSize),
-                        "detail" to JsonPrimitive(encoded.detail),
-                        "encoded_mime_type" to JsonPrimitive(encoded.mimeType),
-                        "encoded_width" to JsonPrimitive(encoded.width),
-                        "encoded_height" to JsonPrimitive(encoded.height),
-                        "encoded_byte_size" to JsonPrimitive(encoded.encodedBytes),
-                        "image" to JsonObject(
-                            mapOf(
-                                "mime_type" to JsonPrimitive(encoded.mimeType),
-                                "base64_data" to JsonPrimitive(encoded.base64Data),
-                                "path" to JsonPrimitive(fileAccess.toDisplayPath(path))
+                ToolResult.Success(
+                    JsonObject(
+                        mapOf(
+                            "content" to JsonPrimitive(
+                                "已加载图片 ${fileAccess.toDisplayPath(path)} " +
+                                    "(${displayBounds.width}x${displayBounds.height}, ${sourceMime}, ${fileSize} bytes)，" +
+                                    "并作为视觉输入附加到下一轮模型上下文。"
+                            ),
+                            "path" to JsonPrimitive(fileAccess.toDisplayPath(path)),
+                            "mime_type" to JsonPrimitive(sourceMime),
+                            "width" to JsonPrimitive(displayBounds.width),
+                            "height" to JsonPrimitive(displayBounds.height),
+                            "byte_size" to JsonPrimitive(fileSize),
+                            "detail" to JsonPrimitive(encoded.detail),
+                            "encoded_mime_type" to JsonPrimitive(encoded.mimeType),
+                            "encoded_width" to JsonPrimitive(encoded.width),
+                            "encoded_height" to JsonPrimitive(encoded.height),
+                            "encoded_byte_size" to JsonPrimitive(encoded.encodedBytes),
+                            "image" to JsonObject(
+                                mapOf(
+                                    "mime_type" to JsonPrimitive(encoded.mimeType),
+                                    "base64_data" to JsonPrimitive(encoded.base64Data),
+                                    "path" to JsonPrimitive(fileAccess.toDisplayPath(path))
+                                )
                             )
                         )
                     )
                 )
-            )
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "viewImage 异常", e)
-            ToolResult.Error(e.message ?: "读取图片失败", "READ_IMAGE_ERROR")
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "viewImage 异常", e)
+                ToolResult.Error(e.message ?: "读取图片失败", "READ_IMAGE_ERROR")
+            }
         }
     }
 
@@ -130,6 +144,52 @@ class ViewImageTool @Inject constructor(
         return if (width > 0 && height > 0) ImageBounds(width, height) else null
     }
 
+    /**
+     * V-2：读取图片 EXIF ORIENTATION。读取失败（如非 JPEG/损坏）返回 NORMAL。
+     */
+    private fun readOrientation(file: File): Int {
+        return try {
+            val exif = ExifInterface(file.absolutePath)
+            exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } catch (e: Exception) {
+            ExifInterface.ORIENTATION_NORMAL
+        }
+    }
+
+    /**
+     * V-2：按 EXIF ORIENTATION 旋转/翻转 Bitmap。
+     * NORMAL / UNDEFINED 原样返回（引用相等）；旋转/翻转会生成新 Bitmap（由调用方负责回收原图）。
+     */
+    private fun rotateBitmap(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.setScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.setRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.setRotate(90f)
+                matrix.postScale(1f, -1f)
+            }
+            else -> return bitmap // ORIENTATION_NORMAL / ORIENTATION_UNDEFINED
+        }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    /** V-2：判断 EXIF 方向是否会使宽高互换（旋转 90/270 及两个对角线翻转方向）。 */
+    private fun isRotated90Or270(orientation: Int): Boolean = when (orientation) {
+        ExifInterface.ORIENTATION_ROTATE_90,
+        ExifInterface.ORIENTATION_ROTATE_270,
+        ExifInterface.ORIENTATION_TRANSPOSE,
+        ExifInterface.ORIENTATION_TRANSVERSE -> true
+        else -> false
+    }
+
     private fun encodePreview(file: File, bounds: ImageBounds, detail: String): EncodedImage {
         val maxEdge = if (detail == "low") LOW_MAX_EDGE else HIGH_MAX_EDGE
         val targetBytes = if (detail == "low") LOW_TARGET_BYTES else HIGH_TARGET_BYTES
@@ -139,8 +199,21 @@ class ViewImageTool @Inject constructor(
         val decoded = BitmapFactory.decodeFile(file.absolutePath, options)
             ?: throw IllegalArgumentException("无法解码图片: ${file.name}")
 
+        // V-2：EXIF 方向修正——在缩放/编码前按 ORIENTATION 旋转 Bitmap，避免手机竖拍图被横置。
+        // low/high 缩略图与预览图在同一路径统一处理，方向保持一致。
+        var current = decoded
         try {
-            val scaled = scaleToMaxEdge(decoded, maxEdge)
+            val orientation = readOrientation(file)
+            if (orientation != ExifInterface.ORIENTATION_NORMAL) {
+                val rotated = rotateBitmap(decoded, orientation)
+                if (rotated !== decoded) {
+                    // 旋转产生新 Bitmap：回收旧解码图，外层 finally 只回收 current，避免 double-free
+                    decoded.recycle()
+                    current = rotated
+                }
+            }
+
+            val scaled = scaleToMaxEdge(current, maxEdge)
             try {
                 val encoded = compressJpeg(scaled, targetBytes)
                 return EncodedImage(
@@ -152,10 +225,10 @@ class ViewImageTool @Inject constructor(
                     encodedBytes = encoded.size.toLong()
                 )
             } finally {
-                if (scaled !== decoded) scaled.recycle()
+                if (scaled !== current) scaled.recycle()
             }
         } finally {
-            decoded.recycle()
+            current.recycle()
         }
     }
 

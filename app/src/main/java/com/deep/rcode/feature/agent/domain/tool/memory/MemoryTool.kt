@@ -81,7 +81,7 @@ class MemoryTool @Inject constructor(
         "description" to ToolParameter(
             name = "description",
             type = ParameterType.STRING,
-            description = "一句话摘要（save 必填，将出现在系统提示词的记忆清单中）。",
+            description = "一句话摘要（save 可选，缺省时自动从正文首行生成）。",
             required = false
         ),
         "content" to ToolParameter(
@@ -150,10 +150,13 @@ class MemoryTool @Inject constructor(
 
     private fun handleSave(args: Map<String, JsonElement>, name: String?, scope: MemoryScope, projectRoot: String?): ToolResult {
         if (name.isNullOrEmpty()) return ToolResult.Error("save 操作需要 name 参数", "MISSING_NAME")
-        val description = args["description"]?.jsonPrimitive?.contentOrNull?.trim()
-            ?: return ToolResult.Error("save 操作需要 description 参数", "MISSING_DESCRIPTION")
         val content = args["content"]?.jsonPrimitive?.contentOrNull?.trim()
             ?: return ToolResult.Error("save 操作需要 content 参数", "MISSING_CONTENT")
+
+        // M-2：description 缺省时自动从正文生成一句话摘要，不再强制必填
+        val explicitDescription = args["description"]?.jsonPrimitive?.contentOrNull?.trim()
+        val description = explicitDescription ?: autoSummary(content)
+        val autoSummarized = explicitDescription == null
 
         if (scope == MemoryScope.PROJECT && projectRoot.isNullOrBlank()) {
             return ToolResult.Error("当前未选择工作区，无法保存项目级记忆。请改用 scope=global", "NO_WORKSPACE")
@@ -161,10 +164,26 @@ class MemoryTool @Inject constructor(
 
         val success = memoryRepository.saveMemory(name, description, content, scope, projectRoot)
         return if (success) {
-            ToolResult.Success(JsonPrimitive("已成功保存记忆「$name」到 ${scope.name.lowercase()} 作用域。它将在下一次会话启动时自动注入摘要。当前会话若需立即使用，请通过 read 操作读取。"))
+            val summaryNote = if (autoSummarized) "\ndescription 未提供，已自动生成摘要：$description" else ""
+            ToolResult.Success(JsonPrimitive(
+                "已成功保存记忆「$name」到 ${scope.name.lowercase()} 作用域。它将在下一次会话启动时自动注入摘要。当前会话若需立即使用，请通过 read 操作读取。$summaryNote"
+            ))
         } else {
             ToolResult.Error("保存记忆失败，请查看日志。", "SAVE_FAILED")
         }
+    }
+
+    /**
+     * M-2：轻量启发式自动摘要。因工具层无直接 LLM 调用通道，采用启发式而非引入重型基础设施：
+     * 取 content 去除空行后的第一个非空行；content 可能是 Markdown，先去除行首的 #、-、* 等标记；
+     * 若该行超过 60 字符则截断到 60 字符并追加省略号；content 为空则返回占位文案。
+     */
+    private fun autoSummary(content: String): String {
+        val firstLine = content.lineSequence()
+            .map { it.trim().trimStart('#', '-', '*', '>') }
+            .firstOrNull { it.isNotEmpty() }
+            ?: return "（无正文）"
+        return if (firstLine.length > 60) firstLine.take(60) + "…" else firstLine
     }
 
     private fun handleEdit(args: Map<String, JsonElement>, name: String?, scope: MemoryScope, projectRoot: String?): ToolResult {

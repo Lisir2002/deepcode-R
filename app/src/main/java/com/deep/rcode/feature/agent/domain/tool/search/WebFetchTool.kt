@@ -13,6 +13,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
+import org.jsoup.nodes.TextNode
 import javax.inject.Inject
 
 class WebFetchTool @Inject constructor() : AgentTool() {
@@ -22,6 +24,20 @@ class WebFetchTool @Inject constructor() : AgentTool() {
         // 较新的桌面 Chrome 版本，搭配下方 sec-ch-ua / sec-fetch-* 请求头以贴近真实浏览器指纹
         const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
         const val MAX_LENGTH = 100_000 // 限制最大提取字符数，防止撑爆上下文
+
+        // W-3：块级元素集合，遍历正文时逐块换行拼行
+        val BLOCK_TAGS = setOf(
+            "p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "div",
+            "pre", "blockquote", "tr", "td", "th", "section", "article",
+            "ul", "ol", "table", "header", "footer", "nav", "main",
+            "aside", "figure", "figcaption", "dl", "dt", "dd", "hr", "form"
+        )
+
+        // 文本型块级元素：直接取 .text() 作为独立一行（其内容为行内文本，无需再递归子元素）
+        val TEXTUAL_BLOCK_TAGS = setOf(
+            "p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "pre",
+            "blockquote", "dt", "dd", "td", "th", "figcaption"
+        )
     }
 
     override val name = "webfetch"
@@ -133,20 +149,60 @@ class WebFetchTool @Inject constructor() : AgentTool() {
     }
 
     /**
-     * 提取干净正文，并在段落之间保留换行符。
+     * 提取干净正文，按块级元素逐行拼装，保留标题/段落/列表项各自的换行语义。
+     * W-3：改为 Jsoup 遍历块级元素拼行，不再使用字面 "\\n" 替换 hack
+     * （避免误替换页面正文中真实的字面 \n）。
      */
     private fun extractCleanText(doc: Document): String {
         // 移除多余的不可见内容
         doc.select("script, style, iframe, nav, footer, header, noscript, .ad, .advertisement").remove()
-        
-        // 为了避免 Jsoup 的 .text() 把所有行挤在一起，给块级元素加上换行符
-        doc.select("p, h1, h2, h3, h4, h5, h6, li, div, br").append("\\n")
-        
-        val rawText = doc.body()?.text() ?: ""
-        
-        // 还原换行符，并清理多余的空行
-        return rawText.replace("\\n", "\n")
-            .replace(Regex("\\n{3,}"), "\n\n")
+
+        val body = doc.body() ?: return ""
+        val sb = StringBuilder()
+        appendElement(body, sb)
+
+        return sb.toString()
+            .replace(Regex("[ \\t]+\\n"), "\n") // 去掉行尾空白
+            .replace(Regex("\\n[ \\t]+"), "\n") // 去掉行首空白（保留行内单词间的单个空格）
+            .replace(Regex("\\n{3,}"), "\n\n")  // 合并连续空行为一段空行
             .trim()
+    }
+
+    /**
+     * 递归遍历 DOM 拼装文本：
+     * - <br> 输出换行；
+     * - 文本型块级元素（p/h1-h6/li/pre 等）先换行再输出其 .text()，不递归子元素；
+     * - 容器块（div/section/table 等）或行内元素先换行（仅块）再递归子节点，
+     *   保证同一容器内多个子块分别独立成行。
+     */
+    private fun appendElement(element: Element, sb: StringBuilder) {
+        val tag = element.tagName()
+
+        // <br> 输出换行
+        if (tag == "br") {
+            sb.append('\n')
+            return
+        }
+
+        if (tag in BLOCK_TAGS) {
+            sb.append('\n')
+            if (tag in TEXTUAL_BLOCK_TAGS) {
+                val text = element.text().trim()
+                if (text.isNotEmpty()) sb.append(text)
+                return
+            }
+        }
+
+        // 容器块或行内元素：追加自身直接文本，再递归子节点
+        for (node in element.childNodes()) {
+            when (node) {
+                is TextNode -> {
+                    val text = node.text()
+                    if (text.isNotBlank()) sb.append(text)
+                }
+                is Element -> appendElement(node, sb)
+                // 注释/数据等其他节点类型忽略
+            }
+        }
     }
 }

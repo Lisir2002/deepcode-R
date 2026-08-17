@@ -7,7 +7,9 @@ import com.deep.rcode.feature.agent.data.local.dao.AgentMessageDao
 import com.deep.rcode.feature.agent.data.local.dao.ChatSessionDao
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointDao
 import com.deep.rcode.feature.agent.data.local.dao.CheckpointFileSnapshotDao
+import com.deep.rcode.feature.agent.data.local.dao.FileEditHunkDao
 import com.deep.rcode.feature.agent.data.local.dao.HallucinationFuseDao
+import com.deep.rcode.feature.agent.data.local.dao.ModeSwitchHistoryDao
 import com.deep.rcode.feature.agent.data.local.dao.HardConstraintDeleteAuditDao
 import com.deep.rcode.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
 import com.deep.rcode.feature.agent.data.local.dao.ModelCapabilityOverrideDao
@@ -20,9 +22,11 @@ import com.deep.rcode.feature.agent.data.local.entity.AgentMessageEntity
 import com.deep.rcode.feature.agent.data.local.entity.ChatSessionEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointEntity
 import com.deep.rcode.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
+import com.deep.rcode.feature.agent.data.local.entity.FileEditHunkEntity
 import com.deep.rcode.feature.agent.data.local.entity.HallucinationFuseEntity
 import com.deep.rcode.feature.agent.data.local.entity.HardConstraintDeleteAuditEntity
 import com.deep.rcode.feature.agent.data.local.entity.L0SoftCompactRestoreLogEntity
+import com.deep.rcode.feature.agent.data.local.entity.ModeSwitchHistoryEntity
 import com.deep.rcode.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.deep.rcode.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
 import com.deep.rcode.feature.agent.data.local.entity.SkillStateEntity
@@ -58,6 +62,8 @@ import com.deep.rcode.feature.t2i.data.local.entity.T2ITaskEntity
         GitCredentialEntity::class,
         CheckpointEntity::class,
         CheckpointFileSnapshotEntity::class,
+        FileEditHunkEntity::class,
+        ModeSwitchHistoryEntity::class,
         CredentialEncryptionStateEntity::class,
         RemoteAuditLogEntity::class,
         ModelCapabilityOverrideEntity::class,
@@ -72,7 +78,7 @@ import com.deep.rcode.feature.t2i.data.local.entity.T2ITaskEntity
         T2ITaskEntity::class,
         SkillStateEntity::class
     ],
-    version = 45,
+    version = 46,
     exportSchema = true
 )
 abstract class AgentDatabase : RoomDatabase() {
@@ -85,6 +91,8 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun gitCredentialDao(): GitCredentialDao
     abstract fun checkpointDao(): CheckpointDao
     abstract fun checkpointFileSnapshotDao(): CheckpointFileSnapshotDao
+    abstract fun fileEditHunkDao(): FileEditHunkDao
+    abstract fun modeSwitchHistoryDao(): ModeSwitchHistoryDao
     abstract fun credentialEncryptionStateDao(): CredentialEncryptionStateDao
     abstract fun remoteAuditLogDao(): RemoteAuditLogDao
     abstract fun modelCapabilityOverrideDao(): ModelCapabilityOverrideDao
@@ -100,6 +108,6 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun skillStateDao(): SkillStateDao
 
     companion object {
-        const val SCHEMA_VERSION = 45
+        const val SCHEMA_VERSION = 46
     }
 }

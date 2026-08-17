@@ -23,6 +23,17 @@ class SwitchModeTool @Inject constructor(
     private val chatSessionDao: ChatSessionDao
 ) : AbstractContextualTool() {
 
+    private companion object {
+        /** G-3：频率限制时间窗口，5 分钟 */
+        const val RATE_LIMIT_WINDOW_MS = 300_000L
+
+        /** G-3：窗口内允许的最大切换次数 */
+        const val RATE_LIMIT_MAX = 2
+    }
+
+    /** G-3：同会话切换频率限流记录（sessionId -> 最近切换时间戳列表），仅内存态，会话重启即重置。 */
+    private val switchHistory = mutableMapOf<String, MutableList<Long>>()
+
     override val name = "switchMode"
     override val description = "切换当前会话的模式。如果你当前处于 BUILD（构建）模式并认为你需要进入 PLAN（计划）模式来构思复杂逻辑，或者当前在 PLAN 模式下计划已经完成需要进入 BUILD 模式修改代码时，调用此工具主动申请切换。切换前需要用户授权。注意：AUTO（自动）模式只能由用户在界面上手动切换进入，本工具无法切换到 AUTO；但处于 AUTO 模式时，可通过本工具切换到 PLAN 模式退出自动模式（这是 AI 退出 AUTO 的唯一路径）。"
     override val permissionPolicy = ToolPermissionPolicy.ASK
@@ -84,10 +95,34 @@ class SwitchModeTool @Inject constructor(
         val sessionEntity = chatSessionDao.getById(sessionId)
             ?: return ToolResult.Error("找不到会话记录", "SESSION_NOT_FOUND")
 
+        // G-3：频率限制——同会话 5 分钟内最多允许 2 次切换，防止 PLAN↔BUILD 抖动。
+        // 仅在真正执行切换前记录；「已处于目标模式」「校验失败」等分支已提前返回，不会记录。
+        checkAndRecordSwitch(sessionId, context.mode)?.let { return it }
+
         // 切换模式并保存到数据库。UI 层通过 flow 监听，会自动更新外观与后续流程的上下文
         chatSessionDao.upsert(sessionEntity.copy(mode = targetMode.name))
 
         return ToolResult.Success(JsonPrimitive("成功切换至 ${targetMode.name} 模式。"))
+    }
+
+    /**
+     * G-3：频率限制检查并记录一次切换（synchronized 保证并发安全）。
+     * 先清理窗口外（5 分钟前）的旧时间戳；若窗口内已有 RATE_LIMIT_MAX 次，返回超限错误且不记录；
+     * 否则将当前时间戳加入历史并返回 null（放行）。
+     */
+    @Synchronized
+    private fun checkAndRecordSwitch(sessionId: String, currentMode: AgentMode): ToolResult? {
+        val now = System.currentTimeMillis()
+        val history = switchHistory.getOrPut(sessionId) { mutableListOf() }
+        history.removeAll { now - it >= RATE_LIMIT_WINDOW_MS }
+        if (history.size >= RATE_LIMIT_MAX) {
+            return ToolResult.Error(
+                "模式切换过于频繁：5 分钟内最多允许 2 次。当前仍处于 $currentMode 模式。如需调整请稍后再试。",
+                "MODE_SWITCH_RATE_LIMITED"
+            )
+        }
+        history.add(now)
+        return null
     }
 
     override fun buildPermissionRequest(

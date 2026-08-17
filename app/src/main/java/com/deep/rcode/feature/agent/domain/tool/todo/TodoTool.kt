@@ -1,7 +1,9 @@
 package com.deep.rcode.feature.agent.domain.tool.todo
 
+import androidx.room.withTransaction
 import com.deep.rcode.core.util.FileLogger
 import com.deep.rcode.feature.agent.data.local.dao.TodoItemDao
+import com.deep.rcode.feature.agent.data.local.database.AgentDatabase
 import com.deep.rcode.feature.agent.data.local.entity.TodoItemEntity
 import com.deep.rcode.feature.agent.domain.model.AgentContext
 import com.deep.rcode.feature.agent.domain.model.TodoItem
@@ -30,7 +32,8 @@ import javax.inject.Inject
  * AI 不需要查询或记忆 todo_id，也不需要区分创建、更新、删除动作。
  */
 class TodoTool @Inject constructor(
-    private val todoItemDao: TodoItemDao
+    private val todoItemDao: TodoItemDao,
+    private val database: AgentDatabase
 ) : AbstractContextualTool() {
 
     private companion object {
@@ -131,6 +134,17 @@ class TodoTool @Inject constructor(
         val entities = mutableListOf<TodoItemEntity>()
 
         for ((idx, element) in itemElements.withIndex()) {
+            // D-3：先做 status 显式校验，非法值时返回明确错误码，避免被外层吞成模糊错误
+            if (element is JsonObject) {
+                val statusRaw = element["status"]?.jsonPrimitive?.contentOrNull
+                if (statusRaw != null && parseStatus(statusRaw) == null) {
+                    return ToolResult.Error(
+                        "第 ${idx + 1} 项的 status「$statusRaw」无效，合法值：pending / in_progress / completed",
+                        "INVALID_STATUS"
+                    )
+                }
+            }
+
             val draft = parseTodoDraft(element, idx) ?: return ToolResult.Error(
                 "第 ${idx + 1} 项需要字符串标题或含 subject 的对象",
                 "INVALID_ITEM"
@@ -150,9 +164,12 @@ class TodoTool @Inject constructor(
             ))
         }
 
-        todoItemDao.deleteBySession(sessionId)
-        if (entities.isNotEmpty()) {
-            todoItemDao.upsertAll(entities)
+        // D-1：delete + upsert 包 Room 事务，避免中间失败丢全部待办
+        database.withTransaction {
+            todoItemDao.deleteBySession(sessionId)
+            if (entities.isNotEmpty()) {
+                todoItemDao.upsertAll(entities)
+            }
         }
         FileLogger.d(TAG, "todo replace: 同步了 ${entities.size} 项待办")
 
@@ -175,7 +192,10 @@ class TodoTool @Inject constructor(
                         "description" to JsonPrimitive(entity.description),
                         "status" to JsonPrimitive(entity.status.lowercase()),
                         "priority" to JsonPrimitive(entity.priority),
-                        "order" to JsonPrimitive(entity.order)
+                        "order" to JsonPrimitive(entity.order),
+                        // D-2：回传创建/更新时间，供 AI 判断待办新鲜度与完成时序
+                        "created_at" to JsonPrimitive(entity.createdAtMs),
+                        "updated_at" to JsonPrimitive(entity.updatedAtMs)
                     ))
                 }
             )
@@ -192,8 +212,8 @@ class TodoTool @Inject constructor(
         val subject = obj["subject"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
         if (subject.isBlank()) return null
 
-        val status = parseStatus(obj["status"]?.jsonPrimitive?.contentOrNull)
-            ?: throw IllegalArgumentException("第 ${index + 1} 项 status 无效")
+        // D-3：status 已在 replaceTodos 预校验，此处不再抛异常；异常情况下安全回退 pending
+        val status = parseStatus(obj["status"]?.jsonPrimitive?.contentOrNull) ?: TodoStatus.PENDING
 
         return TodoDraft(
             subject = subject,
