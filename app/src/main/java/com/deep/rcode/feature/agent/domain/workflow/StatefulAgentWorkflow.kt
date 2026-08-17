@@ -525,7 +525,11 @@ class StatefulAgentWorkflow @Inject constructor(
         var pendingCompaction: Deferred<List<AgentMessage>>? = null
         var pendingCompactionBaseCount = 0
 
-        while (!state.isFinished && actionQueue.isNotEmpty()) {
+        // 主循环包进 try/finally：无论正常结束、协程被取消（用户点停止）还是异常退出，
+        // 都兜底清理本会话残留的「未决工具权限请求」，避免对话结束后确认卡一直挂着。
+        // 正常路径下 awaitApproval 的 finally 已清 _pendingRequest，此处为空操作；取消/异常
+        // 路径下把挂起的 awaitApproval 以 REJECT 唤醒，工具收到「用户拒绝执行」而非永久挂起。
+        try { while (!state.isFinished && actionQueue.isNotEmpty()) {
             val action = actionQueue.removeFirst()
             val (newState, effects) = reduce(state, action)
             state = newState
@@ -745,7 +749,7 @@ class StatefulAgentWorkflow @Inject constructor(
                     is AgentSideEffect.RequestPermission -> {
                         val tool = toolRegistry.getTool(effect.toolCall.name)
                         val argsPreview = JsonObject(effect.toolCall.arguments).toString().take(500)
-                        val checkResult = requestPermissionIfNeeded(tool, effect.toolCall.id, effect.toolCall.arguments, argsPreview, currentContext.mode)
+                        val checkResult = requestPermissionIfNeeded(tool, effect.toolCall.id, effect.toolCall.arguments, argsPreview, currentContext.mode, currentContext.sessionId)
 
                         if (!checkResult.approved) {
                             val rawResult = ToolResult.Error(checkResult.denyReason, checkResult.errorCode).toTransportString()
@@ -913,6 +917,12 @@ class StatefulAgentWorkflow @Inject constructor(
                     }
                 }
             }
+        }
+        } finally {
+            // 兜底：本会话 workflow 退出（正常 / 用户停止取消 / 异常）时，清理残留的
+            // 未决工具权限请求，以 REJECT 唤醒挂起的 awaitApproval。正常路径下该请求已被
+            // awaitApproval 的 finally 清掉，这里是空操作；取消/异常路径避免确认卡残留。
+            permissionManager.cancelPending(currentContext.sessionId)
         }
         
         state.error?.let { send(AgentEvent.Failed(it)) }
@@ -1390,7 +1400,8 @@ class StatefulAgentWorkflow @Inject constructor(
         callId: String,
         arguments: Map<String, kotlinx.serialization.json.JsonElement>,
         argsPreview: String,
-        mode: com.deep.rcode.feature.agent.domain.model.AgentMode
+        mode: com.deep.rcode.feature.agent.domain.model.AgentMode,
+        sessionId: String?
     ): PermissionCheckResult {
         if (tool == null) {
             return PermissionCheckResult(true)
@@ -1425,7 +1436,7 @@ class StatefulAgentWorkflow @Inject constructor(
                         rememberablePatterns = eval.rememberablePatterns,
                         rememberDisabledReason = eval.rememberDisabledReason
                     )
-                when (permissionManager.awaitApproval(request)) {
+                when (permissionManager.awaitApproval(sessionId, request)) {
                     PermissionChoice.REJECT -> PermissionCheckResult(false, "用户拒绝执行该工具", "USER_REJECTED")
                     PermissionChoice.ONCE -> PermissionCheckResult(true)
                     PermissionChoice.ALWAYS -> {

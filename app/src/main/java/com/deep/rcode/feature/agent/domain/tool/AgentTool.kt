@@ -137,7 +137,12 @@ data class PendingToolPermission(
      * 由 [com.deep.rcode.feature.agent.domain.permission.ToolPermissionPolicyEngine] 评估后填入。
      */
     val rememberablePatterns: List<String> = emptyList(),
-    val rememberDisabledReason: String? = null
+    val rememberDisabledReason: String? = null,
+    /**
+     * 发起该权限请求的 AI 会话 id。用于把弹窗绑定到具体会话：UI 只展示当前会话的待决请求，
+     * 切换/停止会话时按会话清理，避免「对话已结束仍弹出确认卡」。
+     */
+    val sessionId: String? = null
 )
 
 abstract class AgentTool {

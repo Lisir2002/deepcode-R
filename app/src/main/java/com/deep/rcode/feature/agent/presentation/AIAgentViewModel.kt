@@ -465,7 +465,12 @@ class AIAgentViewModel @Inject constructor(
         _retryStates.value = if (state == null) _retryStates.value - sessionId else _retryStates.value + (sessionId to state)
     }
 
+    // 只暴露「当前会话」的权限确认请求：避免对话已结束/切换会话后，旧会话残留的确认卡仍弹出。
     val pendingToolPermission = toolPermissionManager.pendingRequest
+        .combine(_currentSessionId) { pending, currentSid ->
+            if (pending?.sessionId == null || pending.sessionId == currentSid) pending else null
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val pendingUserQuestion = askUserQuestionManager.pendingQuestion
 
@@ -692,6 +697,8 @@ class AIAgentViewModel @Inject constructor(
     }
 
     private fun processNextInQueue(sessionId: String) {
+        // 进入下一条前，清理可能残留的权限确认请求，避免旧确认卡阻塞/残留。
+        toolPermissionManager.cancelPending(sessionId)
         val queue = _queuedRequests.value[sessionId] ?: return
         val next = queue.firstOrNull() ?: return
         _queuedRequests.value = _queuedRequests.value + (sessionId to queue.drop(1))
@@ -1063,6 +1070,8 @@ class AIAgentViewModel @Inject constructor(
         val jobs = sessionJobs.values.filter { it.isActive }
         jobs.forEach { it.cancel() }
         sessionJobs.clear()
+        // 全停时清理任意会话的残留权限确认请求（传 null = 任意会话）。
+        toolPermissionManager.cancelPending(null)
         pendingMergedNotifications.clear()
         _queuedRequests.value = emptyMap()
         _runningCommandSessions.value = emptySet()
@@ -1085,6 +1094,8 @@ class AIAgentViewModel @Inject constructor(
         // 同步捕获本轮 taskId：job.cancel() 后 finally 会清理 map，这里先取走避免竞态。
         val stoppedTaskId = currentTaskIdBySession[sessionId] ?: ""
         job.cancel()
+        // 停止会话时清理其残留的权限确认请求，避免确认卡继续弹出。
+        toolPermissionManager.cancelPending(sessionId)
         pendingMergedNotifications.remove(sessionId)
         setAgentState(sessionId, AgentUIState.Idle)
         _runningTools.value = _runningTools.value - sessionId

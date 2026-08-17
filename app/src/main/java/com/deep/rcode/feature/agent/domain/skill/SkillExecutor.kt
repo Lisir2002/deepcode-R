@@ -71,8 +71,11 @@ class SkillExecutor @Inject constructor(
         // 容器内技能目录映射：宿主 rdeepcodeDir 绑定到 /root/.rdeepcode
         val containerSkillDir = "/root/.rdeepcode/skills/${skill.id}"
 
-        // 审批：所有 SCRIPT 技能执行前必须用户确认（决策点 6：全部审批）
+        // 审批：所有 SCRIPT 技能执行前必须用户确认（决策点 6：全部审批）。
+        // SkillExecutor 无会话上下文，sessionId 传 null：UI 仍会展示确认卡，
+        // 会话结束/停止时 cancelPending 按「任意会话」兜底清理。
         val approval = toolPermissionManager.awaitApproval(
+            null,
             PendingToolPermission(
                 id = "skill-${skill.id}-${System.currentTimeMillis()}",
                 toolName = "loadSkill",
