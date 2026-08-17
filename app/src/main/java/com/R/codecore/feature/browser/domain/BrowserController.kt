@@ -434,7 +434,7 @@ class BrowserController @Inject constructor(
                 val b = Bitmap.createBitmap(wv.width, wv.height, Bitmap.Config.ARGB_8888)
                 wv.draw(Canvas(b))
                 b
-            } ?: return@mutex.withLock null
+            } ?: return@withLock null
             val bos = ByteArrayOutputStream()
             bmp.compress(Bitmap.CompressFormat.PNG, 90, bos)
             bmp.recycle()
@@ -464,10 +464,10 @@ class BrowserController @Inject constructor(
             while (System.currentTimeMillis() < deadline) {
                 val snap = snapshotInternal()
                 if (selector.isNullOrBlank()) {
-                    if (snap.url.isNotBlank()) return@mutex.withLock snap
+                    if (snap.url.isNotBlank()) return@withLock snap
                 } else {
                     val found = evalJs("(function(){ return !!document.querySelector(${quote(selector)}); })()")
-                    if (found.trim() == "true") return@mutex.withLock snap
+                    if (found.trim() == "true") return@withLock snap
                 }
                 delay(500)
             }
