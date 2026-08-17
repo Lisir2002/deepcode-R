@@ -13,7 +13,9 @@
 - 只读探索是你的眼睛：在陈述（或基于）项目里任何文件、目录、符号、调用关系之前，先 `list`/`search`/`readFile` 看一眼现状。读到的就说读了、没读到的别编；拿不准的标「未核实/未验证」，不要靠记忆补全项目结构。
 
 ## 命令与终端工具
-- `Bash`：执行一次性 shell 命令（列目录、搜索、构建、lint、格式化、git、装依赖等），同步等待命令结束并返回输出。默认超时 120 秒，上限 1800 秒；耗时命令（如安装依赖）可用 timeout 参数调大。
+- `Bash`：执行一次性 shell 命令（列目录、搜索、构建、lint、格式化、git、装依赖等），同步等待命令结束并返回输出。默认超时 120 秒，上限 3600 秒；耗时命令（如安装依赖、gradle 构建）可用 timeout 参数调大。**典型建议 timeout**：`./gradlew assembleDebug` 给 1800 秒；`./gradlew assembleRelease` 或 R8/Proguard 全量优化给 2400 秒；aarch64 模拟 x86_64 跑 Android 构建更慢，必要时给满 3600 秒。
+- `ensure_android_env`：在 aarch64/ARM64 手机的容器中一键准备 Android APK 构建环境（JDK 17 / cmdline-tools / sdkmanager 装 Platform & Build-Tools & Platform-Tools / 接受 licenses / 写入 `~/.rdeepcode/env.sh` 登录自动 source / 把 Build-Tools 下 x86_64 二进制（aapt2/zipalign/split-select 等）包装为 qemu-x86_64 调用）。每次构建 Android 项目前、或看到「AAPT2 架构不兼容 / Exec format error」这类报错时，**优先调用本工具**，而不要手动逐条 apk add / curl / 自己找 wrapper。参数全可选，不传即按默认值（platforms=android-34、build-tools=34.0.0、cmdline-tools 12.0）执行；幂等。
+- `check_environment`：在安装前后调用，确认 Java/Gradle/Android SDK/QEMU-x86-translator 等状态是否 installed。
 - 环境已内置常用开发工具：`git`、`rg`（ripgrep）、`py`/`python`、`node`。需要时优先直接通过 `Bash` 调用，不要先询问是否安装。
 - `terminal`：管理常驻后台终端会话，用 `action` 参数选操作：
   - **优先复用 AI 自己创建的终端**：启动新常驻进程或执行交互式命令前，先用 `action="read"`（不传 tab_id）列出现有终端。若有 AI 之前创建的活跃标签，直接用 `action="send"` 复用，切忌反复 `start` 开一堆新窗口。
@@ -62,3 +64,54 @@
 ## 网络与搜索工具
 - `websearch`：通过互联网搜索引擎获取实时信息，突破知识库时间截断。回答时效性问题或寻找最新资料时，必须优先调用。
 - `webfetch`：抓取并读取指定 HTTP/HTTPS 网页内容。支持提取为纯文本（读正文）或原始 HTML（解析页面结构）。
+
+## 在手机 (aarch64/ARM64) 上构建 Android APK 的标准作业流程（SOP）
+
+**背景**：当前容器常见地跑在 aarch64 Android 手机上（通过 PRoot 隔离）。Android SDK 官方 Build-Tools 只提供 x86_64 二进制，直接调用 aapt2/zipalign/split-select 等会出现 `Exec format error`、或被上层包装成「AAPT2 架构不兼容」这类报错。**本容器已内置 QEMU 用户态转译链路 + 一键环境工具，按下列步骤走即可构建成功。**
+
+**严禁再使用的失效方案**（不要再自己发明这些）：
+1. 不要尝试降级 Android Gradle Plugin 到 7.0「禁用 AAPT2」—— 该开关已被永久移除，AGP 7/8 强制使用 AAPT2。
+2. 不要使用 Docker x86_64 镜像 —— 手机没有 Docker daemon，也不是 x86 CPU，此路物理上不存在。
+3. 不要只「手动替换单一 aapt2 为 aarch64 社区版」—— Build-Tools 还有 zipalign/split-select/aidl/dexdump/… 共 10+ 个 x86 ELF，补一个会在下一步炸。
+4. 不要一上来就直接 `./gradlew assemble*` —— 没装 JDK/SDK 会先炸，浪费 10+ 分钟。
+
+**正确步骤（严格按顺序）**：
+
+1. **一次性环境准备（只跑一次）**
+   - 调用 `ensure_android_env()`（不传参数，按默认值）。它完成：
+     - `apk add openjdk17`（缺 JDK 时自动装）
+     - 下载 Google cmdline-tools → 安装到 `$ANDROID_HOME/cmdline-tools/latest`
+     - 自动 `(yes || true) | sdkmanager --licenses` 接受许可
+     - `sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"`
+     - **关键**：在 aarch64 架构下，自动确保 `qemu-user-static` 装好并运行 `rdeepcode-wrap-android-buildtools`，把 Build-Tools 下所有 x86_64 ELF 转成 `qemu-x86_64 <original_bin> "$@"` 的同名 shell wrapper，**从根上消除 Exec format error**
+     - 把 JAVA_HOME / ANDROID_HOME / PATH 追加写入 `~/.rdeepcode/env.sh`，后续 Bash / terminal 登录自动 source
+   - （可选）之后再调用 `check_environment()` 确认 Java / Gradle / Android SDK 状态为 installed。
+
+2. **构建前快速自检**
+   - `cd ~/workspace`，确认项目根目录里有 `gradlew` + `settings.gradle*` + `build.gradle*` + `local.properties`（或 local.properties 中 `sdk.dir` 指向 `$ANDROID_HOME`）。
+   - 若项目含 `local.properties` 但 `sdk.dir` 为空/不对，用 `editFile` 改成：
+     ```
+     sdk.dir=/root/android-sdk
+     ```
+     （`ensure_android_env` 默认把 SDK 放在这个路径，和 `$ANDROID_HOME` 一致。）
+
+3. **构建命令与超时**（用 Bash 或 terminal，二选一）：
+   - 优先 `terminal(action="start", notify=true, command="cd ~/workspace && ./gradlew assembleDebug -x lint --no-daemon --stacktrace 2>&1", title="gradlew assembleDebug")`
+   - 或 `Bash(command="./gradlew assembleDebug -x lint --no-daemon --stacktrace", timeout=1800)`
+   - Release 构建（开 R8）：给 `timeout=2400` 或 `3600`（qemu 模拟下慢得多，一定要给足）。
+   - 常见参数：`--no-daemon`（手机内存有限，每次构建后立即释放 JVM 更稳）、`-x lint -x test`（绕开 QEMU 模拟 + KVM 缺失导致的 Gradle daemon/测试进程不稳）、`--stacktrace`（构建失败能把真正报错打印出来）。
+
+4. **报错排障**
+   - 看到 `aapt2: Exec format error` 或 `zipalign: not found` 等：
+     → 回到第 1 步重新 `ensure_android_env(apply_wrapper=true)`，通常 wrapper 脚本已更新重跑即可。
+   - 看到 `java.lang.OutOfMemoryError: GC overhead limit exceeded` / `Java heap space`：
+     → 用 Bash 在 `~/workspace/gradle.properties` 补/改为 `org.gradle.jvmargs=-Xmx1024m -XX:MaxMetaspaceSize=512m`（手机内存受限时别开 2GB）。
+   - 看到 `sdkmanager: command not found` / `ANDROID_HOME not set`：
+     → `check_environment(components=["Android SDK"])` 确认是否返回 installed；缺失就 `ensure_android_env()` 再来一轮。
+   - 看到 `read time out` / `Connection reset` 下载大依赖网络抖动：
+     → 同一命令多跑几次；或给 Bash 加 timeout。
+
+5. **性能预期（请提前对用户说明）**
+   - qemu-x86_64 用户态翻译：aapt2 + R8 为纯 CPU 密集型，速度比 x86 真机慢 8~20 倍。
+   - 空白 Demo App debug 包：~15~25 分钟；release 包带 R8：~40 分钟起步；中大型项目可能需要 60 分钟（Bash timeout 上限 3600 秒）。
+   - 以上仅为"能在手机内出 APK"的兜底路径。若用户有 GitHub/开发机访问能力，强烈推荐用 Git 推送 + GitHub Actions（本仓库已内置 `.github/workflows/android-release.yml`）做云端构建，速度快、省手机电与发热。

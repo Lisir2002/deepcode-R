@@ -152,8 +152,10 @@ class LinuxContainerEngine @Inject constructor(
         /** 命令默认超时（毫秒）：未显式指定时套用，避免命令卡死时永久占用会话。 */
         const val DEFAULT_TIMEOUT_MS = 120_000L
 
-        /** 命令超时上限（毫秒）：再大的请求也会被钳到此值，防止事实上的“无限等待”。 */
-        const val MAX_TIMEOUT_MS = 1_800_000L
+        /** 命令超时上限（毫秒）：再大的请求也会被钳到此值，防止事实上的“无限等待”。
+         *  为在手机上（经 qemu-user 模拟 x86_64）完成 Android Gradle release 构建预留足够长窗口：
+         *  R8 + aapt2 + d8 单步在 qemu 下可 > 20 分钟，叠加完整构建，上限 3600 秒。 */
+        const val MAX_TIMEOUT_MS = 3_600_000L
 
         /** 超时后给进程的优雅退出宽限（毫秒），过后强杀。 */
         private const val TIMEOUT_KILL_GRACE_MS = 200L

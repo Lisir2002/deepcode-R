@@ -54,8 +54,14 @@ class ExecuteCommandTool @Inject constructor(
         /** 默认超时（秒），与 [LinuxContainerEngine.DEFAULT_TIMEOUT_MS] 对齐。 */
         const val DEFAULT_TIMEOUT_SECONDS = 120L
 
-        /** 超时上限（秒），与 [LinuxContainerEngine.MAX_TIMEOUT_MS] 对齐。 */
-        const val MAX_TIMEOUT_SECONDS = 1_800L
+        /** 超时上限（秒），与 [LinuxContainerEngine.MAX_TIMEOUT_MS] 对齐。
+         *  在 aarch64 手机上经 qemu 模拟 x86_64 构建 Android 时，gradle release 构建常超
+         *  30 分钟，故给足 3600 秒。常用建议 timeout：
+         *    - gradlew assembleDebug/assembleRelease: 1800~2400 秒
+         *    - 大项目 + R8 fullMode：3600 秒（上限）
+         *    - apk add/sdkmanager 拉组件: 480~900 秒
+         */
+        const val MAX_TIMEOUT_SECONDS = 3_600L
 
         /** 命中即视为「改动了 apk 世界」的命令片段，触发 bundle 状态联动刷新。 */
         private val APK_MUTATION_REGEX = Regex("""\bapk\s+(add|del|remove|fix|upgrade|delete)\b""")
