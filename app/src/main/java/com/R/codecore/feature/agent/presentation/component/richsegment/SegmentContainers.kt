@@ -149,8 +149,9 @@ private fun LinkAwareText(
     nav: SegmentationNavigationActions,
     modifier: Modifier = Modifier
 ) {
-    val annotated = androidx.compose.runtime.remember(inlines, baseStyle) {
-        renderInlines(inlines, baseStyle, nav)
+    val codeBackground = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    val annotated = androidx.compose.runtime.remember(inlines, baseStyle, codeBackground) {
+        renderInlines(inlines, baseStyle, codeBackground)
     }
 
     ClickableText(
@@ -177,7 +178,7 @@ private fun LinkAwareText(
 private fun renderInlines(
     inlines: List<Inline>,
     baseStyle: TextStyle,
-    @Suppress("UNUSED_PARAMETER") nav: SegmentationNavigationActions
+    codeBackground: Color
 ): AnnotatedString {
     return buildAnnotatedString {
         for (inline in inlines) {
@@ -202,7 +203,7 @@ private fun renderInlines(
                     pushStyle(SpanStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = (baseStyle.fontSize.value - 0.5f).sp,
-                        background = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        background = codeBackground
                     ))
                     append(" ")
                     append(inline.code)
