@@ -1290,6 +1290,9 @@ class LinuxContainerEngine @Inject constructor(
         if (storageShareEnabled) {
             val external = android.os.Environment.getExternalStorageDirectory()
             if (external != null && external.exists()) {
+                // proot 的 -b 只会在「父目录存在」时自动创建固定目标点；rootfs 里通常没有
+                // /root/storage，若不先建父目录，proot 无法生成 /root/storage/shared，导致 ls 报 no such。
+                java.io.File("$rootfs/root/storage").mkdirs()
                 argv.add("-b")
                 argv.add("${external.absolutePath}:/root/storage/shared")
             } else {
