@@ -149,7 +149,7 @@ private fun LinkAwareText(
     nav: SegmentationNavigationActions,
     modifier: Modifier = Modifier
 ) {
-    val annotated = remember(inlines, baseStyle) {
+    val annotated = androidx.compose.runtime.remember(inlines, baseStyle) {
         renderInlines(inlines, baseStyle, nav)
     }
 
@@ -174,11 +174,10 @@ private fun LinkAwareText(
     }
 }
 
-@Composable
 private fun renderInlines(
     inlines: List<Inline>,
     baseStyle: TextStyle,
-    nav: SegmentationNavigationActions
+    @Suppress("UNUSED_PARAMETER") nav: SegmentationNavigationActions
 ): AnnotatedString {
     return buildAnnotatedString {
         for (inline in inlines) {
@@ -488,7 +487,7 @@ private fun inferByLabel(label: String): SyntaxLanguage? {
     // 常见别名映射
     return when (label.lowercase()) {
         "sh", "bash", "shell", "zsh" -> SyntaxLanguage.SHELL
-        "yml", "yaml" -> SyntaxLanguage.YAML
+        "yml", "yaml" -> null
         "js", "javascript" -> SyntaxLanguage.JAVASCRIPT
         "ts", "typescript" -> SyntaxLanguage.TYPESCRIPT
         "kt", "kotlin" -> SyntaxLanguage.KOTLIN
