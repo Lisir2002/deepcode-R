@@ -235,19 +235,30 @@ object RichTextSegmenter {
 object InlineTokenizer {
 
     // 优先级从高到低：行内代码 > 裸 URL > 文件路径 > 粗斜体 > 粗体 > 斜体。
-    // alternation 靠左优先；URL 与文件路径之间靠「URL 含 :// 且排他字符集」自然区分。
+    //
+    // URL regex 特别说明：
+    //  - 前置 two negative lookbehind：(?<!\]\() 排除 [text](url) 内部 MD 链接场景（测试 urlInMarkdownLinkIsNotReSegmented）
+    //                             (?<![^A-Za-z0-9]<) 排除 <https://url> 尖括号场景（测试 urlInAngleBracketsIsIgnored）
+    //  - 字符集 [^\s<>"`\p{IsHan}] 显式排除中日韩汉字：防中文句号/正文被贪心吃进 URL
+    //    （之前 URL 边界全靠 stripUrlTrailing 后置剥标点，但 URL 中间夹中文时它无能为力）
+    //  - 右括号 )] 在 raw match 阶段先保留，后续 stripUrlTrailing 用配对法精确切
     private val INLINE_TOKEN = Regex(
         "`[^`\\n]+`" +
-            "|https?://[^\\s<>\"'`]+" +
-            "|(?:~|\\.\\.?/|/)[^\\s()<>\"'`]*\\.[A-Za-z0-9]{1,8}" +
+            "|(?<!\\]\\()(?<![^A-Za-z0-9]<)https?://[^\\s<>\"`\\u4e00-\\u9fff]+" +
+            "|(?:~|\\.\\.?/|/)[^\\s()<>\"`]*\\.[A-Za-z0-9]{1,8}" +
             "|[\\w.-]+(?:/[\\w.-]+)+\\.[A-Za-z0-9]{1,8}" +
             "|\\*\\*\\*[^*\\n]+\\*\\*\\*" +
             "|\\*\\*[^*\\n]+\\*\\*" +
             "|(?<![*\\w])\\*[^*\\n]+\\*(?!\\*)"
     )
 
-    // URL 尾部需要剥离的标点：这些显然不属于 URL 本体。
-    private val URL_TRAILING_PUNCT = Regex("[。，、；：？！「」『』《》〈〉【】\"'）)】,.;:!?…—]+$")
+    // 第 1 轮标点剥离：只剥绝对不合法 URL 尾部的中文/全角标点。
+    // 注意：此处不剥 ASCII 半角 ) ] ，留给括号配对逻辑精确处理（否则 Wiki (operating_system) 的尾 ) 被误吃）。
+    private val URL_TRAILING_PUNCT_P1 = Regex("[。，、；：？！「」『』《》〈〉【】＂〝〞'）〕】,;:!?…—－]+$")
+
+    // 第 2 轮标点剥离：括号配对完成后，再剥尾部残留的句点/逗号/分号等软边界。
+    // 注意：这里不剥 ASCII ) ]，因为括号配对逻辑已保证尾部若有 ) ] 必然是成对合法的（例如 Wiki (operating_system)）。
+    private val URL_TRAILING_PUNCT_P2 = Regex("[.,;:!?…—－]+$")
 
     fun parse(text: String): List<Inline> {
         if (text.isBlank()) return emptyList()
@@ -299,16 +310,24 @@ object InlineTokenizer {
 
     private fun isFilePathToken(token: String): Boolean {
         if (token.contains("://")) return false
-        val isAbs = token.startsWith("/") || token.startsWith("~/") ||
+        if (token.isBlank()) return false
+        // 显式前缀：~/  ./  ../  / —— 这些是用户明确写的路径信号，即使无扩展名也认（如 ./gradlew）
+        val explicitPrefix = token.startsWith("/") || token.startsWith("~/") ||
             token.startsWith("./") || token.startsWith("../")
         val isRel = token.count { it == '/' } >= 1
         val hasExt = Regex("\\.[A-Za-z0-9]{1,8}$").containsMatchIn(token)
-        return hasExt && (isAbs || isRel) && token.isNotBlank()
+        return when {
+            explicitPrefix && hasExt -> true
+            explicitPrefix && isRel -> true    // 例：./gradlew  ~/.config/rcodecore  /data/local/tmp
+            hasExt && isRel -> true            // 例：app/src/main/AndroidManifest.xml
+            else -> false
+        }
     }
 
     private fun stripUrlTrailing(url: String): String {
-        var s = URL_TRAILING_PUNCT.replace(url, "")
-        // 剥掉尾部的未配对右括号（如 http://a.b) 或 http://a.b] ）
+        // P1：剥全角/中文标点（绝对不会出现在合法 URL 尾部，同时不碰 ASCII 半角右括号）
+        var s = URL_TRAILING_PUNCT_P1.replace(url, "")
+        // 括号配对：仅把「未配对的右括号」及其后续内容切掉，合法配对（如 Wiki (operating_system)）原样保留
         var depth = 0
         var cut = -1
         for ((idx, ch) in s.withIndex()) {
@@ -318,8 +337,10 @@ object InlineTokenizer {
             }
         }
         if (cut >= 0) s = s.substring(0, cut)
-        // 二次剥离首层未剥尽的标点（截断后可能留下 . 或 ，）
-        s = URL_TRAILING_PUNCT.replace(s, "")
+        // P2：配对处理完，再剥尾部残留的半角右括号/点号/逗号等（都是 URL 非法尾字符）
+        s = URL_TRAILING_PUNCT_P2.replace(s, "")
+        // 再做一次 P1 兜底：P2 剥完后尾部若刚好露出中文标点再清掉
+        s = URL_TRAILING_PUNCT_P1.replace(s, "")
         return s
     }
 }
