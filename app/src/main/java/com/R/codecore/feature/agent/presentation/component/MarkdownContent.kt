@@ -35,6 +35,67 @@ import com.mikepenz.markdown.model.State as MarkdownParseState
 import dev.snipme.highlights.Highlights
 import dev.snipme.highlights.model.SyntaxThemes
 
+/**
+ * 文本渲染前的 URL 预规范化。
+ *
+ * mikepenz.markdown / commonmark-java 的默认 autolink 会把 URL 后面紧跟的非 ASCII
+ * 字符（中文句号、逗号、引号、书名号等）也吞进链接里，导致链接变成
+ * `https://a.b/。我们可以设置…`。这里对输入文本做一次扫描：
+ *  - 对「裸 URL」（未嵌在 Markdown 链接 `[text](url)` / `<url>` / 代码块里的 URL）
+ *    先匹配其合法后缀（ASCII 字母数字和 URL 允许字符），把尾随的「中文/空白/非 URL
+ *    ASCII 标点」剥离出来，放回外层文本。
+ *  - 对规范后的裸 URL 包成 `<url>`（Markdown 显式自动链接），彻底锁定链接边界，
+ *    避免下游解析器二次扩展。
+ */
+internal object MarkdownUrlPreprocessor {
+    // 裸 URL 起点：不捕获 Markdown 链接 `](url)` / `<url>` 中已经有包裹的 URL；
+    //         不捕获代码块/行内代码里的字符串（不处理代码块边界，仅简单跳过）。
+    // 匹配策略：先定位一个 ASCII URL（http/https），再用「合法 URL 字符集合」限定结尾。
+    private val BARE_URL_REGEX = Regex(
+        pattern = """(?<!\()(?<!\]\()(?<!<)https?://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+""",
+        option = RegexOption.IGNORE_CASE
+    )
+
+    // 尾随剥离：有些解析器允许括号作为 URL 结尾，但用户写了 `https://a.b)。` 这种，
+    // 我们再剥掉末尾的非配对右括号、句号、逗号、问号、感叹号、顿号、分号、引号、书名号等。
+    private val TRAILING_STRIP_REGEX = Regex(
+        """[。，、；：？！「」『』《》〈〉（）【】""''""（）,.;:!?()\[\]{}"']+${'$'}"""
+    )
+
+    fun normalize(input: String): String {
+        if (input.length < 10) return input
+        return BARE_URL_REGEX.replace(input) { m ->
+            val raw = m.value
+            val stripped = TRAILING_STRIP_REGEX.replace(raw, "")
+            // 剥离后如果尾部出现了未配对括号（例如 URL 本体末端带了一个多余的 )），
+            // 也剥掉未配对的右侧括号。
+            val cleaned = stripUnmatchedRightBrackets(stripped)
+            if (cleaned.isEmpty()) {
+                // 理论上不会发生（裸 URL 不可能被全部剥空），保险回退原串。
+                raw
+            } else {
+                val tail = raw.substring(cleaned.length)
+                "<$cleaned>$tail"
+            }
+        }
+    }
+
+    private fun stripUnmatchedRightBrackets(url: String): String {
+        var depth = 0
+        for (ch in url) {
+            when (ch) {
+                '(', '[', '{' -> depth++
+                ')', ']', '}' -> if (depth > 0) depth-- else {
+                    // 首个未配对的右括号：截断到这里之前
+                    val idx = url.indexOf(ch)
+                    return url.substring(0, idx)
+                }
+            }
+        }
+        return url
+    }
+}
+
 internal class MarkdownRenderCache(
     private val maxEntries: Int = 80
 ) {
@@ -120,14 +181,16 @@ internal fun MarkdownContent(
         Highlights.Builder().theme(SyntaxThemes.atom(darkMode = isDark))
     }
 
+    val normalizedText = remember(text) { MarkdownUrlPreprocessor.normalize(text) }
+
     androidx.compose.runtime.CompositionLocalProvider(
         androidx.compose.material3.LocalContentColor provides color
     ) {
-        val cachedState = cache?.get(text)
+        val cachedState = cache?.get(normalizedText)
         val parsedState = if (cachedState != null) {
             cachedState
         } else {
-            val mdState = rememberMarkdownState(content = text, retainState = true)
+            val mdState = rememberMarkdownState(content = normalizedText, retainState = true)
             val state by mdState.state.collectAsState()
             state
         }
@@ -197,13 +260,13 @@ internal fun MarkdownContent(
             )
 
             is MarkdownParseState.Loading -> PlainMarkdownText(
-                text = text,
+                text = normalizedText,
                 color = color,
                 modifier = modifier
             )
 
             is MarkdownParseState.Error -> PlainMarkdownText(
-                text = text,
+                text = normalizedText,
                 color = color,
                 modifier = modifier
             )
