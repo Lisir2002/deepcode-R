@@ -52,7 +52,7 @@ class ToolResultCache {
         }
         // 按事件类型批量失效
         when (eventType) {
-            "file.edited", "file.written", "file.deleted" -> {
+            "file.edited", "file.written", "file.deleted", "file.mutated" -> {
                 cache.keys.filter { it.toolName in FILE_TOOLS }.forEach { cache.remove(it) }
             }
             "cache.cleared" -> cache.clear()
@@ -113,16 +113,18 @@ class ToolResultCache {
         /** 默认 TTL：60 秒。 */
         const val DEFAULT_TTL_MS = 60_000L
 
-        /** 文件类工具名集合，用于失效匹配。 */
-        val FILE_TOOLS = setOf("readFile", "searchCode", "listFiles", "grep")
+        /**
+         * 文件类工具名集合，用于缓存键判定与失效匹配。
+         * 必须与 [com.R.codecore.di.AgentModule] 中的注册名保持一致，否则对应工具的结果缓存会静默失效。
+         */
+        val FILE_TOOLS = setOf("readFile", "search", "list")
 
-        /** 规范化时忽略的参数（如 sessionId、reason 等不影响结果的字段）。 */
-        val IGNORED_FIELDS = mapOf(
-            "readFile" to setOf("limit", "offset"),
-            "searchCode" to setOf("maxResults"),
-            "listFiles" to setOf("depth"),
-            "grep" to setOf("maxResults")
-        )
+        /**
+         * 规范化时忽略的参数（如 sessionId、reason 等不影响结果语义的字段）。
+         * 当前为空：所有声明参数都参与缓存键，确保分页窗口（start_line/end_line）、
+         * 结果上限（max_matches）等影响返回内容的字段不被错误忽略，避免命中错误缓存。
+         */
+        val IGNORED_FIELDS: Map<String, Set<String>> = emptyMap()
     }
 }
 

@@ -49,7 +49,7 @@ class ZthCapabilityGuard @Inject constructor() {
         "zero_risk_todo_only" to {
             it.capabilities == setOf(ToolCapability.MODIFY_TODO_STATE)
         },
-        // ZR5：工具名白名单（searchCode / listFiles / readFile / getToolDefinitions）不会毁数据
+        // ZR5：工具名白名单（readFile / search / list / viewImage / askUserQuestion / switchMode）不会毁数据
         "zero_risk_toolname_safe_whitelist" to {
             it.toolName in SAFE_BUILTIN_TOOLS_WHITELIST && it.mcpServerName == null
         },
@@ -150,9 +150,11 @@ class ZthCapabilityGuard @Inject constructor() {
         }
     )
 
+    // 只收录「只读 / 非破坏性」的内置工具名，必须与 AgentModule.provideToolRegistry 的实际注册名一致。
+    // 历史名 searchCode/listFiles/todoList/showTodo/getToolDefinitions 已废弃，会让本白名单整体失效。
     private val SAFE_BUILTIN_TOOLS_WHITELIST = setOf(
-        "searchCode", "listFiles", "readFile", "todoList", "showTodo",
-        "getToolDefinitions", "askUserQuestion", "switchMode", "viewImage"
+        "readFile", "search", "list", "viewImage",
+        "askUserQuestion", "switchMode"
     )
 
     private val SAFE_MCP_SERVER_WHITELIST = setOf<String>(

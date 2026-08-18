@@ -73,6 +73,21 @@ sealed class ToolEvent(
         override val type: String = "file.deleted"
     }
 
+    /**
+     * 文件系统可能被任意命令（如 Bash）变更，具体影响文件不可静态判定。
+     * 订阅者：ToolResultCache（失效所有文件类缓存，保守保证缓存新鲜度）。
+     */
+    data class FileSystemMutated(
+        val reason: String = "",
+        override val source: String = "ExecuteCommandTool",
+        override val sessionId: String? = null,
+        override val timestamp: Long = System.currentTimeMillis(),
+        override val depth: Int = 0,
+        override val causalChain: List<String> = emptyList()
+    ) : ToolEvent(source, sessionId, timestamp, depth, causalChain) {
+        override val type: String = "file.mutated"
+    }
+
     // ---------- todo 命名空间 ----------
 
     /** 待办创建。订阅者：MemoryTool（更新记忆）、ToolSessionState（刷快照）。 */

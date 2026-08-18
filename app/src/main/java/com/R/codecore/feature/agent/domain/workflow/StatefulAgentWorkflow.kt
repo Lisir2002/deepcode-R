@@ -119,6 +119,7 @@ class StatefulAgentWorkflow @Inject constructor(
                 is ToolEvent.FileEdited -> toolResultCache.invalidateByEvent("file.edited", event.path)
                 is ToolEvent.FileWritten -> toolResultCache.invalidateByEvent("file.written", event.path)
                 is ToolEvent.FileDeleted -> toolResultCache.invalidateByEvent("file.deleted", event.path)
+                is ToolEvent.FileSystemMutated -> toolResultCache.invalidateByEvent("file.mutated", null)
                 else -> Unit
             }
         }
@@ -937,7 +938,7 @@ class StatefulAgentWorkflow @Inject constructor(
             return ToolRunResult(error.toTransportString(), true, errorClass = classifyError(error.code))
         }
         return try {
-            // L5 结果缓存：纯读工具（readFile/searchCode/listFiles/grep）按 (toolName, argsHash) 键控，
+            // L5 结果缓存：纯读工具（readFile/search/list）按 (toolName, argsHash) 键控，
             // 命中则直接复用结果，避免同参数重复执行。文件类工具由 mtime + TTL 双机制失效。
             val cacheKey = if (name in ToolResultCache.FILE_TOOLS) {
                 context.sessionId?.let { sid -> toolResultCache.buildKey(name, toolCall.arguments, sid) }
@@ -1055,6 +1056,12 @@ class StatefulAgentWorkflow @Inject constructor(
                 val to = (toolCall.arguments["mode"] as? JsonPrimitive)?.contentOrNull ?: ""
                 val reason = (toolCall.arguments["reason"] as? JsonPrimitive)?.contentOrNull ?: ""
                 ToolEvent.StateModeChanged(from = context.mode.name, to = to, reason = reason, sessionId = sessionId)
+            }
+            "Bash" -> {
+                // 任意 shell 命令可能改动工作区文件，具体影响不可静态判定。
+                // 广播 file.mutated 保守失效所有文件类缓存（readFile/search/list），保证缓存新鲜度。
+                val command = (toolCall.arguments["command"] as? JsonPrimitive)?.contentOrNull ?: ""
+                ToolEvent.FileSystemMutated(reason = command.take(200), sessionId = sessionId)
             }
             else -> null
         }
@@ -1304,6 +1311,10 @@ class StatefulAgentWorkflow @Inject constructor(
             }
             val result = finalResult ?: ToolResult.Error("流式工具未返回结果", "MISSING_STREAM_RESULT")
             val processed = toolOutputStore.process(toolCall.name, toolCall.id, result)
+            // L7 事件发布：流式工具（如 Bash）成功后同样广播事件，驱动缓存失效等联动。
+            if (processed is ToolResult.Success) {
+                publishToolEvent(toolCall.name, toolCall, processed, context)
+            }
             val errorClass = (processed as? ToolResult.Error)?.let { classifyError(it.code) }
             return ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, errorClass = errorClass)
         } catch (e: CancellationException) {
