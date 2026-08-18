@@ -295,11 +295,13 @@ class RichTextSegmenterTest {
         assertEquals("xml", codeBlocks[0].language)
         val tables = segs.filterIsInstance<RichSegment.Table>()
         assertEquals(1, tables.size)
-        // URL 剥离中文句号
+        // URL 剥离中文句号：长文中 developer.android.com 位于 [Android Command line tools](url)
+        // 按 urlInMarkdownLinkIsNotReSegmented 设计，MD 链接内部 URL 不被当作裸 URL 识别，
+        // 因此唯一裸 URL 是「阿里镜像：https://...」那一行。
         val paras = segs.filterIsInstance<RichSegment.Paragraph>()
         val urlsInText = paras.flatMap { it.inlines.filterIsInstance<Inline.Url>() }
         assertEquals(1, urlsInText.size)
-        assertEquals("https://developer.android.com/studio", urlsInText[0].url)
+        assertEquals("https://mirrors.aliyun.com/android/repository/", urlsInText[0].url)
         // FilePath
         val fps = paras.flatMap { it.inlines.filterIsInstance<Inline.FilePath>() }
         assertEquals(1, fps.size)
