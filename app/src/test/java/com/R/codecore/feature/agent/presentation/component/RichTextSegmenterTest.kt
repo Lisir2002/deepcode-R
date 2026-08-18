@@ -267,7 +267,7 @@ class RichTextSegmenterTest {
 
             ## 修改清单
 
-            1. 打开 `/workspace/app/src/main/AndroidManifest.xml`
+            1. 打开 /workspace/app/src/main/AndroidManifest.xml
             2. 修改 `package` 字段
 
             ```xml
