@@ -553,13 +553,16 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
+    fun provideOkHttpClient(proxyRouteHolder: com.R.codecore.feature.proxy.domain.ProxyRouteHolder): OkHttpClient {
         // 流式 SSE 下读超时是「相邻数据块之间」的等待上限；120s 给慢启动/长思考留足空间，
         // 真正卡死由上层阶梯重试（RetryPolicy）兜底。
         return OkHttpClient.Builder()
             .connectTimeout(120, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
+            // 网络代理（§4.2）：注入 ProxyRouteHolder 的路由选择器，启用时代理走 mihomo mixed-port，
+            // 未启用直连；以 @Singleton 无依赖 Holder 避免与 ClashProxyManager 成环。
+            .proxySelector(proxyRouteHolder.selector)
             .build()
     }
 

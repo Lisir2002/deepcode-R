@@ -51,6 +51,7 @@ class ClashProxyManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val okHttp: OkHttpClient,
     private val repository: ProxySettingsRepository,
+    private val routeHolder: ProxyRouteHolder,
 ) {
     companion object {
         private const val TAG = "ClashProxyManager"
@@ -62,7 +63,7 @@ class ClashProxyManager @Inject constructor(
         private const val SECRET_FILE = "secret"
 
         /** 被覆盖块接管、需从源配置剥离的顶层键（避免与 fixed override 冲突或被恶意夹带）。 */
-        private val OVERRIDDEN_KEYS = listOf(
+        val OVERRIDDEN_KEYS = listOf(
             "mixed-port", "port", "socks-port", "redir-port",
             "tproxy-port", "external-controller", "external-ui",
             "secret", "allow-lan", "bind-address", "mode"
@@ -86,6 +87,8 @@ class ClashProxyManager @Inject constructor(
             repository.proxyEnabledFlow.collect { e ->
                 enabledCache = e
                 _state.update { it.copy(enabled = e) }
+                // 同步给 App 网络层的路由开关写位，让共享 OkHttp 的 ProxySelector 感知（§4.2）
+                routeHolder.update(e, "127.0.0.1:$MIXED_PORT")
             }
         }
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
@@ -209,8 +212,17 @@ class ClashProxyManager @Inject constructor(
         if (profileId == null && inlineYaml == null) return "需要 profile_id 或 inline yaml"
         val source = when {
             inlineYaml != null -> inlineYaml
-            else -> repository.revealSecret(profileId!!)
-                ?: return "未找到已播种 profile：$profileId"
+            else -> {
+                val revealed = repository.revealSecret(profileId!!)
+                    ?: return "未找到已播种 profile：$profileId"
+                // 订阅型 profile 存的是订阅 URL：需先拉取远端 YAML；手动型存的就是 YAML 原文。
+                val trimmed = revealed.trim()
+                if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+                    fetchSubscriptionYaml(trimmed) ?: return "订阅拉取失败：$profileId"
+                } else {
+                    revealed
+                }
+            }
         }
         if (source.isBlank()) return "配置为空"
         val config = synthesizeConfig(source)

@@ -116,7 +116,8 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToTerminalSettings: () -> Unit = {},
     onNavigateToSshHosts: () -> Unit = {},
-    onStopAllAndCloseTerminal: () -> Unit = {}
+    onStopAllAndCloseTerminal: () -> Unit = {},
+    onNavigateToNetProxy: () -> Unit = {}
 ) {
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val activeProvider by viewModel.activeProvider.collectAsStateWithLifecycle()
@@ -290,7 +291,8 @@ fun SettingsScreen(
                         }
                         section = it
                     },
-                    onNavigateToTerminalSettings = onNavigateToTerminalSettings
+                    onNavigateToTerminalSettings = onNavigateToTerminalSettings,
+                    onNavigateToNetProxy = onNavigateToNetProxy
                 )
                 SettingsSection.Providers -> ProvidersSection(
                     providers = providers,
@@ -475,6 +477,7 @@ internal fun SettingsMenu(
     onOpenLanguageSheet: () -> Unit,
     onOpen: (SettingsSection) -> Unit,
     onNavigateToTerminalSettings: () -> Unit = {},
+    onNavigateToNetProxy: () -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val themeLabel = stringResource(themeMode.labelRes)
@@ -563,6 +566,15 @@ internal fun SettingsMenu(
             icon = FeatherIcons.Terminal,
             keywords = listOf("terminal", "终端", "ssh", "shell", "bash", "命令"),
             action = onNavigateToTerminalSettings
+        ),
+        MenuItem(
+            section = null,
+            group = groupEnv,
+            title = "网络代理",
+            subtitle = "mihomo 代理（VPN）· 导入订阅 / 手动 YAML · 交给模型自理",
+            icon = FeatherIcons.Globe,
+            keywords = listOf("proxy", "代理", "vpn", "clash", "mihomo", "订阅", "network"),
+            action = onNavigateToNetProxy
         ),
         MenuItem(
             section = SettingsSection.Container,

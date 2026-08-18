@@ -435,7 +435,8 @@ fun AppNavigation(
                             com.R.codecore.feature.settings.presentation.component.SettingsSection.RemoteServers
                         )
                     },
-                    onStopAllAndCloseTerminal = { agentViewModel.stopAllAndCloseTerminal() }
+                    onStopAllAndCloseTerminal = { agentViewModel.stopAllAndCloseTerminal() },
+                    onNavigateToNetProxy = { navController.navigate("proxy_config") }
                 )
             }
             composable("capability_center") {
@@ -444,6 +445,13 @@ fun AppNavigation(
                 com.R.codecore.feature.capability.presentation.component.CapabilityCenterScreen(
                     viewModel = capabilityViewModel,
                     currentSessionMode = currentSessionMode,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("proxy_config") {
+                val proxyViewModel: com.R.codecore.feature.proxy.presentation.ProxyViewModel = hiltViewModel()
+                com.R.codecore.feature.proxy.presentation.component.ProxyConfigScreen(
+                    viewModel = proxyViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
