@@ -387,6 +387,8 @@
 
     <!-- Container Settings -->
     <string name="container_bindings">绑定: %1$s</string>
+    <string name="container_share_storage">共享设备存储</string>
+    <string name="container_share_storage_desc">把设备外存绑定进容器 /root/storage/shared，方便在终端里读写本机文件。开启后生效于后续启动的容器进程，已运行的终端需重开。</string>
     <string name="container_reset">重置</string>
     <string name="container_add_image">添加镜像</string>
     <string name="container_remote_ssh">远程 SSH</string>

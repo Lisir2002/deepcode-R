@@ -1,12 +1,14 @@
 package com.R.codecore.feature.settings.data.repository
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.R.codecore.feature.agent.domain.container.ContainerProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -28,9 +30,25 @@ class ContainerSettingsRepository @Inject constructor(
     private companion object {
         val ACTIVE_PROFILE_ID_KEY = stringPreferencesKey("active_profile_id")
         val CUSTOM_PROFILES_KEY = stringPreferencesKey("custom_profiles_json")
+        val STORAGE_SHARE_ENABLED_KEY = booleanPreferencesKey("storage_share_enabled")
         val profileSerializer = ListSerializer(ContainerProfile.serializer())
         val json = Json { ignoreUnknownKeys = true }
     }
+
+    /**
+     * 是否把设备存储绑定进容器（/root/storage/shared → 设备存储根）。默认关闭；
+     * 开启后在 `buildBaseProotArgv` 动态追加 `-b <外存>:<容器路径>`。
+     * 因 proot 的 `-b` 是 per-process 视图，新命令/新终端即生效，已运行的 shell 需重开。
+     */
+    val storageShareEnabledFlow: Flow<Boolean> = context.containerDataStore.data.map { prefs ->
+        prefs[STORAGE_SHARE_ENABLED_KEY] ?: false
+    }
+
+    suspend fun setStorageShareEnabled(enabled: Boolean) {
+        context.containerDataStore.edit { it[STORAGE_SHARE_ENABLED_KEY] = enabled }
+    }
+
+    suspend fun readStorageShareEnabled(): Boolean = storageShareEnabledFlow.first()
 
     /** 当前选中的 profile id；无值时默认内置 Alpine。 */
     val activeProfileIdFlow: Flow<String> = context.containerDataStore.data.map { prefs ->

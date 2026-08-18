@@ -116,10 +116,20 @@ class LinuxContainerEngine @Inject constructor(
     @Volatile
     private var currentProfile: ContainerProfile = ContainerProfile.BUILTIN_ALPINE
 
+    /** 是否将设备存储绑定进容器（缓存自 [containerSettingsRepository.storageShareEnabledFlow]，避免同步读 DataStore）。 */
+    @Volatile
+    private var storageShareEnabled: Boolean = false
+
     init {
         CoroutineScope(Dispatchers.IO).launch {
             containerSettingsRepository.activeProfileIdFlow.collect { id ->
                 currentProfile = resolveProfile(id)
+            }
+        }
+        // 存储共享开关缓存：buildBaseProotArgv 是同步方法，不能在它内部挂起读 DataStore，故用 flow 预热。
+        CoroutineScope(Dispatchers.IO).launch {
+            containerSettingsRepository.storageShareEnabledFlow.collect { enabled ->
+                storageShareEnabled = enabled
             }
         }
     }
@@ -1273,6 +1283,19 @@ class LinuxContainerEngine @Inject constructor(
         val rcodecoreDir = containerInstaller.rcodecoreDir.apply { mkdirs() }
         argv.add("-b")
         argv.add("${rcodecoreDir.absolutePath}:/root/.rcodecore")
+
+        // 「共享设备存储」：开启时把设备外存绑定到容器内 /root/storage/shared（对齐 Termux 心智）。
+        // 走 legacy storage（targetSdk=28），`Environment.getExternalStorageDirectory()` 一般在
+        // 真机返回 /storage/emulated/0，源路径存在才能被 proot -b。per-process 视图，新进程即生效。
+        if (storageShareEnabled) {
+            val external = android.os.Environment.getExternalStorageDirectory()
+            if (external != null && external.exists()) {
+                argv.add("-b")
+                argv.add("${external.absolutePath}:/root/storage/shared")
+            } else {
+                FileLogger.w(TAG, "存储共享已开启但外存路径不可用（${external?.absolutePath}），跳过绑定")
+            }
+        }
 
         // 自定义 profile 的额外绑定与参数（内置 profile 这俩为空，此段无操作，等价于改动前）
         for (b in profile.extraBindings) {

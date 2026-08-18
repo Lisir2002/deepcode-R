@@ -365,6 +365,8 @@
 
     <!-- Container Settings -->
     <string name="container_bindings">Bindings: %1$s</string>
+    <string name="container_share_storage">Share device storage</string>
+    <string name="container_share_storage_desc">Bind device external storage into the container at /root/storage/shared for read/write of on-device files. Applies to subsequently started container processes; reopen running terminals to see the change.</string>
     <string name="container_reset">Reset</string>
     <string name="container_add_image">Add Image</string>
     <string name="container_remote_ssh">Remote SSH</string>

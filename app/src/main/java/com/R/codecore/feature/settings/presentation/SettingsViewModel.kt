@@ -273,6 +273,10 @@ class SettingsViewModel @Inject constructor(
     private val _activeProfileId = MutableStateFlow(ContainerProfile.BUILTIN_ID)
     val activeProfileId: StateFlow<String> = _activeProfileId.asStateFlow()
 
+    /** 「共享设备存储」：把设备外存绑定进容器 /root/storage/shared（默认关）。 */
+    private val _storageShareEnabled = MutableStateFlow(false)
+    val storageShareEnabled: StateFlow<Boolean> = _storageShareEnabled.asStateFlow()
+
     private val _customProfiles = MutableStateFlow<List<ContainerProfile>>(emptyList())
     val customProfiles: StateFlow<List<ContainerProfile>> = _customProfiles.asStateFlow()
 
@@ -387,6 +391,12 @@ class SettingsViewModel @Inject constructor(
             launch {
                 containerSettingsRepository.customProfilesFlow.collectLatest {
                     _customProfiles.value = it
+                }
+            }
+
+            launch {
+                containerSettingsRepository.storageShareEnabledFlow.collectLatest {
+                    _storageShareEnabled.value = it
                 }
             }
 
@@ -916,6 +926,11 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** 切换「共享设备存储」开关。生效对象为后续启动的容器进程，已运行的 shell 需重开。 */
+    fun setStorageShareEnabled(enabled: Boolean) {
+        viewModelScope.launch { containerSettingsRepository.setStorageShareEnabled(enabled) }
     }
 
     /** 重置内置容器（arm64 或 x86_64）：删除对应架构 rootfs，下次初始化重新解压 + provision。 */

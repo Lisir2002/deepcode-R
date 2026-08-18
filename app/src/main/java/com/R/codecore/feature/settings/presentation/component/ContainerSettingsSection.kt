@@ -36,6 +36,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -85,7 +86,9 @@ internal fun ContainerSection(
     onDeleteCustom: (ContainerProfile) -> Unit,
     onSwitchConfirmed: () -> Unit = {},
     onResetBuiltin: (ContainerProfile) -> Unit = {},
-    remoteConnections: List<RemoteConnection> = emptyList()
+    remoteConnections: List<RemoteConnection> = emptyList(),
+    storageShareEnabled: Boolean = false,
+    onStorageShareChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showAddSheetInternal by remember { mutableStateOf(false) }
@@ -100,6 +103,45 @@ internal fun ContainerSection(
         contentPadding = PaddingValues(Spacing.lg),
         verticalArrangement = Arrangement.spacedBy(Spacing.md)
     ) {
+        item(key = "storage_share") {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(Radius.md),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(
+                    1.dp,
+                    if (storageShareEnabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outlineVariant
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.lg),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.container_share_storage),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.container_share_storage_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = Spacing.xs)
+                        )
+                    }
+                    Switch(
+                        checked = storageShareEnabled,
+                        onCheckedChange = onStorageShareChange
+                    )
+                }
+            }
+        }
+
         items(profiles, key = { it.id }) { profile ->
             val active = profile.id == activeProfileId
             Card(
