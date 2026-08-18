@@ -302,8 +302,20 @@ class RichTextSegmenterTest {
         val urlsInText = paras.flatMap { it.inlines.filterIsInstance<Inline.Url>() }
         assertEquals(1, urlsInText.size)
         assertEquals("https://mirrors.aliyun.com/android/repository/", urlsInText[0].url)
-        // FilePath
-        val fps = paras.flatMap { it.inlines.filterIsInstance<Inline.FilePath>() }
+        // FilePath：长文中的路径在有序列表里（「1. 打开 /workspace/...」是 RichSegment.OrderedList，
+        // 不是 Paragraph），所以需要从所有含 inlines 的段类型中汇总查找。
+        val fps = buildList<List<Inline>> {
+            for (seg in segs) {
+                when (seg) {
+                    is RichSegment.Paragraph -> add(seg.inlines)
+                    is RichSegment.Heading -> add(seg.inlines)
+                    is RichSegment.BulletList -> addAll(seg.items)
+                    is RichSegment.OrderedList -> addAll(seg.items)
+                    is RichSegment.Table -> { add(seg.header.flatten()); addAll(seg.rows.map { it.flatten() }) }
+                    else -> {}
+                }
+            }
+        }.flatten().filterIsInstance<Inline.FilePath>()
         assertEquals(1, fps.size)
         assertEquals("/workspace/app/src/main/AndroidManifest.xml", fps[0].path)
     }
