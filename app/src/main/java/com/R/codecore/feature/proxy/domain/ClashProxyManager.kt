@@ -183,11 +183,12 @@ class ClashProxyManager @Inject constructor(
         body: String? = null,
     ): String? = withContext(Dispatchers.IO) {
         val url = "http://$CONTROLLER_HOST:$CONTROLLER_PORT$path"
-        val b = body?.toRequestBody("application/json".toMediaType())
+        val requestBody = body?.toRequestBody("application/json".toMediaType())
+            ?: ByteArray(0).toRequestBody(null)
         val req = when (method) {
             "GET" -> Request.Builder().url(url).header("Authorization", "Bearer $secret").get().build()
-            "PUT" -> Request.Builder().url(url).header("Authorization", "Bearer $secret").put(b).build()
-            "PATCH" -> Request.Builder().url(url).header("Authorization", "Bearer $secret").patch(b).build()
+            "PUT" -> Request.Builder().url(url).header("Authorization", "Bearer $secret").put(requestBody).build()
+            "PATCH" -> Request.Builder().url(url).header("Authorization", "Bearer $secret").patch(requestBody).build()
             else -> return@withContext null
         }
         runCatching {
@@ -234,7 +235,7 @@ class ClashProxyManager @Inject constructor(
      */
     fun exportContainerEnv(): Map<String, String> {
         if (!enabledCache) return emptyMap()
-        val proxy = "http://$MIXED_HOST:$MIXED_PORT"
+        val proxy = "http://$CONTROLLER_HOST:$MIXED_PORT"
         return mapOf(
             "http_proxy" to proxy,
             "https_proxy" to proxy,
