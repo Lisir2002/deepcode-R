@@ -234,18 +234,28 @@ object RichTextSegmenter {
  */
 object InlineTokenizer {
 
-    // 优先级从高到低：行内代码 > 裸 URL > 文件路径 > 粗斜体 > 粗体 > 斜体。
+    // 优先级从高到低：行内代码 > 裸 URL > 文件路径（显式前缀，可无扩展名）> 文件路径（带扩展名）> 粗斜体 > 粗体 > 斜体。
     //
     // URL regex 特别说明：
     //  - 前置 two negative lookbehind：(?<!\]\() 排除 [text](url) 内部 MD 链接场景（测试 urlInMarkdownLinkIsNotReSegmented）
     //                             (?<![^A-Za-z0-9]<) 排除 <https://url> 尖括号场景（测试 urlInAngleBracketsIsIgnored）
-    //  - 字符集 [^\s<>"`\p{IsHan}] 显式排除中日韩汉字：防中文句号/正文被贪心吃进 URL
-    //    （之前 URL 边界全靠 stripUrlTrailing 后置剥标点，但 URL 中间夹中文时它无能为力）
-    //  - 右括号 )] 在 raw match 阶段先保留，后续 stripUrlTrailing 用配对法精确切
+    //  - 字符集排除：
+    //      \s 空格类
+    //      <>"` Markdown/HTML 边界
+    //      \u4e00-\u9fff CJK 统一汉字（防「URL。正文」整段被吃：正文汉字在 URL 中间位置时，后置剥离无法切除）
+    //      \u3000-\u303f CJK 标点（中文句号/顿号/书名号 等）
+    //      \uff00-\uffef 全角字符（全角逗号/括号/冒号 等）
+    //    只允许 ASCII URL 合法字符与半角标点进入 raw match，再由 stripUrlTrailing 精确处理尾边界。
+    //
+    // 文件路径 regex 两条：
+    //  A) 显式前缀 + 无扩展名也允许：~/xxx  ./gradlew  ../a/b  /data/local/tmp
+    //     —— 用户已显式写路径前缀，信号强烈，无扩展名也该识别
+    //  B) 多段 / 且结尾有扩展名：app/src/main/AndroidManifest.xml
+    //     —— 标准项目相对路径，典型是源码文件
     private val INLINE_TOKEN = Regex(
         "`[^`\\n]+`" +
-            "|(?<!\\]\\()(?<![^A-Za-z0-9]<)https?://[^\\s<>\"`\\u4e00-\\u9fff]+" +
-            "|(?:~|\\.\\.?/|/)[^\\s()<>\"`]*\\.[A-Za-z0-9]{1,8}" +
+            "|(?<!\\]\\()(?<![^A-Za-z0-9]<)https?://[^\\s<>\"`\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef]+" +
+            "|(?:~|\\.\\.?/|/)[^\\s()<>\"`\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef]+" +
             "|[\\w.-]+(?:/[\\w.-]+)+\\.[A-Za-z0-9]{1,8}" +
             "|\\*\\*\\*[^*\\n]+\\*\\*\\*" +
             "|\\*\\*[^*\\n]+\\*\\*" +
@@ -310,16 +320,17 @@ object InlineTokenizer {
 
     private fun isFilePathToken(token: String): Boolean {
         if (token.contains("://")) return false
+        // 排除双斜杠开头：//example.com/x 是 URL 的协议相对形式（或注释），非文件路径
+        if (token.startsWith("//")) return false
         if (token.isBlank()) return false
-        // 显式前缀：~/  ./  ../  / —— 这些是用户明确写的路径信号，即使无扩展名也认（如 ./gradlew）
         val explicitPrefix = token.startsWith("/") || token.startsWith("~/") ||
             token.startsWith("./") || token.startsWith("../")
         val isRel = token.count { it == '/' } >= 1
         val hasExt = Regex("\\.[A-Za-z0-9]{1,8}$").containsMatchIn(token)
         return when {
             explicitPrefix && hasExt -> true
-            explicitPrefix && isRel -> true    // 例：./gradlew  ~/.config/rcodecore  /data/local/tmp
-            hasExt && isRel -> true            // 例：app/src/main/AndroidManifest.xml
+            explicitPrefix && isRel -> true
+            hasExt && isRel -> true
             else -> false
         }
     }
