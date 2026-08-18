@@ -549,6 +549,21 @@ class BrowserController @Inject constructor(
                       else if (data) m.size = -1;
                       m.status = 101; m.duration_ms = 0; pushRec(m);
                     });
+                    try {
+                      var origSend = ws.send;
+                      ws.send = function(data) {
+                        var m = newRec('websocket', 'send', url);
+                        try {
+                          if (typeof data === 'string') { m.size = data.length; m.response_snippet = snippet(data); }
+                          else if (data instanceof ArrayBuffer) m.size = data.byteLength;
+                          else if (data && (data.byteLength != null)) m.size = data.byteLength;
+                          else if (data && (data.size != null)) m.size = data.size;
+                          else if (data) m.size = -1;
+                        } catch (e2) { m.size = -1; }
+                        pushRec(m);
+                        return origSend.apply(this, arguments);
+                      };
+                    } catch (e) {}
                   } catch (e) {}
                 }
                 window.WebSocket = function(url, protocols) {
@@ -591,15 +606,19 @@ class BrowserController @Inject constructor(
               }
 
               try {
+                function routeChanged() {
+                  window.__rcb_route_seq++;
+                  try { window.dispatchEvent(new Event('rcb-routechange')); } catch (e2) {}
+                }
                 ['pushState', 'replaceState'].forEach(function(m) {
                   var orig = history[m];
                   history[m] = function() {
                     var r = orig.apply(this, arguments);
-                    window.__rcb_route_seq++;
+                    routeChanged();
                     return r;
                   };
                 });
-                window.addEventListener('popstate', function() { window.__rcb_route_seq++; });
+                window.addEventListener('popstate', routeChanged);
               } catch (e) {}
             })();
         """
@@ -1458,6 +1477,14 @@ class BrowserController @Inject constructor(
     }
 
     // ─────────────────── 动态数据捕获：网络请求日志查询 ───────────────────
+
+    /** 页面内在途业务请求数（fetch/XHR/WS/SSE），供 wait_for_request 超时、network 汇总报告。 */
+    suspend fun networkPendingCount(): Int = mutex.withLock { readPendingCount() }
+
+    /** 页面内网络缓冲总记录数（含已完成与在途）。 */
+    suspend fun networkTotalCount(): Int = mutex.withLock {
+        evalJs("(window.__rcb_net || []).length").trim().toIntOrNull() ?: 0
+    }
 
     /** 列出页面内已记录的异步数据请求（fetch/XHR/WS/SSE），按时间倒序返回最近 limit 条。 */
     suspend fun listNetwork(limit: Int = 20): List<BrowserNetworkRecord> = mutex.withLock {

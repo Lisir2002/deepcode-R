@@ -531,11 +531,15 @@ class BrowserAgentTool @Inject constructor(
     private suspend fun doNetwork(args: Map<String, JsonElement>): ToolResult {
         val limit = runCatching { args["limit"]?.jsonPrimitive?.contentOrNull?.toInt() }.getOrNull() ?: 20
         val records = browserController.listNetwork(limit)
+        val total = browserController.networkTotalCount()
+        val pending = browserController.networkPendingCount()
         return ToolResult.Success(
             JsonObject(
                 mapOf(
                     "ok" to JsonPrimitive(true),
                     "count" to JsonPrimitive(records.size),
+                    "total" to JsonPrimitive(total),
+                    "pending" to JsonPrimitive(pending),
                     "note" to JsonPrimitive("已按时间倒序返回最近 ${records.size} 条异步数据请求（URL/响应均脱敏，敏感参数置 ***）。"),
                     "requests" to networkListToJson(records)
                 )
@@ -564,8 +568,16 @@ class BrowserAgentTool @Inject constructor(
         return if (rec != null) {
             ToolResult.Success(networkToJson(rec))
         } else {
+            val pending = browserController.networkPendingCount()
             ToolResult.Success(
-                JsonObject(mapOf("ok" to JsonPrimitive(false), "found" to JsonPrimitive(false), "note" to JsonPrimitive("等待超时，未捕获到匹配 $url 的请求。")))
+                JsonObject(
+                    mapOf(
+                        "ok" to JsonPrimitive(false),
+                        "found" to JsonPrimitive(false),
+                        "pending" to JsonPrimitive(pending),
+                        "note" to JsonPrimitive("等待超时，未捕获到匹配 $url 的请求。当前在途业务请求 $pending 个。")
+                    )
+                )
             )
         }
     }
