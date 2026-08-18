@@ -109,9 +109,10 @@ fun ServiceBrowserScreen(
         if (addressText != uiState.currentUrl) addressText = uiState.currentUrl
     }
 
-    // 首次进入：若带初始 URL（如模型请求打开某页面）则自动导航
+    // 首次进入：预创建首个激活标签（避免组合期间改 activeTabId 引发 AndroidView 重复挂载崩溃），再按需导航
     LaunchedEffect(Unit) {
-        if (!initialUrl.isNullOrBlank() && uiState.currentUrl.isBlank()) {
+        browserController.ensureActiveTab()
+        if (!initialUrl.isNullOrBlank()) {
             browserController.navigate(initialUrl)
         }
     }
@@ -260,26 +261,35 @@ fun ServiceBrowserScreen(
                 .padding(padding)
                 .imePadding()
         ) {
-            // WebView 容器：按激活标签 key 切换，每个标签独占一个 WebView 实例
-            key(uiState.activeTabId) {
-                val webView = remember { browserController.bind() }
+            // WebView 容器：按激活标签 key 切换，每个标签独占一个 WebView 实例。
+            // 首个标签尚未创建（activeTabId 为空）时先渲染占位，避免在组合期间创建标签引发 key 跳变导致崩溃。
+            if (uiState.activeTabId.isBlank()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.White)
-                ) {
-                    AndroidView(
-                        factory = { webView },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    if (uiState.isLoading) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator()
+                )
+            } else {
+                key(uiState.activeTabId) {
+                    val webView = remember { browserController.bind() }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.White)
+                    ) {
+                        AndroidView(
+                            factory = { webView },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        if (uiState.isLoading) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
                         }
                     }
                 }

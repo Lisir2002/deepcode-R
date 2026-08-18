@@ -681,13 +681,18 @@ class BrowserController @Inject constructor(
      * 浏览器页挂载 WebView。创建（首次）或复用已有实例，配置好后返回给 Compose AndroidView。
      * 必须在主线程调用（Compose AndroidView factory 即主线程）。
      */
-    @SuppressLint("SetJavaScriptEnabled")
-    fun bind(): WebView {
+    /** 确保存在一个激活标签（浏览器页组合前调用；避免 composition 期间创建标签引发 key 跳变崩溃）。 */
+    fun ensureActiveTab() {
         if (tabs.isEmpty()) {
             val tab = createTab(null)
             activeTabId = tab.id
             applyActiveTab(tab)
         }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    fun bind(): WebView {
+        ensureActiveTab()
         val active = activeTab() ?: createTab(null).also {
             activeTabId = it.id
             applyActiveTab(it)
