@@ -92,6 +92,7 @@ class LinuxContainerEngine @Inject constructor(
     /** Level 2+3 融合：5 路真实信号聚合器；按 bundleId/custom(null) 各自独立，公开 StateFlow 给 UI。 */
     val progressAggregator: RealProgressAggregator,
     private val concurrencyPolicy: PrefetchConcurrencyPolicy,
+    private val rcbBridge: com.R.codecore.feature.agent.domain.bridge.RcbBridge,
 ) : CommandEngine {
     /** 容器初始化的实时进度，供所有入口（终端页/AI/后台终端/MCP）共享同一份状态。 */
     private val _initProgress = MutableStateFlow<ContainerInitState>(ContainerInitState.Idle)
@@ -119,6 +120,9 @@ class LinuxContainerEngine @Inject constructor(
     /** 是否将设备存储绑定进容器（缓存自 [containerSettingsRepository.storageShareEnabledFlow]，避免同步读 DataStore）。 */
     @Volatile
     private var storageShareEnabled: Boolean = false
+
+    /** 存储共享是否开着（供终端构造提示横幅等 UI 侧判断）。 */
+    fun isStorageShareEnabled(): Boolean = storageShareEnabled
 
     init {
         CoroutineScope(Dispatchers.IO).launch {
@@ -1326,8 +1330,11 @@ class LinuxContainerEngine @Inject constructor(
             // (5.1.107.x) 的 seccomp 过滤表已包含 statx，默认 seccomp 模式即可正确翻译，故此处
             // **刻意不设 PROOT_NO_SECCOMP**——这正是 Termux 自己用 proot 的方式；强制全量 ptrace
             // (PROOT_NO_SECCOMP=1) 反而在本设备触发过 ptrace(PEEKDATA) I/O error。
-            "PATH" to "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PATH" to "/root/.rcodecore/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME" to "/root",
+            // 容器 ⇄ 宿主桥端点：让 rcb-* 命令能连回宿主 App（见 RcbBridge）。首次调用会懒启动服务。
+            "RCB_BRIDGE_ADDR" to rcbBridge.address(),
+            "RCB_BRIDGE_TOKEN" to rcbBridge.authToken(),
             // git 全局配置指向持久挂载里的 .gitconfig（/root/.rcodecore 绑定到宿主 filesDir/rcodecore，
             // 跨 rootfs 升级不丢）。git-credentials 同放该目录，credential.helper=store 经此读。
             // 让终端/AI/UI 三端 git 都读同一份配置与凭据，详见 GitCredentialsFileSync。

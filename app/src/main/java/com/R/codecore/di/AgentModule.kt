@@ -672,6 +672,7 @@ object AgentModule {
         memoryTool: com.R.codecore.feature.agent.domain.tool.memory.MemoryTool,
         generateImageTool: com.R.codecore.feature.agent.domain.tool.image.GenerateImageTool,
         browserTool: BrowserAgentTool,
+        storageTool: com.R.codecore.feature.agent.domain.tool.storage.StorageTool,
         resultTypeRegistry: com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
     ): ToolRegistry {
         return ToolRegistry().apply {
@@ -714,6 +715,8 @@ object AgentModule {
             registerTool("generateImage", generateImageTool)
             // ══ 内置服务浏览器：模型在共享 WebView 会话中浏览/操作网页（含容器服务与登录站点）
             registerTool("browser", browserTool)
+            // ══ 设备存储护栏工具：结构化 list/read/write/delete + ASK 确认（见设计「护栏」）
+            registerTool("device_storage", storageTool)
         }
     }
 

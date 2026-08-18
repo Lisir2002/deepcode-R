@@ -120,7 +120,9 @@ enum class ToolCapability {
     /** C.4.4 ZTH：加载 Skill 文件（执行 .md/.skill 外部规则）。 */
     LOAD_SKILL_BUNDLE,
     /** C.4.8 ZTH：修改用户已确认 sentinel / 保留策略 / 硬约束。 */
-    MODIFY_USER_CONFIRMED_STATE
+    MODIFY_USER_CONFIRMED_STATE,
+    /** 设备存储（外部共享存储）的读/写。护栏：走结构化工具 + ASK 确认，不依赖 shell 解析。 */
+    ACCESS_DEVICE_STORAGE
 }
 
 data class PendingToolPermission(

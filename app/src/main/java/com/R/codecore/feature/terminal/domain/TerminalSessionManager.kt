@@ -120,7 +120,7 @@ class TerminalSessionManager @Inject constructor(
             .getOrDefault(false)
         val id = nextId()
         val shellCommand = if (installed) {
-            "cd ~/workspace 2>/dev/null; export ENV=/etc/profile; exec ${containerEngine.defaultShell()}"
+            "cd ~/workspace 2>/dev/null; export ENV=/etc/profile; ${storageBannerCommand()}exec ${containerEngine.defaultShell()}"
         } else {
             // 原生 sh：把 cwd 设到 app 私有 files/workspace（WorkspaceRepository 保证目录存在）；
             // 写一个 MOTD 告诉用户此为 fallback shell、仅基础命令、apk/包管理不可用。
@@ -378,7 +378,7 @@ class TerminalSessionManager @Inject constructor(
         val installed = runCatching { ensureContainer(); containerEngine.isContainerInstalled() }
             .getOrDefault(false)
         val session = if (installed) {
-            buildSession("cd ~/workspace 2>/dev/null; export ENV=/etc/profile; exec ${containerEngine.defaultShell()}")
+            buildSession("cd ~/workspace 2>/dev/null; export ENV=/etc/profile; ${storageBannerCommand()}exec ${containerEngine.defaultShell()}")
         } else {
             val cwd = workspaceRepository.currentPath()
             buildNativeFallbackSession("cd \"$cwd\" 2>/dev/null; exec /system/bin/sh -i")
@@ -520,6 +520,19 @@ class TerminalSessionManager @Inject constructor(
 
     private fun bumpRevision() {
         _revision.value = _revision.value + 1
+    }
+
+    /**
+     * 终端启动时打印「设备存储」提示横幅的命令片段。
+     * 开关开着→提示已共享（新终端生效）；关着→提示如何去开（否则用户全凭猜，见存储互通 issue）。
+     * 返回空串则无横幅；返回带尾随 `; ` 的命令片段，直接拼在 `exec <shell>` 之前。
+     */
+    private fun storageBannerCommand(): String {
+        return if (containerEngine.isStorageShareEnabled()) {
+            "printf '\\n[设备存储] ~/storage/shared 已共享本机外存（新终端生效）\\n'; "
+        } else {
+            "printf '\\n[提示] 想访问本机文件？开「共享设备存储」：设置→容器→最上开关（新终端生效）\\n'; "
+        }
     }
 
     /**
