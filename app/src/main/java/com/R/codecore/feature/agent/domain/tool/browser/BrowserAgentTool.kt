@@ -9,13 +9,20 @@ import com.R.codecore.feature.agent.domain.tool.ToolResult
 import com.R.codecore.feature.browser.domain.BrowserController
 import com.R.codecore.feature.browser.domain.BrowserCredential
 import com.R.codecore.feature.browser.domain.BrowserCredentialStore
+import com.R.codecore.feature.browser.domain.BrowserDownloadInfo
 import com.R.codecore.feature.browser.domain.BrowserElement
 import com.R.codecore.feature.browser.domain.BrowserLoginPromptManager
+import com.R.codecore.feature.browser.domain.BrowserNetworkRecord
 import com.R.codecore.feature.browser.domain.BrowserPageSnapshot
+import com.R.codecore.feature.browser.domain.BrowserTabInfo
+import com.R.codecore.feature.browser.domain.BrowserTakeoverManager
+import com.R.codecore.feature.workspace.domain.WorkspacePathMapper
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.URI
@@ -48,7 +55,9 @@ import javax.inject.Inject
 class BrowserAgentTool @Inject constructor(
     private val browserController: BrowserController,
     private val credentialStore: BrowserCredentialStore,
-    private val loginPromptManager: BrowserLoginPromptManager
+    private val loginPromptManager: BrowserLoginPromptManager,
+    private val takeoverManager: BrowserTakeoverManager,
+    private val pathMapper: WorkspacePathMapper
 ) : AgentTool() {
 
     private companion object {
@@ -62,31 +71,35 @@ class BrowserAgentTool @Inject constructor(
     override val name = "browser"
     override val description =
         "操作内置服务浏览器。可打开网页（外网或容器内 http://localhost:PORT）、提取页面内容、点击/输入/提交表单、" +
-            "截图、执行 JS、自动登录。与用户共享同一个浏览会话和登录态。" +
-            "典型用法：browser.navigate(url) → browser.snapshot() 查看页面 → browser.click/type/submit 操作 → browser.screenshot() 查看效果。"
+            "悬停/拖拽/按键/上传文件、前后退/刷新、截图、执行 JS、自动登录、请求用户接管(takeover)。与用户共享同一个浏览会话和登录态。" +
+            "典型用法：browser.navigate(url) → browser.snapshot() 查看页面 → browser.click/type/submit 操作 → browser.screenshot() 查看效果。" +
+            "遇到验证码/支付/二次认证等无法自动完成的步骤时，调用 takeover 请求用户亲自接管。"
     override val capabilities = setOf(ToolCapability.NETWORK_READ, ToolCapability.NETWORK_WRITE, ToolCapability.USER_INTERACTION)
 
     override val parameters: Map<String, ToolParameter> = mapOf(
         "action" to ToolParameter(
             name = "action",
             type = ParameterType.STRING,
-            description = "要执行的浏览器动作：navigate / snapshot / click / type / select_option / submit / scroll / screenshot / evaluate / wait_for / get_attribute / handle_dialog / login",
+            description = "要执行的浏览器动作：navigate / snapshot / extract / click / type / select_option / submit / scroll / hover / drag / press_key / upload_file / back / forward / reload / screenshot / evaluate / wait_for / get_attribute / handle_dialog / login / takeover / new_tab / switch_tab / close_tab / list_tabs / downloads / network / network_get / wait_for_request",
             required = true,
             enum = listOf(
-                "navigate", "snapshot", "click", "type", "select_option", "submit",
-                "scroll", "screenshot", "evaluate", "wait_for", "get_attribute", "handle_dialog", "login"
+                "navigate", "snapshot", "extract", "click", "type", "select_option", "submit",
+                "scroll", "hover", "drag", "press_key", "upload_file", "back", "forward", "reload",
+                "screenshot", "evaluate", "wait_for", "get_attribute", "handle_dialog", "login", "takeover",
+                "new_tab", "switch_tab", "close_tab", "list_tabs", "downloads",
+                "network", "network_get", "wait_for_request"
             )
         ),
         "url" to ToolParameter(
             name = "url",
             type = ParameterType.STRING,
-            description = "navigate 时必填：要打开的 URL（可省略协议，自动补 https://；容器服务用 http://localhost:端口）",
+            description = "navigate / wait_for_request 时必填；new_tab / network_get 时可选：要打开的 URL 或要匹配的请求 URL 子串（可省略协议，自动补 https://；容器服务用 http://localhost:端口）",
             required = false
         ),
         "element_id" to ToolParameter(
             name = "element_id",
             type = ParameterType.STRING,
-            description = "click/type/select_option/submit/get_attribute 时必填：snapshot 返回的元素 id",
+            description = "click/type/select_option/submit/get_attribute 时必填：snapshot 返回的元素 id；screenshot 时可选：仅截取该元素区域",
             required = false
         ),
         "text" to ToolParameter(
@@ -135,7 +148,62 @@ class BrowserAgentTool @Inject constructor(
         "timeout_ms" to ToolParameter(
             name = "timeout_ms",
             type = ParameterType.INTEGER,
-            description = "wait_for 时可选：等待超时毫秒，默认 10000",
+            description = "wait_for / wait_for_request 时可选：等待超时毫秒（wait_for 默认 10000，wait_for_request 默认 15000）",
+            required = false
+        ),
+        "limit" to ToolParameter(
+            name = "limit",
+            type = ParameterType.INTEGER,
+            description = "network 时可选：返回最近多少条网络请求记录，默认 20（1-100）",
+            required = false
+        ),
+        "network_id" to ToolParameter(
+            name = "network_id",
+            type = ParameterType.INTEGER,
+            description = "network_get 时可选：按记录的 id 精确查询（与 url 二选一，都空则返回最新一条）",
+            required = false
+        ),
+        "message" to ToolParameter(
+            name = "message",
+            type = ParameterType.STRING,
+            description = "takeover 时必填：告诉用户需要亲自完成什么（如验证码、支付、二次认证、人工决策）",
+            required = false
+        ),
+        "key" to ToolParameter(
+            name = "key",
+            type = ParameterType.STRING,
+            description = "press_key 时必填：要按下的键（如 Enter、Escape、Tab、Backspace 或单字符）",
+            required = false
+        ),
+        "target_element_id" to ToolParameter(
+            name = "target_element_id",
+            type = ParameterType.STRING,
+            description = "drag 时必填：拖拽目标元素的 id（把 element_id 拖到该元素上）",
+            required = false
+        ),
+        "file_path" to ToolParameter(
+            name = "file_path",
+            type = ParameterType.STRING,
+            description = "upload_file 时必填：要上传的本地文件路径（容器内路径，如 ~/workspace/data/input.csv）",
+            required = false
+        ),
+        "mode" to ToolParameter(
+            name = "mode",
+            type = ParameterType.STRING,
+            description = "extract 时可选：text（默认，纯文本）/ links / headings / table / html",
+            required = false,
+            enum = listOf("text", "links", "headings", "table", "html")
+        ),
+        "compact" to ToolParameter(
+            name = "compact",
+            type = ParameterType.BOOLEAN,
+            description = "snapshot 时可选：true 时只返回元素摘要，省略页面全文，节省 token（默认 false 返回完整快照）",
+            required = false
+        ),
+        "tab_id" to ToolParameter(
+            name = "tab_id",
+            type = ParameterType.STRING,
+            description = "switch_tab / close_tab 时必填：要切换/关闭的标签 id（从 list_tabs 获取）",
             required = false
         )
     )
@@ -145,18 +213,35 @@ class BrowserAgentTool @Inject constructor(
         return try {
             when (action) {
                 "navigate" -> doNavigate(args)
-                "snapshot" -> ToolResult.Success(snapshotToJson(browserController.snapshot()))
+                "snapshot" -> doSnapshot(args)
+                "extract" -> doExtract(args)
                 "click" -> doClick(args)
                 "type" -> doType(args)
                 "select_option" -> doSelect(args)
                 "submit" -> doSubmit(args)
                 "scroll" -> doScroll(args)
-                "screenshot" -> doScreenshot()
+                "hover" -> doHover(args)
+                "drag" -> doDrag(args)
+                "press_key" -> doPressKey(args)
+                "upload_file" -> doUploadFile(args)
+                "back" -> ToolResult.Success(snapshotToJson(browserController.back()))
+                "forward" -> ToolResult.Success(snapshotToJson(browserController.forward()))
+                "reload" -> ToolResult.Success(snapshotToJson(browserController.reloadPage()))
+                "screenshot" -> doScreenshot(args)
                 "evaluate" -> doEvaluate(args)
                 "wait_for" -> doWaitFor(args)
                 "get_attribute" -> doGetAttribute(args)
                 "handle_dialog" -> doHandleDialog(args)
                 "login" -> doLogin()
+                "takeover" -> doTakeover(args)
+                "new_tab" -> doNewTab(args)
+                "switch_tab" -> doSwitchTab(args)
+                "close_tab" -> doCloseTab(args)
+                "list_tabs" -> doListTabs()
+                "downloads" -> doListDownloads()
+                "network" -> doNetwork(args)
+                "network_get" -> doNetworkGet(args)
+                "wait_for_request" -> doWaitForRequest(args)
                 else -> ToolResult.Error("未知动作: $action", "UNKNOWN_ACTION")
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -169,8 +254,23 @@ class BrowserAgentTool @Inject constructor(
 
     // ─────────────────────────── 动作实现 ───────────────────────────
 
+    private suspend fun doSnapshot(args: Map<String, JsonElement>): ToolResult {
+        val compact = args["compact"]?.jsonPrimitive?.booleanOrNull ?: false
+        val snap = browserController.snapshot()
+        return ToolResult.Success(snapshotToJson(snap, compact))
+    }
+
+    private suspend fun doExtract(args: Map<String, JsonElement>): ToolResult {
+        val selector = args["selector"]?.jsonPrimitive?.contentOrNull
+        val mode = args["mode"]?.jsonPrimitive?.contentOrNull ?: "text"
+        val result = browserController.extract(selector, mode)
+        val parsed = runCatching { json.parseToJsonElement(result) }.getOrNull()
+        return if (parsed != null) ToolResult.Success(parsed) else ToolResult.Success(JsonPrimitive(result))
+    }
+
     private suspend fun doNavigate(args: Map<String, JsonElement>): ToolResult {
         val url = args["url"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("navigate 需要 url 参数", "MISSING_URL")
+        browserController.validateUrl(url)?.let { return ToolResult.Error(it, "UNSAFE_URL") }
         val snap = browserController.navigate(url)
         return ToolResult.Success(snapshotToJson(snap))
     }
@@ -207,15 +307,57 @@ class BrowserAgentTool @Inject constructor(
         return ToolResult.Success(snapshotToJson(snap))
     }
 
-    private suspend fun doScreenshot(): ToolResult {
-        val dataUrl = browserController.screenshot()
+    private suspend fun doHover(args: Map<String, JsonElement>): ToolResult {
+        val id = args["element_id"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("hover 需要 element_id", "MISSING_ELEMENT_ID")
+        val snap = browserController.hover(id)
+        return ToolResult.Success(snapshotToJson(snap))
+    }
+
+    private suspend fun doDrag(args: Map<String, JsonElement>): ToolResult {
+        val id = args["element_id"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("drag 需要 element_id", "MISSING_ELEMENT_ID")
+        val targetId = args["target_element_id"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("drag 需要 target_element_id", "MISSING_TARGET_ELEMENT_ID")
+        val snap = browserController.drag(id, targetId)
+        return ToolResult.Success(snapshotToJson(snap))
+    }
+
+    private suspend fun doPressKey(args: Map<String, JsonElement>): ToolResult {
+        val id = args["element_id"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("press_key 需要 element_id", "MISSING_ELEMENT_ID")
+        val key = args["key"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("press_key 需要 key", "MISSING_KEY")
+        val snap = browserController.pressKey(id, key)
+        return ToolResult.Success(snapshotToJson(snap))
+    }
+
+    private suspend fun doUploadFile(args: Map<String, JsonElement>): ToolResult {
+        val id = args["element_id"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("upload_file 需要 element_id", "MISSING_ELEMENT_ID")
+        val filePath = args["file_path"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("upload_file 需要 file_path", "MISSING_FILE_PATH")
+        val hostFile = runCatching { pathMapper.toHostFile(filePath) }.getOrNull()
+            ?: java.io.File(filePath)
+        val error = browserController.uploadFile(id, hostFile)
+        return if (error == null) {
+            val after = browserController.snapshot()
+            ToolResult.Success(
+                JsonObject(
+                    mapOf(
+                        "ok" to JsonPrimitive(true),
+                        "note" to JsonPrimitive("已上传文件 ${pathMapper.toContainerPath(hostFile.absolutePath)} 到元素 #$id"),
+                        "page" to snapshotToJson(after)
+                    )
+                )
+            )
+        } else {
+            ToolResult.Error(error, "UPLOAD_FAILED")
+        }
+    }
+
+    private suspend fun doScreenshot(args: Map<String, JsonElement>): ToolResult {
+        val elementId = args["element_id"]?.jsonPrimitive?.contentOrNull
+        val dataUrl = browserController.screenshot(elementId)
             ?: return ToolResult.Error("截图失败：浏览器页面尚未渲染（请先在浏览器页打开页面）", "SCREENSHOT_EMPTY")
-        // 截图非常大，不适合完整塞进上下文；返回一个提示 + 数据 URL 交由上层决定是否喂多模态
         return ToolResult.Success(
             JsonObject(
                 mapOf(
                     "ok" to JsonPrimitive(true),
-                    "note" to JsonPrimitive("页面截图（data:image/png;base64），多模态模型可直接查看。"),
+                    "note" to JsonPrimitive(if (elementId != null) "元素截图（data:image/png;base64），多模态模型可直接查看。" else "页面截图（data:image/png;base64），多模态模型可直接查看。"),
                     "image_data_url" to JsonPrimitive(dataUrl)
                 )
             )
@@ -251,6 +393,22 @@ class BrowserAgentTool @Inject constructor(
             ToolResult.Success(JsonPrimitive("对话框已${if (accept) "确认" else "取消"}"))
         } else {
             ToolResult.Success(JsonPrimitive("当前没有待处理的对话框"))
+        }
+    }
+
+    /** 请求用户接管当前页面（验证码/支付/二次认证等），用户完成后返回最新快照。 */
+    private suspend fun doTakeover(args: Map<String, JsonElement>): ToolResult {
+        val message = args["message"]?.jsonPrimitive?.contentOrNull
+            ?: "请用户亲自完成当前页面上的操作（如验证码、支付、二次认证等）。"
+        val snap = browserController.snapshot()
+        val host = runCatching { URI(snap.url).host }.getOrNull().orEmpty()
+        val title = if (host.isNotBlank()) "需要你接管 $host" else "需要你接管浏览器"
+        val answer = takeoverManager.awaitTakeover(title, message)
+        return if (answer.confirmed) {
+            val after = browserController.snapshot()
+            ToolResult.Success(snapshotToJson(after))
+        } else {
+            ToolResult.Success(JsonPrimitive("用户未接管/取消了接管请求。"))
         }
     }
 
@@ -300,37 +458,229 @@ class BrowserAgentTool @Inject constructor(
         )
     }
 
-    // ─────────────────────────── 序列化辅助 ───────────────────────────
+    // ─────────────────────────── 多标签页 ───────────────────────────
 
-    private fun snapshotToJson(snap: BrowserPageSnapshot): JsonObject {
-        val elements = snap.elements.take(MAX_ELEMENTS).map { el ->
+    private suspend fun doNewTab(args: Map<String, JsonElement>): ToolResult {
+        val url = args["url"]?.jsonPrimitive?.contentOrNull
+        url?.let { browserController.validateUrl(it)?.let { e -> return ToolResult.Error(e, "UNSAFE_URL") } }
+        val info = browserController.newTab(url)
+        return ToolResult.Success(
             JsonObject(
                 mapOf(
-                    "id" to JsonPrimitive(el.id),
-                    "tag" to JsonPrimitive(el.tag),
-                    "type" to JsonPrimitive(el.type),
-                    "text" to JsonPrimitive(el.text),
-                    "disabled" to JsonPrimitive(el.disabled)
+                    "ok" to JsonPrimitive(true),
+                    "tab_id" to JsonPrimitive(info.id),
+                    "title" to JsonPrimitive(info.title),
+                    "url" to JsonPrimitive(info.url),
+                    "tabs" to tabsToJson()
                 )
             )
+        )
+    }
+
+    private suspend fun doSwitchTab(args: Map<String, JsonElement>): ToolResult {
+        val id = args["tab_id"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("switch_tab 需要 tab_id", "MISSING_TAB_ID")
+        val err = browserController.switchTab(id)
+        return if (err != null) ToolResult.Error(err, "SWITCH_TAB_FAILED")
+        else ToolResult.Success(snapshotToJson(browserController.snapshot()))
+    }
+
+    private suspend fun doCloseTab(args: Map<String, JsonElement>): ToolResult {
+        val id = args["tab_id"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("close_tab 需要 tab_id", "MISSING_TAB_ID")
+        val err = browserController.closeTab(id)
+        return if (err != null) ToolResult.Error(err, "CLOSE_TAB_FAILED")
+        else ToolResult.Success(
+            JsonObject(
+                mapOf(
+                    "ok" to JsonPrimitive(true),
+                    "tabs" to tabsToJson(),
+                    "page" to snapshotToJson(browserController.snapshot())
+                )
+            )
+        )
+    }
+
+    private fun doListTabs(): ToolResult = ToolResult.Success(tabsToJson())
+
+    private fun doListDownloads(): ToolResult {
+        val downloads = browserController.listDownloads()
+        return ToolResult.Success(
+            JsonObject(
+                mapOf(
+                    "count" to JsonPrimitive(downloads.size),
+                    "downloads" to JsonArray(
+                        downloads.map { d ->
+                            JsonObject(
+                                mapOf(
+                                    "id" to JsonPrimitive(d.id),
+                                    "url" to JsonPrimitive(d.url),
+                                    "file_name" to JsonPrimitive(d.fileName),
+                                    "path" to JsonPrimitive(d.path),
+                                    "status" to JsonPrimitive(d.status),
+                                    "error" to JsonPrimitive(d.error)
+                                )
+                            )
+                        }
+                    )
+                )
+            )
+        )
+    }
+
+    // ─────────────────────────── 动态数据捕获：网络请求查询 ───────────────────────────
+
+    private suspend fun doNetwork(args: Map<String, JsonElement>): ToolResult {
+        val limit = runCatching { args["limit"]?.jsonPrimitive?.contentOrNull?.toInt() }.getOrNull() ?: 20
+        val records = browserController.listNetwork(limit)
+        return ToolResult.Success(
+            JsonObject(
+                mapOf(
+                    "ok" to JsonPrimitive(true),
+                    "count" to JsonPrimitive(records.size),
+                    "note" to JsonPrimitive("已按时间倒序返回最近 ${records.size} 条异步数据请求（URL/响应均脱敏，敏感参数置 ***）。"),
+                    "requests" to networkListToJson(records)
+                )
+            )
+        )
+    }
+
+    private suspend fun doNetworkGet(args: Map<String, JsonElement>): ToolResult {
+        val url = args["url"]?.jsonPrimitive?.contentOrNull
+        val id = runCatching { args["network_id"]?.jsonPrimitive?.contentOrNull?.toInt() }.getOrNull()
+        val rec = browserController.getNetwork(url, id)
+        return if (rec != null) {
+            ToolResult.Success(networkToJson(rec))
+        } else {
+            ToolResult.Success(
+                JsonObject(mapOf("ok" to JsonPrimitive(false), "found" to JsonPrimitive(false), "note" to JsonPrimitive("未找到匹配的网络请求记录。")))
+            )
         }
+    }
+
+    private suspend fun doWaitForRequest(args: Map<String, JsonElement>): ToolResult {
+        val url = args["url"]?.jsonPrimitive?.contentOrNull
+            ?: return ToolResult.Error("wait_for_request 需要 url 参数（要等待的请求 URL 子串）", "MISSING_URL")
+        val timeout = runCatching { args["timeout_ms"]?.jsonPrimitive?.contentOrNull?.toLong() }.getOrNull() ?: 15_000L
+        val rec = browserController.waitForRequest(url, timeout)
+        return if (rec != null) {
+            ToolResult.Success(networkToJson(rec))
+        } else {
+            ToolResult.Success(
+                JsonObject(mapOf("ok" to JsonPrimitive(false), "found" to JsonPrimitive(false), "note" to JsonPrimitive("等待超时，未捕获到匹配 $url 的请求。")))
+            )
+        }
+    }
+
+    private fun networkListToJson(records: List<BrowserNetworkRecord>): JsonArray =
+        JsonArray(records.map { networkToJson(it) })
+
+    private fun networkToJson(rec: BrowserNetworkRecord): JsonObject =
+        JsonObject(
+            mapOf(
+                "id" to JsonPrimitive(rec.id),
+                "op" to JsonPrimitive(rec.op),
+                "method" to JsonPrimitive(rec.method),
+                "url" to JsonPrimitive(rec.url),
+                "status" to JsonPrimitive(rec.status),
+                "duration_ms" to JsonPrimitive(rec.durationMs),
+                "size" to JsonPrimitive(rec.size),
+                "response_snippet" to JsonPrimitive(rec.responseSnippet),
+                "error" to JsonPrimitive(rec.error)
+            )
+        )
+
+    private fun tabsToJson(): JsonArray {
+        val activeId = browserController.uiState.value.activeTabId
+        return JsonArray(
+            browserController.listTabs().map { t ->
+                JsonObject(
+                    mapOf(
+                        "id" to JsonPrimitive(t.id),
+                        "title" to JsonPrimitive(t.title),
+                        "url" to JsonPrimitive(t.url),
+                        "active" to JsonPrimitive(t.id == activeId)
+                    )
+                )
+            }
+        )
+    }
+
+    // ─────────────────────────── 序列化辅助 ───────────────────────────
+
+    private fun snapshotToJson(snap: BrowserPageSnapshot, compact: Boolean = false): JsonObject {
+        val elements = snap.elements.take(MAX_ELEMENTS)
+        val elementsJson = JsonArray(
+            elements.map { el ->
+                JsonObject(
+                    mapOf(
+                        "id" to JsonPrimitive(el.id),
+                        "kind" to JsonPrimitive(el.kind),
+                        "tag" to JsonPrimitive(el.tag),
+                        "type" to JsonPrimitive(el.type),
+                        "label" to JsonPrimitive(el.label),
+                        "text" to JsonPrimitive(if (el.sensitive) "" else el.text),
+                        "value" to JsonPrimitive(if (el.sensitive) "" else el.value),
+                        "href" to JsonPrimitive(el.href),
+                        "placeholder" to JsonPrimitive(el.placeholder),
+                        "checked" to JsonPrimitive(el.checked),
+                        "disabled" to JsonPrimitive(el.disabled),
+                        "required" to JsonPrimitive(el.required),
+                        "readonly" to JsonPrimitive(el.readonly),
+                        "options" to JsonArray(
+                            el.options.map { o ->
+                                JsonObject(mapOf("value" to JsonPrimitive(o.value), "text" to JsonPrimitive(o.text)))
+                            }
+                        ),
+                        "sensitive" to JsonPrimitive(el.sensitive)
+                    )
+                )
+            }
+        )
+        // 每控件一行的紧凑清单，模型可快速扫出「编号 + 控件类型 + 名称 + 状态」，据此用 element_id 精确操作
         val sb = StringBuilder()
-        for (e in elements) {
-            sb.append("[#").append((e["id"] as JsonPrimitive).content).append("] ")
-            sb.append((e["tag"] as JsonPrimitive).content)
-            val t = (e["text"] as JsonPrimitive).content
-            if (t.isNotBlank()) sb.append(": ").append(t)
+        for (el in elements) {
+            sb.append('[').append(el.id).append("] ").append(el.kind)
+            val name = el.label.ifBlank { el.text }.ifBlank { el.value }
+            if (name.isNotBlank()) sb.append(" \"").append(name).append('"')
+            when {
+                el.kind.endsWith(":checkbox") || el.kind.endsWith(":radio") ->
+                    sb.append(if (el.checked) " [已勾选]" else " [未勾选]")
+                el.kind == "select" && el.value.isNotBlank() ->
+                    sb.append(" [当前=").append(el.value).append(']')
+            }
+            if (el.kind == "select" && el.options.isNotEmpty()) {
+                sb.append(" 选项=").append(el.options.joinToString("/") { o -> o.text.ifBlank { o.value } })
+            }
+            if (el.required) sb.append(" [必填]")
+            if (el.disabled) sb.append(" [禁用]")
+            if (el.kind == "link" && el.href.isNotBlank()) sb.append(" -> ").append(el.href)
+            if (el.placeholder.isNotBlank() && el.label.isBlank()) sb.append(" (placeholder=").append(el.placeholder).append(')')
             sb.append('\n')
         }
-        val pageText = snap.pageText.take(MAX_TEXT)
+        // 标题大纲（缩进展示层级，帮助模型快速理解页面结构）
+        val headingSb = StringBuilder()
+        for (h in snap.headings) {
+            headingSb.append("  ".repeat((h.level - 1).coerceAtLeast(0)))
+                .append('H').append(h.level).append(' ').append(h.text).append('\n')
+        }
+        val headingsJson = JsonArray(
+            snap.headings.map { h ->
+                JsonObject(mapOf("level" to JsonPrimitive(h.level), "text" to JsonPrimitive(h.text)))
+            }
+        )
+        val pageText = if (compact) "" else snap.pageText.take(MAX_TEXT)
         return JsonObject(
             mapOf(
                 "title" to JsonPrimitive(snap.title),
                 "url" to JsonPrimitive(snap.url),
                 "login_page" to JsonPrimitive(snap.hasLoginForm),
                 "login_hint" to JsonPrimitive(snap.loginHint),
-                "elements_summary" to JsonPrimitive(sb.toString()),
-                "elements" to JsonPrimitive(elements.toString()),
+                "pending_requests" to JsonPrimitive(snap.pendingRequests),
+                "headings_summary" to JsonPrimitive(headingSb.toString()),
+                "headings" to headingsJson,
+                "controls_total" to JsonPrimitive(snap.elements.size),
+                "controls_shown" to JsonPrimitive(elements.size),
+                "controls_summary" to JsonPrimitive(sb.toString()),
+                "elements" to elementsJson,
                 "page_text" to JsonPrimitive(pageText)
             )
         )

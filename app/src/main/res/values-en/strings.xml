@@ -805,6 +805,12 @@
     <string name="web_search_title">Web Search</string>
     <string name="web_search_results_count">%1$s results found</string>
 
+    <!-- Browser -->
+    <string name="browser_takeover_done">Done, continue</string>
+    <string name="browser_new_tab">New tab</string>
+    <string name="browser_close_tab">Close tab</string>
+    <string name="browser_tab_empty">New tab</string>
+
     <!-- Workspace Picker -->
     <string name="workspace_select">Select Workspace</string>
     <string name="workspace_switch">Switch Workspace</string>

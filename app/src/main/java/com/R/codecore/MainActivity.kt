@@ -108,6 +108,10 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var browserLoginPromptManager: com.R.codecore.feature.browser.domain.BrowserLoginPromptManager
 
+    /** 浏览器「用户接管」流程（验证码/支付/二次认证时请求用户亲自完成）。 */
+    @Inject
+    lateinit var browserTakeoverManager: com.R.codecore.feature.browser.domain.BrowserTakeoverManager
+
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -202,7 +206,8 @@ class MainActivity : ComponentActivity() {
                     ) {
                         AppNavigation(
                             browserController = browserController,
-                            browserLoginPromptManager = browserLoginPromptManager
+                            browserLoginPromptManager = browserLoginPromptManager,
+                            browserTakeoverManager = browserTakeoverManager
                         )
                         // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
                         com.R.codecore.feature.credentials.presentation.component.GlobalCredentialDialogHost(
@@ -262,7 +267,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppNavigation(
     browserController: com.R.codecore.feature.browser.domain.BrowserController,
-    browserLoginPromptManager: com.R.codecore.feature.browser.domain.BrowserLoginPromptManager
+    browserLoginPromptManager: com.R.codecore.feature.browser.domain.BrowserLoginPromptManager,
+    browserTakeoverManager: com.R.codecore.feature.browser.domain.BrowserTakeoverManager
 ) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -492,6 +498,7 @@ fun AppNavigation(
                 com.R.codecore.feature.browser.presentation.ServiceBrowserScreen(
                     browserController = browserController,
                     loginPromptManager = browserLoginPromptManager,
+                    takeoverManager = browserTakeoverManager,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

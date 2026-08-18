@@ -3,10 +3,13 @@ package com.R.codecore.feature.browser.presentation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -33,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,13 +61,18 @@ import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.browser.domain.BrowserController
 import com.R.codecore.feature.browser.domain.BrowserLoginPromptManager
+import com.R.codecore.feature.browser.domain.BrowserTabInfo
+import com.R.codecore.feature.browser.domain.BrowserTakeoverManager
 import com.R.codecore.feature.browser.domain.LoginPromptAnswer
+import com.R.codecore.feature.browser.domain.TakeoverAnswer
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.ArrowRight
 import compose.icons.feathericons.ChevronLeft
 import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.X
 import kotlinx.coroutines.launch
 
 /**
@@ -78,13 +90,16 @@ import kotlinx.coroutines.launch
 fun ServiceBrowserScreen(
     browserController: BrowserController,
     loginPromptManager: BrowserLoginPromptManager,
+    takeoverManager: BrowserTakeoverManager,
     initialUrl: String? = null,
     onNavigateBack: () -> Unit
 ) {
     val uiState by browserController.uiState.collectAsStateWithLifecycle()
+    val tabs by browserController.tabsState.collectAsStateWithLifecycle()
     val agentStatus by browserController.agentStatus.collectAsStateWithLifecycle()
     val pendingDialog by browserController.pendingDialog.collectAsStateWithLifecycle()
     val pendingLoginPrompt by loginPromptManager.pendingPrompt.collectAsStateWithLifecycle()
+    val pendingTakeover by takeoverManager.pending.collectAsStateWithLifecycle()
 
     val scope = rememberCoroutineScope()
     var addressText by remember { mutableStateOf(uiState.currentUrl) }
@@ -110,6 +125,19 @@ fun ServiceBrowserScreen(
         val url = addressText.trim()
         if (url.isBlank()) return
         scope.launch { browserController.navigate(url) }
+    }
+
+    fun switchTab(id: String) {
+        if (id == uiState.activeTabId) return
+        scope.launch { browserController.switchTab(id) }
+    }
+
+    fun closeTab(id: String) {
+        scope.launch { browserController.closeTab(id) }
+    }
+
+    fun newTab() {
+        scope.launch { browserController.newTab(null) }
     }
 
     Scaffold(
@@ -174,6 +202,14 @@ fun ServiceBrowserScreen(
                         )
                     }
                 }
+                // 标签栏：多标签切换 / 新建 / 关闭
+                BrowserTabBar(
+                    tabs = tabs,
+                    activeTabId = uiState.activeTabId,
+                    onSelect = { switchTab(it) },
+                    onClose = { closeTab(it) },
+                    onNewTab = { newTab() }
+                )
                 if (uiState.isLoading) {
                     LinearProgressIndicator(
                         progress = { (uiState.progress.coerceIn(0, 100)) / 100f },
@@ -224,25 +260,27 @@ fun ServiceBrowserScreen(
                 .padding(padding)
                 .imePadding()
         ) {
-            // WebView 容器（用户与模型共享同一实例）
-            val webView = remember { browserController.bind() }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.White)
-            ) {
-                AndroidView(
-                    factory = { webView },
-                    modifier = Modifier.fillMaxSize()
-                )
-                if (uiState.isLoading) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
+            // WebView 容器：按激活标签 key 切换，每个标签独占一个 WebView 实例
+            key(uiState.activeTabId) {
+                val webView = remember { browserController.bind() }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White)
+                ) {
+                    AndroidView(
+                        factory = { webView },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    if (uiState.isLoading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
                     }
                 }
             }
@@ -281,6 +319,25 @@ fun ServiceBrowserScreen(
                 )
             },
             onCancel = { loginPromptManager.cancel(p.requestId) }
+        )
+    }
+
+    // ── 用户接管提示对话框（模型请求用户亲自完成验证码/支付/二次认证等） ──
+    pendingTakeover?.let { p ->
+        AlertDialog(
+            onDismissRequest = { takeoverManager.cancel(p.requestId) },
+            title = { Text(p.title) },
+            text = { Text(p.message) },
+            confirmButton = {
+                TextButton(onClick = { takeoverManager.resolve(p.requestId, TakeoverAnswer(confirmed = true)) }) {
+                    Text(stringResource(R.string.browser_takeover_done))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { takeoverManager.cancel(p.requestId) }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
         )
     }
 }
@@ -337,4 +394,68 @@ private fun LoginCredentialDialog(
             }
         }
     )
+}
+
+/** 浏览器标签栏：横向滚动，可切换 / 关闭 / 新建标签。 */
+@Composable
+private fun BrowserTabBar(
+    tabs: List<BrowserTabInfo>,
+    activeTabId: String,
+    onSelect: (String) -> Unit,
+    onClose: (String) -> Unit,
+    onNewTab: () -> Unit
+) {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = Spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        items(tabs, key = { it.id }) { tab ->
+            val active = tab.id == activeTabId
+            Surface(
+                shape = RoundedCornerShape(Radius.sm),
+                color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                border = if (active) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                modifier = Modifier
+                    .widthIn(max = 200.dp)
+                    .clickable { onSelect(tab.id) }
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = Spacing.sm, end = Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = tab.title.ifBlank { tab.url.ifBlank { stringResource(R.string.browser_tab_empty) } },
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 140.dp)
+                    )
+                    IconButton(
+                        onClick = { onClose(tab.id) },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            FeatherIcons.X,
+                            contentDescription = stringResource(R.string.browser_close_tab),
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            IconButton(onClick = onNewTab, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    FeatherIcons.Plus,
+                    contentDescription = stringResource(R.string.browser_new_tab),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }
