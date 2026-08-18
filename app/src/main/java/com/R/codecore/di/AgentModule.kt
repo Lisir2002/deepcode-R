@@ -673,6 +673,7 @@ object AgentModule {
         generateImageTool: com.R.codecore.feature.agent.domain.tool.image.GenerateImageTool,
         browserTool: BrowserAgentTool,
         storageTool: com.R.codecore.feature.agent.domain.tool.storage.StorageTool,
+        networkProxyTool: com.R.codecore.feature.agent.domain.tool.proxy.NetworkProxyTool,
         resultTypeRegistry: com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
     ): ToolRegistry {
         return ToolRegistry().apply {
@@ -717,6 +718,8 @@ object AgentModule {
             registerTool("browser", browserTool)
             // ══ 设备存储护栏工具：结构化 list/read/write/delete + ASK 确认（见设计「护栏」）
             registerTool("device_storage", storageTool)
+            // ══ 网络代理工具（VPN 形态）：模型自助管理容器内 mihomo 代理，ASK 确认 + MODIFY_NETWORK 能力隔离
+            registerTool("network_proxy", networkProxyTool)
         }
     }
 

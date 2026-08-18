@@ -93,6 +93,7 @@ class LinuxContainerEngine @Inject constructor(
     val progressAggregator: RealProgressAggregator,
     private val concurrencyPolicy: PrefetchConcurrencyPolicy,
     private val rcbBridge: com.R.codecore.feature.agent.domain.bridge.RcbBridge,
+    private val proxyManager: com.R.codecore.feature.proxy.domain.ClashProxyManager,
 ) : CommandEngine {
     /** 容器初始化的实时进度，供所有入口（终端页/AI/后台终端/MCP）共享同一份状态。 */
     private val _initProgress = MutableStateFlow<ContainerInitState>(ContainerInitState.Idle)
@@ -1316,7 +1317,7 @@ class LinuxContainerEngine @Inject constructor(
 
     /** 容器内进程的标准环境变量（proot loader / 动态库 / PATH / HOME 等）。 */
     private fun buildContainerEnv(): Map<String, String> {
-        return mapOf(
+        val env = mapOf(
             // Android proot 必需的环境变量
             "PROOT_TMP_DIR" to containerInstaller.prootTmpDir.absolutePath, // Android 没有 /tmp
             // Termux proot 的 loader 分离，必须用 PROOT_LOADER/_32 指向，否则无法注入子进程而起不来。
@@ -1342,6 +1343,9 @@ class LinuxContainerEngine @Inject constructor(
             "TERM" to "xterm-256color",
             "LANG" to "C.UTF-8"
         )
+        // 网络代理（VPN）：启用时注入 http/https/all_proxy → 127.0.0.1:7890（容器内 mihomo 与宿主
+        // 共享 loopback，同一实例），NO_PROXY 保护本地服务；未启用则并入空 map 等价不改动。
+        return env + proxyManager.exportContainerEnv()
     }
 
     private fun buildProcessBuilder(invocation: ProotInvocation): ProcessBuilder {

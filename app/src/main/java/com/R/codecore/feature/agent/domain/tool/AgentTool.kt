@@ -122,7 +122,9 @@ enum class ToolCapability {
     /** C.4.8 ZTH：修改用户已确认 sentinel / 保留策略 / 硬约束。 */
     MODIFY_USER_CONFIRMED_STATE,
     /** 设备存储（外部共享存储）的读/写。护栏：走结构化工具 + ASK 确认，不依赖 shell 解析。 */
-    ACCESS_DEVICE_STORAGE
+    ACCESS_DEVICE_STORAGE,
+    /** 网络代理（VPN 形态：容器内 mihomo mixed-proxy）。护栏：走结构化工具 + ASK 确认，能力隔离。 */
+    MODIFY_NETWORK
 }
 
 data class PendingToolPermission(
