@@ -68,6 +68,14 @@ class ClashProxyManager @Inject constructor(
             "tproxy-port", "external-controller", "external-ui",
             "secret", "allow-lan", "bind-address", "mode"
         )
+
+        /**
+         * 拉取订阅用的 User-Agent。实测该订阅商（nginx）按 UA 白名单放行：
+         * 非 Clash 系 UA（如通用浏览器/curl/自研 UA）直接回 406 Not Acceptable（HTML 错误页），
+         * Clash 系 UA（clash.meta / ClashMetaForAndroid/...）才回 200 + 完整 YAML。
+         * 故伪装成 mihomo 自身默认订阅 UA，保证订阅在程序内与 Clash 表现一致。
+         */
+        const val SUBSCRIPTION_USER_AGENT = "clash.meta"
     }
 
     private val _state = MutableStateFlow(ProxyRuntimeState())
@@ -162,7 +170,9 @@ class ClashProxyManager @Inject constructor(
     /** 订阅 URL 全文抓取（拉取远端订阅 YAML）。失败返回 null。 */
     suspend fun fetchSubscriptionYaml(url: String): String? = withContext(Dispatchers.IO) {
         runCatching {
-            val req = Request.Builder().url(url).header("User-Agent", "rcodecore/1").get().build()
+            val req = Request.Builder().url(url)
+                .header("User-Agent", SUBSCRIPTION_USER_AGENT)
+                .get().build()
             okHttp.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful || resp.body == null) return@use null
                 resp.body!!.string()
