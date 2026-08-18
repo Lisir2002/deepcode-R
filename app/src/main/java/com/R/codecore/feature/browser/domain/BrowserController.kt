@@ -698,11 +698,16 @@ class BrowserController @Inject constructor(
             applyActiveTab(it)
         }
         _uiState.value = _uiState.value.copy(screenVisible = true)
+        // 共享 WebView 复用前必须先摘除旧父容器，否则 Compose AndroidView 二次 addView 会抛
+        // IllegalStateException("The specified child already has a parent ...")。
+        detachFromParent(active.webView)
         return active.webView
     }
 
     /** 浏览器页卸载时调用（不销毁 WebView，保留会话/Cookie）。 */
     fun unbind() {
+        // 摘除激活 WebView，避免离开页面后仍挂在旧 AndroidViewHolder 上，下次返回时重复挂载崩溃。
+        activeWebView()?.let(::detachFromParent)
         _uiState.value = _uiState.value.copy(screenVisible = false)
     }
 
@@ -1349,8 +1354,13 @@ class BrowserController @Inject constructor(
         }
     }
 
-    private fun detachAndDestroy(wv: WebView) {
+    /** 将 WebView 从当前父容器摘除（不销毁），供复用前的重新挂载与页面卸载时调用。 */
+    private fun detachFromParent(wv: WebView) {
         (wv.parent as? android.view.ViewGroup)?.removeView(wv)
+    }
+
+    private fun detachAndDestroy(wv: WebView) {
+        detachFromParent(wv)
         wv.destroy()
     }
 
