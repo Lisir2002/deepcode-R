@@ -56,43 +56,43 @@ internal object MarkdownUrlPreprocessor {
         option = RegexOption.IGNORE_CASE
     )
 
-    // 尾随剥离：有些解析器允许括号作为 URL 结尾，但用户写了 `https://a.b)。` 这种，
-    // 我们再剥掉末尾的非配对右括号、句号、逗号、问号、感叹号、顿号、分号、引号、书名号等。
-    private val TRAILING_STRIP_REGEX = Regex(
-        """[。，、；：？！「」『』《》〈〉（）【】""''""（）,.;:!?()\[\]{}"']+${'$'}"""
+    // 尾随剥离：剥离末尾常见的中英文标点（不包括括号/方括号/花括号本身，这些
+    // 可能出现在合法 URL 里；未配对的右括号由 stripUnmatchedRightBrackets 处理）。
+    private val TRAILING_PUNCTUATION_REGEX = Regex(
+        """[。，、；：？！「」『』《》〈〉【】""''""（）,.;:!?"'…—]+${'$'}"""
     )
 
     fun normalize(input: String): String {
         if (input.length < 10) return input
         return BARE_URL_REGEX.replace(input) { m ->
             val raw = m.value
-            val stripped = TRAILING_STRIP_REGEX.replace(raw, "")
-            // 剥离后如果尾部出现了未配对括号（例如 URL 本体末端带了一个多余的 )），
-            // 也剥掉未配对的右侧括号。
-            val cleaned = stripUnmatchedRightBrackets(stripped)
-            if (cleaned.isEmpty()) {
-                // 理论上不会发生（裸 URL 不可能被全部剥空），保险回退原串。
+            // 1. 先去掉尾部标点（中英文句号、逗号、引号、感叹号、问号等）
+            val punctStripped = TRAILING_PUNCTUATION_REGEX.replace(raw, "")
+            // 2. 处理未配对的右括号：尾部如果有多余的 ) ] }，在括号配对位置截断
+            val bracketCleaned = stripUnmatchedRightBrackets(punctStripped)
+            if (bracketCleaned.isEmpty()) {
                 raw
             } else {
-                val tail = raw.substring(cleaned.length)
-                "<$cleaned>$tail"
+                val tail = raw.substring(bracketCleaned.length)
+                "<$bracketCleaned>$tail"
             }
         }
     }
 
     private fun stripUnmatchedRightBrackets(url: String): String {
         var depth = 0
-        for (ch in url) {
+        var earliestCut = -1
+        for ((i, ch) in url.withIndex()) {
             when (ch) {
                 '(', '[', '{' -> depth++
                 ')', ']', '}' -> if (depth > 0) depth-- else {
-                    // 首个未配对的右括号：截断到这里之前
-                    val idx = url.indexOf(ch)
-                    return url.substring(0, idx)
+                    if (earliestCut < 0) earliestCut = i
                 }
             }
         }
-        return url
+        // 遍历完后如果还有括号栈未归零（leftOver > 0），保持原样（像 Wikipedia
+        // 这种有内嵌括号的合法 URL 本身是配对的，不应该动）。
+        return if (earliestCut < 0) url else url.substring(0, earliestCut)
     }
 }
 
