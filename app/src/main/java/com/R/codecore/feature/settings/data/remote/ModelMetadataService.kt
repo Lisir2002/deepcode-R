@@ -38,7 +38,13 @@ class ModelMetadataService @Inject constructor(
      * 单模型能力复选框覆盖 Dao（RC63 备选方案④）。
      * 仅在最后一步 merge 时读入，优先级最高；用户一旦手动覆盖，覆盖值就是最终决策。
      */
-    private val modelCapabilityOverrideDao: ModelCapabilityOverrideDao
+    private val modelCapabilityOverrideDao: ModelCapabilityOverrideDao,
+    /**
+     * 共享 OkHttp（AgentModule 注入）。以 newBuilder 派生 metadataClient：
+     * 继承其 ProxySelector（代理启用时 models.dev 也走 mihomo mixed-port，而非直连），
+     * 同时覆写回短超时，避免占用共享 client 的 120s 流式超时语义。
+     */
+    private val okHttp: OkHttpClient,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -49,7 +55,7 @@ class ModelMetadataService @Inject constructor(
     private var refreshAttemptedThisProcess = false
 
     /** models.dev 仅作元数据增强：独立短超时 client，不可达时快速失败，不占用共享的 120s 流式超时。 */
-    private val metadataClient: OkHttpClient = OkHttpClient.Builder()
+    private val metadataClient: OkHttpClient = okHttp.newBuilder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
