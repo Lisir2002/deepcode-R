@@ -299,6 +299,7 @@ private fun ImportEditor(
                         onClick = { onPreview(urlField.trim(), null) },
                         enabled = urlField.isNotBlank() && !busy
                     ) { Text("预检") }
+                    SaveHint()
                 }
                 ImportMode.MANUAL -> {
                     OutlinedTextField(
@@ -314,6 +315,7 @@ private fun ImportEditor(
                         onClick = { onPreview(null, yamlField) },
                         enabled = yamlField.isNotBlank() && !busy
                     ) { Text("预检") }
+                    SaveHint()
                 }
                 ImportMode.FILE -> {
                     Text(
@@ -363,6 +365,17 @@ private fun ModeChip(label: String, selected: Boolean, enabled: Boolean, onClick
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
         )
     }
+}
+
+/** 预检按钮下方的保存提示：避免用户找不到只在预检通过后出现的保存按钮。 */
+@Composable
+private fun SaveHint() {
+    Text(
+        text = "预检通过后才会出现「仅保存 / 保存并启用」按钮",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable
