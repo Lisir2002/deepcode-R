@@ -178,44 +178,44 @@ class RcbBridge @Inject constructor(
                 |#!/bin/bash
                 |# rcb-send 引擎：读 env 令牌，发一条 `cmd [base64(param)]`，输出宿主编译的回复行。
                 |set -u
-                |CMD="\${1:-}"
-                |ARG="\${2:-}"
-                |ADDR="\${RCB_BRIDGE_ADDR:-127.0.0.1:0}"
-                |TOKEN="\${RCB_BRIDGE_TOKEN:-}"
-                |HOST="\${ADDR%%:*}"
-                |PORT="\${ADDR##*:}"
-                |[ -n "\$TOKEN" ] && [ "\$PORT" != 0 ] || { echo "err bridge_not_ready"; exit 1; }
+                |CMD="${'$'}{1:-}"
+                |ARG="${'$'}{2:-}"
+                |ADDR="${'$'}{RCB_BRIDGE_ADDR:-127.0.0.1:0}"
+                |TOKEN="${'$'}{RCB_BRIDGE_TOKEN:-}"
+                |HOST="${'$'}{ADDR%%:*}"
+                |PORT="${'$'}{ADDR##*:}"
+                |[ -n "${'$'}TOKEN" ] && [ "${'$'}PORT" != 0 ] || { echo "err bridge_not_ready"; exit 1; }
                 |B64=""
-                |[ -n "\$ARG" ] && B64="\$(printf '%s' "\$ARG" | base64 | tr -d '\n')"
-                |exec 3<>"/dev/tcp/\$HOST/\$PORT" || { echo "err connect_failed"; exit 1; }
-                |printf '%s\n' "\$TOKEN" >&3
-                |printf '%s\n' "\$CMD \$B64" >&3
+                |[ -n "${'$'}ARG" ] && B64="${'$'}(printf '%s' "${'$'}ARG" | base64 | tr -d '\n')"
+                |exec 3<>"/dev/tcp/${'$'}HOST/${'$'}PORT" || { echo "err connect_failed"; exit 1; }
+                |printf '%s\n' "${'$'}TOKEN" >&3
+                |printf '%s\n' "${'$'}CMD ${'$'}B64" >&3
                 |IFS= read -r REPLY <&3
                 |exec 3<&- 3>&-
-                |printf '%s\n' "\$\{REPLY:-err no_reply}"
+                |printf '%s\n' "${'$'}{REPLY:-err no_reply}"
                 |""".trimMargin())
             writeHelper(binDir, "rcb-clipboard",
                 """
                 |#!/bin/bash
                 |# rcb-clipboard get|set [text]
-                |MODE="\${1:-}"
-                |case "\$MODE" in
+                |MODE="${'$'}{1:-}"
+                |case "${'$'}MODE" in
                 |  get)
-                |    REPLY="\$(rcb-send clipboard_get)"
-                |    case "\$REPLY" in
+                |    REPLY="${'$'}(rcb-send clipboard_get)"
+                |    case "${'$'}REPLY" in
                 |      ok\ *)
-                |        printf '%s' "\${REPLY#ok }" | base64 -d
+                |        printf '%s' "${'$'}{REPLY#ok }" | base64 -d
                 |        echo
                 |        ;;
                 |      *)
-                |        echo "\$REPLY" >&2
+                |        echo "${'$'}REPLY" >&2
                 |        exit 1
                 |        ;;
                 |    esac
                 |    ;;
                 |  set)
                 |    shift
-                |    rcb-send clipboard_set "\${*:-}"
+                |    rcb-send clipboard_set "${'$'}{*:-}"
                 |    ;;
                 |  *)
                 |    echo "用法: rcb-clipboard get|set [text]" >&2
@@ -227,29 +227,29 @@ class RcbBridge @Inject constructor(
                 """
                 |#!/bin/bash
                 |# rcb-open-url URL：让宿主 App 打开链接（需宿主侧接线，否则仅记日志）
-                |[ -n "\$1" ] || { echo "用法: rcb-open-url URL" >&2; exit 1; }
-                |rcb-send open_url "\$1"
+                |[ -n "${'$'}1" ] || { echo "用法: rcb-open-url URL" >&2; exit 1; }
+                |rcb-send open_url "${'$'}1"
                 |""".trimMargin())
             writeHelper(binDir, "rcb-open",
                 """
                 |#!/bin/bash
                 |# rcb-open PATH：把路径交给宿主（作为 URL/file 处理，需宿主接线）
-                |[ -n "\$1" ] || { echo "用法: rcb-open PATH" >&2; exit 1; }
-                |rcb-send open_url "\$1"
+                |[ -n "${'$'}1" ] || { echo "用法: rcb-open PATH" >&2; exit 1; }
+                |rcb-send open_url "${'$'}1"
                 |""".trimMargin())
             writeHelper(binDir, "rcb-toast",
                 """
                 |#!/bin/bash
                 |# rcb-toast 文本：宿主弹短暂提示
                 |shift 2>/dev/null
-                |rcb-send toast "\${*:-}"
+                |rcb-send toast "${'$'}{*:-}"
                 |""".trimMargin())
             writeHelper(binDir, "rcb-notify",
                 """
                 |#!/bin/bash
                 |# rcb-notify 文本：宿主弹较长提示（当前降级为 toast）
                 |shift 2>/dev/null
-                |rcb-send notify "\${*:-}"
+                |rcb-send notify "${'$'}{*:-}"
                 |""".trimMargin())
             writeHelper(binDir, "rcb-share",
                 """
