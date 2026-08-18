@@ -167,17 +167,26 @@ class NetworkProxyTool @Inject constructor(
             else -> return ToolResult.Error("test 需要 url（订阅）或 yaml（手动）", "MISSING_ARGS")
         }
         if (source.isNullOrBlank()) return ToolResult.Error("拉取/解析失败（URL 不可达或内容为空）", "FETCH_FAILED")
-        val config = manager.synthesizeConfig(source)
-        val nodeCount = Regex("(?m)^\\s*-\\s+name:").findAll(config).count()
-        val groupCount = Regex("(?m)^\\s*proxy-groups:\\s*$").findAll(config).count()
+        val summary = manager.parseClashConfig(source)
+        if (!summary.ok) {
+            return ToolResult.Error("YAML 解析失败：${summary.error}", "PARSE_FAILED")
+        }
         return ToolResult.Success(
             JsonObject(
                 mapOf(
                     "ok" to JsonPrimitive(true),
                     "valid" to JsonPrimitive(true),
-                    "node_count" to JsonPrimitive(nodeCount),
-                    "group_count" to JsonPrimitive(groupCount),
-                    "note" to JsonPrimitive("本次仅校验，未启用未落盘"),
+                    "node_count" to JsonPrimitive(summary.nodes.size),
+                    "group_count" to JsonPrimitive(summary.groups.size),
+                    "provider_count" to JsonPrimitive(summary.providerCount),
+                    "nodes" to JsonArray(summary.nodes.map { JsonPrimitive(it.name) }),
+                    "note" to JsonPrimitive(
+                        if (summary.providerCount > 0) {
+                            "含 proxy-provider：节点由内核动态加载，node_count 仅统计内联节点"
+                        } else {
+                            "本次仅校验，未启用未落盘"
+                        }
+                    ),
                 )
             )
         )

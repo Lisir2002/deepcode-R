@@ -5,16 +5,29 @@ import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.proxy.data.ProxySettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.yaml.snakeyaml.Yaml
+import java.net.InetSocketAddress
+import java.net.Socket
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,6 +42,44 @@ data class ProxyRuntimeState(
     val controllerPort: Int = ClashProxyManager.CONTROLLER_PORT,
     /** 控制器最近一次是否连得上 mihomo。 */
     val controllerReachable: Boolean = false,
+)
+
+/** 单个代理节点（解析自 Clash 配置，仅展示用）。 */
+data class ProxyNodeInfo(
+    val name: String,
+    val type: String,
+    val server: String,
+    val port: Int,
+)
+
+/** 一份 Clash 配置的解析概览（供预检 / 节点列表展示）。 */
+data class ClashConfigSummary(
+    val ok: Boolean,
+    val nodes: List<ProxyNodeInfo> = emptyList(),
+    val groups: List<String> = emptyList(),
+    val providerCount: Int = 0,
+    val error: String? = null,
+)
+
+/** mihomo /proxies 运行态中的一个分组（对齐 Clash 分组树：类型/选中项/成员/健康检查延迟）。 */
+data class ProxyGroupInfo(
+    val name: String,
+    val type: String,
+    val now: String?,
+    val all: List<String>,
+    val delay: Long?,
+)
+
+/** /proxies 全量快照（分组树 + 节点数），UI 与工具共用。 */
+data class ClashProxiesSnapshot(
+    val groups: List<ProxyGroupInfo>,
+    val nodeCount: Int,
+)
+
+/** /traffic WS 推流的一条速率（字节/秒），实时流量展示用。 */
+data class ProxyTraffic(
+    val up: Long,
+    val down: Long,
 )
 
 /**
@@ -67,6 +118,12 @@ class ClashProxyManager @Inject constructor(
             "mixed-port", "port", "socks-port", "redir-port",
             "tproxy-port", "external-controller", "external-ui",
             "secret", "allow-lan", "bind-address", "mode"
+        )
+
+        /** /proxies 中被视为「分组」的 type：mihomo 五类策略组 + 内置直达/拒绝等（对齐 Clash 分组树）。 */
+        val GROUP_TYPES = setOf(
+            "Selector", "URLTest", "Fallback", "LoadBalance", "Relay",
+            "Direct", "Reject", "RejectDrop", "Compatible", "Pass"
         )
 
         /**
@@ -180,6 +237,74 @@ class ClashProxyManager @Inject constructor(
         }.getOrNull()
     }
 
+    /**
+     * 用 SnakeYAML 解析 Clash 配置，统计内联节点 / 分组 / proxy-provider。
+     *
+     * 修复「解析 OK 但节点 0」：旧实现用正则 `^\s*-\s+name:` 只匹配块式 `- name: …`；
+     * 现实订阅多为**流式** `- {name: …, type: ss, …}` 或直接走 **proxy-provider**（动态节点池），
+     * 正则都数不出来，导致节点数恒为 0。改为真实 YAML 解析后块式/流式/provider 一并对齐 Clash。
+     */
+    fun parseClashConfig(yaml: String): ClashConfigSummary {
+        return try {
+            val root = Yaml().load<Any?>(yaml)
+            if (root !is Map<*, *>) {
+                return ClashConfigSummary(ok = false, error = "不是合法的 YAML 映射")
+            }
+            val proxies = root["proxies"] as? List<*> ?: emptyList<Any?>()
+            val groups = root["proxy-groups"] as? List<*> ?: emptyList<Any?>()
+            val providers = root["proxy-providers"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+            val nodes = proxies.mapNotNull { item ->
+                if (item !is Map<*, *>) return@mapNotNull null
+                val name = item["name"]?.toString()?.takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+                ProxyNodeInfo(
+                    name = name,
+                    type = item["type"]?.toString() ?: "unknown",
+                    server = item["server"]?.toString() ?: "",
+                    port = (item["port"] as? Number)?.toInt()
+                        ?: item["port"]?.toString()?.toIntOrNull() ?: 0,
+                )
+            }
+            val groupNames = groups.mapNotNull { (it as? Map<*, *>)?.get("name")?.toString() }
+            ClashConfigSummary(ok = true, nodes = nodes, groups = groupNames, providerCount = providers.size)
+        } catch (e: Exception) {
+            ClashConfigSummary(ok = false, error = e.message ?: "YAML 解析失败")
+        }
+    }
+
+    /**
+     * 单节点测速（对齐 Clash 的延迟展示）：
+     *  - [useController] 且代理已启用：走 mihomo REST `/proxies/{node}/delay`（真实出口，权威值，Clash 同源）。
+     *    仅当该节点确实载入当前运行配置时才应传 true，否则 REST 会因节点不存在而误报超时；
+     *  - 否则：App 直连节点 `server:port` 的 TCP connect 往返，作为可达性/延迟近似。
+     * @return 毫秒延迟；失败/超时返回 null。
+     */
+    suspend fun testNodeLatency(node: ProxyNodeInfo, useController: Boolean): Long? = withContext(Dispatchers.IO) {
+        if (useController && enabledCache) {
+            val encoded = java.net.URLEncoder.encode(node.name, "UTF-8").replace("+", "%20")
+            val resp = controllerRequest(
+                "GET",
+                "/proxies/$encoded/delay?url=http://www.gstatic.com/generate_204&timeout=5000"
+            )
+            val delay = resp?.let { body ->
+                runCatching {
+                    kotlinx.serialization.json.Json.parseToJsonElement(body)
+                        .jsonObject["delay"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                }.getOrNull()
+            }
+            if (delay != null) return@withContext delay
+            return@withContext null
+        }
+        if (node.server.isBlank() || node.port <= 0) return@withContext null
+        runCatching {
+            Socket().use { sock ->
+                val begin = System.nanoTime()
+                sock.connect(InetSocketAddress(node.server, node.port), 3000)
+                ((System.nanoTime() - begin) / 1_000_000).coerceAtLeast(0)
+            }
+        }.getOrNull()
+    }
+
     /** 把合成配置落盘到 filesDir/rcodecore/proxy/config.yaml。 */
     suspend fun writeConfigFile(configYaml: String) = withContext(Dispatchers.IO) {
         runCatching {
@@ -215,6 +340,74 @@ class ClashProxyManager @Inject constructor(
                 }
             }
         }.getOrNull()
+    }
+
+    private fun urlEncode(s: String): String =
+        java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+    /**
+     * 拉取 mihomo /proxies 全量快照（分组树：类型/当前选中项/成员/健康检查延迟）。
+     * 与 `network_proxy list_proxies` 共用同一 REST 数据源；未运行/不可达返回 null。
+     */
+    suspend fun fetchProxiesSnapshot(): ClashProxiesSnapshot? {
+        val resp = controllerRequest("GET", "/proxies") ?: return null
+        return runCatching {
+            val root = kotlinx.serialization.json.Json.parseToJsonElement(resp).jsonObject
+            val proxies = root["proxies"]?.jsonObject ?: return null
+            val groups = proxies.mapNotNull { (name, el) ->
+                val obj = el.jsonObject
+                val type = obj["type"]?.jsonPrimitive?.contentOrNull
+                    ?: return@mapNotNull null
+                if (type !in GROUP_TYPES) return@mapNotNull null
+                val now = obj["now"]?.jsonPrimitive?.contentOrNull
+                val all = obj["all"]?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+                val delay = obj["history"]?.jsonArray?.lastOrNull()
+                    ?.jsonObject?.get("delay")?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                ProxyGroupInfo(name, type, now, all, delay)
+            }
+            ClashProxiesSnapshot(groups = groups, nodeCount = proxies.size)
+        }.getOrNull()
+    }
+
+    /**
+     * 切换某分组内选中节点（对齐 Clash 点击切换）。走同一 REST：PUT /proxies/{group}。
+     * 成功返回 true。
+     */
+    suspend fun selectProxyNode(group: String, node: String): Boolean {
+        val resp = controllerRequest("PUT", "/proxies/${urlEncode(group)}", """{"name":"$node"}""")
+        return resp != null
+    }
+
+    /**
+     * /traffic WS 实时推流（零轮询，与 mihomo/CMA 的 flow 数据源一致）。
+     * 每次 collect 建立一条 WS；collect 取消即关闭（awaitClose 里 ws.cancel()），失败自动结束流。
+     */
+    fun trafficFlow(): Flow<ProxyTraffic> = callbackFlow {
+        val req = Request.Builder()
+            .url("http://$CONTROLLER_HOST:$CONTROLLER_PORT/traffic")
+            .header("Authorization", "Bearer $secret")
+            .build()
+        val listener = object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                runCatching {
+                    val el = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
+                    val up = el["up"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+                    val down = el["down"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+                    trySend(ProxyTraffic(up, down))
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                close(t)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                close()
+            }
+        }
+        val ws = okHttp.newWebSocket(req, listener)
+        awaitClose { ws.cancel() }
     }
 
     /** 拉起代理：由已播种 profile（[profileId]）或临时 inline（[inlineYaml]）合成配置并落盘、置开关。 */
