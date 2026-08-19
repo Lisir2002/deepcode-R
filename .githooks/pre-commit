@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# pre-commit hook：校验「功能模块 ↔ 模块文档」一一对应（docs/modules 同步纪律）。
+# 任一 feature/<module> 缺少 docs/modules/<module>.md，或存在无对应模块的孤儿文档，
+# 都会打印提示并阻断提交；可用 `git commit --no-verify` 跳过。
+#
+# 启用：仓库根执行 `git config core.hooksPath .githooks`
+# 关闭：`git config --unset core.hooksPath`
+
+set -u
+
+ROOT="$(git rev-parse --show-toplevel)"
+FEATURE_DIR="$ROOT/app/src/main/java/com/R/codecore/feature"
+DOCS_DIR="$ROOT/docs/modules"
+
+# 允许存在的非模块文档：索引 + 公共基础层
+ALLOWED_EXTRA="README.md core.md"
+
+errors=0
+
+# 1) 每个 feature 模块必须有对应文档
+if [[ -d "$FEATURE_DIR" ]]; then
+  for mod in "$FEATURE_DIR"/*/; do
+    [[ -d "$mod" ]] || continue
+    name="$(basename "$mod")"
+    if [[ ! -f "$DOCS_DIR/$name.md" ]]; then
+      echo "❌ 缺少模块文档：feature/$name/ 没有 docs/modules/$name.md（新增模块必须实时新建对应文档）" >&2
+      errors=$((errors+1))
+    fi
+  done
+fi
+
+# 2) docs/modules 下不允许存在孤儿文档（无对应 feature 目录，且非白名单）
+if [[ -d "$DOCS_DIR" ]]; then
+  for doc in "$DOCS_DIR"/*.md; do
+    [[ -f "$doc" ]] || continue
+    name="$(basename "$doc")"
+    case " $ALLOWED_EXTRA " in
+      *" $name "*) continue ;;
+    esac
+    if [[ ! -d "$FEATURE_DIR/${name%.md}" ]]; then
+      echo "❌ 孤儿文档：docs/modules/$name 无对应 feature/${name%.md}/ 模块（删除模块时须同步删除文档）" >&2
+      errors=$((errors+1))
+    fi
+  done
+fi
+
+if (( errors > 0 )); then
+  cat >&2 <<EOF
+
+模块文档同步纪律（见 AGENTS.md「资产同步纪律」）：
+  - 功能模块代码变更 → 同步更新 docs/modules/<module>.md
+  - 新增 feature 模块 → 实时新建 docs/modules/<module>.md
+
+跳过校验（紧急情况）：git commit --no-verify ...
+EOF
+  exit 1
+fi
+
+exit 0
