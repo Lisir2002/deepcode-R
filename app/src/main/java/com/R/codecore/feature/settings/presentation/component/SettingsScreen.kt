@@ -99,6 +99,7 @@ enum class SettingsSection(@param:StringRes val titleRes: Int) {
     ProviderEditor(R.string.settings_provider_editor),
     DefaultModels(R.string.settings_default_models),
     Mcp(R.string.settings_mcp),
+    McpServer(R.string.settings_mcp_server),
     Container(R.string.settings_container),
     Logs(R.string.settings_logs),
     Permissions(R.string.settings_permissions),
@@ -126,6 +127,13 @@ fun SettingsScreen(
     val mcpServers by viewModel.mcpServers.collectAsStateWithLifecycle()
     val mcpStatuses by viewModel.mcpStatuses.collectAsStateWithLifecycle()
     val mcpReloading by viewModel.mcpReloading.collectAsStateWithLifecycle()
+    val mcpServerIsRunning by viewModel.mcpServerIsRunning.collectAsStateWithLifecycle()
+    val mcpServerPort by viewModel.mcpServerPort.collectAsStateWithLifecycle()
+    val mcpServerToken by viewModel.mcpServerToken.collectAsStateWithLifecycle()
+    val mcpServerRequireApproval by viewModel.mcpServerRequireApproval.collectAsStateWithLifecycle()
+    val mcpServerAutoStart by viewModel.mcpServerAutoStart.collectAsStateWithLifecycle()
+    val mcpServerUrl by viewModel.mcpServerUrl.collectAsStateWithLifecycle()
+    val mcpServerError by viewModel.mcpServerError.collectAsStateWithLifecycle()
     val globalRules by viewModel.globalRules.collectAsStateWithLifecycle()
     val projectRules by viewModel.projectRules.collectAsStateWithLifecycle()
     val currentProjectName by viewModel.currentProjectName.collectAsStateWithLifecycle()
@@ -276,6 +284,7 @@ fun SettingsScreen(
                     compactionModel = compactionModel,
                     mcpCount = mcpServers.size,
                     mcpConnected = mcpStatuses.count { it.state == McpServerStatus.State.CONNECTED },
+                    mcpServerRunning = mcpServerIsRunning,
                     logLevel = logLevel,
                     permissionRuleCount = projectRules.size + globalRules.size,
                     themeMode = themeMode,
@@ -325,6 +334,18 @@ fun SettingsScreen(
                         showMcpDialog = true
                     },
                     onDelete = { viewModel.deleteMcpServer(it) }
+                )
+                SettingsSection.McpServer -> McpServerSection(
+                    isRunning = mcpServerIsRunning,
+                    port = mcpServerPort,
+                    token = mcpServerToken,
+                    requireApproval = mcpServerRequireApproval,
+                    autoStart = mcpServerAutoStart,
+                    serverUrl = mcpServerUrl,
+                    errorMessage = mcpServerError,
+                    onToggleServer = { viewModel.toggleMcpServer() },
+                    onSaveConfig = { p, r, a -> viewModel.saveMcpServerConfig(p, r, a) },
+                    onRegenerateToken = { viewModel.regenerateMcpServerToken() }
                 )
                 SettingsSection.Container -> ContainerSection(
                     profiles = containerProfiles,
@@ -467,6 +488,7 @@ internal fun SettingsMenu(
     compactionModel: String,
     mcpCount: Int,
     mcpConnected: Int,
+    mcpServerRunning: Boolean,
     logLevel: LogLevel,
     permissionRuleCount: Int,
     themeMode: AppThemeMode,
@@ -545,6 +567,17 @@ internal fun SettingsMenu(
             icon = FeatherIcons.Box,
             keywords = listOf("mcp", "server", "工具", "function", "协议", "服务器"),
             action = { onOpen(SettingsSection.Mcp) }
+        ),
+        MenuItem(
+            section = SettingsSection.McpServer,
+            group = groupAI,
+            title = stringResource(SettingsSection.McpServer.titleRes),
+            subtitle = stringResource(R.string.settings_mcp_server_subtitle) + " · " + stringResource(
+                if (mcpServerRunning) R.string.settings_mcp_server_running else R.string.settings_mcp_server_stopped
+            ),
+            icon = FeatherIcons.Server,
+            keywords = listOf("mcp", "server", "服务端", "开放", "内置", "服务器"),
+            action = { onOpen(SettingsSection.McpServer) }
         ),
         MenuItem(
             section = SettingsSection.Permissions,

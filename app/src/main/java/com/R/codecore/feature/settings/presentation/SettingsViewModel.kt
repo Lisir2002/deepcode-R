@@ -12,6 +12,7 @@ import com.R.codecore.feature.agent.domain.container.RemoteSshConnection
 import com.R.codecore.feature.agent.domain.container.RootfsSource
 import com.R.codecore.feature.agent.domain.mcp.McpConfigRepository
 import com.R.codecore.feature.agent.domain.mcp.McpManager
+import com.R.codecore.feature.agent.domain.mcp.server.McpServerManager
 import com.R.codecore.feature.agent.domain.mcp.McpServerConfig
 import com.R.codecore.feature.agent.domain.mcp.McpServerStatus
 import com.R.codecore.feature.agent.domain.mcp.McpToolDescriptor
@@ -107,6 +108,7 @@ class SettingsViewModel @Inject constructor(
     private val languageSettingsRepository: LanguageSettingsRepository,
     private val mcpConfigRepository: McpConfigRepository,
     private val mcpManager: McpManager,
+    private val mcpServerManager: McpServerManager,
     private val permissionRulesRepository: PermissionRulesRepository,
     private val visionModelSettingsRepository: VisionModelSettingsRepository,
     private val compactionModelSettingsRepository: CompactionModelSettingsRepository,
@@ -209,6 +211,22 @@ class SettingsViewModel @Inject constructor(
 
     private val _mcpReloading = MutableStateFlow(false)
     val mcpReloading: StateFlow<Boolean> = _mcpReloading.asStateFlow()
+
+    // ── 内置 MCP 服务器（把自己开放出去） ──
+    val mcpServerIsRunning: StateFlow<Boolean> = mcpServerManager.isRunning
+    val mcpServerPort: StateFlow<Int> = mcpServerManager.port
+    val mcpServerToken: StateFlow<String> = mcpServerManager.token
+    val mcpServerRequireApproval: StateFlow<Boolean> = mcpServerManager.requireApproval
+    val mcpServerAutoStart: StateFlow<Boolean> = mcpServerManager.autoStart
+    val mcpServerUrl: StateFlow<String> = mcpServerManager.serverUrl
+    val mcpServerError: StateFlow<String?> = mcpServerManager.errorMessage
+
+    fun toggleMcpServer() = viewModelScope.launch { mcpServerManager.toggleServer() }
+
+    fun saveMcpServerConfig(port: Int, requireApproval: Boolean, autoStart: Boolean) =
+        viewModelScope.launch { mcpServerManager.saveConfig(port, requireApproval, autoStart) }
+
+    fun regenerateMcpServerToken() = viewModelScope.launch { mcpServerManager.regenerateToken() }
 
     private val _fetchState = MutableStateFlow<FetchState>(FetchState.Idle)
     val fetchState: StateFlow<FetchState> = _fetchState.asStateFlow()

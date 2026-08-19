@@ -34,7 +34,7 @@
 | `domain/command/` | 斜杠命令系统：`SlashCommand`（handler 接口）、`SlashCommandRegistry`（Hilt multibinding 汇集）、`SlashCommandModule`（注入绑定）、`CompressCommandHandler`、`StatusCommandHandler` |
 | `domain/container/` | 命令执行后端：`CommandEngine`（接口）、`LinuxContainerEngine`（PRoot 本地容器）、`RemoteSshEngine`（SSH exec）、`RemoteSshConnection`（共享 sshj 连接/SFTP）、`DelegatingCommandEngine`（按模式委派本地/远程）、`ContainerInstaller`、`ContainerProfile`、`ContainerInitState`、`BoundedOutput`、`GlobalInstallArchiveStore` |
 | `domain/container/progress/` | 安装进度聚合：`RealProgressAggregator`、`InstallProgressParser`、`ApkStdoutParser`、`ParallelPrefetchManager`、`PrefetchConcurrencyPolicy`、`ProgressModels` |
-| `domain/mcp/` | MCP 集成：`McpManager`（连接/工具注册/状态流）、`McpClient`、`McpTool`（MCP 工具适配 `AgentTool`）、`McpJsonRpc`、`McpServerConfig`、`McpConfigRepository`、`McpTransport` + `StdioTransport` / `StreamableHttpTransport` |
+| `domain/mcp/` | MCP 集成：`McpManager`（连接/工具注册/状态流）、`McpClient`、`McpTool`（MCP 工具适配 `AgentTool`）、`McpJsonRpc`、`McpServerConfig`、`McpConfigRepository`、`McpTransport` + `StdioTransport` / `StreamableHttpTransport`。**`server/` 子包（已实施）**：内置 MCP 服务器（`McpServerManager`/`McpHttpServer`/`McpServerSession`/`AgentToolMcpAdapter`/`McpServerSecurity`/`McpServerSettings`），把 App 能力开放给外部 MCP 客户端，见 [builtin-mcp-server-design](../plan-docs/builtin-mcp-server-design.md) |
 | `domain/memory/` | 记忆系统：`Memory` 模型（GLOBAL/PROJECT 作用域）、`MemoryParser`、`MemorySource` + `GlobalMemorySource`/`ProjectMemorySource`、`MemoryRepository` |
 | `domain/model/` | 领域模型：`AgentMessage`（含 `AgentContext`：currentFile/selectedCode/projectRoot 等）、`ChatSession`（含 `AgentMode`：BUILD/PLAN/AUTO）、`CodeChange`、`ReasoningEffort`、`TodoItem` |
 | `domain/permission/` | 权限引擎：`ToolPermissionPolicyEngine`（ALLOW/DENY/ASK 判定）、`PermissionRulesRepository`、`ShellCommandParser`、`BuiltInSafeCommands`、`BuildCommandClassifier`、`PermissionModels`、`ZthFailureModels` |
@@ -112,6 +112,8 @@
 ### 3.4 MCP（McpManager）
 
 - `McpManager`（单例）读取 `McpConfigRepository` 的服务器配置，通过 `StreamableHttpTransport`（HTTP）或 `StdioTransport`（stdio）连接 `McpClient`，把服务器暴露的工具包装为 `McpTool` 注册进 `ToolRegistry`，并维护 `statuses: StateFlow<List<McpServerStatus>>` 供 UI 展示；支持动态 install 新服务器（`ManageMcpTool`）。
+
+**内置 MCP 服务器（规划中，未实施）**：当前 `domain/mcp/` 只有客户端（连别人）。设计已评审（[builtin-mcp-server-design](../plan-docs/builtin-mcp-server-design.md)）：新增 `server/` 子包做「客户端 + 服务器」双角色，用 Ktor CIO 起 Streamable HTTP 端点，把 `ToolRegistry` 中的 `AgentTool` 映射为 MCP 工具（复用 `toToolDefinition()`/`execute()`），权限复用 `ToolPermissionManager` + 远程强制审批总开关，服务管理对标 `FtpServerManager`（开关/端口/token/自启/URL 展示）。实施按 M0 只读子集 → M1 全量工具 → M2 SSE+保活 → M3 上下文工具渐进推进；落地后更新本节。
 
 ### 3.5 记忆（Memory）
 

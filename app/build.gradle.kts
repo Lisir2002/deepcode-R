@@ -230,6 +230,8 @@ android {
     // 默认 Gradle 吞掉测试 stdout/stderr，CI 日志看不到具体不一致项。
     // 开启 showStandardStreams 让失败详情直接出现在 CI 控制台日志。
     testOptions {
+        // 让 android.util.Log 等桩方法返回默认值而非抛「not mocked」，便于被测代码间接调用日志不崩。
+        unitTests.isReturnDefaultValues = true
         unitTests.all {
             it.testLogging {
                 showStandardStreams = true
@@ -355,6 +357,11 @@ dependencies {
 
     // Kotlin 序列化
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+
+    // 内置 MCP 服务器（Streamable HTTP）：Ktor CIO 起 HTTP 监听 + SSE，供外部 MCP 客户端连入。
+    // 与项目协程/序列化栈同源（见 docs/plan-docs/builtin-mcp-server-design.md 决策记录）。
+    implementation("io.ktor:ktor-server-core:2.3.13")
+    implementation("io.ktor:ktor-server-cio:2.3.13")
 
     // YAML 解析 (用于 Skill Frontmatter)
     implementation("org.yaml:snakeyaml:2.2")

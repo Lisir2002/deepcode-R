@@ -71,6 +71,10 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var mcpManager: McpManager
 
+    /** 内置 MCP 服务器管理：注入即触发构造（init 读 DataStore + 按 autoStart 自动拉起监听）。 */
+    @Inject
+    lateinit var mcpServerManager: com.R.codecore.feature.agent.domain.mcp.server.McpServerManager
+
     /** git 凭据/署名落盘同步器：启动即把 Room 凭据 + DataStore 署名写到容器持久挂载目录，
      *  供终端/AI/UI 三端 git 经 credential.helper=store 共用，兜底 rootfs 升级或文件被删。 */
     @Inject

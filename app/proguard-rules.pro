@@ -102,3 +102,9 @@
 # ---- SnakeYAML / EdDSA 等第三方库在 Android 环境下的 JRE 缺失类告警忽略 ----
 -dontwarn java.beans.**
 -dontwarn sun.security.x509.**
+
+# ---- Ktor（内置 MCP 服务器 HTTP 层）----
+# io.ktor.util.debug.IntellijIdeaDebugDetector 引用了 JVM-only 的 java.lang.management API，
+# Android 运行时没有这些类；R8 fullMode 下缺失类会报错，该检测器在 Android 上无意义，忽略即可。
+-dontwarn java.lang.management.**
+-dontwarn io.ktor.util.debug.**
