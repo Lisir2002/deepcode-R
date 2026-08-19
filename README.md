@@ -139,7 +139,7 @@ keyPassword=your_key_password
 发版走 Tag 驱动：在 `main` 节点上打 `v*` Tag 推送（如 `git push origin v0.1.0-rc1` / `v0.1.0`），由 [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) 自动接管 → 单测 → `assembleRelease` → 正式签名 → 上传 R8 mapping → 创建 GitHub Release → 挂载 `rcodecore-arm64-<tag>.apk` → 写入 Run Summary。RC Tag（含 `-rc`）自动标记为 prerelease。
 
 - **正式签名前置条件**：仓库 `Settings → Secrets → Actions` 必须配置 4 个 secrets —— `AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`。缺失任一会**静默回退到 debug keystore 签名**，产物不可上架。
-- **实时监控与产物校验**、完整命令与 CI job 详解：见 [AGENTS.md §云端构建与实时监控自动化](./AGENTS.md#云端构建与实时监控自动化)。
+- **实时监控与产物校验**、完整命令与 CI job 详解：见 [docs/ci-release.md](./docs/ci-release.md)（云端构建发版运维手册）。
 - **Release 页面**：https://github.com/Lisir2002/deepcode-R/releases
 
 ## 技术栈

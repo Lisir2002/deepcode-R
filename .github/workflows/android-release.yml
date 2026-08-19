@@ -283,7 +283,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       # 把版本号、prerelease 标志、APK 下载链接、Release 页面写入 Run Summary，
-      # 方便 AI / 维护者通过 GitHub API 或 Actions 页面一眼定位产物（与 AGENTS.md §云端构建与实时监控自动化 对齐）。
+      # 方便 AI / 维护者通过 GitHub API 或 Actions 页面一眼定位产物（与 docs/ci-release.md 云端构建发版运维手册 对齐）。
       - name: Write download URLs to Run Summary
         if: always()
         env:
