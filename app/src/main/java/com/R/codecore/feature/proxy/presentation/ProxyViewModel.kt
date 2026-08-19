@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -233,22 +234,69 @@ class ProxyViewModel @Inject constructor(
         }
     }
 
-    /** 对展开 profile 的所有节点测速（并发受限），逐节点回填延迟/超时状态。 */
+    /**
+     * 对展开 profile 的所有节点测速（对齐 Clash：只走内核真实出口，不做 App 直连近似）。
+     *
+     * 若被测配置不是当前运行配置（代理未启用 / 活跃的是别的 profile），自动临时用该配置启用内核
+     * 再测，测完恢复原状态。Clash 的测速本来就是针对「当前加载配置」，节点延迟只能由内核在真实出口
+     * 上测出；旧实现「未启用时直连 server:port」在节点几乎都在海外时必然 connect 超时 → 假「全部超时」。
+     * 内核始终不可达则给出明确错误，不再逐个标超时。
+     */
     fun testProfileLatency(id: String) {
         val current = _profileNodes.value ?: return
         if (current.profileId != id || current.testing) return
-        _profileNodes.value = current.copy(testing = true, latencies = emptyMap())
+        _profileNodes.value = current.copy(testing = true, latencies = emptyMap(), error = null)
         viewModelScope.launch {
             val nodes = current.summary.nodes
-            // 仅当该 profile 正是当前运行的活跃配置时走 mihomo REST（真实出口测速），否则直连近似
-            val useController = manager.state.value.enabled &&
-                manager.state.value.activeProfileId == id
+            if (nodes.isEmpty()) {
+                _profileNodes.update { v ->
+                    if (v == null || v.profileId != id) v
+                    else v.copy(
+                        testing = false,
+                        error = "没有可测的内联节点（节点可能全部来自 proxy-provider，需先启用代理后经「分组 · 流量」查看实时延迟）"
+                    )
+                }
+                return@launch
+            }
+            val wasEnabled = manager.state.value.enabled
+            val wasActive = manager.state.value.activeProfileId
+            // 被测配置未在运行 → 临时启用，确保节点已加载进内核
+            if (!(wasEnabled && wasActive == id)) {
+                val r = manager.on(id, null)
+                if (r != "ok") {
+                    _profileNodes.update { v ->
+                        if (v == null || v.profileId != id) v
+                        else v.copy(testing = false, error = "启用配置以测速失败：$r")
+                    }
+                    return@launch
+                }
+            }
+            // 等内核控制面就绪（根侧拉启 mihomo 是异步的，短轮询）
+            val ready = withContext(Dispatchers.IO) {
+                var ok = false
+                repeat(6) {
+                    if (manager.controllerRequest("GET", "/configs") != null) {
+                        ok = true
+                        return@withContext true
+                    }
+                    delay(500)
+                }
+                ok
+            }
+            if (!ready) {
+                restoreAfterTest(wasEnabled, wasActive)
+                _profileNodes.update { v ->
+                    if (v == null || v.profileId != id) v
+                    else v.copy(testing = false, error = "mihomo 内核未运行（控制面不可达），无法测速；请先「启用代理」后再试")
+                }
+                return@launch
+            }
             val semaphore = Semaphore(6)
             coroutineScope {
                 nodes.forEach { node ->
                     launch(Dispatchers.IO) {
                         semaphore.withPermit {
-                            val d = manager.testNodeLatency(node, useController)
+                            val d = manager.testNodeLatency(node)
                             _profileNodes.update { v ->
                                 if (v == null || v.profileId != id) v
                                 else v.copy(latencies = v.latencies + (node.name to d))
@@ -257,9 +305,19 @@ class ProxyViewModel @Inject constructor(
                     }
                 }
             }
+            restoreAfterTest(wasEnabled, wasActive)
             _profileNodes.update { v ->
                 if (v == null || v.profileId != id) v else v.copy(testing = false)
             }
+        }
+    }
+
+    /** 测速结束后恢复代理运行状态：测前未启用→关；测前是其它活跃配置→恢复原活跃。 */
+    private suspend fun restoreAfterTest(wasEnabled: Boolean, wasActive: String?) {
+        if (!wasEnabled) {
+            manager.off()
+        } else if (wasActive != null && wasActive != manager.state.value.activeProfileId) {
+            manager.on(wasActive, null)
         }
     }
 

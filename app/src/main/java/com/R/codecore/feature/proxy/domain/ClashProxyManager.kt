@@ -26,8 +26,6 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.yaml.snakeyaml.Yaml
-import java.net.InetSocketAddress
-import java.net.Socket
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -273,36 +271,29 @@ class ClashProxyManager @Inject constructor(
     }
 
     /**
-     * 单节点测速（对齐 Clash 的延迟展示）：
-     *  - [useController] 且代理已启用：走 mihomo REST `/proxies/{node}/delay`（真实出口，权威值，Clash 同源）。
-     *    仅当该节点确实载入当前运行配置时才应传 true，否则 REST 会因节点不存在而误报超时；
-     *  - 否则：App 直连节点 `server:port` 的 TCP connect 往返，作为可达性/延迟近似。
-     * @return 毫秒延迟；失败/超时返回 null。
+     * 单节点测速（对齐 Clash：只走内核真实出口，不做 App 直连近似）。
+     *
+     * 走 mihomo REST `/proxies/{node}/delay?url=generate_204&timeout=5000`，与 ClashMetaForAndroid
+     * 同源：由节点在运行配置下真实访问目标 URL 得出延迟。
+     *  - 成功 → 毫秒延迟；
+     *  - 节点超时（mihomo 返回 504）/ 控制器不可达 → null，由调用方按「超时」展示。
+     *
+     * 注意：旧实现里「代理未启用时用 Socket 直连 server:port 作近似」在节点服务器几乎都在海外时
+     * 必然 connect 超时，导致「测速全部超时」；且该近似测得的是 TCP 握手而非代理出口延迟，与 Clash
+     * 语义不符，故移除。调用方必须先把被测配置加载进内核（[on]）再测，否则 REST 会因节点不存在报错。
      */
-    suspend fun testNodeLatency(node: ProxyNodeInfo, useController: Boolean): Long? = withContext(Dispatchers.IO) {
-        if (useController && enabledCache) {
-            val encoded = java.net.URLEncoder.encode(node.name, "UTF-8").replace("+", "%20")
-            val resp = controllerRequest(
-                "GET",
-                "/proxies/$encoded/delay?url=http://www.gstatic.com/generate_204&timeout=5000"
-            )
-            val delay = resp?.let { body ->
-                runCatching {
-                    kotlinx.serialization.json.Json.parseToJsonElement(body)
-                        .jsonObject["delay"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
-                }.getOrNull()
-            }
-            if (delay != null) return@withContext delay
-            return@withContext null
+    suspend fun testNodeLatency(node: ProxyNodeInfo): Long? = withContext(Dispatchers.IO) {
+        val encoded = urlEncode(node.name)
+        val resp = controllerRequest(
+            "GET",
+            "/proxies/$encoded/delay?url=http://www.gstatic.com/generate_204&timeout=5000"
+        )
+        resp?.let { body ->
+            runCatching {
+                kotlinx.serialization.json.Json.parseToJsonElement(body)
+                    .jsonObject["delay"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+            }.getOrNull()
         }
-        if (node.server.isBlank() || node.port <= 0) return@withContext null
-        runCatching {
-            Socket().use { sock ->
-                val begin = System.nanoTime()
-                sock.connect(InetSocketAddress(node.server, node.port), 3000)
-                ((System.nanoTime() - begin) / 1_000_000).coerceAtLeast(0)
-            }
-        }.getOrNull()
     }
 
     /** 把合成配置落盘到 filesDir/rcodecore/proxy/config.yaml。 */

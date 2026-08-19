@@ -595,7 +595,7 @@ private fun NodeListView(view: ProfileNodesView?, onTestLatency: () -> Unit) {
         }
         view.error != null -> {
             Text(
-                text = "加载失败：${view.error}",
+                text = view.error,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
