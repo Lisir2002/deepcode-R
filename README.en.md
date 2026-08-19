@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/Language-Kotlin-purple.svg" alt="Kotlin" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4.svg" alt="Jetpack Compose UI" />
   <img src="https://img.shields.io/badge/MinSDK-26-orange.svg" alt="Min SDK 26 (Android 8.0)" />
+  <a href="https://github.com/Lisir2002/deepcode-R/actions"><img src="https://github.com/Lisir2002/deepcode-R/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
   <a href="https://github.com/Lisir2002/deepcode-R/releases/latest"><img src="https://img.shields.io/github/v/release/Lisir2002/deepcode-R?display_name=tag&include_prereleases" alt="Latest Release" /></a>
   <a href="https://github.com/Lisir2002/deepcode-R/releases"><img src="https://img.shields.io/github/downloads/Lisir2002/deepcode-R/total" alt="Total Downloads" /></a>
 </p>
@@ -32,16 +33,31 @@
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [For Developers: Build & Test](#for-developers-build--test)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Documentation](#documentation)
+- [Known Limitations](#known-limitations)
+- [Contributing](#contributing)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
+
 ## Overview
 
 R-CodeCore is an AI-powered coding assistant that runs natively on Android. It integrates large language models with a local Linux development environment. The built-in Alpine Linux container and terminal emulator let the AI directly read/write files, execute shell commands, and run build tools. It also supports remote SSH servers as the execution backend, turning your phone into a mobile workstation for remote projects.
 
 ## Features
 
-- **AI Agent** — Supports Anthropic (Claude), OpenAI (GPT), Gemini, and other providers. Deeply interacts with the dev environment via 17 built-in tools (file read/write/edit, shell execution, terminal management, web search, MCP management, etc.). Supports streaming output, context compression, multi-session management, and PLAN/BUILD/AUTO execution modes
+- **AI Agent** — Supports Anthropic (Claude), OpenAI (GPT), Gemini, and other providers. Deeply interacts with the dev environment via **20+ built-in tools** (file read/write/edit, shell execution, terminal management, web search/fetch, image generation, MCP management, etc.). Supports streaming output, context compression, multi-session management, and PLAN/BUILD/AUTO execution modes
 - **Permission & Safety** — Seven-layer permission evaluation engine: catastrophic command interception, PLAN-mode read-only constraints, shell static analysis, built-in read-only whitelist, user approval and rule memory
 - **Checkpoints & Rollback** — Automatic file snapshots before modifications, with rollback to any checkpoint
-- **Built-in Terminal** — Based on Termux components + PRoot Alpine Linux container, providing a full Linux command-line environment with background persistence, multi-tab management, and 6 built-in bundles (Python/Node/Git/Bash/rg/Network tools)
+- **Built-in Terminal** — Based on Termux components + PRoot Alpine Linux container, providing a full Linux command-line environment with background persistence, multi-tab management, and **7 built-in bundles** (Python/Node/Git/Bash/rg/Network tools/QEMU x86 translator)
 - **Remote SSH Mode** — Connect to a remote SSH server as the execution backend. Commands via exec channel, file I/O via exec + cat/base64, terminal via shell channel, with auto-reconnect and status indicator
 - **MCP Protocol** — Model Context Protocol client, connecting to local (stdio) or remote (HTTP) MCP servers to dynamically extend tool capabilities
 - **Git Integration** — Built-in visual Git operations (status/branches/commits/tags/graph), with unified credential management across three endpoints (UI Git / AI Bash / terminal git)
@@ -50,32 +66,34 @@ R-CodeCore is an AI-powered coding assistant that runs natively on Android. It i
 - **Markdown Rendering** — Real-time Markdown rendering in AI conversations, with code highlighting
 - **Custom Prompts** — System prompts support user-defined overrides, preserved across app upgrades
 
-## Tech Stack
+## Installation
 
-| Category | Technology |
-|----------|------------|
-| Language | Kotlin 2.2.21 |
-| Build | Android Gradle Plugin 8.9.3 + KSP |
-| UI | Jetpack Compose (BOM 2025.12.01) + Material 3 |
-| DI | Hilt 2.56.1 (Dagger) |
-| Database | Room 2.7.1 (file-driven SQL migration system, Schema v31) |
-| Network | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
-| Async | Kotlin Coroutines / Flow |
-| Terminal | Termux terminal-emulator + terminal-view (JNI libtermux.so) |
-| Container | PRoot + Alpine Linux 3.21 rootfs (arm64-v8a / x86_64) |
-| Remote SSH | SSHJ 0.38.0 (exec channel + shell channel) |
-| Crypto | BouncyCastle bcprov-jdk18on 1.75 + Android Keystore AES-GCM |
-| FTP | Apache Commons Net 3.10.0 |
-| Compression | Apache Commons Compress 1.26.2 (tar.gz / XZ) |
-| Serialization | Gson + kotlinx.serialization |
+> R-CodeCore is distributed as an APK. **No compilation needed** — just download and install.
 
-## Getting Started
+1. Go to the [Releases page](https://github.com/Lisir2002/deepcode-R/releases) and download the latest APK (`rcodecore-arm64-<tag>.apk`).
+2. Transfer the APK to your phone (browser download / cloud drive / USB).
+3. Tap the APK to install. If prompted about "unknown sources", allow "Install unknown apps" in system settings (path varies by brand).
+
+**Prerequisites**
+
+- **Physical device (officially supported)**: Android 8.0+ (API 26) **arm64-v8a** device (the mainstream ABI for current Android handsets)
+- *Note: x86_64 emulators are not officially supported — design decision = "real devices only, no virtual machine considerations"*
+
+## Quick Start
+
+1. **Add an AI provider**: Go to "Settings → AI Providers" and add an API key for Anthropic (Claude) / OpenAI (GPT) / Gemini.
+2. **Start chatting**: Return to the home screen and describe what you need; the AI can read/write files and run commands. Use the **PLAN / BUILD / AUTO** execution modes to control how much freedom the AI has.
+3. **Use the terminal**: Open the "Terminal" tab and install the built-in bundles you need (Python / Node / Git / Bash, etc.) for a full Linux command-line environment.
+4. **Connect remote**: Configure a remote SSH server in Settings to turn your phone into a mobile workstation for remote projects.
+5. **Extend capabilities**: Add MCP servers to dynamically extend tools; connect the built-in browser so the AI can read pages behind your login session.
+
+> 💡 For more details, see the in-app help (Settings → Help) and the [Documentation](#documentation) section.
+
+## For Developers: Build & Test
 
 ### Prerequisites
 
-- **Physical device (officially supported)**: Android 8.0+ (API 26) **arm64-v8a** device (the mainstream ABI for current Android handsets)
-- **Build environment**: JDK 17
-- *Note: x86_64 emulators are not officially supported — design decision = "real devices only, no virtual machine considerations"*
+- **JDK 17**
 
 ### Build
 
@@ -122,9 +140,27 @@ keyPassword=your_key_password
 Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push origin v0.1.0-rc1` / `v0.1.0`) and [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) takes over automatically → unit tests → `assembleRelease` → production signing → upload R8 mapping → create GitHub Release → attach `rcodecore-arm64-<tag>.apk` → write Run Summary. RC tags (containing `-rc`) are auto-marked as prerelease.
 
 - **Production-signing prerequisite**: the repository `Settings → Secrets → Actions` must define 4 secrets — `AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`. Missing any one silently falls back to the debug keystore, and the artifact cannot be published.
-- **Real-time monitoring & artifact verification** (mandatory after pushing a tag): poll `workflow_runs` + `jobs` via the GitHub API until `conclusion` settles → download the APK → `unzip -l` to confirm only `lib/arm64-v8a/*.so` → `keytool -printcert` to confirm it is not `CN=Android Debug` → `sha256sum` to record the fingerprint.
-- **Full commands, the 6 CI jobs, and the signing-secrets verification API**: see [AGENTS.md § Cloud build & real-time monitoring automation](./AGENTS.md#云端构建与实时监控自动化).
+- **Real-time monitoring & artifact verification**, full commands, and CI job details: see [AGENTS.md § Cloud build & real-time monitoring automation](./AGENTS.md#云端构建与实时监控自动化).
 - **Release page**: https://github.com/Lisir2002/deepcode-R/releases
+
+## Tech Stack
+
+| Category | Technology |
+|----------|------------|
+| Language | Kotlin 2.2.21 |
+| Build | Android Gradle Plugin 8.9.3 + KSP |
+| UI | Jetpack Compose (BOM 2025.12.01) + Material 3 |
+| DI | Hilt 2.56.1 (Dagger) |
+| Database | Room 2.7.1 (file-driven SQL migration system, Schema v46) |
+| Network | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
+| Async | Kotlin Coroutines / Flow |
+| Terminal | Termux terminal-emulator + terminal-view (JNI libtermux.so) |
+| Container | PRoot + Alpine Linux 3.21 rootfs (arm64-v8a / x86_64) |
+| Remote SSH | SSHJ 0.38.0 (exec channel + shell channel) |
+| Crypto | BouncyCastle bcprov-jdk18on 1.75 + Android Keystore AES-GCM |
+| FTP | Apache Commons Net 3.10.0 |
+| Compression | Apache Commons Compress 1.26.2 (tar.gz / XZ) |
+| Serialization | Gson + kotlinx.serialization |
 
 ## Project Structure
 
@@ -133,18 +169,26 @@ app/src/main/java/com/R/codecore/
 ├── core/                # Core infrastructure (FileLogger, AILogger, db/MigrationLoader, CredentialEncryptor, LineDiff, theme)
 ├── di/                  # Hilt DI (AgentModule, RepositoryModule, BackupModule)
 ├── feature/
-│   ├── agent/           # AI Agent (MVI workflow, 17 tools, permission engine, MCP, skills, memory, checkpoints, provider adapters)
+│   ├── agent/           # AI Agent (MVI workflow, 20+ tools, permission engine, MCP, skills, memory, checkpoints, provider adapters)
 │   ├── credentials/     # Git credential management (3-endpoint IPC bridge, file sync, global dialog)
 │   ├── git/             # Git visualization (status/branches/commits/tags/graph/diff)
 │   ├── settings/        # App settings (AI provider management, container, MCP, remote, logs, etc.)
-│   ├── terminal/        # Terminal emulation & session management (local PRoot + remote SSH, 6 built-in bundles)
+│   ├── terminal/        # Terminal emulation & session management (local PRoot + remote SSH, 7 built-in bundles)
 │   ├── workspace/       # Workspace & document management (local + remote SFTP/FTP sync)
 │   └── backup/          # AES-encrypted backup & restore
 ├── AIEditorApp.kt       # Application entry (BC registration, credential bridge, MCP, keepalive init)
 └── MainActivity.kt      # Main Activity (NavHost + Drawer + global credential dialog)
 ```
 
-> 📋 **AI collaboration guidelines**: See [AGENTS.md](./AGENTS.md) — asset sync discipline, Conventional Commits, branching workflow, release process (RC gating), and other must-read rules for development.
+> Detailed per-module developer docs: see [docs/modules/](./docs/modules/README.md) (one doc per module: responsibilities, architecture, interfaces, maintenance guide).
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [docs/modules/README.md](./docs/modules/README.md) | **Module docs index**: one document per feature module (architecture, interfaces, maintenance guide) |
+| [AGENTS.md](./AGENTS.md) | **AI collaboration guidelines**: asset sync discipline, Conventional Commits, branching workflow, release process |
+| `app/src/main/assets/docs/` | In-app help documents (viewable at runtime via Settings → Help) |
 
 ## Known Limitations
 
@@ -152,6 +196,10 @@ app/src/main/java/com/R/codecore/
 - Release artifacts are **physical-device arm64-v8a single-ABI** APKs:
   - Supports all mainstream Android physical devices (Snapdragon/Dimensity/Kirin and other 64-bit ARM chipsets);
   - x86_64 emulators or x86 Chromebooks will fail at install time (missing `x86_64` native libs) — no runtime crashes, aligned with the "don't waste build resources on virtual machines" design decision.
+
+## Contributing
+
+Issues and PRs are welcome. Please follow the rules in [AGENTS.md](./AGENTS.md): Conventional Commits, asset sync discipline (UI strings go to `strings.xml`, code changes sync module docs, etc.). Enable local validation before committing: `git config core.hooksPath .githooks`.
 
 ## Acknowledgements
 
