@@ -1,8 +1,10 @@
 name: Android Release
 
-# 打 Tag（如 v1.0.0）时触发：构建真机单架构 Release APK（arm64-v8a only）
-#   - 发布产物显式带 arm64 标签，避免用户误装到 x86_64 模拟器（安装阶段即失败，不会运行期崩溃）。
-#   - x86_64 模拟器如需开发使用，本地临时切回 abiFilters=[arm64-v8a,x86_64] 即可（_x86Assets 资产已按「只支持真机」设计决策删除，仓库不再保留 x86 容器备份）。
+# 打 Tag（如 v1.0.0）时触发：构建「真机 + 虚拟环境通用」的 Release APK（双 ABI：arm64-v8a + x86_64）。
+#   - 单包通用（用户决策「不分包」）：同一 APK 同时携带 arm64-v8a 与 x86_64 两套原生库，
+#     Android 包管理器安装/运行期按设备 ABI 自动选用——真机（arm64）与 x86_64 模拟器都安装即用，
+#     无需用户选择、不存在「误装到 x86_64 模拟器」的问题（详见 docs/plan-docs/emulator-support-design.md）。
+#   - 容器 rootfs 同理双架构打入（container/arm + container/x86_64），运行时按宿主架构选装/选用。
 # 创建 GitHub Release 并把 APK 作为资产发布。
 on:
   push:
@@ -167,25 +169,35 @@ jobs:
       - name: Run unit tests (release)
         run: ./gradlew --warning-mode=all :app:testReleaseUnitTest --stacktrace
 
-      # 构建真机单架构 release APK（arm64-v8a only，见 build.gradle.kts abiFilters 与 sourceSets）
+      # 构建通用 release APK（双 ABI：arm64-v8a + x86_64，见 build.gradle.kts abiFilters 与 sourceSets）
       # --warning-mode=all + --stacktrace：失败时完整输出，便于在 CI 一眼定位 R8/打包/OOM 根因
       - name: Build Release APK
         run: ./gradlew --warning-mode=all assembleRelease --stacktrace
 
-      # 重命名 APK 为「品牌-arm64-版本」格式（真机单架构，显式带 ABI 标签）：
-      #   rcodecore-arm64-v1.0.0-rc1.apk
+      # 重命名 APK 为「品牌-版本」格式（单包通用，双 ABI 一并打入，不带 ABI 标签）：
+      #   rcodecore-v1.0.0-rc1.apk
       - name: Rename APK
         run: |
           mkdir -p dist
           ver="${GITHUB_REF_NAME:-manual}"   # tag 如 v1.0.0-rc1；手动触发时为 manual-N
           src="app/build/outputs/apk/release/app-release.apk"
           if [[ -f "$src" ]]; then
-            out="dist/rcodecore-arm64-${ver}.apk"
+            out="dist/rcodecore-${ver}.apk"
             cp "$src" "$out"
             echo "packaged $out"
             ls -lh "$out"
+            # 产物校验：通用包必须同时包含 arm64-v8a 与 x86_64 两套原生库（解 zip 列出 lib/ 下架构目录）
+            echo "--- ABI 校验：lib/ 下应有 arm64-v8a 与 x86_64 ---"
+            unzip -l "$out" | awk '/\.so$/ {print $4}' | awk -F/ 'NF>=3 {print $2}' | sort -u
+            has_arm=$(unzip -l "$out" | grep -c 'lib/arm64-v8a/.*\.so' || true)
+            has_x86=$(unzip -l "$out" | grep -c 'lib/x86_64/.*\.so' || true)
+            if [[ "$has_arm" -eq 0 || "$has_x86" -eq 0 ]]; then
+              echo "::error::ABI 校验失败：arm64-v8a($has_arm) / x86_64($has_x86) 未同时包含，请检查 build.gradle.kts abiFilters=[arm64-v8a,x86_64] 与双架构资产。"
+              exit 1
+            fi
+            echo "✓ ABI 校验通过：arm64-v8a + x86_64 双架构齐备"
           else
-            echo "::error::missing $src — assembleRelease 产出未找到，请检查 build.gradle.kts 已移除 flavor 且 abiFilters=arm64-v8a。"
+            echo "::error::missing $src — assembleRelease 产出未找到，请检查 build.gradle.kts 已移除 flavor 且 abiFilters 含 arm64-v8a 与 x86_64。"
             exit 1
           fi
 
@@ -207,7 +219,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-apk-${{ github.ref_name }}
-          path: dist/rcodecore-arm64-*.apk
+          path: dist/rcodecore-*.apk
           if-no-files-found: warn
           retention-days: 90
 
@@ -273,9 +285,9 @@ jobs:
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           fail_on_unmatched_files: true
           generate_release_notes: false
-          # 产物名约定 rcodecore-arm64-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
+          # 产物名约定 rcodecore-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
           files: |
-            dist/rcodecore-arm64-*.apk
+            dist/rcodecore-*.apk
         env:
           # RC70 修复：softprops action 对 tag/release 写操作 + 附件 upload 用 GH_RELEASE_TOKEN (细粒度 PAT)，
           # 避免默认 secrets.GITHUB_TOKEN 在 tag 已经存在 + repo 限制 Release write / tag push 时竞态失败。
@@ -291,13 +303,13 @@ jobs:
           IS_PRERELEASE: ${{ steps.prerelease.outputs.is_prerelease }}
           REPO: ${{ github.repository }}
         run: |
-          apk="dist/rcodecore-arm64-${TAG}.apk"
+          apk="dist/rcodecore-${TAG}.apk"
           sha256="$(sha256sum "$apk" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
           {
             echo "## R-CodeCore Release — ${TAG}"
             echo ""
             echo "- **Prerelease**: ${IS_PRERELEASE}"
-            echo "- **APK**: \`rcodecore-arm64-${TAG}.apk\`"
+            echo "- **APK**: \`rcodecore-${TAG}.apk\` (双 ABI 通用包：arm64-v8a + x86_64)"
             echo "- **SHA256**: \`${sha256}\`"
             echo "- **Release page**: https://github.com/${REPO}/releases/tag/${TAG}"
             echo "- **Artifact**: r8-mapping-${TAG} (Run artifact, 90d retention)"

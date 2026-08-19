@@ -70,14 +70,14 @@ R-CodeCore 是一款在 Android 手机上运行的 AI 编程工具，将大语�
 
 > R-CodeCore 以 APK 形式发布，**无需自己编译**，直接下载安装即可。
 
-1. 前往 [Releases 页面](https://github.com/Lisir2002/deepcode-R/releases)，下载最新版本 APK（`rcodecore-arm64-<tag>.apk`）。
-2. 将 APK 传输到手机（浏览器直下 / 网盘 / USB）。
+1. 前往 [Releases 页面](https://github.com/Lisir2002/deepcode-R/releases)，下载最新版本 APK（`rcodecore-<tag>.apk`，单包通用：真机与模拟器同一安装包）。
+2. 将 APK 传输到手机/模拟器（浏览器直下 / 网盘 / USB）。
 3. 在手机上点击 APK 安装。若提示「未知来源」，需在系统设置中允许「安装未知应用」（不同品牌路径略有差异）。
 
 **环境要求**
 
 - **真机（正式支持）**：Android 8.0+（API 26）**arm64-v8a** 设备（当前 Android 真机主流 ABI）
-- *注：x86_64 模拟器不做正式支持，设计决策为「只适配真机、不考虑虚拟机」*
+- **虚拟环境（模拟器 / 虚拟机）**：x86_64 或 arm64 系统镜像均支持——同一通用包安装即用，容器按宿主架构自动选用（x86_64 走 x86_64 原生 proot，arm64 走原生执行）；详见 [docs/plan-docs/emulator-support-design.md](docs/plan-docs/emulator-support-design.md)
 
 ## 快速上手
 
@@ -103,7 +103,7 @@ R-CodeCore 是一款在 Android 手机上运行的 AI 编程工具，将大语�
 
 # Release 发布包（需配置签名；不配置时自动回退到 debug keystore 签名，保证能产出 APK）
 ./gradlew assembleRelease
-# 产物路径：app/build/outputs/apk/release/app-release.apk（单 arm64-v8a 真机架构）
+# 产物路径：app/build/outputs/apk/release/app-release.apk（双 ABI 通用包：arm64-v8a + x86_64）
 
 # Release AAB
 ./gradlew bundleRelease
@@ -136,7 +136,7 @@ keyPassword=your_key_password
 
 ### 云端构建（GitHub Actions 自动发版）
 
-发版走 Tag 驱动：在 `main` 节点上打 `v*` Tag 推送（如 `git push origin v0.1.0-rc1` / `v0.1.0`），由 [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) 自动接管 → 单测 → `assembleRelease` → 正式签名 → 上传 R8 mapping → 创建 GitHub Release → 挂载 `rcodecore-arm64-<tag>.apk` → 写入 Run Summary。RC Tag（含 `-rc`）自动标记为 prerelease。
+发版走 Tag 驱动：在 `main` 节点上打 `v*` Tag 推送（如 `git push origin v0.1.0-rc1` / `v0.1.0`），由 [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) 自动接管 → 单测 → `assembleRelease` → 正式签名 → **ABI 双架构产物校验** → 上传 R8 mapping → 创建 GitHub Release → 挂载 `rcodecore-<tag>.apk` → 写入 Run Summary。RC Tag（含 `-rc`）自动标记为 prerelease。
 
 - **正式签名前置条件**：仓库 `Settings → Secrets → Actions` 必须配置 4 个 secrets —— `AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`。缺失任一会**静默回退到 debug keystore 签名**，产物不可上架。
 - **实时监控与产物校验**、完整命令与 CI job 详解：见 [docs/ci-release.md](./docs/ci-release.md)（云端构建发版运维手册）。
@@ -193,9 +193,9 @@ app/src/main/java/com/R/codecore/
 ## 已知限制
 
 - `targetSdk` 锁定为 28 以绕过 Android 10+ W^X 策略，使 PRoot 可执行；代价为无法上架 Google Play（与 Termux 同一取舍）。
-- 发布产物为**真机 arm64-v8a 单架构** APK：
-  - 适配所有主流 Android 真机（骁龙/天玑/麒麟等 64 位 ARM 芯片）；
-  - x86_64 模拟器、Chromebook x86 安装时因缺少 `x86_64` so 会在安装阶段直接失败，不会进入运行期崩溃——符合「不在虚拟机场景浪费构建资源」的设计决策。
+- 发布产物为**双 ABI 通用包**（arm64-v8a + x86_64）：
+  - 适配所有主流 Android 真机（骁龙/天玑/麒麟等 64 位 ARM 芯片）与 x86_64 / arm64 模拟器、虚拟机；
+  - 极端罕见的主机 ABI（非 arm64/x86_64）下容器不可用，AI 核心（对话/文件/远程 SSH）仍可用，容器/终端走明确降级提示。
 
 ## 贡献
 

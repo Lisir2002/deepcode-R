@@ -95,6 +95,7 @@ catalog 刷新：App 启动调 `refreshFromNetworkIfStale()`；`init` 中监听 
 
 `SettingsViewModel.setActiveContainerProfile(id)`：
 
+0. 默认值：首次启动未持久化 profile 时，`ContainerSettingsRepository.activeProfileIdFlow` 按宿主架构自动选内置容器（x86_64 宿主 → 内置 x86_64，其余 → 内置 arm64，见 `EnvironmentDetector.defaultProfileId()`），真机与模拟器零配置可用。
 1. 定位 profile（自定义 / 内置 arm64 / 内置 x86_64）。
 2. `ContainerSettingsRepository.setActiveProfile` 持久化选择。
 3. 本地镜像 → `ExecutionModeRepository.setExecutionMode(LOCAL_PROOT)` + `ExecutionModeHolder.setMode`。

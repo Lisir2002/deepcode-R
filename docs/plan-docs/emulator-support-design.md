@@ -1,9 +1,24 @@
-# 虚拟环境（模拟器/虚拟机）支持 · 设计文档 v1.0（草案）
+# 虚拟环境（模拟器/虚拟机）支持 · 设计文档 v1.0（已实施）
 
-> 状态：📝 草案，待评审
+> 状态：✅ 已实施（M0~M2 落地，M3 CI 模拟器冒烟为后续增强）
 > 目标：让 R-CodeCore 从「真机专用」平滑演进到「真机 + 虚拟环境（模拟器 / 虚拟机）均可用」
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 相关入口：`AGENTS.md` / `docs/modules/`（模块文档）/ `docs/ci-release.md`（发版运维）
+
+---
+
+## 0. 实施状态总览（2026-08-19）
+
+| 里程碑 | 内容 | 状态 | 证据 |
+|---|---|---|---|
+| M0 | arm64 模拟器镜像支持 | ✅ 已落地 | 单包通用天然覆盖 arm64 模拟器（宿主即 arm64，与真机一致） |
+| M1 | 环境探测抽象 + 无容器降级路由 | ✅ 已落地 | `core/environment/ExecutionEnvironment.kt` + `LinuxContainerEngine.ensureInstalled()` 降级分支 |
+| M2 | **通用单包**：双 ABI + 双 rootfs 同一 APK | ✅ 已落地 | `app/build.gradle.kts` 双 ABI；`ContainerInstaller` 双架构安装；**本地 `assembleRelease` 验证通过** |
+| M3 | CI 模拟器端到端冒烟 | 📋 后续增强 | 见 §6.6，不在本次范围 |
+
+**本地构建验证结果**（`assembleRelease` BUILD SUCCESSFUL，产物 `app-release.apk` 22MB）：
+- `lib/` 同时含 `arm64-v8a` 与 `x86_64` 两套 `.so`（均含 `libtermux.so`，terminal-emulator 双 ABI 提供）；
+- `assets/container/` 同时含 `alpine-rootfs.bin`（arm64）与 `alpine-rootfs-x86_64.bin`（x86_64）、arm64/x86_64 两套 proot+loader+动态库、`qemu-user-linux-arm64-x86_64` 转译器。
 
 ---
 
@@ -116,12 +131,12 @@ object EnvironmentDetector {
 
 ### 6.2 环境适配点清单（改哪里）
 
-| 适配点 | 现状 | 改后 |
+| 适配点 | 现状 | 改后（已实施） |
 |---|---|---|
-| 打包 ABI（P1） | `abiFilters = ["arm64-v8a"]` | 由环境策略决定（见 6.3） |
-| 容器 rootfs 架构（P3） | `ContainerInstaller.ASSET_DIR` 固定 `container/arm` | 按环境选 `arm` / `x86_64`（复用已有双架构安装逻辑骨架） |
-| Bundle 安装 | Alpine v3.21 arm64 apk | x86_64 环境切 x86_64 仓库（`TerminalBundles` 加架构维度） |
-| 执行后端 | `DelegatingFileAccess` 按 ExecutionMode 分发 | 增加「环境不支持容器时」的降级路由 |
+| 打包 ABI（P1） | `abiFilters = ["arm64-v8a"]` | `abiFilters = ["arm64-v8a", "x86_64"]`（见 6.3） |
+| 容器 rootfs 架构（P3） | `ContainerInstaller.ASSET_DIR` 固定 `container/arm` | 按宿主选 `arm` / `x86_64`（`rootfsDirFor` + `installRootfsX86`，见 6.4） |
+| Bundle 安装 | Alpine v3.21 arm64 apk | **无需改动**：apk 在容器内按容器架构自动解析（x86_64 rootfs → x86_64 包），`TerminalBundles` 只声明包名 |
+| 执行后端 | `DelegatingFileAccess` 按 ExecutionMode 分发 | 增加「环境不支持容器时」的降级路由（见 6.5） |
 | 帮助文档/提示词 | 真机口径 | 虚拟环境口径文案（走 `assets/docs` + `prompts` 同步纪律） |
 
 ### 6.3 打包策略：单一通用包（Universal APK）· 用户决策「不分包」
@@ -133,13 +148,16 @@ object EnvironmentDetector {
 - **产物命名**：由 `rcodecore-arm64-<tag>.apk` 调整为 `rcodecore-<tag>.apk`（不再暗示单架构）；CI 校验清单相应改为校验 `lib/` 同时含 `arm64-v8a` 与 `x86_64`（见 [docs/ci-release.md](file:///workspace/deepcode-R/docs/ci-release.md) 扩展）。
 - **体积代价**：单包 = 双 ABI `.so` + 双 rootfs，体积必然增长（预计 +5~10MB 量级）。这是「一个包、两环境」的确定性取舍，换取单一产物的分发与运维简单性。后续如需减负，可评估 rootfs 按需下载（属优化项，不影响本决策）。
 
-### 6.4 容器架构选择与 x86_64 转译（方向 C 核心）
+### 6.4 容器架构选择与 x86_64 转译（方向 C 核心 · 已实施）
 
-`ContainerInstaller` 注释已表明曾设计双容器架构（同一 APK 内双 rootfs，运行时按环境安装）：
+`ContainerInstaller` 支持同一 APK 内双 rootfs + 双 proot，运行时按宿主架构选择（**注意：比早期草案更进一步——x86_64 宿主直接用 x86_64 原生 proot，不经 qemu 转译**）：
 
-- **arm64 环境**：安装 `container/arm`，aarch64 rootfs 原生执行（现状）；
-- **x86_64 环境**：x86_64 rootfs，经 proot `-q` 注入静态 `qemu-*-static` 转译（宿主侧 proot/loader 仍 arm64 版）；
-- **无容器降级**：跳过容器安装，命令执行降级/提示。
+- **arm64 宿主（真机 / arm64 模拟器镜像）**：安装 `container/arm`，aarch64 rootfs 原生执行（现状）；
+- **x86_64 宿主（x86_64 模拟器镜像）**：安装 `container/x86_64`，**x86_64 原生 proot + x86_64 rootfs 原生执行**（`ContainerInstaller.installProotX86()` 部署 x86_64 proot/loader/libtalloc/libandroid-shmem 到 `container/bin_x86`/`container/lib_x86`）；
+- **arm64 宿主切到 x86_64 容器（真机场景，可选手动切换）**：经 proot `-q` 注入静态 `qemu-user-linux-arm64-x86_64` 转译（arm64 proot + qemu，`deployQemuX86()` 部署）；
+- **无容器降级**：跳过容器安装，命令执行降级/提示（见 §6.5）。
+
+对应实现：`ContainerInstaller.prootBinFor/prootLoaderFor/prootLibDirFor` 按 `profile.arch + EnvironmentDetector.hostIsX86_64` 选择 proot 架构；`LinuxContainerEngine.buildBaseProotArgv` 仅在「x86_64 容器 + 非 x86_64 宿主」时注入 `-q qemu`。
 
 **反直觉净收益**：Android SDK Build-Tools 是 x86_64 ELF，真机上依赖 `QEMU_X86_TRANSLATOR` bundle 转译；在 x86_64 模拟器上**原生可执行**——「容器内构建 Android APK」场景在模拟器反而更顺畅。
 
@@ -186,4 +204,4 @@ object EnvironmentDetector {
 |---|---|---|
 | 2026-08-19 | 采用「分层可用」策略，A→B→C→D 演进 | 每步独立交付、独立回退，优先保障真机零回退 |
 | 2026-08-19 | **单包通用（不分包）**：一个安装包在真机与模拟器均正常运行 | 双 ABI `.so` + 双 rootfs 资产打入同一 APK，运行时按环境选择 |
-| 2026-08-19 | 先出本设计文档，评审后再实施 | 待评审 |
+| 2026-08-19 | 实施落地：M0~M2 完成并通过本地构建验证 | 环境探测层 + 双 ABI + 双 rootfs + x86_64 原生 proot + 降级路由全部落地；M3（CI 模拟器冒烟）留作后续增强 |

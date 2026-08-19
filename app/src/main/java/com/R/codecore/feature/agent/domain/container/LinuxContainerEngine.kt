@@ -1,5 +1,6 @@
 package com.R.codecore.feature.agent.domain.container
 
+import com.R.codecore.core.environment.EnvironmentDetector
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.domain.container.progress.ApkStdoutParser
 import com.R.codecore.feature.agent.domain.container.progress.InstallPhase
@@ -113,10 +114,13 @@ class LinuxContainerEngine @Inject constructor(
 
     /**
      * 当前选中的 profile（缓存自 [containerSettingsRepository.activeProfileIdFlow]，避免同步读 DataStore）。
-     * 启动首帧为内置 Alpine（等同改动前）；profile 切换后由 flow collector 更新。fallback 到内置保证安全。
+     * 启动首帧按宿主架构取内置容器：x86_64 宿主 → x86_64 内置（x86_64 模拟器零配置可用），其余 → arm64 内置；
+     * profile 切换后由 flow collector 更新。fallback 到内置保证安全。
      */
     @Volatile
-    private var currentProfile: ContainerProfile = ContainerProfile.BUILTIN_ALPINE
+    private var currentProfile: ContainerProfile =
+        if (EnvironmentDetector.hostIsX86_64) ContainerProfile.BUILTIN_ALPINE_X86
+        else ContainerProfile.BUILTIN_ALPINE
 
     /** 是否将设备存储绑定进容器（缓存自 [containerSettingsRepository.storageShareEnabledFlow]，避免同步读 DataStore）。 */
     @Volatile
@@ -897,10 +901,15 @@ class LinuxContainerEngine @Inject constructor(
         runCatching {
             containerInstaller.rootfsDirFor(profile).deleteRecursively()
         }
-        // 清理宿主侧可执行（跨 profile 共用的 proot 全套，都清；x86_64 专用 qemu 只在当前或 x86_64 架构下清）
+        // 清理宿主侧可执行（跨 profile 共用的 proot 全套都清；x86_64 原生 proot 与 x86_64 专用 qemu
+        // 只在当前或 x86_64 架构下清）
         runCatching { containerInstaller.prootBin.delete() }
         runCatching { containerInstaller.prootLoader.delete() }
         runCatching { containerInstaller.prootLoader32.delete() }
+        runCatching { containerInstaller.prootX86Bin.delete() }
+        runCatching { containerInstaller.prootX86Loader.delete() }
+        runCatching { containerInstaller.prootX86Loader32.delete() }
+        runCatching { containerInstaller.prootX86LibDir.deleteRecursively() }
         if (profile.arch == ContainerArch.X86_64) {
             runCatching { containerInstaller.rootfsX86Dir.deleteRecursively() }
             runCatching { containerInstaller.qemuX86Bin.delete() }
@@ -1098,7 +1107,14 @@ class LinuxContainerEngine @Inject constructor(
             _initProgress.value = ContainerInitState.Ready(migratedFromLegacyProvisioned = migrated)
             refreshContainerHome()
         } else {
-            val reason = "容器未安装（缺少 rootfs/proot）"
+            // 降级路由：宿主架构无可用 proot（如非 arm64/x86_64 的未知环境）时给明确提示；
+            // 其余情况一律走「文件读写/远程 SSH 等不依赖容器的能力」（LocalFileAccess 走宿主路径），
+            // 仅容器内执行命令/终端受限，AI 核心仍可用。
+            val reason = if (!EnvironmentDetector.containerRunnable) {
+                "当前环境不支持容器（宿主架构无可用 proot），请使用远程 SSH 模式或真机"
+            } else {
+                "容器未安装（缺少 rootfs/proot）"
+            }
             _initProgress.value = ContainerInitState.Failed(reason)
             throw IllegalStateException(reason)
         }
@@ -1139,10 +1155,12 @@ class LinuxContainerEngine @Inject constructor(
         // installRootfsIfNeed 在真正解压/部署时回调更新进度（已安装则快路径不回调）
         containerInstaller.installRootfsIfNeed(profile) { _initProgress.value = it }
 
-        // x86_64 容器：无论 rootfs 是否已安装，都要补一遍 qemu 转译器部署（幂等）
+        // x86_64 容器：无论 rootfs 是否已安装，都要补一遍 qemu 转译器部署（幂等）——
+        // 仅 arm64 宿主跑 x86_64 容器（qemu 转译）才需要；x86_64 宿主（x86_64 模拟器）走
+        // x86_64 原生 proot，无需 qemu（installRootfsX86 已一并部署 x86_64 proot）。
         // 原因：isInstalledX86 为了避免 ETXTBSY 循环不把 qemu 存在性当硬条件，此处做"
         // 最后一英里"同步；copyAsset 内部有原子 rename + ETXTBSY 捕获，不会崩。
-        if (profile.arch == ContainerArch.X86_64) {
+        if (profile.arch == ContainerArch.X86_64 && !EnvironmentDetector.hostIsX86_64) {
             runCatching { containerInstaller.deployQemuX86() }
                 .onFailure { t -> FileLogger.w(TAG, "doInit: deployQemuX86 失败 (不抛): ${t.message}") }
             // 若 qemu 仍然缺失则打告警，buildBaseProotArgv 也会同步打，两边齐提醒用户。
@@ -1247,7 +1265,8 @@ class LinuxContainerEngine @Inject constructor(
     private fun buildBaseProotArgv(projectPath: String?): MutableList<String> {
         val profile = currentProfile
         val rootfs = containerInstaller.rootfsDirFor(profile).absolutePath
-        val prootBin = containerInstaller.prootBin.absolutePath
+        // 按 profile + 宿主架构取正确架构的 proot 可执行（x86_64 宿主跑 x86_64 容器 → x86_64 原生 proot）
+        val prootBin = containerInstaller.prootBinFor(profile).absolutePath
 
         val argv = mutableListOf(
             prootBin,
@@ -1259,10 +1278,11 @@ class LinuxContainerEngine @Inject constructor(
             "-0"              // 伪 root，apk 等需要
         )
 
-        // x86_64 容器：proot 的 -q 注入静态 qemu 转译器（宿主 arm64 运行，翻译容器内 x86_64 用户态指令）。
-        // -q 后的路径是「宿主侧」绝对路径（qemu 本体跑在 proot 之外，需宿主 loader 加载），
-        // 且 qemu 二进制须在 rootfs 之外可见——proot 自身直接 exec 它，不走 rootfs 翻译。
-        if (profile.arch == ContainerArch.X86_64) {
+        // x86_64 容器 + 非 x86_64 宿主（arm64 宿主）：proot 的 -q 注入静态 qemu 转译器（宿主 arm64 运行，
+        // 翻译容器内 x86_64 用户态指令）。-q 后的路径是「宿主侧」绝对路径（qemu 本体跑在 proot 之外，
+        // 需宿主 loader 加载），且 qemu 二进制须在 rootfs 之外可见——proot 自身直接 exec 它，不走 rootfs 翻译。
+        // x86_64 宿主（x86_64 模拟器）原生执行 x86_64 rootfs，无需 -q。
+        if (profile.arch == ContainerArch.X86_64 && !EnvironmentDetector.hostIsX86_64) {
             val qemu = containerInstaller.qemuX86Bin
             if (qemu.exists()) {
                 argv.add("-q")
@@ -1317,15 +1337,17 @@ class LinuxContainerEngine @Inject constructor(
 
     /** 容器内进程的标准环境变量（proot loader / 动态库 / PATH / HOME 等）。 */
     private fun buildContainerEnv(): Map<String, String> {
+        val profile = currentProfile
         val env = mapOf(
             // Android proot 必需的环境变量
             "PROOT_TMP_DIR" to containerInstaller.prootTmpDir.absolutePath, // Android 没有 /tmp
             // Termux proot 的 loader 分离，必须用 PROOT_LOADER/_32 指向，否则无法注入子进程而起不来。
-            "PROOT_LOADER" to containerInstaller.prootLoader.absolutePath,
-            "PROOT_LOADER_32" to containerInstaller.prootLoader32.absolutePath,
+            // 按 profile + 宿主架构取对应架构的 loader（x86_64 宿主 → x86_64 原生 loader）。
+            "PROOT_LOADER" to containerInstaller.prootLoaderFor(profile).absolutePath,
+            "PROOT_LOADER_32" to containerInstaller.prootLoader32For(profile).absolutePath,
             // Termux proot 动态链接 libtalloc.so.2 / libandroid-shmem.so，需让 linker64 能找到它们；
             // libc.so/liblog.so 走系统默认路径(/system/lib64)。
-            "LD_LIBRARY_PATH" to "${containerInstaller.prootLibDir.absolutePath}:/system/lib64:/system/lib",
+            "LD_LIBRARY_PATH" to "${containerInstaller.prootLibDirFor(profile).absolutePath}:/system/lib64:/system/lib",
             // 说明（statx / seccomp）：旧 proot 5.1.0 的 seccomp 过滤表没有 statx，Node 用 statx 解析
             // 模块路径会拿到未翻译的 ~/workspace/xxx → ENOENT「Cannot find module」。Termux proot
             // (5.1.107.x) 的 seccomp 过滤表已包含 statx，默认 seccomp 模式即可正确翻译，故此处

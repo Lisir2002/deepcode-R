@@ -78,6 +78,7 @@
 ### 3.7 容器与功能包管理
 
 - `TerminalBundles` 定义 7 个 Bundle（Python/Node/rg/Git/Bash/网络工具/QEMU x86 转译器），`version` 自增触发存量重装；`postInstallHook` 含 pip 三链路兜底、git-credential-store、bash PS1 前缀等一次性 shell 脚本。
+- **Bundle 架构无关性**：Bundle 只声明 apk 包名，不涉及架构——apk 在容器内按容器所在架构（arm64 / x86_64 rootfs）自动解析安装，无需为 x86_64 环境单独维护包定义（见 [emulator-support-design](../plan-docs/emulator-support-design.md)）。
 - `TerminalBundleRepository` 用 `<rootfs>/.bundles/<stableKey>-v<N>.done` 标记文件持久化安装状态，冷启动从磁盘恢复；检测旧 `.provisioned` 标记自动迁移为全量已安装；实际 `apk add/del` 由 `LinuxContainerEngine` 执行，本仓库只负责状态机与落盘。
 - `TerminalSettingsViewModel` 通过 `containerEngine.refreshBundleStatesFromApk()` 用真实 apk 世界校准 UI 状态（聊天页 AI 直接 apk 装包时保持联动）。
 

@@ -107,6 +107,7 @@
 - `LinuxContainerEngine`：本地 PRoot 容器实现；`RemoteSshEngine`：SSH exec（基于 `RemoteSshConnection` 共享 sshj 连接，与 SFTP 文件访问复用同一连接）；`DelegatingCommandEngine` 按当前模式/配置把调用委派给本地或远程后端。
 - `ExecuteCommandTool`（`Bash`）把 shell 命令交给 `CommandEngine`，流式输出、限长截断、环境同步，并按计划/自动/常规模式受权限引擎约束。
 - `ContainerInstaller` + `progress/` 子包负责环境安装与进度聚合解析（`RealProgressAggregator`/`InstallProgressParser`/`ApkStdoutParser`）。
+- **双架构容器（真机 + 模拟器）**：`ContainerInstaller` 支持 `container/arm`（arm64）与 `container/x86_64`（x86_64 rootfs + x86_64 原生 proot + qemu 转译器）双 rootfs 资产，`prootBinFor/rootfsDirFor` 按 `ContainerProfile.arch + EnvironmentDetector` 选择；`LinuxContainerEngine` 首次启动按宿主架构自动落到对应内置 profile（x86_64 宿主 → `BUILTIN_ALPINE_X86`），`buildBaseProotArgv` 仅「x86_64 容器 + 非 x86_64 宿主」时注入 `-q qemu`；容器不可用环境走明确降级报错，AI 核心（文件/对话/远程 SSH）不受影响（见 [emulator-support-design](../plan-docs/emulator-support-design.md)）。
 
 ### 3.4 MCP（McpManager）
 

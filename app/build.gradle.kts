@@ -148,17 +148,18 @@ android {
             useSupportLibrary = true
         }
 
-        // 真机单构建产物：只打包 arm64-v8a（当前 Android 真机唯一主流 ABI）。
-        // x86_64 模拟器不做正式支持：若需模拟器开发可自行切回 [arm64-v8a, x86_64] 或
-        // 在 local 构建临时恢复；APK 文件名与 release 产物会显式带 arm64 标签，
-        // 避免用户误装到 x86 模拟器（安装阶段就因缺少 x86_64 对应 so 失败，不会运行期崩）。
-        // ContainerInstaller.ASSET_DIR 固定指向 assets/container/arm 目录，
-        // 安装到 app 私有目录后，proot/rootfs 全按 aarch64 执行。
-        ndk { abiFilters += listOf("arm64-v8a") }
+        // 通用单包（用户决策「不分包」）：双 ABI 打入同一 APK，真机与模拟器/虚拟机都安装即用。
+        //   - arm64-v8a：真机 arm64 / arm64 系统镜像模拟器（原生执行容器，默认路径）；
+        //   - x86_64：x86_64 系统镜像模拟器（x86_64 原生 proot + x86_64 rootfs，见
+        //     ContainerInstaller 双架构安装与 EnvironmentDetector 环境探测）。
+        // Android 包管理器在安装/运行期按设备 ABI 自动选用 lib/arm64-v8a 或 lib/x86_64 下的 .so
+        // （libtermux.so 由 terminal-emulator 模块为全部 ABI 提供），互不干扰、无需用户选择。
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
-    // 真机单架构：sourceSets.main.assets 只挂 _armAssets（对应 arm64-v8a）。
-    // _x86Assets 目录已按「只支持真机、不考虑虚拟机适配」的设计决策删除，仓库不再保留 x86 容器备份。
+    // 双架构通用包：sourceSets.main.assets 挂 _armAssets，其内同时含 container/arm（arm64 容器）与
+    // container/x86_64（x86_64 rootfs + arm64 宿主 qemu 转译器 + x86_64 宿主原生 proot），一并打进 APK，
+    // 运行时由 EnvironmentDetector 按宿主架构选装/选用对应 rootfs 与 proot（见 ContainerInstaller）。
     sourceSets {
         getByName("main") {
             assets.srcDir("src/_armAssets")

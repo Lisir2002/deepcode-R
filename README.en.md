@@ -70,14 +70,14 @@ R-CodeCore is an AI-powered coding assistant that runs natively on Android. It i
 
 > R-CodeCore is distributed as an APK. **No compilation needed** — just download and install.
 
-1. Go to the [Releases page](https://github.com/Lisir2002/deepcode-R/releases) and download the latest APK (`rcodecore-arm64-<tag>.apk`).
-2. Transfer the APK to your phone (browser download / cloud drive / USB).
+1. Go to the [Releases page](https://github.com/Lisir2002/deepcode-R/releases) and download the latest APK (`rcodecore-<tag>.apk` — one universal package for both physical devices and emulators).
+2. Transfer the APK to your phone/emulator (browser download / cloud drive / USB).
 3. Tap the APK to install. If prompted about "unknown sources", allow "Install unknown apps" in system settings (path varies by brand).
 
 **Prerequisites**
 
 - **Physical device (officially supported)**: Android 8.0+ (API 26) **arm64-v8a** device (the mainstream ABI for current Android handsets)
-- *Note: x86_64 emulators are not officially supported — design decision = "real devices only, no virtual machine considerations"*
+- **Virtual environment (emulator / VM)**: x86_64 or arm64 system images both work — the same universal package installs and runs; the container auto-selects by host architecture (x86_64 → native x86_64 proot, arm64 → native execution); see [docs/plan-docs/emulator-support-design.md](docs/plan-docs/emulator-support-design.md)
 
 ## Quick Start
 
@@ -103,7 +103,7 @@ R-CodeCore is an AI-powered coding assistant that runs natively on Android. It i
 
 # Release build (signing config required; auto-falls back to debug keystore when missing)
 ./gradlew assembleRelease
-# Output: app/build/outputs/apk/release/app-release.apk (single arm64-v8a ABI)
+# Output: app/build/outputs/apk/release/app-release.apk (dual-ABI universal package: arm64-v8a + x86_64)
 
 # Release AAB
 ./gradlew bundleRelease
@@ -137,7 +137,7 @@ keyPassword=your_key_password
 
 ### Cloud build (GitHub Actions release automation)
 
-Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push origin v0.1.0-rc1` / `v0.1.0`) and [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) takes over automatically → unit tests → `assembleRelease` → production signing → upload R8 mapping → create GitHub Release → attach `rcodecore-arm64-<tag>.apk` → write Run Summary. RC tags (containing `-rc`) are auto-marked as prerelease.
+Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push origin v0.1.0-rc1` / `v0.1.0`) and [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) takes over automatically → unit tests → `assembleRelease` → production signing → **dual-ABI artifact validation** → upload R8 mapping → create GitHub Release → attach `rcodecore-<tag>.apk` → write Run Summary. RC tags (containing `-rc`) are auto-marked as prerelease.
 
 - **Production-signing prerequisite**: the repository `Settings → Secrets → Actions` must define 4 secrets — `AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`. Missing any one silently falls back to the debug keystore, and the artifact cannot be published.
 - **Real-time monitoring & artifact verification**, full commands, and CI job details: see [docs/ci-release.md](./docs/ci-release.md) (cloud build & release operations manual).
@@ -194,9 +194,9 @@ app/src/main/java/com/R/codecore/
 ## Known Limitations
 
 - `targetSdk` is locked to 28 to bypass Android 10+ W^X policy, enabling PRoot execution; trade-off: ineligible for Google Play (same as Termux).
-- Release artifacts are **physical-device arm64-v8a single-ABI** APKs:
-  - Supports all mainstream Android physical devices (Snapdragon/Dimensity/Kirin and other 64-bit ARM chipsets);
-  - x86_64 emulators or x86 Chromebooks will fail at install time (missing `x86_64` native libs) — no runtime crashes, aligned with the "don't waste build resources on virtual machines" design decision.
+- Release artifacts are **dual-ABI universal** packages (arm64-v8a + x86_64):
+  - Supports all mainstream Android physical devices (Snapdragon/Dimensity/Kirin and other 64-bit ARM chipsets) plus x86_64 / arm64 emulators and VMs;
+  - On an extremely rare host ABI (neither arm64 nor x86_64) the container is unavailable; the AI core (chat / files / remote SSH) still works, while container/terminal show an explicit degradation notice.
 
 ## Contributing
 

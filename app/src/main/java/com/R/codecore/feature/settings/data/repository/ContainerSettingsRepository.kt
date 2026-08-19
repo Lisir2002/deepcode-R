@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.R.codecore.core.environment.EnvironmentDetector
 import com.R.codecore.feature.agent.domain.container.ContainerProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -50,9 +51,10 @@ class ContainerSettingsRepository @Inject constructor(
 
     suspend fun readStorageShareEnabled(): Boolean = storageShareEnabledFlow.first()
 
-    /** 当前选中的 profile id；无值时默认内置 Alpine。 */
+    /** 当前选中的 profile id；无值时按宿主架构取内置容器（x86_64 宿主 → x86_64 内置，其余 → arm64 内置）。 */
     val activeProfileIdFlow: Flow<String> = context.containerDataStore.data.map { prefs ->
-        prefs[ACTIVE_PROFILE_ID_KEY]?.takeIf { it.isNotBlank() } ?: ContainerProfile.BUILTIN_ID
+        prefs[ACTIVE_PROFILE_ID_KEY]?.takeIf { it.isNotBlank() }
+            ?: EnvironmentDetector.defaultProfileId()
     }
 
     /** 用户自定义 profile 列表（不含内置）。解析失败回退空列表。 */

@@ -31,7 +31,7 @@
 
 ## 项目概览
 
-R-CodeCore 是运行在 Android 真机（arm64-v8a）上的 AI 编程工具：内置 PRoot + Alpine Linux 容器与终端，AI Agent 可直接读写文件、执行 Shell、运行构建；支持远程 SSH 执行后端、MCP 协议、Git 集成、备份恢复。采用 Feature-based Architecture + DDD，重度使用 Jetpack Compose / Hilt / Coroutines。
+R-CodeCore 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）上的 AI 编程工具：内置 PRoot + Alpine Linux 容器与终端，AI Agent 可直接读写文件、执行 Shell、运行构建；支持远程 SSH 执行后端、MCP 协议、Git 集成、备份恢复。采用 Feature-based Architecture + DDD，重度使用 Jetpack Compose / Hilt / Coroutines。
 
 > 面向用户的完整介绍见 [README.md](./README.md)；每个功能模块的开发文档见 `docs/modules/`（见[架构概览](#架构概览)）。
 
@@ -48,7 +48,7 @@ R-CodeCore 是运行在 Android 真机（arm64-v8a）上的 AI 编程工具：�
 | 数据库 | Room 2.7.1（文件驱动 SQL 迁移，Schema v46） |
 | 网络 | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
 | 终端 | Termux terminal-emulator + terminal-view（JNI libtermux.so） |
-| 容器 | PRoot + Alpine Linux 3.21 rootfs（arm64-v8a） |
+| 容器 | PRoot + Alpine Linux 3.21 rootfs（arm64-v8a / x86_64 双架构，运行时按宿主选择） |
 | 远程 SSH | SSHJ 0.38.0（exec channel + shell channel） |
 
 ## 关键命令
@@ -56,7 +56,7 @@ R-CodeCore 是运行在 Android 真机（arm64-v8a）上的 AI 编程工具：�
 ```bash
 # 日常开发冒烟（AI 改完编译型代码默认跑这个；debug buildType 快，不跑 R8）
 ./gradlew :app:assembleDebug
-# Release 链路验证 / 发布包（arm64-v8a 真机单架构）
+# Release 链路验证 / 发布包（双 ABI 通用包：arm64-v8a + x86_64，真机与模拟器通用）
 ./gradlew :app:assembleRelease
 # Release AAB
 ./gradlew :app:bundleRelease
@@ -211,7 +211,7 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 | 构建命令报错/找不到任务 | 误用旧 flavor 命令 | 只用 `assembleDebug/assembleRelease/bundleRelease`（项目无 flavor） |
 | PRoot 容器无法执行 | `targetSdk` 被改高破坏 W^X 绕过 | 保持 `targetSdk = 28`，勿"顺手修复" |
 | 提交被 pre-commit 阻断 | 新增/删除 feature 模块未同步 `docs/modules/` | 按提示新建/删除对应文档，或先说明（`--no-verify` 仅紧急） |
-| APK 装不上/装后崩溃 | ABI 不符 | 本包仅 arm64-v8a 真机，x86_64 模拟器不支持 |
+| APK 装不上/装后崩溃 | ABI 不符 | 通用包含 arm64-v8a + x86_64；若宿主为其它 ABI（少见），走无容器降级（AI 核心仍可用） |
 | 版本号对不上 | 手改 `versionName` | 靠 Git Tag 动态推导，代码中勿手写版本号 |
 | 提交被 commit-msg 阻断 | 提交信息不合 Conventional Commits | 按 `type(scope): subject` 重写提交信息 |
 

@@ -74,13 +74,17 @@ data class TerminalBundle(
 
 /**
  * 7 个内置 Bundle 清单。改包/版本直接改这里；注意改了 [packages]/hook 同步 +1 version。
- * 版本基线（均为 Alpine 3.21 arm64）：
+ * 版本基线（Alpine 3.21；体积估算以 arm64 为例）：
  *   - python3  3.12.x (~40MB) + py3-pip (~5MB)
  *   - nodejs 22.x LTS (~22MB) + npm (~6MB)
  *   - ripgrep 14.x (~4MB)
  *   - git 2.47 + git-credential-store helper (~22MB + helper 脚本)
  *   - bash 5.2 + less + ncurses (~5MB)
  *   - curl + wget + ca-certificates (~3MB)
+ *
+ * **架构无关性说明**：bundle 只声明 apk 包名，不涉及架构——apk 在容器内运行时按容器
+ * 所在架构（arm64 / x86_64 rootfs）自动解析并安装对应架构的包，无需为 x86_64 环境单独
+ * 维护一套包定义（见 docs/plan-docs/emulator-support-design.md「Bundle 架构维度」）。
  */
 object TerminalBundles {
 

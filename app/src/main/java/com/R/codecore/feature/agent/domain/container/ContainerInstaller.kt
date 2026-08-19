@@ -2,6 +2,7 @@ package com.R.codecore.feature.agent.domain.container
 
 import android.content.Context
 import android.system.Os
+import com.R.codecore.core.environment.EnvironmentDetector
 import com.R.codecore.core.util.FileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -154,6 +155,16 @@ class ContainerInstaller @Inject constructor(
     /** x86_64 内置容器的 qemu 转译器资产（宿主 arm64 + 目标 x86_64，静态链接） */
     val ASSET_QEMU_X86: String get() = "$ASSET_DIR_X86/qemu-user-linux-arm64-x86_64"
 
+    // —— x86_64 宿主（x86_64 模拟器）的「原生 proot」三件套 ——
+    // Termux proot x86_64 版：proot + loader（64/32 位）+ 动态依赖 libtalloc/libandroid-shmem。
+    // 与 arm64 宿主共用 x86_64 rootfs，但 proot 本体必须是宿主架构（arm64 宿主跑 x86_64 容器用
+    // arm64 proot + `-q` 注入 qemu 转译；x86_64 宿主跑 x86_64 容器用 x86_64 proot 原生执行）。
+    val ASSET_PROOT_X86: String get() = "$ASSET_DIR_X86/proot"
+    val ASSET_LOADER_X86: String get() = "$ASSET_DIR_X86/loader"
+    val ASSET_LOADER32_X86: String get() = "$ASSET_DIR_X86/loader32"
+    val ASSET_LIBTALLOC_X86: String get() = "$ASSET_DIR_X86/libtalloc.so.2"
+    val ASSET_LIBSHMEM_X86: String get() = "$ASSET_DIR_X86/libandroid-shmem.so"
+
     /** rootfs 解压根目录（内置 arm64） */
     val rootfsDir: File
         get() = File(context.filesDir, "rootfs")
@@ -190,6 +201,43 @@ class ContainerInstaller @Inject constructor(
     val prootLibDir: File
         get() = File(context.filesDir, "container/lib")
 
+    // —— x86_64 宿主（x86_64 模拟器）的「原生 proot」安装位置（与 arm64 proot 目录隔离）——
+    /** x86_64 原生 proot 可执行文件（Termux x86_64 版，动态链接 linker64 + libtalloc/libandroid-shmem） */
+    val prootX86Bin: File
+        get() = File(context.filesDir, "container/bin_x86/proot")
+
+    /** x86_64 原生 proot 的 64 位 loader（PROOT_LOADER 指向） */
+    val prootX86Loader: File
+        get() = File(context.filesDir, "container/bin_x86/loader")
+
+    /** x86_64 原生 proot 的 32 位 loader（PROOT_LOADER_32 指向，x86_64 rootfs 内基本用不到，随包部署保底） */
+    val prootX86Loader32: File
+        get() = File(context.filesDir, "container/bin_x86/loader32")
+
+    /** x86_64 原生 proot 的动态依赖库目录（LD_LIBRARY_PATH 指向） */
+    val prootX86LibDir: File
+        get() = File(context.filesDir, "container/lib_x86")
+
+    /** 按 [profile] 返回对应架构的 proot 可执行文件：x86_64 容器 + x86_64 宿主 → x86_64 原生 proot；其余 → arm64 proot。 */
+    fun prootBinFor(profile: ContainerProfile): File =
+        if (profile.arch == ContainerArch.X86_64 && EnvironmentDetector.hostIsX86_64) prootX86Bin
+        else prootBin
+
+    /** 按 [profile] 返回对应架构的 proot loader（PROOT_LOADER 用）。 */
+    fun prootLoaderFor(profile: ContainerProfile): File =
+        if (profile.arch == ContainerArch.X86_64 && EnvironmentDetector.hostIsX86_64) prootX86Loader
+        else prootLoader
+
+    /** 按 [profile] 返回对应架构的 proot 32 位 loader（PROOT_LOADER_32 用）。 */
+    fun prootLoader32For(profile: ContainerProfile): File =
+        if (profile.arch == ContainerArch.X86_64 && EnvironmentDetector.hostIsX86_64) prootX86Loader32
+        else prootLoader32
+
+    /** 按 [profile] 返回对应架构的 proot 动态依赖库目录（LD_LIBRARY_PATH 用）。 */
+    fun prootLibDirFor(profile: ContainerProfile): File =
+        if (profile.arch == ContainerArch.X86_64 && EnvironmentDetector.hostIsX86_64) prootX86LibDir
+        else prootLibDir
+
     /** PRoot 在 Android 上必须的临时目录（Android 没有 /tmp） */
     val prootTmpDir: File
         get() = File(context.cacheDir, "proot_tmp")
@@ -205,12 +253,14 @@ class ContainerInstaller @Inject constructor(
         return marker.exists() && marker.readText().trim() == INSTALL_VERSION
     }
 
-    /** 检查内置 x86_64 容器是否就绪：rootfs 版本标记 + proot 全套到位即可。
+    /** 检查内置 x86_64 容器是否就绪：rootfs 版本标记 + 宿主对应架构的 proot 到位即可。
      *  不把 qemuX86Bin.exists 作为硬条件——proot 进程仍占用旧 qemu 二进制导致 Text file busy
      *  时 qemux 可稍后由 deployQemuX86() 重试部署；若这里把它绑进 isInstalled，会让系统
      *  误以为整个 rootfs 未装而重复解压，反而更容易撞上正在运行的 qemu 转译进程。 */
     fun isInstalledX86(): Boolean {
-        if (!prootBin.exists() || !rootfsX86Dir.isDirectory) return false
+        // x86_64 容器在 x86_64 宿主需 x86_64 原生 proot；arm64 宿主跑 x86_64 容器（qemu 转译）仍需 arm64 proot。
+        // 两套 proot 由 installRootfsX86 一并部署，故任一存在即视为 proot 侧就绪。
+        if ((!prootBin.exists() && !prootX86Bin.exists()) || !rootfsX86Dir.isDirectory) return false
         val marker = File(rootfsX86Dir, ".installed")
         return marker.exists() && marker.readText().trim() == INSTALL_VERSION_X86
     }
@@ -243,7 +293,8 @@ class ContainerInstaller @Inject constructor(
     }
 
     /**
-     * 安装内置 x86_64 容器：proot 全套（与 arm64 共用）+ 静态 qemu 转译器 + x86_64 rootfs + DNS/apk 源。
+     * 安装内置 x86_64 容器：proot（arm64 与 x86_64 两套，按宿主架构选用）+ 静态 qemu 转译器
+     * （仅 arm64 宿主需要）+ x86_64 rootfs + DNS/apk 源。
      */
     private suspend fun installRootfsX86(
         onProgress: (ContainerInitState) -> Unit
@@ -257,7 +308,10 @@ class ContainerInstaller @Inject constructor(
 
         onProgress(ContainerInitState.DeployingProot)
         installProot()
-        // 静态 qemu 转译器（宿主 arm64）：proot 启动 x86_64 容器时用 -q 注入；
+        // x86_64 宿主（x86_64 模拟器）需要 x86_64 原生 proot 才能执行 x86_64 rootfs。
+        // arm64 宿主跑 x86_64 容器（qemu 转译）用 arm64 proot，本套部署后闲置但无害（体积 ~300KB）。
+        installProotX86()
+        // 静态 qemu 转译器（宿主 arm64）：arm64 宿主跑 x86_64 容器时 proot -q 注入；
         // copyAsset 内部已做原子 rename + IOException 捕获，旧 qemu 仍被占用时不会崩。
         deployQemuX86()
         extractRootfsTo(rootfsX86Dir, context.assets.open(ASSET_ROOTFS_X86), null, onProgress)
@@ -385,6 +439,15 @@ class ContainerInstaller @Inject constructor(
         // 动态依赖库：放到 lib 目录，由 LD_LIBRARY_PATH 指向；可读即可（给可执行位无害）
         copyAsset(ASSET_LIBTALLOC, File(prootLibDir, "libtalloc.so.2"), executable = true)
         copyAsset(ASSET_LIBSHMEM, File(prootLibDir, "libandroid-shmem.so"), executable = true)
+    }
+
+    /** 从 assets 复制 x86_64 宿主用的「原生 proot」三件套（x86_64 模拟器场景）。 */
+    private fun installProotX86() {
+        copyAsset(ASSET_PROOT_X86, prootX86Bin, executable = true)
+        copyAsset(ASSET_LOADER_X86, prootX86Loader, executable = true)
+        copyAsset(ASSET_LOADER32_X86, prootX86Loader32, executable = true)
+        copyAsset(ASSET_LIBTALLOC_X86, File(prootX86LibDir, "libtalloc.so.2"), executable = true)
+        copyAsset(ASSET_LIBSHMEM_X86, File(prootX86LibDir, "libandroid-shmem.so"), executable = true)
     }
 
     /** 把单个 asset 复制到目标文件，按需赋「对所有用户」的可执行位。
