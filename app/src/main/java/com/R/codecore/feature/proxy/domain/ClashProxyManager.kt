@@ -548,8 +548,10 @@ class ClashProxyManager @Inject constructor(
             val p = pb.start()
             mihomoProcess = p
             FileLogger.i(TAG, "mihomo 内核已启动（log=${logFile.absolutePath}）")
-            // 监视退出（onExit 非阻塞，不占 IO 线程）：进程意外退出时清空句柄并告警，避免「伪运行」状态。
-            p.onExit().thenAccept {
+            // 监视退出（waitFor 阻塞一个 IO 线程，进程存活期间让渡；进程意外退出时清空句柄并告警，
+            // 避免残留「伪运行」状态。不能用 Process.onExit()——Android 未提供该 Java 9 API。）
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                p.waitFor()
                 if (mihomoProcess === p) {
                     mihomoProcess = null
                     FileLogger.w(TAG, "mihomo 内核进程退出 code=${p.exitValue()}（详见 mihomo.log）")
