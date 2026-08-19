@@ -11,13 +11,28 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.TextNode
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import javax.inject.Inject
+import javax.net.ssl.SSLException
 
-class WebFetchTool @Inject constructor() : AgentTool() {
+/**
+ * 网页抓取工具。注意：必须走**共享 OkHttp**（[AgentModule] 注入 ProxyRouteHolder 的 ProxySelector），
+ * 代理启用时流量才会经 mihomo mixed-port 出口，否则直连被墙站点必然失败。
+ * 旧实现用 `Jsoup.connect()`（内部 HttpURLConnection）完全绕过共享 OkHttp 与代理，
+ * 导致「节点可用但谷歌打不开」；现改为 OkHttp 拉响应体 + Jsoup 解析正文，代理路由与
+ * 正文提取能力两者兼得。
+ */
+class WebFetchTool @Inject constructor(
+    private val client: OkHttpClient
+) : AgentTool() {
 
     private companion object {
         const val TAG = "WebFetchTool"
@@ -100,44 +115,45 @@ class WebFetchTool @Inject constructor() : AgentTool() {
     }
 
     private fun fetchDocument(url: String): Document {
+        // 共享 OkHttp：代理启用时经 mihomo 出口，未启用直连；请求头保持真实 Chrome 指纹。
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            // 真桌面 Chrome 一定会发送的 sec-ch-ua 系列客户端提示
+            .header("Sec-Ch-Ua", "\"Chromium\";v=\"132\", \"Not A(Brand\";v=\"99\", \"Google Chrome\";v=\"132\"")
+            .header("Sec-Ch-Ua-Mobile", "?0")
+            .header("Sec-Ch-Ua-Platform", "\"Windows\"")
+            // Fetch Metadata 请求头，现代浏览器发页面请求时必带
+            .header("Sec-Fetch-Dest", "document")
+            .header("Sec-Fetch-Mode", "navigate")
+            .header("Sec-Fetch-Site", "none")
+            .header("Sec-Fetch-User", "?1")
+            .header("Upgrade-Insecure-Requests", "1")
+            .build()
         return try {
-            Jsoup.connect(url)
-                .userAgent(USER_AGENT)
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-                .header("Accept-Language", "en-US,en;q=0.9")
-                // 真桌面 Chrome 一定会发送的 sec-ch-ua 系列客户端提示
-                .header("Sec-Ch-Ua", "\"Chromium\";v=\"132\", \"Not A(Brand\";v=\"99\", \"Google Chrome\";v=\"132\"")
-                .header("Sec-Ch-Ua-Mobile", "?0")
-                .header("Sec-Ch-Ua-Platform", "\"Windows\"")
-                // Fetch Metadata 请求头，现代浏览器发页面请求时必带
-                .header("Sec-Fetch-Dest", "document")
-                .header("Sec-Fetch-Mode", "navigate")
-                .header("Sec-Fetch-Site", "none")
-                .header("Sec-Fetch-User", "?1")
-                .header("Upgrade-Insecure-Requests", "1")
-                // 3xx 重定向默认即跟随，显式声明；限制响应体大小避免超大页面吃满内存
-                .followRedirects(true)
-                .maxBodySize(5 * 1024 * 1024) // 5MB
-                .timeout(15000) // 15秒超时
-                .ignoreContentType(true)
-                .get()
-        } catch (e: org.jsoup.HttpStatusException) {
-            FileLogger.e(TAG, "HTTP 状态码异常: ${e.statusCode} - ${e.getUrl()}", e)
-            // 把真实状态码和原始异常描述回传给 AI，不做任何模糊化处理
-            throw FetchException("HTTP ${e.statusCode}: ${e.message ?: "无状态描述"}")
-        } catch (e: org.jsoup.UnsupportedMimeTypeException) {
-            FileLogger.e(TAG, "不支持的响应类型: ${e.getMimeType()} - ${e.getUrl()}", e)
-            throw FetchException("不支持的响应 MIME 类型: ${e.getMimeType()}")
-        } catch (e: java.net.SocketTimeoutException) {
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val body = resp.body?.string().orEmpty()
+                    FileLogger.e(TAG, "HTTP 状态码异常: ${resp.code} - $url")
+                    throw FetchException("HTTP ${resp.code}: ${body.take(200).ifBlank { resp.message }}")
+                }
+                val html = resp.body?.string().orEmpty()
+                Jsoup.parse(html, url)
+            }
+        } catch (e: FetchException) {
+            throw e
+        } catch (e: SocketTimeoutException) {
             FileLogger.e(TAG, "请求超时: $url", e)
             throw FetchException("请求超时（15 秒内未响应）")
-        } catch (e: java.net.UnknownHostException) {
+        } catch (e: UnknownHostException) {
             FileLogger.e(TAG, "DNS 解析失败: $url", e)
             throw FetchException("无法解析主机名：${url}")
-        } catch (e: javax.net.ssl.SSLException) {
+        } catch (e: SSLException) {
             FileLogger.e(TAG, "SSL 握手失败: $url", e)
             throw FetchException("SSL/TLS 握手失败：${e.message ?: "未知原因"}")
-        } catch (e: java.io.IOException) {
+        } catch (e: IOException) {
             FileLogger.e(TAG, "网络 I/O 异常: ${e.message} - $url", e)
             throw FetchException("网络 I/O 异常：${e.message ?: "未知原因"}")
         }

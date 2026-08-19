@@ -21,8 +21,12 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.URLUtil
 import androidx.core.content.FileProvider
+import androidx.webkit.ProxyConfig
+import androidx.webkit.ProxyController
 import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.feature.proxy.domain.ClashProxyManager
 import com.R.codecore.feature.workspace.domain.WorkspacePathMapper
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -40,14 +44,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.util.UUID
+import java.util.concurrent.Executor
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -68,7 +75,9 @@ import javax.inject.Singleton
 @Singleton
 class BrowserController @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val pathMapper: WorkspacePathMapper
+    private val pathMapper: WorkspacePathMapper,
+    private val proxyManager: ClashProxyManager,
+    private val okHttp: OkHttpClient
 ) {
     private companion object {
         const val TAG = "BrowserController"
@@ -636,6 +645,49 @@ class BrowserController @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
 
+    // 代理开关变化时，让已存在的 WebView 也跟上 mihomo 代理（新标签/导航天然生效）。
+    init {
+        scope.launch {
+            proxyManager.state.collect { applyWebViewProxy(null) }
+        }
+    }
+
+    // ─────────────────────── WebView 代理接管 ───────────────────────
+
+    /**
+     * 把 WebView 的网络流量接入 mihomo 代理。WebView 不认 Java ProxySelector，只能靠
+     * [ProxyController.setProxyOverride] 做进程级代理覆盖。
+     * 代理开启时指向 mihomo mixed-port 并放行 loopback/内网（容器开发服务直连），
+     * 关闭时清除覆盖回退系统默认网络。内部统一 post 到主线程执行。
+     */
+    private fun applyWebViewProxy(webView: WebView?) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            FileLogger.w(TAG, "当前 WebView 不支持 PROXY_OVERRIDE，外网访问将走系统默认网络")
+            return
+        }
+        // ProxyController 内部与 WebView 提供方通信，统一调度到主线程避免线程问题。
+        val syncExecutor = Executor { it.run() }
+        mainHandler.post {
+            runCatching {
+                if (proxyManager.isEnabled()) {
+                    val config = ProxyConfig.Builder()
+                        .addProxyRule("127.0.0.1:${ClashProxyManager.MIXED_PORT}")
+                        .addBypassRule("localhost")
+                        .addBypassRule("127.0.0.1")
+                        .addBypassRule("10.*")
+                        .addBypassRule("192.168.*")
+                        .addBypassRule("172.16.*")
+                        .build()
+                    ProxyController.getInstance().setProxyOverride(config, syncExecutor, Runnable {})
+                } else {
+                    ProxyController.getInstance().clearProxyOverride(syncExecutor, Runnable {})
+                }
+            }.onFailure {
+                FileLogger.w(TAG, "设置 WebView 代理失败: ${it.message}")
+            }
+        }
+    }
+
     /** 全部标签页（每个标签独占一个 WebView，保留各自历史栈/会话/Cookie）。 */
     private val tabs = mutableListOf<BrowserTab>()
 
@@ -1127,21 +1179,18 @@ class BrowserController @Inject constructor(
             downloadsDir.mkdirs()
             val outFile = File(downloadsDir, fileName)
 
-            val conn = (URL(url).openConnection() as? HttpURLConnection)
-                ?: throw IllegalStateException("非 HTTP 下载地址：$url")
-            conn.apply {
-                instanceFollowRedirects = true
-                connectTimeout = 15_000
-                readTimeout = 60_000
-                setRequestProperty("User-Agent", userAgent ?: "R-CodeCore-Browser")
-                if (cookies.isNotBlank()) setRequestProperty("Cookie", cookies)
+            // 共享 OkHttp 下载（代理启用时经 mihomo 出口）；旧实现 HttpURLConnection 直连会绕过代理。
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", userAgent ?: "R-CodeCore-Browser")
+                .apply { if (cookies.isNotBlank()) header("Cookie", cookies) }
+                .build()
+            okHttp.newCall(req).execute().use { resp ->
+                if (resp.code !in 200..299) {
+                    throw IllegalStateException("下载失败（HTTP ${resp.code}）")
+                }
+                resp.body!!.byteStream().use { input -> outFile.outputStream().use { input.copyTo(it) } }
             }
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                throw IllegalStateException("下载失败（HTTP $code）")
-            }
-            conn.inputStream.use { input -> outFile.outputStream().use { input.copyTo(it) } }
-            conn.disconnect()
 
             upsertDownload(
                 info.copy(
@@ -1313,6 +1362,8 @@ class BrowserController @Inject constructor(
         } catch (e: Exception) {
             FileLogger.w(TAG, "addDocumentStartJavaScript 注入失败（旧 WebView 降级：不采集网络数据）", e)
         }
+        // 新 WebView 创建即按当前代理开关接管网络出口（WebView 不认 Java ProxySelector）。
+        applyWebViewProxy(wv)
         return wv
     }
 

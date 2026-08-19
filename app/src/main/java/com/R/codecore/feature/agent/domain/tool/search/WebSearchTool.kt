@@ -18,14 +18,21 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
-import java.net.URL
 import javax.inject.Inject
 
-class WebSearchTool @Inject constructor() : AgentTool() {
+/**
+ * 实时网络搜索工具。经**共享 OkHttp**（注入 ProxyRouteHolder 的 ProxySelector）请求海外
+ * Parallel AI MCP，代理启用时流量走 mihomo 出口，未启用时直连（可被墙阻断）。
+ */
+class WebSearchTool @Inject constructor(
+    private val client: OkHttpClient
+) : AgentTool() {
 
     private companion object {
         const val TAG = "WebSearchTool"
@@ -124,26 +131,19 @@ class WebSearchTool @Inject constructor() : AgentTool() {
             )
         ).toString()
 
-        val url = URL(PARALLEL_MCP_URL)
-        val connection = url.openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "POST"
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.setRequestProperty("Accept", "application/json, text/event-stream")
-            connection.setRequestProperty("User-Agent", "rcodecore/1.0")
-            connection.doOutput = true
-            connection.connectTimeout = 15000
-            connection.readTimeout = 30000
-
-            OutputStreamWriter(connection.outputStream).use { writer ->
-                writer.write(requestBody)
-                writer.flush()
-            }
-
-            val responseCode = connection.responseCode
+        // 共享 OkHttp（代理启用时经 mihomo 出口）：旧实现用 HttpURLConnection 直连海外
+        // search.parallel.ai/mcp，完全绕过共享 OkHttp 的 ProxySelector，代理启用后依旧连不上。
+        val req = Request.Builder()
+            .url(PARALLEL_MCP_URL)
+            .post(requestBody.toRequestBody("application/json".toMediaType()))
+            .header("Accept", "application/json, text/event-stream")
+            .header("User-Agent", "rcodecore/1.0")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            val responseCode = resp.code
             if (responseCode !in 200..299) {
-                val errorStr = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
-                FileLogger.e(TAG, "WebSearch 失败: HTTP $responseCode, ${errorStr?.take(500)}")
+                val errorStr = resp.body?.string().orEmpty().take(500)
+                FileLogger.e(TAG, "WebSearch 失败: HTTP $responseCode, $errorStr")
                 if (responseCode in 400..499) {
                     throw Http4xxException(responseCode)
                 }
@@ -151,12 +151,10 @@ class WebSearchTool @Inject constructor() : AgentTool() {
             }
 
             // 尝试直接读取普通 JSON 或解析 Event-Stream (SSE) 格式
-            val responseBody = connection.inputStream.bufferedReader().use { it.readText() }
+            val responseBody = resp.body?.string().orEmpty()
 
             // 解析 MCP 返回体，合并所有 content 段的 text
             return parseMcpResponse(responseBody)
-        } finally {
-            connection.disconnect()
         }
     }
 

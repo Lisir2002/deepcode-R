@@ -744,6 +744,10 @@ class ClashProxyManager @Inject constructor(
         }
         if (profileId != null) repository.setActiveProfile(profileId)
         repository.setProxyEnabled(true)
+        // 同步写位：不等 DataStore flow 的异步 emit，消除「on() 返回后立刻发请求仍走直连」的竞态窗口。
+        // 后续 flow 收集器也会写同一组值（幂等）。
+        enabledCache = true
+        routeHolder.update(true, "127.0.0.1:$MIXED_PORT")
         _state.update { it.copy(enabled = true, activeProfileId = profileId) }
         FileLogger.i(TAG, "network_proxy ON (profile=$profileId inline=${inlineYaml != null})")
         return "ok"
@@ -753,6 +757,9 @@ class ClashProxyManager @Inject constructor(
     suspend fun off() {
         stopKernel()
         repository.setProxyEnabled(false)
+        // 同步写位（同 on()），不等 flow 异步 emit。
+        enabledCache = false
+        routeHolder.update(false, "127.0.0.1:$MIXED_PORT")
         _state.update { it.copy(enabled = false) }
         FileLogger.i(TAG, "network_proxy OFF")
     }
