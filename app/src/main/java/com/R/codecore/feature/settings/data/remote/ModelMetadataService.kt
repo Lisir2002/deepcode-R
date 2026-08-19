@@ -4,12 +4,19 @@ import android.content.Context
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.R.codecore.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
+import com.R.codecore.feature.proxy.domain.ClashProxyManager
 import com.R.codecore.feature.settings.data.repository.CompatibilityPolicyRepository
 import com.R.codecore.feature.settings.data.repository.DefaultPolicy
 import com.R.codecore.feature.settings.domain.model.ModelMetadata
 import com.R.codecore.feature.settings.domain.model.ProviderType
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -45,14 +52,44 @@ class ModelMetadataService @Inject constructor(
      * 同时覆写回短超时，避免占用共享 client 的 120s 流式超时语义。
      */
     private val okHttp: OkHttpClient,
+    /**
+     * 代理引擎管理器：监听其状态，当代理（mihomo 内核控制面）就绪后自动补拉元数据。
+     * 解决「App 启动即拉取、此时代理尚未自动恢复完成 → 直连 models.dev 超时 → 永不重试」的问题。
+     */
+    private val proxyManager: ClashProxyManager,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** 独立协程作用域：监听代理状态，不占模型请求链路。 */
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** 串行化刷新，避免启动拉取与代理就绪补拉并发重复。 */
+    private val refreshMutex = Mutex()
 
     @Volatile
     private var cached: Cache? = null
 
     @Volatile
     private var refreshAttemptedThisProcess = false
+
+    /** 进程内是否已在「代理就绪」后触发过一次补拉（每个进程最多一次）。 */
+    @Volatile
+    private var proxyRetryFired = false
+
+    init {
+        // 代理就绪（内核控制面可达）后自动补拉元数据：覆盖两类场景——
+        //  ① 启动时代理自动恢复尚未完成，首拉走直连失败；
+        //  ② 用户随后手动开启代理。
+        // 等代理真正可用再发请求，避免把流量打进无人监听的 7890 或直连被墙的 models.dev。
+        serviceScope.launch {
+            proxyManager.state.collect { state ->
+                if (state.enabled && state.controllerReachable && !proxyRetryFired) {
+                    proxyRetryFired = true
+                    refreshInternal()
+                }
+            }
+        }
+    }
 
     /** models.dev 仅作元数据增强：独立短超时 client，不可达时快速失败，不占用共享的 120s 流式超时。 */
     private val metadataClient: OkHttpClient = okHttp.newBuilder()
@@ -81,14 +118,30 @@ class ModelMetadataService @Inject constructor(
     /**
      * App 启动时统一调用的异步刷新：磁盘缓存未过期（<24h）则跳过；拉取成功写入内存与磁盘缓存，
      * 失败静默（resolve 回退内置 assets 数据）。进程内只尝试一次，绝不阻塞模型请求。
+     * 代理未就绪导致的失败由 [init] 中的代理状态监听在代理就绪后自动补拉。
      */
     suspend fun refreshFromNetworkIfStale() {
         if (refreshAttemptedThisProcess) return
         refreshAttemptedThisProcess = true
-        withContext(Dispatchers.IO) {
+        refreshInternal()
+    }
+
+    /** 真正的刷新实现（可被启动拉取与代理就绪补拉重复调用）；互斥锁防止并发重复拉取。 */
+    private suspend fun refreshInternal() {
+        refreshMutex.withLock {
+            // 已在内存缓存成功拉取过，直接跳过，避免重复拉取
+            cached?.let { return@withLock }
             val diskCache = loadCatalogFromDisk()
-            if (diskCache != null && isFresh(diskCache)) return@withContext
-            fetchCatalogFromNetwork()
+            if (diskCache != null && isFresh(diskCache)) {
+                cached = diskCache
+                return@withLock
+            }
+            withContext(Dispatchers.IO) {
+                runCatching { fetchCatalogFromNetwork() }
+                    .onFailure { e ->
+                        FileLogger.w(TAG, "拉取 models.dev 模型元数据失败（代理就绪后将自动重试）", e)
+                    }
+            }
         }
     }
 
