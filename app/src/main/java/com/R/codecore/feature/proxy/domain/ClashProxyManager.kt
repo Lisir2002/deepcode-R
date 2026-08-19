@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -193,6 +194,16 @@ class ClashProxyManager @Inject constructor(
             // ModelMetadataService 那类 `Failed to connect to /127.0.0.1:7890`），必须内核先起。
             val initiallyEnabled = repository.isProxyEnabled()
             if (initiallyEnabled) {
+                // 内核以 -f config.yaml 启动，配置缺失会瞬时退出（code=1）——先兜底重建再拉起。
+                val cfgFile = java.io.File(configDir(), CONFIG_FILE)
+                if (!cfgFile.isFile) {
+                    val rebuilt = rebuildConfigFromActiveProfile()
+                    FileLogger.i(
+                        TAG,
+                        if (rebuilt) "启动时重写丢失的 config.yaml"
+                        else "config.yaml 缺失且无法从活跃 profile 重建，跳过自动恢复"
+                    )
+                }
                 val ok = ensureKernelRunning(restart = false)
                 enabledCache = ok
                 _state.update { it.copy(enabled = ok) }
@@ -362,6 +373,29 @@ class ClashProxyManager @Inject constructor(
             java.io.File(dir, CONFIG_FILE).writeText(configYaml, Charsets.UTF_8)
             FileLogger.i(TAG, "proxy config 已写入 ${java.io.File(dir, CONFIG_FILE).absolutePath}")
         }.onFailure { FileLogger.w(TAG, "写 proxy config 失败: ${it.message}") }
+    }
+
+    /**
+     * 启动时自动恢复用：config.yaml 缺失时，从活跃 profile 重新合成并落盘（尽力而为）。
+     * 订阅型需重新拉远端 YAML，网络不可达时返回 false，自动恢复跳过。
+     */
+    private suspend fun rebuildConfigFromActiveProfile(): Boolean {
+        val activeId = repository.activeProfileIdFlow.first() ?: return false
+        return try {
+            val revealed = repository.revealSecret(activeId) ?: return false
+            val trimmed = revealed.trim()
+            val source = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+                fetchSubscriptionYaml(trimmed) ?: return false
+            } else {
+                revealed
+            }
+            if (source.isBlank()) return false
+            writeConfigFile(synthesizeConfig(source))
+            true
+        } catch (t: Throwable) {
+            FileLogger.w(TAG, "启动重建 config.yaml 失败: ${t.message}")
+            false
+        }
     }
 
     /** 打 mimomo external-controller REST；成功返回 body，失败返回 null（视为未运行/网络错）。 */
@@ -541,8 +575,15 @@ class ClashProxyManager @Inject constructor(
         if (!bin.isFile) return false
         return runCatching {
             val dir = configDir()
+            val cfgFile = java.io.File(dir, CONFIG_FILE)
+            // 配置必须先就绪再启动：mihomo 找不到 config.yaml 会瞬时退出（code=1）。
+            // 时序上 on() 是先落盘再启内核，此处守卫主要拦「启动时自动恢复」路径的陈旧/缺失配置。
+            if (!cfgFile.isFile) {
+                FileLogger.w(TAG, "config.yaml 不存在（${cfgFile.absolutePath}），跳过启动 mihomo")
+                return@runCatching false
+            }
             val logFile = java.io.File(dir, "mihomo.log")
-            val pb = ProcessBuilder(bin.absolutePath, "-d", dir.absolutePath, "-f", CONFIG_FILE)
+            val pb = ProcessBuilder(bin.absolutePath, "-d", dir.absolutePath, "-f", cfgFile.absolutePath)
             pb.redirectErrorStream(true)
             pb.redirectOutput(logFile)
             val p = pb.start()
@@ -555,6 +596,7 @@ class ClashProxyManager @Inject constructor(
                 if (mihomoProcess === p) {
                     mihomoProcess = null
                     FileLogger.w(TAG, "mihomo 内核进程退出 code=${p.exitValue()}（详见 mihomo.log）")
+                    logKernelLogTail()
                 }
             }
             true
@@ -564,9 +606,20 @@ class ClashProxyManager @Inject constructor(
         }.getOrDefault(false)
     }
 
-    /** 轮询 external-controller 直至可达（[retries] 次 × 500ms）。 */
+    /** 把 mihomo.log 尾部打进 FileLogger，便于在日志里直接看到内核报错（config 解析/端口占用/geodata 缺失等）。 */
+    private fun logKernelLogTail(maxChars: Int = 4000) {
+        runCatching {
+            val f = java.io.File(configDir(), "mihomo.log")
+            if (!f.isFile) return
+            val tail = f.readBytes().takeLast(maxChars).toString(Charsets.UTF_8)
+            FileLogger.w(TAG, "--- mihomo.log tail ---\n$tail")
+        }
+    }
+
+    /** 轮询 external-controller 直至可达（[retries] 次 × 500ms）；内核进程已死则立即失败。 */
     private suspend fun waitControllerReady(retries: Int): Boolean {
         repeat(retries) {
+            if (mihomoProcess?.isAlive == false) return false
             if (controllerRequest("GET", "/configs") != null) return true
             delay(500)
         }
@@ -587,6 +640,14 @@ class ClashProxyManager @Inject constructor(
                         return@withLock false
                     }
                     if (!startKernelProcess()) return@withLock false
+                    // 秒退保护：进程启动后瞬时退出（config 缺失/解析失败/端口占用/geodata 缺失）
+                    // 直接读日志并失败返回，不再空轮询 10s 等一个已死的进程（也避免死占 kernelMutex
+                    // 阻塞后续 on()）。
+                    delay(300)
+                    if (mihomoProcess?.isAlive != true) {
+                        logKernelLogTail()
+                        return@withLock false
+                    }
                 }
                 waitControllerReady(20)
             }
