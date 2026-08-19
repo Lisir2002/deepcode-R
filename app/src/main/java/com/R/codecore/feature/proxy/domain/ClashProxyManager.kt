@@ -267,28 +267,46 @@ class ClashProxyManager @Inject constructor(
 
     /**
      * 合成 mihomo 配置：固定覆盖块头 + 清洗后的源配置体。
-     * 剥离 [OVERRIDDEN_KEYS] 顶层键，保留源 proxies/groups/rules（无 rules 则追加 DIRECT 兜底）。
+     *
+     * 用真实 YAML 解析而非逐行正则清洗：旧实现按「行首命中 OVERRIDDEN_KEYS 就删整行」，
+     * 会把**块式**代理节点里的嵌套键（如 `    port: 443`、`mode:`、`secret:`）误删，导致
+     * mihomo 加载配置 FATAL 秒退（code=1，且 log-level 静默时无任何日志可查）。
+     * 改为解析成 Map 后仅移除顶层危险键再 dump 回 YAML，嵌套结构不受损。
+     *
+     * 源不是 YAML 映射（订阅回 HTML/裸文本等）时，退化为仅 DIRECT 兜底的空配置并告警，
+     * 避免 mihomo 因配置不可解析而秒退。
      */
     fun synthesizeConfig(sourceYaml: String): String {
-        val body = sourceYaml.lines().filterNot { line ->
-            val t = line.trimStart()
-            t.isNotEmpty() && OVERRIDDEN_KEYS.any { t.startsWith("$it:") || t.startsWith("$it :") }
-        }.joinToString("\n")
-        val hasRules = Regex("^\\s*rules\\s*:").containsMatchIn(sourceYaml)
+        val clean = LinkedHashMap<Any?, Any?>()
+        try {
+            val root = Yaml().load<Any?>(sourceYaml)
+            if (root is Map<*, *>) {
+                root.forEach { (k, v) ->
+                    val key = k?.toString() ?: return@forEach
+                    if (key !in OVERRIDDEN_KEYS) clean[key] = v
+                }
+            } else {
+                FileLogger.w(
+                    TAG,
+                    "订阅源不是 YAML 映射（实际为 ${root?.javaClass?.simpleName ?: "null"}），仅生成 DIRECT 兜底配置"
+                )
+            }
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "订阅源 YAML 解析失败（${e.message}），仅生成 DIRECT 兜底配置")
+        }
+        if (clean["rules"] == null) clean["rules"] = listOf("MATCH,DIRECT")
+        val body = Yaml().dump(clean)
         return buildString {
             appendLine("mixed-port: $MIXED_PORT")
             appendLine("allow-lan: false")
             appendLine("mode: rule")
-            appendLine("log-level: silent")
+            // info 而非 silent：内核启动期 FATAL/错误必须落到 mihomo.log，否则秒退原因完全不可见。
+            appendLine("log-level: info")
             appendLine("external-controller: $CONTROLLER_HOST:$CONTROLLER_PORT")
             appendLine("secret: \"$secret\"")
             appendLine()
-            appendLine(body.trim('\n'))
-            if (!hasRules) {
-                appendLine()
-                appendLine("rules:")
-                appendLine("  - MATCH,DIRECT")
-            }
+            append(body.trimEnd('\n'))
+            appendLine()
         }
     }
 
@@ -582,6 +600,12 @@ class ClashProxyManager @Inject constructor(
                 FileLogger.w(TAG, "config.yaml 不存在（${cfgFile.absolutePath}），跳过启动 mihomo")
                 return@runCatching false
             }
+            // 内容校验：落盘文件必须能解析为 YAML 映射，否则 mihomo 必然 FATAL 秒退（code=1）。
+            // 自动恢复路径加载的是旧会话残留的 config.yaml，可能已损坏，启前拦截并给出明确提示。
+            if (!validateConfigFile(cfgFile)) {
+                FileLogger.w(TAG, "config.yaml 内容非法（不可解析为 YAML 映射），跳过启动 mihomo")
+                return@runCatching false
+            }
             val logFile = java.io.File(dir, "mihomo.log")
             val pb = ProcessBuilder(bin.absolutePath, "-d", dir.absolutePath, "-f", cfgFile.absolutePath)
             pb.redirectErrorStream(true)
@@ -606,16 +630,29 @@ class ClashProxyManager @Inject constructor(
         }.getOrDefault(false)
     }
 
+    /** 落盘 config.yaml 是否能解析为 YAML 映射（mihomo 加载前的最后一道闸，防「配损坏 → 秒退」）。 */
+    private fun validateConfigFile(f: java.io.File): Boolean = runCatching {
+        val root = Yaml().load<Any?>(f.readText(Charsets.UTF_8))
+        root is Map<*, *>
+    }.getOrDefault(false)
+
     /** 把 mihomo.log 尾部打进 FileLogger，便于在日志里直接看到内核报错（config 解析/端口占用/geodata 缺失等）。 */
     private fun logKernelLogTail(maxChars: Int = 4000) {
         runCatching {
             val f = java.io.File(configDir(), "mihomo.log")
-            if (!f.isFile) return
+            if (!f.isFile) {
+                FileLogger.w(TAG, "mihomo.log 不存在，无法读取内核退出原因")
+                return
+            }
             val bytes = f.readBytes()
             val start = (bytes.size - maxChars).coerceAtLeast(0)
             // takeLast 会退回 List<Byte>，无 toString(Charset)；用 copyOfRange 保持 ByteArray。
             val tail = bytes.copyOfRange(start, bytes.size).toString(Charsets.UTF_8)
-            FileLogger.w(TAG, "--- mihomo.log tail ---\n$tail")
+            if (tail.isBlank()) {
+                FileLogger.w(TAG, "mihomo.log 为空（log-level 静默或内核未写任何日志），无法定位退出原因")
+            } else {
+                FileLogger.w(TAG, "--- mihomo.log tail ---\n$tail")
+            }
         }
     }
 
