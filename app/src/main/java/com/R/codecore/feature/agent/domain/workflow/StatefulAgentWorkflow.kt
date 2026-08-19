@@ -134,6 +134,18 @@ class StatefulAgentWorkflow @Inject constructor(
         const val SUMMARY_CHARS = 512
 
         /**
+         * 截断续写上限：模型回复连续被 max_tokens/length 截断（isTruncated）时，最多续写几轮。
+         * 超过则强制结束——否则模型反复截断会形成无限续写循环（每轮追加上下文更易再截断、持续烧 token）。
+         */
+        const val MAX_TRUNCATION_ROUNDS = 3
+
+        /**
+         * 主循环最大 LLM 轮次上限：防止模型陷入「反复工具调用 / 截断续写」时无限循环。
+         * 达到该轮次仍未结束则强制收尾并报错，避免只能靠用户手动停止。
+         */
+        const val MAX_ITERATIONS = 50
+
+        /**
          * 上游模型 API 返回「不支持多模态（image / image_url）」的特征关键字列表。
          * 由 HttpErrorEnricher 把响应体里的 error.message 拼到异常 message 后是这种形式：
          *   "HTTP 400: Invalid parameter: messages with type=image_url are not supported by this model"
@@ -155,6 +167,11 @@ class StatefulAgentWorkflow @Inject constructor(
         val iterations: Int = 0,
         val isFinished: Boolean = false,
         val error: String? = null,
+        /**
+         * 连续截断续写计数：模型回复 isTruncated 且无 toolCalls 时递增，达到
+         * [MAX_TRUNCATION_ROUNDS] 则强制结束，防止无限续写死循环。非截断轮清零。
+         */
+        val truncationRounds: Int = 0,
         /** 本批模型返回的 toolCalls（原始顺序，用于最后按序组装 tool 响应） */
         val batchToolCalls: List<ToolCall> = emptyList(),
         /** 待请求权限的 toolCall（逐个弹窗收集） */
@@ -299,7 +316,8 @@ class StatefulAgentWorkflow @Inject constructor(
                 // 新用户请求：清零备选方案②的降级重试标志，让兼容端点新请求有机会自动兜底
                 newState = state.copy(
                     messages = action.initialMessages,
-                    visionFallbackRetried = false
+                    visionFallbackRetried = false,
+                    truncationRounds = 0
                 )
                 effects.add(AgentSideEffect.CallLlm)
             }
@@ -317,18 +335,29 @@ class StatefulAgentWorkflow @Inject constructor(
                 
                 if (action.response.toolCalls.isEmpty()) {
                     if (action.response.isTruncated) {
-                        newState = newState.copy(
-                            messages = newState.messages + AgentMessage.UserMessage(content = "你的回复因长度限制被截断了，请从截断处继续。")
-                        )
-                        effects.add(AgentSideEffect.CallLlm)
+                        if (newState.truncationRounds >= MAX_TRUNCATION_ROUNDS) {
+                            // 续写次数已达上限：强制结束，防止模型反复截断造成无限续写死循环。
+                            // 已保留本轮截断的 partial 内容，用户仍能看到模型已输出的部分。
+                            newState = newState.copy(
+                                isFinished = true,
+                                error = "回复多次因长度限制被截断（已续写 $MAX_TRUNCATION_ROUNDS 次），已停止。请精简要求或分步提问。"
+                            )
+                        } else {
+                            newState = newState.copy(
+                                truncationRounds = newState.truncationRounds + 1,
+                                messages = newState.messages + AgentMessage.UserMessage(content = "你的回复因长度限制被截断了，请从截断处继续。")
+                            )
+                            effects.add(AgentSideEffect.CallLlm)
+                        }
                     } else {
-                        newState = newState.copy(isFinished = true)
+                        newState = newState.copy(truncationRounds = 0, isFinished = true)
                     }
                 } else {
                     // 本批多个 tool_call：全部进入待权限队列，逐个弹窗收集批准；
                     // 全部批准后才进入并行执行阶段（见 PermissionEvaluated / ToolBatchFinished）。
                     val toolCalls = action.response.toolCalls.toList()
                     newState = newState.copy(
+                        truncationRounds = 0, // 进入工具调用轮：截断续写链已结束，清零计数
                         batchToolCalls = toolCalls,
                         pendingPermissionCalls = toolCalls,
                         approvedToolCalls = emptyList(),
@@ -530,7 +559,7 @@ class StatefulAgentWorkflow @Inject constructor(
         // 都兜底清理本会话残留的「未决工具权限请求」，避免对话结束后确认卡一直挂着。
         // 正常路径下 awaitApproval 的 finally 已清 _pendingRequest，此处为空操作；取消/异常
         // 路径下把挂起的 awaitApproval 以 REJECT 唤醒，工具收到「用户拒绝执行」而非永久挂起。
-        try { while (!state.isFinished && actionQueue.isNotEmpty()) {
+        try { while (!state.isFinished && actionQueue.isNotEmpty() && state.iterations < MAX_ITERATIONS) {
             val action = actionQueue.removeFirst()
             val (newState, effects) = reduce(state, action)
             state = newState
@@ -925,7 +954,16 @@ class StatefulAgentWorkflow @Inject constructor(
             // awaitApproval 的 finally 清掉，这里是空操作；取消/异常路径避免确认卡残留。
             permissionManager.cancelPending(currentContext.sessionId)
         }
-        
+
+        // 迭代上限兜底：若因达到 MAX_ITERATIONS 退出循环（isFinished 未置位），
+        // 显式标记错误结束，避免「无声循环」或「无声截断结束」。
+        if (!state.isFinished && state.iterations >= MAX_ITERATIONS) {
+            state = state.copy(
+                isFinished = true,
+                error = "已达到最大迭代轮次（$MAX_ITERATIONS 轮），已强制结束。请简化任务或分步执行。"
+            )
+        }
+
         state.error?.let { send(AgentEvent.Failed(it)) }
         send(AgentEvent.Completed)
     }
