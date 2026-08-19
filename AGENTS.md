@@ -13,6 +13,7 @@
 - **功能、工具变化 → 检查 docs**：任何功能新增/删除/行为变化或工具变更，还要检查 `app/src/main/assets/docs/` 下是否有对应使用文档需要更新（如新功能的使用说明、工具行为变化的提示）。
 - **UI 变化 → 必须更新对应使用文档**：任何 UI 变化（新增页面、改交互、调布局、改文案）**必须**同步更新 `app/src/main/assets/docs/` 下对应的使用文档，确保用户可见的说明与实际界面一致。AI 应自行在 `docs/` 目录中查找对应的文档；若不存在则新建。
 - **UI 文案 → 必须同步 strings.xml**：任何新增或修改用户可见的中文文案（按钮、标题、提示、Toast 等），**必须**将其提取为 string resource 写入 `app/src/main/res/values/strings.xml`（中文）和 `app/src/main/res/values-en/strings.xml`（英文翻译），并在 `.kt` 代码中用 `stringResource(R.string.xxx)` 或 `context.getString(R.string.xxx)` 引用。**禁止在 .kt 文件中硬编码中文 UI 文案。** 命名规范：语义化英文全小写下划线分隔，通用文案用 `common_` 前缀跨页面复用。
+- **代码结构变化 → 必须同步模块文档**：`docs/modules/` 是功能模块级开发文档（一个模块一份，对应 `feature/<module>/`），与 `assets/docs/`（用户使用说明）用途不同，面向开发与维护。任何功能新增/删除/行为变化/目录结构调整，**必须**同步更新对应模块文档 `docs/modules/<module>.md`；在 `feature/` 下**新增模块时，必须实时新建** `docs/modules/<module>.md` 并在 `docs/modules/README.md` 索引登记。文档固定六段式结构（模块定位 / 目录结构与职责 / 核心架构与主流程 / 对外接口与集成点 / 关键设计点与约束 / 维护与扩展指引），详见 `docs/modules/README.md`。改动只涉及单个模块内部逻辑时可只更新该模块文档；涉及跨模块结构变更还需同步 `core.md` 与索引。
 
 ## Git 提交规范
 
@@ -171,6 +172,8 @@ curl -s -u "<owner>:<token>" \
     - `workspace`：工作区与文档管理。远程 SSH 文件访问经 `RemoteSftpFileAccess`。
     - `credentials`：Git 凭据统一管理（三端共用：UI Git / AI Bash / 终端 git）。
     - `backup`：AES 加密备份与恢复。
+    - 其余模块（`proxy`、`browser`、`capability`、`t2i`）职责见下文模块文档。
+> 各功能模块的详细开发文档（目录职责、核心架构、对外接口、维护指引，一个模块一份）见 **`docs/modules/`**（索引：`docs/modules/README.md`）。
 - **远程 SSH 链路**：`RemoteSshConnection`（共享 sshj `SSHClient`）+ `RemoteSshEngine`（exec channel 执行命令）+ `RemoteSftpFileAccess`（文件操作）+ `RemoteTerminalSessionManager`（终端会话），构成远程模式下的执行链路。
 
 ### 数据库

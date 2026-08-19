@@ -1,0 +1,105 @@
+# 服务浏览器（Browser）模块文档
+
+> 模块路径：`app/src/main/java/com/R/codecore/feature/browser/`；维护规则：本模块代码变更必须同步更新本文档
+
+## 1. 模块定位
+
+提供内置**服务浏览器**能力：单个 `BrowserController` 单例持有一个（或多个标签的）WebView 实例，同时服务于**用户侧**（`ServiceBrowserScreen` 地址栏/标签栏/WebView 容器）与**模型侧**（`BrowserAgentTool` 通过 suspend 操作 navigate/snapshot/click/type/… 驱动页面）。
+
+关键设计：
+
+- **用户与模型共享同一浏览会话**：同一份 Cookie、同一个页面，用户登录后模型自动复用登录态。
+- **可代理浏览器控制（Browser Control）**：模型把浏览器当作工具操作，包括点击、输入、选择、提交、滚动、悬停、拖拽、按键、上传文件、截图、抽取结构化数据、多标签页、下载等。
+- **动态数据捕获**：document-start 注入 JS 插桩包装 fetch/XHR/WS/SSE，供模型查询页面网络请求、判定页面就绪与等待请求。
+- **安全护栏**：协议白名单（仅 http/https）、密码等敏感字段快照脱敏、网络记录 URL/响应体脱敏。
+- **异步人机协作**：登录凭据输入（`BrowserLoginPromptManager`）与用户接管（`BrowserTakeoverManager`）均采用 park-and-resume 挂起/唤醒模式。
+
+## 2. 目录结构与职责
+
+| 路径 | 职责 |
+| --- | --- |
+| `domain/BrowserController.kt` | 浏览器核心控制器（`@Singleton`）：持有 WebView 单例/多标签、模型操作全集（suspend）、快照/截图/网络捕获、WebView 代理接管、下载、对话框处理 |
+| `domain/BrowserModels.kt` | 数据模型：`BrowserElement`/`BrowserOption`/`BrowserHeading`/`BrowserPageSnapshot`/`BrowserNetworkRecord`/`BrowserTabInfo`/`BrowserDownloadInfo`/`BrowserUiState`/`AgentBrowserStatus`/`PendingBrowserDialog`/`PendingLoginPrompt`/`BrowserCredential` |
+| `domain/BrowserCredentialStore.kt` | 站点登录凭据加密存储：Android Keystore AES-GCM 密钥 + SharedPreferences 按 host 维度存取 |
+| `domain/BrowserLoginPromptManager.kt` | 登录凭据 park-and-resume 流程：工具侧 `awaitCredentials` 挂起，UI 侧 `resolve`/`cancel` 唤醒（超时 3 分钟） |
+| `domain/BrowserTakeoverManager.kt` | 用户接管 park-and-resume 流程：模型遇到验证码/支付/二次认证等调用 `awaitTakeover`，用户完成/取消唤醒（超时 5 分钟） |
+| `presentation/ServiceBrowserScreen.kt` | 浏览器页 Compose UI：地址栏、前进/后退/刷新、标签栏、WebView 容器、模型操作状态条、alert/confirm 对话框、登录凭据输入、用户接管提示 |
+
+## 3. 核心架构与主流程
+
+### 3.1 线程模型
+
+WebView 所有操作必须在主线程。`BrowserController` 把每个模型操作封装成 suspend 函数，内部统一调度到 `Dispatchers.Main`（`withContext(Dispatchers.Main)` 或主 Handler post），工具侧在 IO 协程调用即可。全部操作经 `Mutex` 串行化，避免并发操作同一页面。
+
+### 3.2 多标签与 UI 绑定
+
+- 每个标签一个 `BrowserTab`（独立 WebView，保留各自历史栈/会话）。
+- `bind()`/`unbind()`：页面挂载/卸载时复用同一 WebView（摘除旧父容器避免 AndroidView 二次 addView 崩溃）；`ensureActiveTab()` 在组合前预创建首个标签，避免组合期间改 activeTabId 引发崩溃。
+- 状态流：`uiState`（URL/标题/能否前进后退/加载进度/screenVisible/activeTabId）、`tabsState`、`agentStatus`（模型操作状态条）、`downloads`、`pendingDialog`。
+
+### 3.3 模型操作（suspend API）
+
+| 操作 | 说明 |
+| --- | --- |
+| `navigate(url)` | 校验协议白名单后 `loadUrl`，`waitForPageSettled` 等页面就绪并返回快照 |
+| `snapshot()` / `currentSnapshot()` | 页面快照（标题+URL+标题大纲+元素树+纯文本+登录探测+在途请求数） |
+| `click/type/selectOption/submit/scroll/hover/pressKey/drag` | 通过 `data-rcb-id` 定位元素，执行对应 JS 后返回新快照 |
+| `getAttribute/evaluate/extract` | 读属性、执行任意 JS、结构化取数（links/headings/table/text/html） |
+| `screenshot(elementId?)` | 视口/元素截图，返回 base64 PNG data URL 供多模态模型查看 |
+| `handleDialog(accept)` | 处理页面 alert/confirm |
+| `waitFor(selector, timeout)` | 等待元素出现或页面加载完成 |
+| `uploadFile(elementId, hostFile)` | 向 file 输入自动回填本地文件（暂存 `pendingUploadFile`，`onShowFileChooser` 时用 FileProvider Uri 回填） |
+| `back/forward/reloadPage` | 导航历史操作 |
+| `newTab/switchTab/closeTab/listTabs` | 多标签管理 |
+| `listNetwork/getNetwork/waitForRequest/networkPendingCount` | 查询页面网络请求记录 |
+
+### 3.4 页面快照与 JS 注入
+
+- `JS_SNAPSHOT`：给可交互控件打 `data-rcb-id`，解析控件类型/标签/取值/状态，返回元素树；密码等敏感字段 `value` 置空、标 `sensitive=true`。
+- `JS_PAGE_TEXT`：正文纯文本（截 12000）。
+- `JS_TYPE`：React 兼容的 value setter（走原型描述符 set + input/change 事件）。
+- `JS_NET_HOOK`：`addDocumentStartJavaScript` 在 document-start 注入，包装 fetch/XHR/WebSocket/EventSource，写入页面内环形缓冲 `window.__rcb_net`（上限 100 条）并维护在途计数 `__rcb_net_pending`；URL query 敏感参数与响应体敏感 JSON key 均替换为 `***`；同时 hook pushState/replaceState/popstate 维护 `__rcb_route_seq`。
+- `waitForPageSettled`：以「主文档加载完成 + 在途业务请求为 0 + DOM 指纹稳定 + 路由稳定」三重条件判定页面就绪（400ms debounce）。
+
+### 3.5 WebView 代理接管
+
+WebView 不认 Java `ProxySelector`，只能用 `ProxyController.setProxyOverride` 做进程级代理覆盖：代理开启时指向 mihomo mixed-port `127.0.0.1:7890` 并放行 loopback/内网（容器开发服务直连），关闭时 `clearProxyOverride` 回退系统默认网络。`init` 中订阅 `proxyManager.state` 让已存在 WebView 跟随代理开关变化。
+
+### 3.6 下载与会话
+
+`setDownloadListener` → `downloadToWorkspace`：用共享 OkHttp 下载到 `~/workspace/downloads`（携带当前页面 Cookie 保持登录态，代理启用时经 mihomo 出口），任务状态经 `_downloads` 暴露，保留最多 50 条。
+
+### 3.7 登录与接管协作
+
+- `detectLoginForm`：根据密码框/登录文案探测登录页。
+- `BrowserLoginPromptManager.awaitCredentials(host)`：工具侧挂起 → `pendingPrompt` 状态触发 UI 凭据输入弹窗 → `resolve/cancel` 唤醒，超时 3 分钟自动放行。
+- `BrowserTakeoverManager.awaitTakeover(title, message)`：挂起 → UI 提示用户亲自操作 → `resolve(TakeoverAnswer(confirmed=true))` 让模型继续，超时 5 分钟取消。
+- `BrowserCredentialStore`：Keystore AES-GCM 密钥（不可导出），凭据 `"username\u0001password"` 加密后存入 SharedPreferences（IV 前置 Base64），按 host 维度存取；模型代填时会读明文发给云端，文档注释明确提示该风险可由登录代填前确认开关缓解。
+
+## 4. 对外接口与集成点
+
+| 接口/入口 | 说明 |
+| --- | --- |
+| `BrowserController` | `@Singleton`，注入 `WorkspacePathMapper`（下载路径映射）、`ClashProxyManager`（代理接管）、`OkHttpClient`（下载） |
+| `BrowserAgentTool` | 模型侧工具：通过上述 suspend 操作驱动页面（不在此目录，消费方） |
+| `BrowserCredentialStore.find/save/delete/hosts` | 凭据读写（模型登录代填与 UI 管理） |
+| `BrowserLoginPromptManager.awaitCredentials/pendingPrompt/resolve/cancel` | 登录凭据 park-and-resume |
+| `BrowserTakeoverManager.awaitTakeover/pending/resolve/cancel` | 用户接管 park-and-resume |
+| `ServiceBrowserScreen` | Compose 页面，参数注入 `browserController`/`loginPromptManager`/`takeoverManager`/`initialUrl`/`onNavigateBack` |
+
+## 5. 关键设计点与约束
+
+- **协议白名单**：`ALLOWED_SCHEMES = {http, https}`，拦截 `file://`/`content://`/`intent://`/`javascript:` 等危险 scheme。
+- **敏感数据脱敏**：密码框 value 不回传、`JS_ATTRIBUTE` 对 value/textContent 返回 `[redacted]`、网络记录 URL/响应体正则脱敏。
+- **共享会话**：模型与用户共用同一 WebView/Cookie；`unbind()` 不销毁 WebView，保留会话与登录态。
+- **WebView 代理**：必须走 `ProxyController` 进程级覆盖，且统一 post 主线程；不支持 `PROXY_OVERRIDE` 时降级走系统默认网络并告警。
+- **上传回填**：仅当 `pendingUploadFile` 已暂存时才拦截 `onShowFileChooser` 自动回填，否则走系统默认文件选择器配合 takeover。
+- **至少保留一个标签**：`closeTab` 在 `tabs.size <= 1` 时拒绝关闭。
+
+## 6. 维护与扩展指引
+
+- **新增模型操作**：在 `BrowserController` 加对应 suspend 方法（`mutex.withLock` + 主线程调度），需页面 JS 时在 companion 增加 `JS_*` 常量；`BrowserAgentTool` 侧同步暴露。
+- **扩展网络捕获**：`JS_NET_HOOK` 中新增捕获目标（如 beacon、iframe）时，同步扩展 `BrowserNetworkRecord` 字段与 `decodeNetworkList` 反序列化。
+- **敏感字段扩展**：新增密码类字段需在快照/属性读取/网络脱敏三处保持一致。
+- **升级 AndroidX WebView 依赖**：`ProxyController` 依赖 `WebViewFeature.PROXY_OVERRIDE`、`addDocumentStartJavaScript` 依赖 `WebViewFeature.DOCUMENT_START_SCRIPT`，升级时需校验特性开关，注入失败已按降级处理。
+- **测试建议**：覆盖多标签切换复用、模型驱动交互后快照、登录探测与凭据代填、接管超时、上传回填、下载落盘路径、WebView 代理开关切换。
