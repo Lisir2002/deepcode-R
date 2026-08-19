@@ -144,7 +144,7 @@ refreshSecret string    // external-controller secret（随机生成，Credentia
 ### P0（容器避墙 + 引擎运行）
 - [ ] `ProxySettingsRepository`（订阅 + 活跃 + secret 加密）
 - [ ] 配置合成管线 + 固定覆盖块 + 归一化校验（拆危险段）
-- [ ] `ClashProxyManager`：合成→启动/停止 mihomo（arm64/amd64 预取+sha256）
+- [x] `ClashProxyManager`：合成→启动/停止 mihomo（arm64/amd64 预取+sha256）
 - [ ] `ToolCapability.MODIFY_NETWORK` + `NetworkProxyTool`（`network_proxy`，ASK）
 - [ ] `AgentModule` 注册
 - [ ] `buildContainerEnv()` 注入代理 env

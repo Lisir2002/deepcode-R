@@ -1,18 +1,26 @@
 package com.R.codecore.feature.proxy.domain
 
 import android.content.Context
+import android.os.Build
 import com.R.codecore.core.util.FileLogger
+import java.io.IOException
 import com.R.codecore.feature.proxy.data.ProxySettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -131,10 +139,43 @@ class ClashProxyManager @Inject constructor(
          * 故伪装成 mihomo 自身默认订阅 UA，保证订阅在程序内与 Clash 表现一致。
          */
         const val SUBSCRIPTION_USER_AGENT = "clash.meta"
+
+        /**
+         * mihomo 内核（Clash Meta）发布版本与二进制资产。
+         *
+         * 选择 **android 构建**（与 ClashMetaForAndroid 同源）：可直接作为 App 子进程运行，
+         * 绑定 127.0.0.1:7890 —— App 网络栈与容器进程共享 loopback，同一实例两侧共用。
+         * SHA256 为对应 `.gz` 的官方校验和（发布页 sha256sums 同值），版本固定避免运行时
+         * 探测 GitHub API 引入不确定性与降级风险；旧版本资产长期保留，故固定版本安全。
+         *
+         * 资产命名：arm64 → `mihomo-android-arm64-v8-…`；x86_64 → `mihomo-android-amd64-…`
+         * （`-amd64-v1/-v2/-v3` 只是 **linux** 构建的 CPU 档位命名，android 构建统一用 `-amd64-`）。
+         */
+        const val MIHOMO_VERSION = "v1.19.13"
+        const val MIHOMO_BASE_URL = "https://github.com/MetaCubeX/mihomo/releases/download/$MIHOMO_VERSION/"
+        const val MIHOMO_ARM64_ASSET = "mihomo-android-arm64-v8-$MIHOMO_VERSION.gz"
+        const val MIHOMO_ARM64_GZ_SHA256 = "c896cbe91344124da0c8e0b93d77a11fae53fc16f49b1b8cd238b5008e336e5b"
+        const val MIHOMO_AMD64_ASSET = "mihomo-android-amd64-$MIHOMO_VERSION.gz"
+        const val MIHOMO_AMD64_GZ_SHA256 = "f930e62c24f6f6ae18790282963d47eadaeed61346a8d869ca899acdb8c7cf29"
     }
 
     private val _state = MutableStateFlow(ProxyRuntimeState())
     val state: StateFlow<ProxyRuntimeState> = _state.asStateFlow()
+
+    /** 串行化内核的启动/停止，避免 on() 与启动时自动恢复并发双拉。 */
+    private val kernelMutex = Mutex()
+
+    /** 当前 mihomo 内核子进程（App 子进程，绑定 127.0.0.1:7890；App 进程存活则内核存活）。 */
+    @Volatile
+    private var mihomoProcess: Process? = null
+
+    /**
+     * 下载 mihomo 二进制用的**直连** OkHttp：强制 Proxy.NO_PROXY 覆盖共享 client 的 ProxySelector。
+     * 内核二进制属于基础设施，必须绕过代理自举（代理未起/代理本身被墙都不能成为下载失败原因）。
+     */
+    private val directClient: OkHttpClient by lazy {
+        okHttp.newBuilder().proxy(java.net.Proxy.NO_PROXY).build()
+    }
 
     /** env 注入/控制器读取的安全鉴权令牌（app 运行时生成并落盘，跨进程一致）。 */
     @Volatile
@@ -147,7 +188,25 @@ class ClashProxyManager @Inject constructor(
     init {
         secret = loadOrCreateSecret()
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-            repository.proxyEnabledFlow.collect { e ->
+            // 首帧：上次若为启用态，先拉起内核、确认控制面就绪，再同步开关。
+            // 顺序不可反——先置 enabled 会让共享 OkHttp 把流量打进还没人监听的 7890（对应
+            // ModelMetadataService 那类 `Failed to connect to /127.0.0.1:7890`），必须内核先起。
+            val initiallyEnabled = repository.isProxyEnabled()
+            if (initiallyEnabled) {
+                val ok = ensureKernelRunning(restart = false)
+                enabledCache = ok
+                _state.update { it.copy(enabled = ok) }
+                routeHolder.update(ok, "127.0.0.1:$MIXED_PORT")
+                FileLogger.i(
+                    TAG,
+                    if (ok) "启动时自动恢复 mihomo 内核成功"
+                    else "启动时自动恢复 mihomo 内核失败（保持代理关闭，避免把网络流量打进未监听的端口）"
+                )
+            } else {
+                routeHolder.update(false, "127.0.0.1:$MIXED_PORT")
+            }
+            // 之后的开关变化继续由 flow 驱动
+            repository.proxyEnabledFlow.drop(1).collect { e ->
                 enabledCache = e
                 _state.update { it.copy(enabled = e) }
                 // 同步给 App 网络层的路由开关写位，让共享 OkHttp 的 ProxySelector 感知（§4.2）
@@ -401,7 +460,159 @@ class ClashProxyManager @Inject constructor(
         awaitClose { ws.cancel() }
     }
 
-    /** 拉起代理：由已播种 profile（[profileId]）或临时 inline（[inlineYaml]）合成配置并落盘、置开关。 */
+    // ============================ mihomo 内核生命周期 ============================
+
+    private fun mihomoDir(): java.io.File = java.io.File(configDir(), "mihomo").apply { mkdirs() }
+
+    private fun mihomoBinary(): java.io.File = java.io.File(mihomoDir(), "mihomo")
+
+    /** 按宿主 ABI 挑选 android 构建资产（+ 官方 SHA256）；不支持的 ABI 返回 null。 */
+    private fun pickMihomoAsset(): Pair<String, String>? {
+        val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: return null
+        return when {
+            abi.startsWith("arm64") -> MIHOMO_ARM64_ASSET to MIHOMO_ARM64_GZ_SHA256
+            abi.startsWith("x86_64") -> MIHOMO_AMD64_ASSET to MIHOMO_AMD64_GZ_SHA256
+            else -> null
+        }
+    }
+
+    /**
+     * 下载并校验 mihomo 内核二进制（首次使用触发，已存在且体积正常则跳过）。
+     * 走 [directClient]（Proxy.NO_PROXY）**自举**：内核属于基础设施，代理未起/代理自身不可达
+     * 都不能成为下载失败的原因，故必须绕过代理直接拉 GitHub。
+     * @return null=就绪；非 null=失败原因（供调用方回显）。
+     */
+    private suspend fun downloadMihomoIfNeeded(): String? = withContext(Dispatchers.IO) {
+        val (asset, expectedSha) = pickMihomoAsset()
+            ?: return@withContext "不支持的 CPU 架构：${Build.SUPPORTED_ABIS.firstOrNull()}"
+        val bin = mihomoBinary()
+        if (bin.isFile && bin.length() > 1_000_000) return@withContext null
+        val dir = mihomoDir()
+        val gz = java.io.File(dir, asset)
+        runCatching {
+            val req = Request.Builder().url(MIHOMO_BASE_URL + asset).get().build()
+            directClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful || resp.body == null) {
+                    throw IOException("HTTP ${resp.code}")
+                }
+                val md = MessageDigest.getInstance("SHA-256")
+                resp.body!!.byteStream().use { input ->
+                    gz.outputStream().buffered().use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            md.update(buf, 0, n)
+                            out.write(buf, 0, n)
+                        }
+                    }
+                }
+                val hex = md.digest().joinToString("") { "%02x".format(it) }
+                if (!hex.equals(expectedSha, ignoreCase = true)) {
+                    throw IOException("SHA256 校验失败（期望 $expectedSha，实际 $hex）")
+                }
+            }
+        }.onFailure {
+            gz.delete()
+            FileLogger.w(TAG, "下载 mihomo 失败: ${it.message}")
+            return@withContext "下载 mihomo 失败：${it.message}"
+        }
+        // 校验通过 → 解压 gz
+        runCatching {
+            GZIPInputStream(gz.inputStream().buffered()).use { gzip ->
+                bin.outputStream().buffered().use { out -> gzip.copyTo(out, 64 * 1024) }
+            }
+            gz.delete()
+            if (!bin.setExecutable(true, false)) {
+                FileLogger.w(TAG, "mihomo setExecutable 返回 false（可能仍可执行）")
+            }
+            FileLogger.i(TAG, "mihomo 内核就绪：${bin.absolutePath}")
+        }.onFailure {
+            bin.delete()
+            FileLogger.w(TAG, "解压 mihomo 失败: ${it.message}")
+            return@withContext "解压 mihomo 失败：${it.message}"
+        }
+        null
+    }
+
+    /** 拉启 mihomo 子进程（App 子进程，绑定 127.0.0.1:7890；App 进程存活则内核存活）。 */
+    private fun startKernelProcess(): Boolean {
+        val bin = mihomoBinary()
+        if (!bin.isFile) return false
+        return runCatching {
+            val dir = configDir()
+            val logFile = java.io.File(dir, "mihomo.log")
+            val pb = ProcessBuilder(bin.absolutePath, "-d", dir.absolutePath, "-f", CONFIG_FILE)
+            pb.redirectErrorStream(true)
+            pb.redirectOutput(logFile)
+            val p = pb.start()
+            mihomoProcess = p
+            FileLogger.i(TAG, "mihomo 内核已启动（log=${logFile.absolutePath}）")
+            // 监视退出（onExit 非阻塞，不占 IO 线程）：进程意外退出时清空句柄并告警，避免「伪运行」状态。
+            p.onExit().thenAccept {
+                if (mihomoProcess === p) {
+                    mihomoProcess = null
+                    FileLogger.w(TAG, "mihomo 内核进程退出 code=${p.exitValue()}（详见 mihomo.log）")
+                }
+            }
+            true
+        }.onFailure {
+            FileLogger.w(TAG, "启动 mihomo 内核失败: ${it.message}")
+            false
+        }.getOrDefault(false)
+    }
+
+    /** 轮询 external-controller 直至可达（[retries] 次 × 500ms）。 */
+    private suspend fun waitControllerReady(retries: Int): Boolean {
+        repeat(retries) {
+            if (controllerRequest("GET", "/configs") != null) return true
+            delay(500)
+        }
+        return false
+    }
+
+    /** 在 [kernelMutex] 内确保内核运行；[restart]=true 时先停旧进程再起（加载新配置）。 */
+    private suspend fun ensureKernelRunning(restart: Boolean): Boolean =
+        withContext(Dispatchers.IO) {
+            kernelMutex.withLock {
+                if (restart) stopKernelLocked()
+                val alive = mihomoProcess?.isAlive == true
+                if (!alive) {
+                    // 首次使用需先自举下载并校验内核二进制（已存在则直接跳过）
+                    val err = downloadMihomoIfNeeded()
+                    if (err != null) {
+                        FileLogger.w(TAG, err)
+                        return@withLock false
+                    }
+                    if (!startKernelProcess()) return@withLock false
+                }
+                waitControllerReady(20)
+            }
+        }
+
+    private suspend fun stopKernel() = withContext(Dispatchers.IO) {
+        kernelMutex.withLock { stopKernelLocked() }
+    }
+
+    private fun stopKernelLocked() {
+        val p = mihomoProcess ?: return
+        mihomoProcess = null
+        if (!p.isAlive) return
+        runCatching { p.destroy() }
+        val deadline = System.currentTimeMillis() + 1500
+        while (p.isAlive && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(100)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                break
+            }
+        }
+        if (p.isAlive) runCatching { p.destroyForcibly() }
+        FileLogger.i(TAG, "mihomo 内核已停止")
+    }
+
+    /** 拉起代理：由已播种 profile（[profileId]）或临时 inline（[inlineYaml]）合成配置、落盘、拉起内核、置开关。 */
     suspend fun on(profileId: String?, inlineYaml: String?): String {
         if (profileId == null && inlineYaml == null) return "需要 profile_id 或 inline yaml"
         val source = when {
@@ -421,6 +632,13 @@ class ClashProxyManager @Inject constructor(
         if (source.isBlank()) return "配置为空"
         val config = synthesizeConfig(source)
         writeConfigFile(config)
+        // 内核必须实际跑起来并让控制面就绪，才能把开关置为 enabled——
+        // 否则 App 流量会被 routeHolder 打进无人监听的 7890（`Failed to connect to /127.0.0.1:7890`）。
+        val kernelOk = ensureKernelRunning(restart = true)
+        if (!kernelOk) {
+            FileLogger.w(TAG, "on(): mihomo 内核未就绪，代理保持关闭")
+            return "mihomo 内核启动失败（下载或启动异常，详见日志），代理未启用"
+        }
         if (profileId != null) repository.setActiveProfile(profileId)
         repository.setProxyEnabled(true)
         _state.update { it.copy(enabled = true, activeProfileId = profileId) }
@@ -428,8 +646,9 @@ class ClashProxyManager @Inject constructor(
         return "ok"
     }
 
-    /** 关闭代理：仅翻转开关（env 也随之不再注入）。 */
+    /** 关闭代理：先停内核，再翻转开关（env 也随之不再注入）。 */
     suspend fun off() {
+        stopKernel()
         repository.setProxyEnabled(false)
         _state.update { it.copy(enabled = false) }
         FileLogger.i(TAG, "network_proxy OFF")
