@@ -143,8 +143,6 @@ app/src/main/java/com/R/codecore/
 └── MainActivity.kt      # 主 Activity（NavHost + Drawer + 全局凭据弹窗）
 ```
 
-> 🔎 **深度代码总结（逐源码核验 + 实时同步机制）**：请见 [DEEPCODE-FINAL-SUMMARY.md](./DEEPCODE-FINAL-SUMMARY.md)——项目架构决策、工具矩阵、权限评估链路、数据库 Schema、启动流程、Git 凭据链路等全量细节，以及后续每次代码改动的同步维护规则都在这一份文档里。
->
 > 📋 **AI 协同开发规范**：请见 [AGENTS.md](./AGENTS.md)——资产同步纪律、Conventional Commits 规范、分支工作流、发版流程（RC 判定）等开发必读规则。
 
 ## 已知限制

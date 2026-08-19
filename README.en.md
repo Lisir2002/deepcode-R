@@ -144,8 +144,6 @@ app/src/main/java/com/R/codecore/
 └── MainActivity.kt      # Main Activity (NavHost + Drawer + global credential dialog)
 ```
 
-> 🔎 **In-depth code summary (source-verified + live-sync rules)**: See [DEEPCODE-FINAL-SUMMARY.md](./DEEPCODE-FINAL-SUMMARY.md) — the single authoritative document covering architecture decisions, the tool matrix, permission evaluation pipeline, database schema, startup lifecycle, Git credential chain, and the live-sync maintenance rules for every subsequent code change.
->
 > 📋 **AI collaboration guidelines**: See [AGENTS.md](./AGENTS.md) — asset sync discipline, Conventional Commits, branching workflow, release process (RC gating), and other must-read rules for development.
 
 ## Known Limitations
