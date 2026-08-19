@@ -452,6 +452,14 @@ fun AppNavigation(
                 val proxyViewModel: com.R.codecore.feature.proxy.presentation.ProxyViewModel = hiltViewModel()
                 com.R.codecore.feature.proxy.presentation.component.ProxyConfigScreen(
                     viewModel = proxyViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToNodes = { navController.navigate("proxy_nodes") }
+                )
+            }
+            composable("proxy_nodes") {
+                val proxyViewModel: com.R.codecore.feature.proxy.presentation.ProxyViewModel = hiltViewModel()
+                com.R.codecore.feature.proxy.presentation.component.ProxyNodesScreen(
+                    viewModel = proxyViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

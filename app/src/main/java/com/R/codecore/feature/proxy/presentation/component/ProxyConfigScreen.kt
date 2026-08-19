@@ -64,7 +64,9 @@ import com.R.codecore.feature.proxy.presentation.ProxyPreview
 import com.R.codecore.feature.proxy.presentation.ProxyViewModel
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
+import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Lock
+import compose.icons.feathericons.Zap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -83,7 +85,8 @@ private const val FIXED_OVERRIDE_HINT =
 @Composable
 fun ProxyConfigScreen(
     viewModel: ProxyViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToNodes: () -> Unit
 ) {
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val enabled by viewModel.enabled.collectAsStateWithLifecycle()
@@ -132,6 +135,15 @@ fun ProxyConfigScreen(
                         enabled = enabled,
                         activeProfileId = activeProfileId,
                         onToggle = viewModel::toggleEnabled
+                    )
+                }
+
+                // 独立入口：节点管理整页（分组/节点/状态/测速/切换 一站式操作）。
+                item {
+                    NodesEntryCard(
+                        enabled = enabled,
+                        profileCount = profiles.size,
+                        onClick = onNavigateToNodes
                     )
                 }
 
@@ -246,6 +258,72 @@ private fun MasterToggle(
                 )
             }
             Switch(checked = enabled, onCheckedChange = onToggle)
+        }
+    }
+}
+
+/** 节点管理独立页入口卡：分组 / 节点 / 状态 / 测速 / 切换 一站式。 */
+@Composable
+private fun NodesEntryCard(
+    enabled: Boolean,
+    profileCount: Int,
+    onClick: () -> Unit
+) {
+    val enabledClick = profileCount > 0
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabledClick, onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                        RoundedCornerShape(12.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = FeatherIcons.Zap,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(Modifier.width(Spacing.md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "节点管理",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = when {
+                        profileCount == 0 -> "先导入配置，即可管理分组 / 节点"
+                        enabled -> "分组 · 节点 · 状态 · 测速 · 切换，一站式操作"
+                        else -> "当前未启用：可查看节点与测速，切换需先启用代理"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(Spacing.sm))
+            Icon(
+                imageVector = FeatherIcons.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
