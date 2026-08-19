@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
+import com.R.codecore.feature.agent.domain.container.ContainerInstaller
+import com.R.codecore.feature.proxy.domain.ClashProxyManager
+import com.R.codecore.feature.proxy.domain.ProxyRuntimeState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +30,9 @@ internal data class UsageStats(
 @HiltViewModel
 internal class AboutStatsViewModel @Inject constructor(
     private val sessionDao: ChatSessionDao,
-    private val messageDao: AgentMessageDao
+    private val messageDao: AgentMessageDao,
+    private val proxyManager: ClashProxyManager,
+    private val containerInstaller: ContainerInstaller
 ) : ViewModel() {
 
     private val _stats = MutableStateFlow(
@@ -42,8 +47,18 @@ internal class AboutStatsViewModel @Inject constructor(
     )
     val stats: StateFlow<UsageStats> = _stats.asStateFlow()
 
+    /** mihomo 代理内核运行态（来自 [ClashProxyManager]）。 */
+    val proxyState: StateFlow<ProxyRuntimeState> = proxyManager.state
+
+    private val _terminalReady = MutableStateFlow(false)
+    val terminalReady: StateFlow<Boolean> = _terminalReady.asStateFlow()
+
     init {
         refresh()
+        viewModelScope.launch(Dispatchers.IO) {
+            _terminalReady.value =
+                containerInstaller.isInstalled() || containerInstaller.isInstalledX86()
+        }
     }
 
     fun refresh() {
