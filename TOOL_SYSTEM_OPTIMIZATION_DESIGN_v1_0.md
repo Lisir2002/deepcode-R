@@ -1,5 +1,5 @@
 # Agent 工具系统 · 优化设计文档 v1.0（讨论草案）
-> 状态：11 个工具族逐工具提问式讨论已全部完成，结论已回填（待汇总实施清单）
+> 状态：11 个工具族逐工具提问式讨论已全部完成，结论已回填；**实施清单（§13）已全部落地**（对照当前代码逐项核实，2026-08-19）
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 核心参考结构：
 > - [AgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/AgentTool.kt)
@@ -305,7 +305,7 @@
 | 10 | MCP/技能（manageMcp/loadSkill） | ✅ 已讨论（S-1~S-3） |
 | 11 | 模式切换（switchMode） | ✅ 已讨论（G-1~G-3） |
 
-> 全部 11 个工具族已讨论完毕。下一阶段：将各章节「采纳」项汇总为实施清单，按优先级排期进入编码。
+> 全部 11 个工具族已讨论完毕。§13 实施清单已全部落地（2026-08-19 对照代码逐项核实，唯一暂缓 T-4 任意字节码发送，见 13.4）。
 
 ---
 
@@ -317,55 +317,55 @@
 
 | # | 工具 | 事项 | 说明 | 状态 |
 |---|---|---|---|---|
-| V-4 | viewImage | 解码移至 IO 线程 | `withContext(Dispatchers.IO)` 包裹解码/缩放/编码，避免主线程卡顿/ANR | ⏳ |
-| F-2 | editFile | 大文件 LCS 保护 | 超大差异跳过 O(n·m) DP，退化为整体替换，防 OOM | ⏳ |
-| D-1 | todo | 快照事务化 | delete+upsert 包 Room `withTransaction`，防中间失败丢全部待办 | ⏳ |
-| D-3 | todo | 参数校验友好化 | parseStatus 改 ToolResult.Error + INVALID_STATUS 明确错误码 | ⏳ |
-| Q-3 | askUserQuestion | 回答超时机制 | `awaitAnswer` 3 分钟超时放行，防会话无限阻塞 | ⏳ |
-| Q-4 | askUserQuestion | 参数解析容错 | 字段级 runCatching，非法字段返回带序号/字段名的明确错误码 | ⏳ |
+| V-4 | viewImage | 解码移至 IO 线程 | `withContext(Dispatchers.IO)` 包裹解码/缩放/编码，避免主线程卡顿/ANR | ✅ |
+| F-2 | editFile | 大文件 LCS 保护 | 超大差异跳过 O(n·m) DP，退化为整体替换，防 OOM | ✅ |
+| D-1 | todo | 快照事务化 | delete+upsert 包 Room `withTransaction`，防中间失败丢全部待办 | ✅ |
+| D-3 | todo | 参数校验友好化 | parseStatus 改 ToolResult.Error + INVALID_STATUS 明确错误码 | ✅ |
+| Q-3 | askUserQuestion | 回答超时机制 | `awaitAnswer` 3 分钟超时放行，防会话无限阻塞 | ✅ |
+| Q-4 | askUserQuestion | 参数解析容错 | 字段级 runCatching，非法字段返回带序号/字段名的明确错误码 | ✅ |
 
 ### 13.2 P1 · 正确性与体验优化
 
 | # | 工具 | 事项 | 说明 | 状态 |
 |---|---|---|---|---|
-| T-1 | Bash | 双模式返回 | 新增 `strict` 参数：默认 Success+exit_code；strict=true 非零退出→Error | ⏳ |
-| T-3 | terminal | 长输出限幅+分页 | read 默认 BoundedOutput 首尾截断；新增 start_line/max_lines 分页 | ⏳ |
-| E-1 | search | 反馈真实截断状态 | truncated 按实际截断置位；matches 用 `rg --count-matches` 独立统计 | ⏳ |
-| E-2 | search | 结果数量截断 | 新增 `max_matches` 参数（默认 200），超出提示缩小范围 | ⏳ |
-| E-4 | list | 真实权限位 | 读取真实 POSIX 权限位，不可读回退 `-` 而非伪造 | ⏳ |
-| W-1 | websearch | 结果结构化 | 解析为 [{title, url, snippet}] 列表，多段 content 合并 | ⏳ |
-| W-2 | websearch | 指数退避重试 | 网络抖动/超时自动重试 1-2 次 | ⏳ |
-| W-3 | webfetch | 移除换行 hack | 改 Jsoup 块级元素遍历拼行，避免误替换字面 `\n` | ⏳ |
-| V-1 | generateImage | 重试元数据 | 返回结果附加 attempts/failures + DB 任务行落盘 | ⏳ |
-| V-2 | viewImage | EXIF 方向修正 | ExifInterface 读 ORIENTATION，缩放前旋转 Bitmap | ⏳ |
-| C-4 | ensure_android_env | 去除反射 | LinuxContainerEngine 提供公开方法替换 getDeclaredField | ⏳ |
-| C-5 | ensure_android_env | 进度流式化 | 7 步脚本 STEP 行实时转 Progress 事件 | ⏳ |
-| C-6 | switch_container_arch | 进度流式化 | 首次切 x86_64 解压 rootfs/部署 QEMU 接流式进度 | ⏳ |
-| C-1 | check_environment | 结果缓存 | 30s TTL 缓存，避免 AI 重复探测 | ⏳ |
-| M-2 | memory | 自动摘要 | save 缺 description 时调 LLM 生成一句话摘要 | ⏳ |
-| D-2 | todo | 回传时间字段 | listTodos 回传 createdAt/updatedAt | ⏳ |
-| G-3 | switchMode | 切换频率限制 | 同会话 5 分钟最多 2 次，防 PLAN↔BUILD 抖动 | ⏳ |
+| T-1 | Bash | 双模式返回 | 新增 `strict` 参数：默认 Success+exit_code；strict=true 非零退出→Error | ✅ |
+| T-3 | terminal | 长输出限幅+分页 | read 默认 BoundedOutput 首尾截断；新增 start_line/max_lines 分页 | ✅ |
+| E-1 | search | 反馈真实截断状态 | truncated 按实际截断置位；matches 用 `rg --count-matches` 独立统计 | ✅ |
+| E-2 | search | 结果数量截断 | 新增 `max_matches` 参数（默认 200），超出提示缩小范围 | ✅ |
+| E-4 | list | 真实权限位 | 读取真实 POSIX 权限位，不可读回退 `-` 而非伪造 | ✅ |
+| W-1 | websearch | 结果结构化 | 解析为 [{title, url, snippet}] 列表，多段 content 合并 | ✅ |
+| W-2 | websearch | 指数退避重试 | 网络抖动/超时自动重试 1-2 次 | ✅ |
+| W-3 | webfetch | 移除换行 hack | 改 Jsoup 块级元素遍历拼行，避免误替换字面 `\n` | ✅ |
+| V-1 | generateImage | 重试元数据 | 返回结果附加 attempts/failures + DB 任务行落盘 | ✅ |
+| V-2 | viewImage | EXIF 方向修正 | ExifInterface 读 ORIENTATION，缩放前旋转 Bitmap | ✅ |
+| C-4 | ensure_android_env | 去除反射 | LinuxContainerEngine 提供公开方法替换 getDeclaredField | ✅ |
+| C-5 | ensure_android_env | 进度流式化 | 7 步脚本 STEP 行实时转 Progress 事件 | ✅ |
+| C-6 | switch_container_arch | 进度流式化 | 首次切 x86_64 解压 rootfs/部署 QEMU 接流式进度 | ✅ |
+| C-1 | check_environment | 结果缓存 | 30s TTL 缓存，避免 AI 重复探测 | ✅ |
+| M-2 | memory | 自动摘要 | save 缺 description 时调 LLM 生成一句话摘要 | ✅ |
+| D-2 | todo | 回传时间字段 | listTodos 回传 createdAt/updatedAt | ✅ |
+| G-3 | switchMode | 切换频率限制 | 同会话 5 分钟最多 2 次，防 PLAN↔BUILD 抖动 | ✅ |
 
 ### 13.3 P2 · 新能力增强
 
 | # | 工具 | 事项 | 说明 | 状态 |
 |---|---|---|---|---|
-| F-1 | editFile | 相似匹配建议 | NO_MATCH 时返回 Top-N 相近候选 | ⏳ |
-| F-3 | readFile/writeFile | hunk 落库 | 持久化 hunk/旧内容快照，支撑「撤销编辑」 | ⏳ |
-| F-4 | readFile | total_lines 自动决策 | 按文件大小自动决策；新增 `force_total_lines` 参数覆盖 | ⏳ |
-| T-2 | Bash | 只读命令自动重试 | 白名单只读命令（ls/pwd/git status）自动重试 | ⏳ |
-| T-5 | terminal | 继承工作区目录 | start 传入 workspaceRepository.currentPath() | ⏳ |
-| E-3 | list | 默认忽略噪音目录 | 默认隐藏 .git/build/.gradle/node_modules，`-a` 显示全部 | ⏳ |
-| M-1 | memory | 单条大小上限 | 单条 50KB 上限，超出明确报错引导拆分 | ⏳ |
-| M-3 | memory | tags 标签 | save 支持 tags 数组，list 按 tag 过滤 | ⏳ |
-| M-4 | memory | 访问统计排序 | 记录命中次数并降序展示/注入 | ⏳ |
-| V-3 | generateImage | 保存到工作区 | 新增 `output_path` 参数，保留私有目录副本 | ⏳ |
-| Q-1 | askUserQuestion | 默认选项高亮 | options 项新增 `default` 字段，UI 默认高亮 | ⏳ |
-| Q-2 | askUserQuestion | 支持 markdown | question/description 轻量 markdown 渲染 | ⏳ |
-| S-1 | loadSkill | 技能版本锁 | 技能实体与参数新增 `version` 字段 | ⏳ |
-| S-2 | manageMcp | 连接测试 | add 后 stdio/HTTP 全测连通性，失败即告知 | ⏳ |
-| S-3 | loadSkill | 运行时依赖预检查 | `requires_runtime` 元数据，加载前探测运行时就绪性 | ⏳ |
-| G-1 | switchMode | 切换历史记录 | 新增 {from, to, reason, timestamp} 历史 | ⏳ |
+| F-1 | editFile | 相似匹配建议 | NO_MATCH 时返回 Top-N 相近候选 | ✅ |
+| F-3 | readFile/writeFile | hunk 落库 | 持久化 hunk/旧内容快照，支撑「撤销编辑」 | ✅ |
+| F-4 | readFile | total_lines 自动决策 | 按文件大小自动决策；新增 `force_total_lines` 参数覆盖 | ✅ |
+| T-2 | Bash | 只读命令自动重试 | 白名单只读命令（ls/pwd/git status）自动重试 | ✅ |
+| T-5 | terminal | 继承工作区目录 | start 传入 workspaceRepository.currentPath() | ✅ |
+| E-3 | list | 默认忽略噪音目录 | 默认隐藏 .git/build/.gradle/node_modules，`-a` 显示全部 | ✅ |
+| M-1 | memory | 单条大小上限 | 单条 50KB 上限，超出明确报错引导拆分 | ✅ |
+| M-3 | memory | tags 标签 | save 支持 tags 数组，list 按 tag 过滤 | ✅ |
+| M-4 | memory | 访问统计排序 | 记录命中次数并降序展示/注入 | ✅ |
+| V-3 | generateImage | 保存到工作区 | 新增 `output_path` 参数，保留私有目录副本 | ✅ |
+| Q-1 | askUserQuestion | 默认选项高亮 | options 项新增 `default` 字段，UI 默认高亮 | ✅ |
+| Q-2 | askUserQuestion | 支持 markdown | question/description 轻量 markdown 渲染 | ✅ |
+| S-1 | loadSkill | 技能版本锁 | 技能实体与参数新增 `version` 字段 | ✅ |
+| S-2 | manageMcp | 连接测试 | add 后 stdio/HTTP 全测连通性，失败即告知 | ✅ |
+| S-3 | loadSkill | 运行时依赖预检查 | `requires_runtime` 元数据，加载前探测运行时就绪性 | ✅ |
+| G-1 | switchMode | 切换历史记录 | 新增 {from, to, reason, timestamp} 历史 | ✅ |
 
 ### 13.4 暂缓/不采纳项（记录备查）
 
@@ -378,3 +378,60 @@
 | M-5 | memory | 向量语义搜索 | ⏳ 暂缓（复杂度不成比例） |
 | W-4 | webfetch | URL 缓存 | ❌ 不采纳（保证内容最新） |
 | W-5 | webfetch | css_selector 提取 | ⏳ 暂缓 |
+
+---
+
+## 14. 实施状态审计（对照当前代码 · 2026-08-19）
+
+> 结论：**§13 实施清单 39 项全部 ✅ 已实现**（含 13.4 外的全部「采纳」项）。以下为逐项代码证据摘要；「暂缓/不采纳」项按原结论保留。
+
+### P0 · 缺陷与崩溃修复
+| # | 工具 | 证据 |
+|---|---|---|
+| V-4 | viewImage | [ImageTools.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/file/ImageTools.kt#L54-L85) 解码/缩放/编码整链包 `withContext(Dispatchers.IO)` |
+| F-2 | editFile | [EditFileTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/editor/EditFileTool.kt#L31-L35) `MAX_LCS_CELLS`；[L261-L276](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/editor/EditFileTool.kt#L261-L276) `n*m` 超阈值跳过 DP 退化为整体替换 |
+| D-1 | todo | [TodoTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/todo/TodoTool.kt#L167-L176) `withTransaction` 包删除+upsert |
+| D-3 | todo | [TodoTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/todo/TodoTool.kt#L136-L144) 非法 status 返回 `INVALID_STATUS` |
+| Q-3 | askUserQuestion | [AskUserQuestionManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/question/AskUserQuestionManager.kt#L27-L58) `ANSWER_TIMEOUT_MS = 3min` + `withTimeout` 放行 |
+| Q-4 | askUserQuestion | [AskUserQuestionTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/question/AskUserQuestionTool.kt#L151-L168) 字段级 runCatching 容错 |
+
+### P1 · 正确性与体验优化
+| # | 工具 | 证据 |
+|---|---|---|
+| T-1 | Bash | [ExecuteCommandTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/container/ExecuteCommandTool.kt#L117-L122) `strict` 参数；非零退出→`ToolResult.Error` |
+| T-3 | terminal | [BackgroundTerminalTools.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/container/BackgroundTerminalTools.kt#L155-L165) `start_line`/`max_lines` 分页 + 首尾截断 |
+| E-1 | search | [SearchCodeTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/explorer/SearchCodeTool.kt#L67-L105) `rg --count-matches` 独立统计 + 真实 `truncated` |
+| E-2 | search | [SearchCodeTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/explorer/SearchCodeTool.kt#L31-L35) `DEFAULT_MAX_MATCHES = 200` |
+| E-4 | list | [ListFilesTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/explorer/ListFilesTool.kt#L302-L328) 读真实 POSIX 权限位，不可读回退 `-` |
+| W-1 | websearch | [WebSearchTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/search/WebSearchTool.kt#L197-L252) 结构化 `{query, results:[{title,url,snippet}], ...}` |
+| W-2 | websearch | [WebSearchTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/search/WebSearchTool.kt#L41-L103) `MAX_ATTEMPTS=3` 指数退避重试 |
+| W-3 | webfetch | [WebFetchTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/search/WebFetchTool.kt#L167-L220) Jsoup 块级元素遍历拼行，移除换行 hack |
+| V-1 | generateImage | [GenerateImageTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/image/GenerateImageTool.kt#L271-L280) 返回 `attempts`/`failures` + 任务落库 |
+| V-2 | viewImage | [ImageTools.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/file/ImageTools.kt#L147-L232) `ExifInterface` 读 ORIENTATION 缩放前旋转 |
+| C-4 | ensure_android_env | [EnsureAndroidEnvTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/container/EnsureAndroidEnvTool.kt#L174) 改用 `containerEngine.isBundleInstalled(id)`，无反射 |
+| C-5 | ensure_android_env | [EnsureAndroidEnvTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/container/EnsureAndroidEnvTool.kt#L47) 实现 `StreamingAgentTool` 流式进度 |
+| C-6 | switch_container_arch | [SwitchContainerArchTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/container/SwitchContainerArchTool.kt#L38) 实现 `StreamingAgentTool` 流式进度 |
+| C-1 | check_environment | [CheckEnvironmentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/container/CheckEnvironmentTool.kt#L59-L72) `CACHE_TTL_MS = 30_000` |
+| M-2 | memory | [MemoryTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/memory/MemoryTool.kt#L218-L236) 缺 description 时 `autoSummary()` |
+| D-2 | todo | [TodoTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/todo/TodoTool.kt#L179-L199) 回传 `created_at`/`updated_at` |
+| G-3 | switchMode | [SwitchModeTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/mode/SwitchModeTool.kt#L101-L140) 5 分钟窗口限 2 次 → `MODE_SWITCH_RATE_LIMITED` |
+
+### P2 · 新能力增强
+| # | 工具 | 证据 |
+|---|---|---|
+| F-1 | editFile | [EditFileTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/editor/EditFileTool.kt#L278-L337) `findSimilarCandidates()` Top-N 相似候选 |
+| F-3 | readFile/writeFile | [EditFileTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/editor/EditFileTool.kt#L207-L220) + [FileTools.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/file/FileTools.kt#L268-L280) hunk/旧内容写 `FileEditHunkDao` |
+| F-4 | readFile | [FileTools.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/file/FileTools.kt#L42-L79) `force_total_lines` + `AUTO_TOTAL_LINES_BYTES` 自动决策 |
+| T-2 | Bash | [ExecuteCommandTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/container/ExecuteCommandTool.kt#L78) 只读命令白名单正则 + `@retry` 复用累积器 |
+| T-5 | terminal | [BackgroundTerminalTools.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/container/BackgroundTerminalTools.kt#L274-L356) `startBackgroundCommand(..., workspaceRepository.currentPath())` |
+| E-3 | list | [ListFilesTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/explorer/ListFilesTool.kt#L38-L40) `NOISE_DIRS`（.git/.gradle/build/node_modules） |
+| M-1 | memory | [MemoryTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/memory/MemoryTool.kt#L180-L206) 单条字符数上限 |
+| M-3 | memory | [MemoryTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/memory/MemoryTool.kt#L218-L236) `parseTags()` 支持 tags |
+| M-4 | memory | [MemoryTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/memory/MemoryTool.kt#L153-L177) `accessCount` 记录并展示 |
+| V-3 | generateImage | [GenerateImageTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/image/GenerateImageTool.kt#L258-L280) `output_path` + `copyToWorkspace()` |
+| Q-1 | askUserQuestion | [AskUserQuestionTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/question/AskUserQuestionTool.kt#L58-L63) options `default` 字段 |
+| Q-2 | askUserQuestion | [AskUserQuestionTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/question/AskUserQuestionTool.kt#L56) description 支持轻量 Markdown |
+| S-1 | loadSkill | [LoadSkillTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/skill/LoadSkillTool.kt#L56-L92) `version` 参数 + 版本锁校验 |
+| S-2 | manageMcp | [ManageMcpTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/mcp/ManageMcpTool.kt#L142-L172) add 后 `testConnection` stdio/HTTP 全测 |
+| S-3 | loadSkill | [LoadSkillTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/skill/LoadSkillTool.kt#L119-L164) `requiresRuntime` + `command -v` 预探测 |
+| G-1 | switchMode | [SwitchModeTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/mode/SwitchModeTool.kt#L101-L119) `ModeSwitchHistoryEntity` 切换历史 |

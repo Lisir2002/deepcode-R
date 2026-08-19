@@ -5,6 +5,8 @@
 > **引擎**：mihomo（Clash Meta 内核，https://github.com/MetaCubeX/mihomo），**纯 mixed-port（HTTP+SOCKS5 同端口）模式**运行在容器内，不建 TUN。设计深度借鉴 **ClashMetaForAndroid**（https://github.com/MetaCubeX/ClashMetaForAndroid，下文 CMA）与 mihomo 的核心机制（见 §10 深借对照表）。
 >
 > 仍是**应用层代理**，非内核级 TUN-VPN。定位详见 §1。
+>
+> **实施状态**：✅ **已实现**（`feature/proxy/` 落地：mihomo mixed-port 内核启动/停止、配置合成管线、`NetworkProxyTool` 工具注册、订阅/节点/配置 UI；详见文末实施状态审计）
 
 ---
 
@@ -141,20 +143,22 @@ refreshSecret string    // external-controller secret（随机生成，Credentia
 
 ## 7. 实现清单（按批次）
 
+> 实施状态：P0 全部 ✅；P1 大部分 ✅（缺 geo 资产预取）；P2 未排期。2026-08-19 对照代码核实。
+
 ### P0（容器避墙 + 引擎运行）
-- [ ] `ProxySettingsRepository`（订阅 + 活跃 + secret 加密）
-- [ ] 配置合成管线 + 固定覆盖块 + 归一化校验（拆危险段）
-- [x] `ClashProxyManager`：合成→启动/停止 mihomo（arm64/amd64 预取+sha256）
-- [ ] `ToolCapability.MODIFY_NETWORK` + `NetworkProxyTool`（`network_proxy`，ASK）
-- [ ] `AgentModule` 注册
-- [ ] `buildContainerEnv()` 注入代理 env
-- [ ] 独立「配置导入/管理页」（订阅/手动/文件导入向导 + 编辑器 + 覆盖块展示，见 §11）
-- [ ] 确认卡接线（`on/off/config`）
+- [x] `ProxySettingsRepository`（订阅 + 活跃 + secret 加密）— [ProxySettingsRepository.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/proxy/data/ProxySettingsRepository.kt)
+- [x] 配置合成管线 + 固定覆盖块 + 归一化校验（拆危险段）— `ClashProxyManager.synthesizeConfig()`
+- [x] `ClashProxyManager`：合成→启动/停止 mihomo（arm64/amd64 预取+sha256）— `on()/off()/startKernelProcess()`
+- [x] `ToolCapability.MODIFY_NETWORK` + `NetworkProxyTool`（`network_proxy`，ASK）— [NetworkProxyTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/proxy/NetworkProxyTool.kt)
+- [x] `AgentModule` 注册 — [AgentModule.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/di/AgentModule.kt)
+- [x] `buildContainerEnv()` 注入代理 env — `ClashProxyManager.exportContainerEnv()` 并入 `LinuxContainerEngine.buildContainerEnv()`
+- [x] 独立「配置导入/管理页」（订阅/手动/文件导入向导 + 编辑器 + 覆盖块展示，见 §11）— [ProxyConfigScreen.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/proxy/presentation/component/ProxyConfigScreen.kt) / [ProxyNodesScreen.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/proxy/presentation/component/ProxyNodesScreen.kt)
+- [x] 确认卡接线（`on/off/config`）— 复用 ZTH 确认卡 + `ToolPermissionPolicy.ASK`
 
 ### P1（模型自助切节点 + App 出口）
-- [ ] mihomo REST 封装（`list_proxies`/`select`/`mode`/`latency`）
-- [ ] 共享 OkHttp `ProxySelector` 注入（WebFetch/MCP/模型 API/T2I）
-- [ ] `flow`：WS `/traffic`,`/connections` 推流封装
+- [x] mihomo REST 封装（`list_proxies`/`select`/`mode`/`latency`）— `ClashProxyManager` REST 控制面（/proxies、/delay、`selectProxyNode()`）
+- [x] 共享 OkHttp `ProxySelector` 注入（WebFetch/MCP/模型 API/T2I）— [ProxyRouteHolder.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/proxy/domain/ProxyRouteHolder.kt) `selector` 供共享 client 注入
+- [x] `flow`：WS `/traffic`,`/connections` 推流封装 — [ClashProxyManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/proxy/domain/ClashProxyManager.kt#L485-L511) `trafficFlow()` 零轮询
 - [ ] geo 资产（geoip/geosite）按需预取（订阅引用时才取）
 
 ### P2（体验）

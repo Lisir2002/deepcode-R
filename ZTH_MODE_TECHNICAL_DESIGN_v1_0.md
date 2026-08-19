@@ -1,5 +1,6 @@
 # ZTH 零幻觉容忍模式 · 三层架构完整技术设计文档 v1.0
 > 需求冻结版本 · 含模块结构 / 类图 / DB Schema / DataStore Proto / 状态机 / 决策矩阵 / 参数总表 / UI 分层 / 钩子落点 / 单测 Checklist
+> **实施状态**：✅ **已实现**（`feature/agent/domain/zth/` 全量落地：确认卡 12×17 状态机、熔断、能力守卫、工具输出审计、WorkflowHooks 接入 StatefulAgentWorkflow）
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 现有核心参考结构位置（仅作挂接参考，本文档不要求改现有实现设计方向）：
 > - [StatefulAgentWorkflow.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/workflow/StatefulAgentWorkflow.kt)

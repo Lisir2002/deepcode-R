@@ -5,7 +5,7 @@
 > **对应目录**：`app/src/main/java/com/R/codecore/feature/t2i/`（独立 feature 包）+ `app/src/main/java/com/R/codecore/feature/agent/domain/tool/image/GenerateImageTool.kt`（Tool 留在 agent 下复用 Tool 事件链与权限引擎）
 > **与现有架构文档关系**：本设计是《COMPLETE_TECHNICAL_ARCHITECTURE_v1_0》与《ZTH_MODE_TECHNICAL_DESIGN_v1_0》在 AI Agent 能力侧的新增子章节，不改动已有 DB-SHIELD / 持久化护盾 / SCHEMA 38 的任何约定。
 > **设计日期**：2026-08-11
-> **状态**：✅ 全部规格讨论完毕，待代码实现
+> **状态**：✅ 全部规格讨论完毕；**核心已实现**（表结构 + 工具集成 + 三态端点 + 任务持久化/崩溃恢复已落地；双写 `attachmentsJson` 链路已具备但 `GenerateImageTool` 未主动回写，见文末实施状态审计）
 
 ---
 
@@ -1008,6 +1008,22 @@ suspend fun LocalFileImageStorage.saveToMediaStore(
 | 已有 ZTH 模式设计 | `ZTH_MODE_TECHNICAL_DESIGN_v1_0.md` |
 | 闪退复盘与工程教训（可作为 T2I 8 步串行的最佳实践依据） | `docs/engineering/startup-crash-lessons-RC61.md` |
 | 设计绑定的 Room 迁移脚本对应物（后续 Step 1 生成） | `app/src/main/assets/migrations/39_rc69_add_t2i.sql` |
+
+---
+
+## 📌 实施状态审计（对照当前代码，2026-08-19）
+
+| 设计点 | 实现状态 | 代码证据 |
+|---|---|---|
+| 3 张新表（Provider / ProviderModel / Task） | ✅ | `feature/t2i/data/local/entity/` 下 `T2IProviderEntity` / `T2IProviderModelEntity` / `T2ITaskEntity` + 对应 DAO |
+| SYNC / ASYNC / AUTO 三态端点 | ✅ | [T2IProviderEntity.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/t2i/data/local/entity/T2IProviderEntity.kt#L24-L35) `endpointMode` 默认 `AUTO`；[ImageGenerator.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/t2i/data/remote/ImageGenerator.kt#L19-L33) `EndpointMode` 枚举 + `Result.modeUsed` |
+| AUTO 形态探测并缓存回写 | ✅ | [GenerateImageTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/image/GenerateImageTool.kt#L208-L255) 读取 active Provider，AUTO 且实际模式不同时调 `T2IProviderDao.updateEndpointMode()` 缓存 |
+| 工具集成（AI 调 `GenerateImageTool` + 事件链/权限引擎） | ✅ | [GenerateImageTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/image/GenerateImageTool.kt) 走 `ToolStreamEvent` 流 + `T2IPermissionPolicyEngine` 额度/安全评估 |
+| 任务持久化 + 崩溃恢复状态机 | ✅ | [T2ITaskEntity.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/t2i/data/local/entity/T2ITaskEntity.kt#L8-L29) `PENDING/RUNNING/PENDING_RETRY/DANGLING`；[T2ITaskDao.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/t2i/data/local/dao/T2ITaskDao.kt#L26-L31) `getDanglingTasks()` 30 分钟悬垂扫描 |
+| 重试元数据 + 输出到工作区 | ✅ | [GenerateImageTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/image/GenerateImageTool.kt#L271-L280) 返回 `attempts`/`failures`；`output_path` 经 `copyToWorkspace()` 复制到工作区 |
+| 双写 `agent_messages.attachmentsJson` | ⚠️ 链路具备、未主动接线 | `AgentMessageEntity.attachmentsJson` 与 [MessagePersistenceUseCase.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/session/MessagePersistenceUseCase.kt#L36-L70) 已支持 `attachments` 参数写入，但 `GenerateImageTool` 当前未把生成图作为附件回写会话消息 |
+
+> 结论：除「双写 attachmentsJson」未接线外，T2I 设计核心均已落地。双写实现方案：`GenerateImageTool` 成功后构造 `Attachment(url=file://…, mimeType=image/*)` 列表，经 `MessagePersistenceUseCase` 持久化到当前会话，使多轮上下文天然感知生成图。
 
 ---
 

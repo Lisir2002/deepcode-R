@@ -195,12 +195,14 @@
 
 ## 7. 实现清单（按批次）
 
+> 实施状态（2026-08-19 对照代码核实）：Topic 1/2 已落地；Topic 3 部分（保活 FGS 已有，缺 WakeLock/agent 计数/停止）；Topic 4/5/6 未排期。详见 §11 实施状态审计。
+
 ### P0（最稳）
-- [ ] Topic 1：`/sdcard` 动态绑 + legacy 授权 + 开关 + 10.1 护栏
-- [ ] Topic 2：`RcbBridge`（TCP + 握手 + 能力隔离）+ 6 个 `rcb-*` helper + provision 注入 + open-url 设置
+- [x] Topic 1：`/sdcard` 动态绑 + legacy 授权 + 开关 + 10.1 护栏（开关与动态绑定已落地；运行时授权走系统权限流程）
+- [x] Topic 2：`RcbBridge`（TCP + 握手 + 能力隔离）+ 6 个 `rcb-*` helper + provision 注入 + open-url 设置（helper 全量生成，`share` 按设计默认禁用）
 
 ### P1（收益最大）
-- [ ] Topic 3：agent 保活接线 + `WakeLock` + 停止按钮 + 10.2 取消机制
+- [ ] Topic 3：agent 保活接线 + `WakeLock` + 停止按钮 + 10.2 取消机制（`TerminalKeepaliveService` 已有 dataSync FGS + `sessionCount` + 常驻开关；其余未做）
 
 ### P2（低成本纯前端）
 - [ ] Topic 4：URL 长按菜单 + 长按选区提示
@@ -257,3 +259,36 @@
 ### 10.4 锁定前提的复核结论（v1.1 明确）
 - targetSdk=28 → legacy storage、豁免 12+/14+ FGS 限制 → 方案按"技术能跑但主动限制"设计，安全性靠"默认关 + 能力隔离 + 开机不自动跑"。
 - 若未来升级 targetSdk（需先解决 PRoot W^X 问题再谈），上述限制将重新生效，届时再按现代约束调整（MANAGE_EXTERNAL_STORAGE / FGS type 权限 / 开机只能点开）。已在设计保留此迁移备注。
+
+---
+
+## 11. 实施状态审计（对照当前代码 · 2026-08-19）
+
+### 11.1 逐 Topic 状态
+
+| Topic | 实现状态 | 代码证据 |
+|---|---|---|
+| 1 存储互通（`/sdcard` 动态绑） | ✅ **已实现** | [ContainerSettingsRepository.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/data/repository/ContainerSettingsRepository.kt#L43-L51) `storageShareEnabledFlow`；[ContainerSettingsSection.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/component/ContainerSettingsSection.kt#L90-L138) 开关 UI；[LinuxContainerEngine.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/container/LinuxContainerEngine.kt#L1292-L1302) `buildBaseProotArgv` 按开关动态追加 `-b <external>:/root/storage/shared`（先建父目录） |
+| 2 容器内 helper（RcbBridge） | ✅ **已实现**（`share` 按设计禁用；`open-url` 需宿主接线） | [RcbBridge.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/bridge/RcbBridge.kt)：loopback TCP + 握手令牌（L64-L89）、`clipboard_get/set`（L133-L140）、`open_url`（L141-L144）、`toast/notify`（L145-L152）、`share` 返回 `capability_disabled`（L154）；helper 脚本 `rcb-send/rcb-clipboard/rcb-open-url/rcb-open/rcb-toast/rcb-notify/rcb-share`（L172-L263）；[LinuxContainerEngine.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/container/LinuxContainerEngine.kt#L1336-L1337) 注入 `RCB_BRIDGE_ADDR/TOKEN` |
+| 3 后台保活（WakeLock/agent 计数/停止） | ⚠️ **部分实现** | `TerminalKeepaliveService` 已有 `dataSync` FGS + `sessionCount` 引用计数 + 常驻开关（[TerminalKeepaliveService.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/terminal/domain/TerminalKeepaliveService.kt#L16-L65)）；**缺**：`WakeLock`（无 `WakeLock`/`WAKE_LOCK`）、agent 计数 `ACTION_AGENT_START/STOP`、通知「停止」action、`CommandEngine.cancelRunning()` |
+| 4 终端交互精修（URL 长按菜单） | ❌ **未实现** | [TerminalClients.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/terminal/presentation/component/TerminalClients.kt#L156) `onLongPress(event): Boolean = false`（未处理 URL/选区） |
+| 5 开机自启 + intent 触发 | ❌ **未实现** | 无 `BootReceiver`/`RunAgentReceiver`/`BOOT_COMPLETED` 注册；仅有 `enqueueAgentRequest` 入口 |
+| 6 rootfs 备份恢复 | ❌ **未实现** | `BackupManagerImpl`/`BackupSection` 只管 app 数据/密钥；无容器快照（`createSnapshot`/`restoreSnapshot`/`apk list --installed` 均无） |
+
+### 11.2 未实施项 → 按当前架构补充的设计与实施计划
+
+> 以下 4 项按 v1.1 定案 + 当前代码实际形态给出可落地的补充设计（保持与现有架构一致，不新造轮子）。
+
+**T3.1 agent 保活接线 + WakeLock + 停止按钮（P1）**
+- `TerminalKeepaliveService` 新增 `ACTION_AGENT_START`/`ACTION_AGENT_STOP` 常量与 `agentCount` 计数，与现有 `sessionCount` 叠加；`count>0` 时持 `PARTIAL_WAKE_LOCK`，归零释放；`START_STICKY` 重建时若计数丢失则清零并释放锁（防泄漏，见 §8 漏洞 G）。
+- manifest 增 `WAKE_LOCK` 权限。
+- 通知加「停止」action → `pendingIntent` → `StatefulAgentWorkflow` 当前协程 `cancel()`；`CommandEngine` 增 `suspend fun cancelRunning()` 默认空实现，`LinuxContainerEngine` 覆写为销毁当前进程组（`processHandle.destroyForcibly()`），远程实现走 SSH exec 中断。
+
+**T4.1 URL 长按菜单 + 选区提示（P2）**
+- `AppTerminalViewClient.onLongPress()` 改为在链接命中/选区场景返回 `true`：用 emulator 屏幕缓冲定位光标处文本，正则提取 URL → 弹 Compose 菜单（打开/复制/分享）；「打开」复用 `RcbBridge.openUrlHandler` 落点（需先在 UI 层接线）。选区结束补轻 Toast。
+
+**T5.1 BootReceiver + RunAgentReceiver + 开机提醒（P3）**
+- 新增 `BootReceiver`（`RECEIVE_BOOT_COMPLETED`，默认关，设置开启且 prompt 非空 → 发「点击启动」通知唤起 App，不自动跑 agent）；新增 `RunAgentReceiver`（`exported` + `signature` 权限 + 白名单 → 解析 prompt → `enqueueAgentRequest`）。设置项「开机启动 prompt」+「开机提醒」总开关。
+
+**T6.1 容器包清单+配置 快照/恢复（P3）**
+- 复用现有备份框架：`BackupManagerImpl` 增加「容器环境」快照分组——备份侧收集 `apk list --installed` 清单 + `$HOME`、`/etc`、`~/.rcodecore` 可变文件，经既有加密/落盘链路写入设备存储；恢复侧 `apk add` 清单 + 释放配置，挂靠 `BackupSection` 增「容器环境」入口。快照记录基础镜像版本，跨版本仅恢复包清单。Alpine 源失效时保留快照 + 提示手动换源（不自动清数据）。

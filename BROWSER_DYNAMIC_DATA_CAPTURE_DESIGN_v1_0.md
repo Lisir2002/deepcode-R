@@ -1,6 +1,6 @@
 # 内置浏览器 · 动态数据捕获设计文档 v1.0
 
-> 状态：提问式讨论已收敛，方案定稿（待实施）
+> 状态：✅ **已实现**（JS 插桩 + 就绪判定升级 + 动态数据查询接口全部落地，见 §7 实施状态审计）
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 核心参考文件：
 > - [BrowserController.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/browser/domain/BrowserController.kt)
@@ -303,6 +303,24 @@ finally: isLoading 兜底 false
 - **Phase C · WebSocket/SSE 插桩**：补全长连接通道记录。
 - **Phase D · SPA 路由 hook**：`pushState`/`replaceState`/`popstate` + URL/标题同步。
 - **Phase E · 脱敏打磨与边界**：query/body 脱敏正则、opaque/二进制降级、环形缓冲上限、超时策略联调。
+
+> 实施状态：✅ **Phase A~E 全部完成**（对应 `JS_NET_HOOK` 全量落地，见下节）。
+
+---
+
+## 9.1 实施状态审计（对照当前代码）
+
+| 设计点 | 实现状态 | 代码证据 |
+|---|---|---|
+| `NET_HOOK_JS` 注入（document-start） | ✅ | [BrowserController.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/browser/domain/BrowserController.kt#L1361) `WebViewCompat.addDocumentStartJavaScript(wv, JS_NET_HOOK, setOf("*"))` |
+| fetch / XHR / WebSocket / EventSource 四通道插桩 | ✅ | [BrowserController.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/browser/domain/BrowserController.kt#L427-L619) `JS_NET_HOOK` 内 `__rcb_net_pending` 维护 + 各通道 wrap |
+| 在途请求计数 `__rcb_net_pending` | ✅ | 同上；[BrowserController.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/browser/domain/BrowserController.kt#L1530) `evalJs("(window.__rcb_net_pending || 0)")` |
+| SPA 路由 hook `__rcb_route_seq` | ✅ | [BrowserController.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/browser/domain/BrowserController.kt#L619-L622) 包装 `pushState`/`replaceState` + `popstate`；[L1541](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/browser/domain/BrowserController.kt#L1541) 读取路由序列 |
+| 就绪判定升级（pending + DOM 稳定 + 路由 seq） | ✅ | `waitForPageSettled` 综合三者判定；网络缓冲解析见 [L1588](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/browser/domain/BrowserController.kt#L1588) |
+| `network` / `network_get` / `wait_for_request` 动作 | ✅ | [BrowserAgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/browser/BrowserAgentTool.kt) 动作表含动态数据查询接口 |
+| 浏览器侧动态数据查询 | ✅ | `pending_requests` 快照 + 按需拉取网络缓冲 |
+
+> 结论：本文档设计目标已全部实现，无需新增实施任务。
 
 ---
 
