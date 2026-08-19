@@ -611,7 +611,10 @@ class ClashProxyManager @Inject constructor(
         runCatching {
             val f = java.io.File(configDir(), "mihomo.log")
             if (!f.isFile) return
-            val tail = f.readBytes().takeLast(maxChars).toString(Charsets.UTF_8)
+            val bytes = f.readBytes()
+            val start = (bytes.size - maxChars).coerceAtLeast(0)
+            // takeLast 会退回 List<Byte>，无 toString(Charset)；用 copyOfRange 保持 ByteArray。
+            val tail = bytes.copyOfRange(start, bytes.size).toString(Charsets.UTF_8)
             FileLogger.w(TAG, "--- mihomo.log tail ---\n$tail")
         }
     }
