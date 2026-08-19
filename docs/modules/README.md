@@ -38,7 +38,13 @@
 | t2i | `feature/t2i/` | [t2i.md](./t2i.md) | 文生图：Provider 抽象、SYNC/ASYNC/AUTO 端点、权限策略 |
 | core（公共基础层） | `core/` + `di/` + 应用入口 | [core.md](./core.md) | 跨模块基础设施：数据库迁移、安全加密、主题、日志、Worker、Hilt DI、App 入口 |
 
+## 设计文档（docs/plan-docs/）
+
+- 本目录只收录**功能模块文档**（一个模块一份）；**架构/功能设计文档**（方案、评审、决策记录）统一放置 `docs/plan-docs/`，命名 `<名称>-design.md`，并在文档头部标注评审状态（`📝 草案` / `✅ 已评审` / `已实施`）。
+- 二者关系：设计文档定稿 → 实施落地 → 由本目录对应模块文档反映实现（规则权威来源见 [AGENTS.md 资产同步纪律](../../AGENTS.md)）。
+
 ## 相关文档
 
 - [AGENTS.md](../../AGENTS.md) —— AI 协同开发规范（本文档同步规则权威来源）
 - [README.md](../../README.md) —— 项目总览
+- [plan-docs/](../plan-docs/) —— 设计文档目录（架构/功能设计方案）

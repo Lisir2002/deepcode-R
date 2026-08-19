@@ -105,6 +105,7 @@ R-CodeCore 是运行在 Android 真机（arm64-v8a）上的 AI 编程工具：�
 - **UI 变化 → 必须更新对应使用文档**：任何 UI 变化（新增页面、改交互、调布局、改文案）**必须**同步更新 `app/src/main/assets/docs/` 下对应的使用文档，确保用户可见的说明与实际界面一致。AI 应自行在 `docs/` 目录中查找对应的文档；若不存在则新建。
 - **UI 文案 → 必须同步 strings.xml**：任何新增或修改用户可见的中文文案（按钮、标题、提示、Toast 等），**必须**将其提取为 string resource 写入 `app/src/main/res/values/strings.xml`（中文）和 `app/src/main/res/values-en/strings.xml`（英文翻译），并在 `.kt` 代码中用 `stringResource(R.string.xxx)` 或 `context.getString(R.string.xxx)` 引用。**禁止在 .kt 文件中硬编码中文 UI 文案。** 命名规范：语义化英文全小写下划线分隔，通用文案用 `common_` 前缀跨页面复用。
 - **代码结构变化 → 必须同步模块文档**：`docs/modules/` 是功能模块级开发文档（一个模块一份，对应 `feature/<module>/`），与 `assets/docs/`（用户使用说明）用途不同，面向开发与维护。任何功能新增/删除/行为变化/目录结构调整，**必须**同步更新对应模块文档 `docs/modules/<module>.md`；在 `feature/` 下**新增模块时，必须实时新建** `docs/modules/<module>.md` 并在 `docs/modules/README.md` 索引登记。文档固定六段式结构（模块定位 / 目录结构与职责 / 核心架构与主流程 / 对外接口与集成点 / 关键设计点与约束 / 维护与扩展指引），命名规范与同步规则详见 `docs/modules/README.md`。改动只涉及单个模块内部逻辑时可只更新该模块文档；涉及跨模块结构变更还需同步 `core.md` 与索引。**该规则由 `.githooks/pre-commit` 自动校验**：提交时检查「每个 feature 模块都有对应文档、无孤儿文档」，违反即阻断（启用 hooks：仓库根执行 `git config core.hooksPath .githooks`）。
+- **设计文档 → `docs/plan-docs/`**：任何架构/功能**设计文档**（方案、评审、决策记录）统一放置 `docs/plan-docs/`，命名 `<名称>-design.md`（全小写 snake_case），并在文档头部标注评审状态（`📝 草案` / `✅ 已评审` / `已实施`）。设计文档只放该目录，**禁止散放根目录或其他位置**。设计定稿并实施后，由对应的 `docs/modules/` 模块文档反映落地实现。
 
 ## Git 提交规范
 
@@ -220,6 +221,7 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 |---|---|
 | `AGENTS.md` | 本规范（AI 纪律源，运行时被加载） |
 | `docs/ci-release.md` | 云端构建发版运维手册 |
+| `docs/plan-docs/` | 设计文档目录（架构/功能设计方案，命名 `<名称>-design.md`） |
 | `docs/modules/README.md` | 模块文档索引（每模块一份文档） |
 | `app/build.gradle.kts` | 构建配置 + 版本号动态推导（勿手写 versionName） |
 | `app/src/main/java/com/R/codecore/feature/agent/data/local/database/AgentDatabase.kt` | Room schema 唯一事实源（v46） |

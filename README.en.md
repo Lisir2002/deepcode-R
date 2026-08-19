@@ -187,6 +187,7 @@ app/src/main/java/com/R/codecore/
 | Document | Description |
 |---|---|
 | [docs/modules/README.md](./docs/modules/README.md) | **Module docs index**: one document per feature module (architecture, interfaces, maintenance guide) |
+| [docs/plan-docs/](./docs/plan-docs/) | **Design docs**: architecture/feature design proposals (with review status), e.g. [Virtual environment support](./docs/plan-docs/emulator-support-design.md) |
 | [AGENTS.md](./AGENTS.md) | **AI collaboration guidelines**: asset sync discipline, Conventional Commits, branching workflow, release process |
 | `app/src/main/assets/docs/` | In-app help documents (viewable at runtime via Settings → Help) |
 

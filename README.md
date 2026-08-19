@@ -186,6 +186,7 @@ app/src/main/java/com/R/codecore/
 | 文档 | 说明 |
 |---|---|
 | [docs/modules/README.md](./docs/modules/README.md) | **模块文档索引**：每个功能模块一份文档（架构、接口、维护指引） |
+| [docs/plan-docs/](./docs/plan-docs/) | **设计文档目录**：架构/功能设计方案（含评审状态），如[虚拟环境支持](./docs/plan-docs/emulator-support-design.md) |
 | [AGENTS.md](./AGENTS.md) | **AI 协同开发规范**：资产同步纪律、Conventional Commits、分支工作流、发版流程 |
 | `app/src/main/assets/docs/` | App 内置帮助文档（运行时可在「设置 → 帮助」查看） |
 
