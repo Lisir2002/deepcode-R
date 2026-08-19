@@ -70,14 +70,14 @@
 
 | # | 文件 | 修复要点 | 代码锚点 |
 |---|---|---|---|
-| A | [FileLogger.kt](/workspace/deepcode-R/app/src/main/java/com/deep/rcode/core/util/FileLogger.kt) | 新增 `flushSync(level, tag, msg, t)`：阻塞当前线程 append + `FileChannel.force(false)`，保证 return 前日志已在文件里 | L? 搜索 `fun flushSync` |
-| B | [AIEditorApp.kt](/workspace/deepcode-R/app/src/main/java/com/deep/rcode/AIEditorApp.kt) | installCrashHandler 用 **flushSync("FATAL")** + 先 logcat 再交 default uncaught handler 杀进程 | L? 搜索 `installCrashHandler` |
-| C | [WorkspaceDocumentsProvider.kt](/workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/workspace/data/provider/WorkspaceDocumentsProvider.kt) | ① onCreate 独立 FileLogger.init（Provider 比 Application.onCreate 更早）<br>② 全 SAF @Override 入口 `providerSafe {}` 异常统一转 `FileNotFoundException`<br>③ `exposedChildren()` 去掉 `extractDocs(ctx())` 热路径 asset IO | L? 搜索 `providerSafe`、`onCreate`、`exposedChildren` |
-| D | [AgentModule.kt](/workspace/deepcode-R/app/src/main/java/com/deep/rcode/di/AgentModule.kt) | `provideAgentDatabase` 三阶段兜底：首阶段迁移 → 次阶段 destructive rebuild → 三阶段终极 try Throwable destructive | L? 搜索 `provideAgentDatabaseInternal` |
-| E | [MigrationLoader.kt](/workspace/deepcode-R/app/src/main/java/com/deep/rcode/core/db/MigrationLoader.kt) | 整个 doLoad 外层 runCatching，失败返回空数组（由 AgentModule 转 destructive） | L? 搜索 `fun doLoad` |
-| F | [CredentialEncryptor.kt](/workspace/deepcode-R/app/src/main/java/com/deep/rcode/core/security/CredentialEncryptor.kt) | `ensureInitialized` 永不抛 MasterKeyTamperedException：失败只 flushSync 记日志 + dekCached=null + initialized=false 允许重试 | L? 搜索 `suspend fun ensureInitialized` |
-| G | [ExecutionModeRepository.kt](/workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/data/repository/ExecutionModeRepository.kt) | `decryptCredentialCompat` 从 `suspend + encryptor.decrypt` 改成**纯前缀判断的普通函数**：V2:→""，其他→raw。**彻底切断冷启动 Flow → encryptor → DB open → 争用的链** | L? 搜索 `fun decryptCredentialCompat` |
-| H | [DEKManager.kt](/workspace/deepcode-R/app/src/main/java/com/deep/rcode/core/security/DEKManager.kt) | 定义局部兼容常量 `PURPOSE_UNWRAP_KEY_COMPAT = 8`，不引用官方未公开的 `KeyProperties.PURPOSE_UNWRAP_KEY`（compileSdk 里不存在） | L? 搜索 `PURPOSE_UNWRAP_KEY_COMPAT` |
+| A | [FileLogger.kt](/workspace/deepcode-R/app/src/main/java/com/R/codecore/core/util/FileLogger.kt) | 新增 `flushSync(level, tag, msg, t)`：阻塞当前线程 append + `FileChannel.force(false)`，保证 return 前日志已在文件里 | L? 搜索 `fun flushSync` |
+| B | [AIEditorApp.kt](/workspace/deepcode-R/app/src/main/java/com/R/codecore/AIEditorApp.kt) | installCrashHandler 用 **flushSync("FATAL")** + 先 logcat 再交 default uncaught handler 杀进程 | L? 搜索 `installCrashHandler` |
+| C | [WorkspaceDocumentsProvider.kt](/workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/workspace/data/provider/WorkspaceDocumentsProvider.kt) | ① onCreate 独立 FileLogger.init（Provider 比 Application.onCreate 更早）<br>② 全 SAF @Override 入口 `providerSafe {}` 异常统一转 `FileNotFoundException`<br>③ `exposedChildren()` 去掉 `extractDocs(ctx())` 热路径 asset IO | L? 搜索 `providerSafe`、`onCreate`、`exposedChildren` |
+| D | [AgentModule.kt](/workspace/deepcode-R/app/src/main/java/com/R/codecore/di/AgentModule.kt) | `provideAgentDatabase` 三阶段兜底：首阶段迁移 → 次阶段 destructive rebuild → 三阶段终极 try Throwable destructive | L? 搜索 `provideAgentDatabaseInternal` |
+| E | [MigrationLoader.kt](/workspace/deepcode-R/app/src/main/java/com/R/codecore/core/db/MigrationLoader.kt) | 整个 doLoad 外层 runCatching，失败返回空数组（由 AgentModule 转 destructive） | L? 搜索 `fun doLoad` |
+| F | [CredentialEncryptor.kt](/workspace/deepcode-R/app/src/main/java/com/R/codecore/core/security/CredentialEncryptor.kt) | `ensureInitialized` 永不抛 MasterKeyTamperedException：失败只 flushSync 记日志 + dekCached=null + initialized=false 允许重试 | L? 搜索 `suspend fun ensureInitialized` |
+| G | [ExecutionModeRepository.kt](/workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/data/repository/ExecutionModeRepository.kt) | `decryptCredentialCompat` 从 `suspend + encryptor.decrypt` 改成**纯前缀判断的普通函数**：V2:→""，其他→raw。**彻底切断冷启动 Flow → encryptor → DB open → 争用的链** | L? 搜索 `fun decryptCredentialCompat` |
+| H | [DEKManager.kt](/workspace/deepcode-R/app/src/main/java/com/R/codecore/core/security/DEKManager.kt) | 定义局部兼容常量 `PURPOSE_UNWRAP_KEY_COMPAT = 8`，不引用官方未公开的 `KeyProperties.PURPOSE_UNWRAP_KEY`（compileSdk 里不存在） | L? 搜索 `PURPOSE_UNWRAP_KEY_COMPAT` |
 
 ---
 

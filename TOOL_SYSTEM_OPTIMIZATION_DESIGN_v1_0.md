@@ -2,11 +2,11 @@
 > 状态：11 个工具族逐工具提问式讨论已全部完成，结论已回填（待汇总实施清单）
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 核心参考结构：
-> - [AgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/tool/AgentTool.kt)
-> - [ToolRegistry.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/tool/ToolRegistry.kt)
-> - [ToolResultCache.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/tool/ToolResultCache.kt)
-> - [ToolDependencyScheduler.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/tool/ToolDependencyScheduler.kt)
-> - [StatefulAgentWorkflow.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/workflow/StatefulAgentWorkflow.kt)
+> - [AgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/AgentTool.kt)
+> - [ToolRegistry.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/ToolRegistry.kt)
+> - [ToolResultCache.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/ToolResultCache.kt)
+> - [ToolDependencyScheduler.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/ToolDependencyScheduler.kt)
+> - [StatefulAgentWorkflow.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/workflow/StatefulAgentWorkflow.kt)
 
 ---
 

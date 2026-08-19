@@ -2,7 +2,7 @@
 
 > **文档代号**：`T2I_RC69_TECHNICAL_DESIGN_v1_0`
 > **发布版本绑定**：v0.1.0-rc69 (SCHEMA 39)
-> **对应目录**：`app/src/main/java/com/deep/rcode/feature/t2i/`（独立 feature 包）+ `app/src/main/java/com/deep/rcode/feature/agent/domain/tool/image/GenerateImageTool.kt`（Tool 留在 agent 下复用 Tool 事件链与权限引擎）
+> **对应目录**：`app/src/main/java/com/R/codecore/feature/t2i/`（独立 feature 包）+ `app/src/main/java/com/R/codecore/feature/agent/domain/tool/image/GenerateImageTool.kt`（Tool 留在 agent 下复用 Tool 事件链与权限引擎）
 > **与现有架构文档关系**：本设计是《COMPLETE_TECHNICAL_ARCHITECTURE_v1_0》与《ZTH_MODE_TECHNICAL_DESIGN_v1_0》在 AI Agent 能力侧的新增子章节，不改动已有 DB-SHIELD / 持久化护盾 / SCHEMA 38 的任何约定。
 > **设计日期**：2026-08-11
 > **状态**：✅ 全部规格讨论完毕，待代码实现
@@ -178,7 +178,7 @@ T2I 功能在现有 7 层 Android Clean Architecture 基础上作为**增量平�
 | **SRP 单一职责** | ❌ AIProvider 同时负责"聊天补全"和"文生图"，是两种完全不同的 API 契约（messages→text vs prompt→image） | ✅ ImageGenerator 独立 interface，AIProvider 0 行改动。Provider 层各司其职。 |
 | **多轮上下文感知（体验核心）** | ❌ generateImage() 只接收本次 prompt，不回见历史对话。需要在 Workflow 层加 NLU：检测"画图意图→调用生成→写回消息→续写描述"，等于手写一个意图分类器 + 指代消解器。 | ✅ **天然具备**：LLM 标准 function calling 工具循环。例子：用户说"把刚才那张夜景改成赛博朋克风"→ LLM 自动在上下文里读到刚才 ToolResult 里描述的"夜景图"→ 构造更准确的 prompt → 调 generateImage → 再写文字解释。整个链路 0 特殊处理。 |
 | **流式/进度/取消** | ❌ generateImage 需要 2 个新接口（同步 + streaming），并且要扩展 AIStreamChunk 新子类，Workflow 层要分支处理 | ✅ 直接继承 StreamingAgentTool，`Progress`/`Completed` 事件已存在，Workflow 自动转 `AgentEvent.ToolCallProgress` / `ToolCallFinished`，**0 代码改动** |
-| **权限 / 成本审批** | ❌ 要在 Provider 层加独立拦截 hook（AIProvider 里从没做过权限审批），额度计数要另外建一个 T2ICostKeeper，和现有 ToolPermissionPolicyEngine 不互通，审计日志不统一。 | ✅ Tool 体系已有的 [ToolPermissionManager](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/tool/ToolPermissionManager.kt) + `PendingToolPermission` 弹窗 + `rememberablePatterns` 自动复用。额度引擎作为 Pre-Execute Hook 放进 `GenerateImageTool.executeStream()` 开头。 |
+| **权限 / 成本审批** | ❌ 要在 Provider 层加独立拦截 hook（AIProvider 里从没做过权限审批），额度计数要另外建一个 T2ICostKeeper，和现有 ToolPermissionPolicyEngine 不互通，审计日志不统一。 | ✅ Tool 体系已有的 [ToolPermissionManager](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/ToolPermissionManager.kt) + `PendingToolPermission` 弹窗 + `rememberablePatterns` 自动复用。额度引擎作为 Pre-Execute Hook 放进 `GenerateImageTool.executeStream()` 开头。 |
 | **单测/集成测试难度** | 🔴🔴🔴🔴 需要双轨 Workflow 测试：`should_detect_draw_intent` / `should_generate` / `should_continue_normal_chat` + 歧义句 20 条。 | 🟢🟢 0 新 Workflow 测试；所有测试集中在：GenerateImageTool.execute() 单测 + ImageGenerator Adapter 单测 + 权限引擎真值表。 |
 | **SCHEMA / 迁移风险** | ❌ 必须给 AgentMessageEntity 加 generatedImagesJson 列（SCHEMA 39 再加一列），需要同步改 Domain Model AgentMessage + Entity↔Domain 转换 + Backup JSONL 导出。 | ✅ 双写复用 `AgentMessageEntity.attachmentsJson`（L36 已有，SCHEMA 19 加入），**0 列改动**。只加 3 张新表（增量追加式，不碰存量表）。 |
 | **BackupManager 兼容** | ❌ BackupManagerImpl export 要新增段落 decode generatedImagesJson，漏写一处就备份看不到图。 | ✅ attachmentsJson 已自动被 JSON 化+备份。**0 代码改动**。 |
@@ -582,7 +582,7 @@ T2ITaskRepository.onTaskTerminal(task: T2ITaskEntity) {
 ### 5.1 完整包树（PKG-3.1 / 3.2 / 3.3 / 3.4 决策）
 
 ```
-app/src/main/java/com/deep/rcode/
+app/src/main/java/com/R/codecore/
 │
 ├── di/
 │   └── AgentModule.kt                              🟠 改动：3 个 DAO @Provides 新增；ImageGenerator 多 binding；注册 GenerateImageTool

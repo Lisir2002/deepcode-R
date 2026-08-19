@@ -786,7 +786,7 @@ Application.onCreate
 ### 4.3 ZthModule 扩展设计（新增 Hilt Module）
 
 ```kotlin
-// 新增文件：com/deep/rcode/di/ZthModule.kt
+// 新增文件：com/R/codecore/di/ZthModule.kt
 @Module
 @InstallIn(SingletonComponent::class)
 object ZthModule {

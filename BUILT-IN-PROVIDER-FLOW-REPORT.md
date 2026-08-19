@@ -1,7 +1,7 @@
 # 添加供应商 · 内置供应商（阶跃星辰）流程细化分析
 
 > 生成时间：2026-08-16
-> 核心文件：[AddProviderSheet.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/component/AddProviderSheet.kt)（全流程）、[ProviderModelComponents.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/component/ProviderModelComponents.kt)（模型行/测试 UI）、[SettingsViewModel.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/SettingsViewModel.kt)（testModel 入口）、[ModelApiService.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/data/remote/ModelApiService.kt)（网络测试实现）
+> 核心文件：[AddProviderSheet.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/component/AddProviderSheet.kt)（全流程）、[ProviderModelComponents.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/component/ProviderModelComponents.kt)（模型行/测试 UI）、[SettingsViewModel.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/SettingsViewModel.kt)（testModel 入口）、[ModelApiService.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/data/remote/ModelApiService.kt)（网络测试实现）
 
 ---
 
@@ -101,10 +101,10 @@ var builtInModels by remember { mutableStateOf(STEPFUN_DEFAULT_MODELS) } // 预�
 
 ## 六、步骤 3：模型选择（含测试/删除）
 
-`BuiltInModelList`（[L626-667](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/component/AddProviderSheet.kt#L626-L667)，**本次已修复**）：
+`BuiltInModelList`（[L626-667](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/component/AddProviderSheet.kt#L626-L667)，**本次已修复**）：
 
 - 对 `models`（预填 5 个）逐行渲染 `ProviderModelRow`；
-- 每行结构（ProviderModelRow，[ProviderModelComponents.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/component/ProviderModelComponents.kt)）：
+- 每行结构（ProviderModelRow，[ProviderModelComponents.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/component/ProviderModelComponents.kt)）：
   - 左侧 `ModelLogoIcon`（按模型名取 logo）；
   - 中间模型名 + 能力标签（本内置流程传 `metadata=null`，因此只显示固定 "Chat" 标签，不显示识图/工具/思考标签——因为保存前还没 resolve 元数据）；
   - **能力覆盖齿轮按钮**：内置流程传 `onOpenCapabilityOverride = {}`（空操作，不弹覆盖面板）；
@@ -125,7 +125,7 @@ var builtInModels by remember { mutableStateOf(STEPFUN_DEFAULT_MODELS) } // 预�
       → _testing -= model
 ```
 
-### 组装逻辑（修复后，[L646-660](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/component/AddProviderSheet.kt#L646-L660)）
+### 组装逻辑（修复后，[L646-660](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/component/AddProviderSheet.kt#L646-L660)）
 
 ```kotlin
 type = if (protocol == StepFunProtocol.OPENAI) ProviderType.OPENAI else ProviderType.ANTHROPIC
@@ -145,7 +145,7 @@ useFullUrl = false / useResponseApi = false   // 快速向导固定 false（编�
 
 ## 八、完成：组装并保存
 
-`goNext()` 第 3 步执行（[L179-192](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/component/AddProviderSheet.kt#L179-L192)）：
+`goNext()` 第 3 步执行（[L179-192](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/component/AddProviderSheet.kt#L179-L192)）：
 
 ```kotlin
 AIProviderConfig(

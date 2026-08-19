@@ -128,7 +128,7 @@ keyPassword=your_key_password
 ## 项目结构
 
 ```
-app/src/main/java/com/deep/rcode/
+app/src/main/java/com/R/codecore/
 ├── core/                # 核心基础设施（FileLogger、AILogger、db/MigrationLoader、CredentialEncryptor、LineDiff、主题）
 ├── di/                  # Hilt 依赖注入（AgentModule、RepositoryModule、BackupModule）
 ├── feature/

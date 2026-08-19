@@ -129,7 +129,7 @@ Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push orig
 ## Project Structure
 
 ```
-app/src/main/java/com/deep/rcode/
+app/src/main/java/com/R/codecore/
 ├── core/                # Core infrastructure (FileLogger, AILogger, db/MigrationLoader, CredentialEncryptor, LineDiff, theme)
 ├── di/                  # Hilt DI (AgentModule, RepositoryModule, BackupModule)
 ├── feature/

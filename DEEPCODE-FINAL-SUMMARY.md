@@ -64,7 +64,7 @@ deepcode-R/
 │       │   │   │   50-safety.md / 60-tools-and-paths.md / 70-skills-and-mcp.md
 │       │   │   │   80-plan-mode.md / 81-auto-mode.md
 │       │   │   └── docs/                        # 11 篇使用指南
-│       │   ├── java/com/deep/rcode/             # 约 220+ .kt 文件
+│       │   ├── java/com/R/codecore/             # 约 220+ .kt 文件
 │       │   ├── res/values & values-en           # 中/英 strings.xml
 │       │   └── res/xml/                         # network_security_config, locales_config, file_paths
 │       ├── debug/res/values                     # .debug 包名变体
@@ -93,7 +93,7 @@ deepcode-R/
 
 ## 三、启动生命周期（逐行源码核验 AIEditorApp / MainActivity）
 
-### 3.1 `AIEditorApp.kt` 位置：`app/src/main/java/com/deep/rcode/AIEditorApp.kt`
+### 3.1 `AIEditorApp.kt` 位置：`app/src/main/java/com/R/codecore/AIEditorApp.kt`
 
 **Phase A：`attachBaseContext(base)`（Hilt 注入前，最早期）**
 1. **FileLogger.init(base)** 传 Context 而非 `filesDir/"logs"`
@@ -116,7 +116,7 @@ deepcode-R/
    - **keepaliveSettings.enabledFlow.distinctUntilChanged**：开→`TerminalKeepaliveService.enablePersistent`；**由开变关才 disable**（避免凭空拉起 Service）
 5. **mcpManager.start()**：并行连接所有启用的 MCP server → 注册工具 → 发状态 StateFlow
 
-### 3.2 `MainActivity.kt` 位置：`app/src/main/java/com/deep/rcode/MainActivity.kt`
+### 3.2 `MainActivity.kt` 位置：`app/src/main/java/com/R/codecore/MainActivity.kt`
 
 1. `attachBaseContext` 同步 SharedPreferences locale
 2. `onCreate`：
@@ -140,7 +140,7 @@ deepcode-R/
 
 ### 4.1 工具抽象体系
 
-文件：`app/src/main/java/com/deep/rcode/feature/agent/domain/tool/AgentTool.kt`
+文件：`app/src/main/java/com/R/codecore/feature/agent/domain/tool/AgentTool.kt`
 
 ```kotlin
 abstract class AgentTool {
@@ -190,7 +190,7 @@ MODIFY_SESSION_STATE, MODIFY_TODO_STATE, EXTERNAL_TOOL
 
 ### 4.3 ToolPermissionPolicyEngine 完整评估链路（源码逐分支核对）
 
-文件：`app/src/main/java/com/deep/rcode/feature/agent/domain/permission/ToolPermissionPolicyEngine.kt`
+文件：`app/src/main/java/com/R/codecore/feature/agent/domain/permission/ToolPermissionPolicyEngine.kt`
 
 **总入口 evaluate(tool, toolName, args, mode) 执行顺序（从外层到内层）**：
 
@@ -258,7 +258,7 @@ evaluateGeneric(rules, capabilities)
 
 ## 五、StatefulAgentWorkflow（MVI Reducer）
 
-文件：`app/src/main/java/com/deep/rcode/feature/agent/domain/workflow/StatefulAgentWorkflow.kt`
+文件：`app/src/main/java/com/R/codecore/feature/agent/domain/workflow/StatefulAgentWorkflow.kt`
 
 **AgentSessionState**（实际字段确认）：
 ```kotlin
@@ -571,27 +571,27 @@ foregroundServiceType = "dataSync"
 
 | 功能 | 入口相对路径 |
 |------|---------|
-| App 启动 | `app/src/main/java/com/deep/rcode/AIEditorApp.kt` |
-| 主导航 / NavHost / Drawer | `app/src/main/java/com/deep/rcode/MainActivity.kt` |
-| Agent MVI 工作流 Reducer | `app/src/main/java/com/deep/rcode/feature/agent/domain/workflow/StatefulAgentWorkflow.kt` |
-| 工具注册（17 个顺序） | `app/src/main/java/com/deep/rcode/di/AgentModule.kt` 第 216-252 行 |
-| 工具抽象 | `app/src/main/java/com/deep/rcode/feature/agent/domain/tool/AgentTool.kt` |
-| Bash（流式+同步） | `app/src/main/java/com/deep/rcode/feature/agent/domain/tool/container/ExecuteCommandTool.kt` |
-| Permission 评估总入口 | `app/src/main/java/com/deep/rcode/feature/agent/domain/permission/ToolPermissionPolicyEngine.kt` |
-| Shell 静态解析 | `app/src/main/java/com/deep/rcode/feature/agent/domain/permission/ShellCommandParser.kt` |
+| App 启动 | `app/src/main/java/com/R/codecore/AIEditorApp.kt` |
+| 主导航 / NavHost / Drawer | `app/src/main/java/com/R/codecore/MainActivity.kt` |
+| Agent MVI 工作流 Reducer | `app/src/main/java/com/R/codecore/feature/agent/domain/workflow/StatefulAgentWorkflow.kt` |
+| 工具注册（17 个顺序） | `app/src/main/java/com/R/codecore/di/AgentModule.kt` 第 216-252 行 |
+| 工具抽象 | `app/src/main/java/com/R/codecore/feature/agent/domain/tool/AgentTool.kt` |
+| Bash（流式+同步） | `app/src/main/java/com/R/codecore/feature/agent/domain/tool/container/ExecuteCommandTool.kt` |
+| Permission 评估总入口 | `app/src/main/java/com/R/codecore/feature/agent/domain/permission/ToolPermissionPolicyEngine.kt` |
+| Shell 静态解析 | `app/src/main/java/com/R/codecore/feature/agent/domain/permission/ShellCommandParser.kt` |
 | Hilt 注入 | `di/AgentModule.kt` / `di/RepositoryModule.kt` / `di/BackupModule.kt` |
-| Room DB 定义 + MigrationLoader 加载 | `app/src/main/java/com/deep/rcode/feature/agent/data/local/database/AgentDatabase.kt` |
-| 字段加密（AES-GCM + AndroidKeyStore） | `app/src/main/java/com/deep/rcode/core/security/CredentialEncryptor.kt` |
-| PRoot 容器 | `app/src/main/java/com/deep/rcode/feature/agent/domain/container/LinuxContainerEngine.kt` |
-| 凭据文件 IPC 桥（双捕获+看门狗暂停） | `app/src/main/java/com/deep/rcode/feature/credentials/data/CredentialRequestBridge.kt` |
-| Git 凭据文件同步 | `app/src/main/java/com/deep/rcode/feature/credentials/data/GitCredentialsFileSync.kt` |
-| Git 命令封装 | `app/src/main/java/com/deep/rcode/feature/git/domain/GitRepository.kt` |
-| MCP 总管 | `app/src/main/java/com/deep/rcode/feature/agent/domain/mcp/McpManager.kt` |
-| 文件同步引擎 | `app/src/main/java/com/deep/rcode/feature/workspace/domain/remote/SyncEngine.kt` |
-| 6 个内置 Bundle | `app/src/main/java/com/deep/rcode/feature/terminal/data/bundle/TerminalBundles.kt` |
-| 前台保活服务 | `app/src/main/java/com/deep/rcode/feature/terminal/domain/TerminalKeepaliveService.kt` |
-| 备份实现 | `app/src/main/java/com/deep/rcode/feature/backup/data/BackupManagerImpl.kt` |
-| 备份加密（RDCB1 magic + PBKDF2） | `app/src/main/java/com/deep/rcode/feature/backup/domain/BackupCrypto.kt` |
+| Room DB 定义 + MigrationLoader 加载 | `app/src/main/java/com/R/codecore/feature/agent/data/local/database/AgentDatabase.kt` |
+| 字段加密（AES-GCM + AndroidKeyStore） | `app/src/main/java/com/R/codecore/core/security/CredentialEncryptor.kt` |
+| PRoot 容器 | `app/src/main/java/com/R/codecore/feature/agent/domain/container/LinuxContainerEngine.kt` |
+| 凭据文件 IPC 桥（双捕获+看门狗暂停） | `app/src/main/java/com/R/codecore/feature/credentials/data/CredentialRequestBridge.kt` |
+| Git 凭据文件同步 | `app/src/main/java/com/R/codecore/feature/credentials/data/GitCredentialsFileSync.kt` |
+| Git 命令封装 | `app/src/main/java/com/R/codecore/feature/git/domain/GitRepository.kt` |
+| MCP 总管 | `app/src/main/java/com/R/codecore/feature/agent/domain/mcp/McpManager.kt` |
+| 文件同步引擎 | `app/src/main/java/com/R/codecore/feature/workspace/domain/remote/SyncEngine.kt` |
+| 6 个内置 Bundle | `app/src/main/java/com/R/codecore/feature/terminal/data/bundle/TerminalBundles.kt` |
+| 前台保活服务 | `app/src/main/java/com/R/codecore/feature/terminal/domain/TerminalKeepaliveService.kt` |
+| 备份实现 | `app/src/main/java/com/R/codecore/feature/backup/data/BackupManagerImpl.kt` |
+| 备份加密（RDCB1 magic + PBKDF2） | `app/src/main/java/com/R/codecore/feature/backup/domain/BackupCrypto.kt` |
 | ProGuard keep 规则 | `app/proguard-rules.pro` |
 | Manifest | `app/src/main/AndroidManifest.xml` |
 | AI 协同规范（资产同步纪律） | `AGENTS.md` |

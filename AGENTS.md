@@ -162,8 +162,8 @@ curl -s -u "<owner>:<token>" \
 ### 关键组件
 
 - **App 入口**：`AIEditorApp` 初始化核心服务（`FileLogger`、`TerminalKeepaliveService`、`McpManager` 等）。
-- **Core 模块**：`app/src/main/java/com/deep/rcode/core/` 承载跨功能基础设施：`FileLogger`、`db/MigrationLoader.kt`、`CredentialEncryptor`、主题等。
-- **Feature 模块**：代码按功能组织在 `app/src/main/java/com/deep/rcode/feature/`：
+- **Core 模块**：`app/src/main/java/com/R/codecore/core/` 承载跨功能基础设施：`FileLogger`、`db/MigrationLoader.kt`、`CredentialEncryptor`、主题等。
+- **Feature 模块**：代码按功能组织在 `app/src/main/java/com/R/codecore/feature/`：
     - `agent`：核心 AI Agent 系统。含提示词管理、MCP（Model Context Protocol）集成、工具注册（文件工具、Shell 执行等）、权限处理、多 Provider 适配（Anthropic、OpenAI、Gemini）。
     - `git`：Git 集成与可视化操作。
     - `settings`：应用配置（AI Provider、容器、MCP、远程、日志等）。

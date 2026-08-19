@@ -2,13 +2,13 @@
 > 需求冻结版本 · 含模块结构 / 类图 / DB Schema / DataStore Proto / 状态机 / 决策矩阵 / 参数总表 / UI 分层 / 钩子落点 / 单测 Checklist
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 现有核心参考结构位置（仅作挂接参考，本文档不要求改现有实现设计方向）：
-> - [StatefulAgentWorkflow.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/workflow/StatefulAgentWorkflow.kt)
-> - [ModelMetadataService.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/data/remote/ModelMetadataService.kt)
-> - [ContextCompactor.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/workflow/ContextCompactor.kt)
-> - [CheckpointDao.java](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/data/local/dao/CheckpointDao.java)
-> - [ProviderEditorScreen.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/component/ProviderEditorScreen.kt)
-> - [SettingsViewModel.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/SettingsViewModel.kt)
-> - [CompatibilityPolicyRepository.kt](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/data/repository/CompatibilityPolicyRepository.kt)
+> - [StatefulAgentWorkflow.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/workflow/StatefulAgentWorkflow.kt)
+> - [ModelMetadataService.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/data/remote/ModelMetadataService.kt)
+> - [ContextCompactor.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/workflow/ContextCompactor.kt)
+> - [CheckpointDao.java](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/data/local/dao/CheckpointDao.java)
+> - [ProviderEditorScreen.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/component/ProviderEditorScreen.kt)
+> - [SettingsViewModel.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/SettingsViewModel.kt)
+> - [CompatibilityPolicyRepository.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/data/repository/CompatibilityPolicyRepository.kt)
 
 ---
 
@@ -787,13 +787,13 @@ ZthRevertCheckpointMenu.kt（聊天页菜单子菜单）：
 
 | 现有类/函数 | 钩子类型 | ZTH 模块接入点 | 需要的改动 |
 |---|---|---|---|
-| [StatefulAgentWorkflow.processUserTurn](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/workflow/StatefulAgentWorkflow.kt) | 入口注入 | CapabilityDetector.detect() → 得 RequiredCapability 集合，按集合构造各 DegradationRequest | 函数开头加能力检测；调用 LLM 之前走 DegradationChainExecutor.execute() 而不是直接发（如果对应 capability enabled） |
+| [StatefulAgentWorkflow.processUserTurn](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/workflow/StatefulAgentWorkflow.kt) | 入口注入 | CapabilityDetector.detect() → 得 RequiredCapability 集合，按集合构造各 DegradationRequest | 函数开头加能力检测；调用 LLM 之前走 DegradationChainExecutor.execute() 而不是直接发（如果对应 capability enabled） |
 | StatefulAgentWorkflow.CallLlm try-catch 块（RC64 vision 降级位置） | 异常捕获 | FailureClassifier.classify(e) → 查 ZthDecisionMatrix → 走 10 列动作（重试/跑 Fallback#1/直接出卡片） | 替换原有硬编码 VISION_UNSUPPORTED_HINTS 字符串匹配；统一走矩阵查表；异常捕获后新增 HallucinationClassifier → 卡片 → 熔断加分链路 |
-| [ModelMetadataService.applyCompatibilityPolicies](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/data/remote/ModelMetadataService.kt) | 只读利用 | ResolverResolver.resolveResolver(DEDICATED_VISION/COMPACT 类型) 时调用 applyCompatibilityPolicies 过滤能力 | 无需改 ModelMetadataService；在 ResolverResolver 内部复用现有 metadata.supportsVision 结果 + 单模型覆盖齿轮按钮的 OverrideDao（✅ 兼容 RC64 已经做好的 ③④ 能力覆盖） |
-| [ContextCompactor](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/agent/domain/workflow/ContextCompactor.kt) | 完整重写或 wrapper | 现有 ContextCompactor 包装成 CompactionPipeline，内部按 L0/L1/L2 单向级联；加上 Checkpoint 保存 + L2 双闸门 + 卡片阻塞等待 | 保留现有对外接口 suspend fun compact() 签名不变（内部改 ZTH 实现），这样 StatefulAgentWorkflow 不需要改 compact() 的调用点 |
-| [AgentModule.provideAgentWorkflow](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/di/AgentModule.kt) | Hilt 扩展 | ZthModule.kt 的所有 Provides（CapabilityDetector / DegradationChainExecutor / 3 Compactors / CB / 4 Coordinators）作为 provideStatefulAgentWorkflow 新参数注入 | provideStatefulAgentWorkflow 函数签名新增 7 个参数（或注入 ZthFacade 一个门面类封装所有子系统，减少参数数量推荐做法） |
-| [ProviderEditorScreen 兼容端点策略区块](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/component/ProviderEditorScreen.kt) | UI 替换 | 现有 3 条横项（DefaultPolicy/autoDowngrade/ViewImageUnknownGuard）整块替换成 ZTH 三段式 Section 1/2/3 | 读 SettingsViewModel 新增的 chainSpecsFlow / paramsSnapshotFlow / fuseDashboardFlow |
-| [SettingsViewModel](file:///workspace/deepcode-R/app/src/main/java/com/deep/rcode/feature/settings/presentation/SettingsViewModel.kt) | StateFlow 扩展 | 新增 4 Flow：compatibilityChainSpecsPerProviderFlow / zthParamsSnapshotFlow / fuseDashboardFlow(sessionId) / presetSelectionFlow + 对应 setter（选择预设 / 保存 Resolver 编辑 / 保存参数编辑 / 重置熔断分） | 注入 CompatibilityChainSpecsRepository（Per-Provider DataStore 读写）+ ZthParamsRepository（参数快照读写）+ HallucinationCircuitBreakerDao |
+| [ModelMetadataService.applyCompatibilityPolicies](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/data/remote/ModelMetadataService.kt) | 只读利用 | ResolverResolver.resolveResolver(DEDICATED_VISION/COMPACT 类型) 时调用 applyCompatibilityPolicies 过滤能力 | 无需改 ModelMetadataService；在 ResolverResolver 内部复用现有 metadata.supportsVision 结果 + 单模型覆盖齿轮按钮的 OverrideDao（✅ 兼容 RC64 已经做好的 ③④ 能力覆盖） |
+| [ContextCompactor](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/workflow/ContextCompactor.kt) | 完整重写或 wrapper | 现有 ContextCompactor 包装成 CompactionPipeline，内部按 L0/L1/L2 单向级联；加上 Checkpoint 保存 + L2 双闸门 + 卡片阻塞等待 | 保留现有对外接口 suspend fun compact() 签名不变（内部改 ZTH 实现），这样 StatefulAgentWorkflow 不需要改 compact() 的调用点 |
+| [AgentModule.provideAgentWorkflow](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/di/AgentModule.kt) | Hilt 扩展 | ZthModule.kt 的所有 Provides（CapabilityDetector / DegradationChainExecutor / 3 Compactors / CB / 4 Coordinators）作为 provideStatefulAgentWorkflow 新参数注入 | provideStatefulAgentWorkflow 函数签名新增 7 个参数（或注入 ZthFacade 一个门面类封装所有子系统，减少参数数量推荐做法） |
+| [ProviderEditorScreen 兼容端点策略区块](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/component/ProviderEditorScreen.kt) | UI 替换 | 现有 3 条横项（DefaultPolicy/autoDowngrade/ViewImageUnknownGuard）整块替换成 ZTH 三段式 Section 1/2/3 | 读 SettingsViewModel 新增的 chainSpecsFlow / paramsSnapshotFlow / fuseDashboardFlow |
+| [SettingsViewModel](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/settings/presentation/SettingsViewModel.kt) | StateFlow 扩展 | 新增 4 Flow：compatibilityChainSpecsPerProviderFlow / zthParamsSnapshotFlow / fuseDashboardFlow(sessionId) / presetSelectionFlow + 对应 setter（选择预设 / 保存 Resolver 编辑 / 保存参数编辑 / 重置熔断分） | 注入 CompatibilityChainSpecsRepository（Per-Provider DataStore 读写）+ ZthParamsRepository（参数快照读写）+ HallucinationCircuitBreakerDao |
 | LlmMessageBuilder（现有或新建） | 过滤器 MSG-INV-3/4 | 发给主/压缩/降级/专用模型任何 LLM 前统一走 builder：L1 系统元数据过滤；L5 sentinel finalContent inline 到关联 user 消息末尾；如果找不到关联 → 虚拟 role=user 补充消息 | 新增单例 `ZthLlmMessageBuilder.build(rawMessages, targetModelPurpose)` → 所有 LLM 调用都必须用它组装 messages 列表（禁止直接传 raw messages 给 SDK） |
 
 ---
