@@ -192,6 +192,19 @@ abstract class AgentTool {
     open suspend fun executeWithContext(args: Map<String, JsonElement>, context: com.R.codecore.feature.agent.domain.model.AgentContext): ToolResult {
         return execute(args)
     }
+
+    /**
+     * L7 事件自声明（事件解耦 M1）：工具执行成功后，由工作流在成功后统一调用，声明本工具要广播的 [ToolEvent]。
+     *
+     * 返回 `null` 表示本工具不产出事件。具象工具通过覆写本方法声明事件，取代工作流内**硬编码的
+     * `when(toolName)` 映射**——工作流只查本钩子、不再感知具体工具名，新增工具无需改动工作流。
+     * 各工具的会话 id / 结果字段在此自行组装（`context.sessionId` 保证事件归属与当前会话连贯）。
+     */
+    open fun buildPostExecutionEvent(
+        toolCall: ToolCall,
+        result: ToolResult,
+        context: com.R.codecore.feature.agent.domain.model.AgentContext
+    ): ToolEvent? = null
     open fun buildPermissionRequest(
         callId: String,
         args: Map<String, JsonElement>,

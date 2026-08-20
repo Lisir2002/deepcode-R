@@ -12,8 +12,10 @@ import com.R.codecore.feature.agent.domain.skill.SkillToolBindingManager
 import com.R.codecore.feature.agent.domain.skill.SkillType
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
-import com.R.codecore.feature.agent.domain.tool.ToolParameter
+import com.R.codecore.feature.agent.domain.tool.ToolCall
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
+import com.R.codecore.feature.agent.domain.tool.ToolEvent
+import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolResult
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -192,6 +194,16 @@ class LoadSkillTool @Inject constructor(
                 ToolResult.Error(result.message, result.code)
             }
         }
+    }
+
+    /** L7 事件自声明：技能加载成功后广播 state.skill.loaded，触发工具定义与上下文刷新。 */
+    override fun buildPostExecutionEvent(
+        toolCall: ToolCall,
+        result: ToolResult,
+        context: AgentContext
+    ): ToolEvent? {
+        val skillName = (toolCall.arguments["skill_name"] as? JsonPrimitive)?.contentOrNull ?: ""
+        return ToolEvent.StateSkillLoaded(skillName = skillName, toolCount = 0, sessionId = context.sessionId)
     }
 
     /** AGENT 级技能的 agentType（仅 AGENT 级需要）；GLOBAL/COMMON 返回 null。 */

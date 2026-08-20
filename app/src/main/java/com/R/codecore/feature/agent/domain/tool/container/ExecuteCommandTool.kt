@@ -6,12 +6,15 @@ import com.R.codecore.feature.agent.domain.container.CommandEvent
 import com.R.codecore.feature.agent.domain.container.CommandResult
 import com.R.codecore.feature.agent.domain.container.LinuxContainerEngine
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
 import com.R.codecore.feature.agent.domain.tool.PendingToolPermission
 import com.R.codecore.feature.agent.domain.tool.StreamingAgentTool
-import com.R.codecore.feature.agent.domain.tool.ToolParameter
+import com.R.codecore.feature.agent.domain.tool.ToolCall
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
+import com.R.codecore.feature.agent.domain.tool.ToolEvent
+import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
 import com.R.codecore.feature.agent.domain.tool.ToolResult
 import com.R.codecore.feature.agent.domain.tool.ToolStreamEvent
@@ -78,6 +81,16 @@ class ExecuteCommandTool @Inject constructor(
             """^\s*(?:ls|pwd|cat|head|tail|wc|echo|date|whoami|which|type|uname|env|printenv|du|df|stat|file|find|grep|rg|git\s+(?:status|log|diff|branch|remote|rev-parse|show|ls-files|stash\s+list))\b.*""",
             RegexOption.IGNORE_CASE
         )
+    }
+
+    /** L7 事件自声明：shell 命令可能改动工作区文件，广播 file.mutated 保守失效文件类缓存。 */
+    override fun buildPostExecutionEvent(
+        toolCall: ToolCall,
+        result: ToolResult,
+        context: AgentContext
+    ): ToolEvent? {
+        val command = (toolCall.arguments["command"] as? JsonPrimitive)?.contentOrNull ?: ""
+        return ToolEvent.FileSystemMutated(reason = command.take(200), sessionId = context.sessionId)
     }
 
     /** 联动刷新用的后台作用域：fire-and-forget，不阻塞工具结果返回。 */

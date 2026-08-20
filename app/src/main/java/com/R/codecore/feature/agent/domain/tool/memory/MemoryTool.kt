@@ -8,7 +8,9 @@ import com.R.codecore.feature.agent.domain.memory.MemoryScope
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.tool.AbstractContextualTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
+import com.R.codecore.feature.agent.domain.tool.ToolCall
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
+import com.R.codecore.feature.agent.domain.tool.ToolEvent
 import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
 import com.R.codecore.feature.agent.domain.tool.ToolResult

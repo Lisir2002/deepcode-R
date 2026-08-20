@@ -10,6 +10,8 @@ import com.R.codecore.feature.agent.domain.model.TodoItem
 import com.R.codecore.feature.agent.domain.model.TodoStatus
 import com.R.codecore.feature.agent.domain.tool.AbstractContextualTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
+import com.R.codecore.feature.agent.domain.tool.ToolCall
+import com.R.codecore.feature.agent.domain.tool.ToolEvent
 import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
 import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
@@ -104,6 +106,16 @@ class TodoTool @Inject constructor(
             FileLogger.e(TAG, "todo 工具执行失败: ${e.message}", e)
             ToolResult.Error("待办操作失败: ${e.message}")
         }
+    }
+
+    /** L7 事件自声明：快照式提交成功后广播 todo.updated，负载含完整待办列表。 */
+    override fun buildPostExecutionEvent(
+        toolCall: ToolCall,
+        result: ToolResult,
+        context: AgentContext
+    ): ToolEvent? {
+        val fullList = context.sessionState?.todoSnapshot.orEmpty()
+        return ToolEvent.TodoUpdated(todoId = "", changedFields = listOf("items"), fullList = fullList, sessionId = context.sessionId)
     }
 
     /** 刷新 [AgentContext.sessionState] 的待办快照（L2 共享会话状态）。 */

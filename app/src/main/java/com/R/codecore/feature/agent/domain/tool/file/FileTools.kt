@@ -6,6 +6,8 @@ import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
 import com.R.codecore.feature.agent.domain.tool.PendingToolPermission
+import com.R.codecore.feature.agent.domain.tool.ToolCall
+import com.R.codecore.feature.agent.domain.tool.ToolEvent
 import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
 import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
@@ -227,6 +229,16 @@ class WriteFileTool @Inject constructor(
     /** F-3：优先走 executeWithContext 以获得会话 ID，用于 hunk 落库；无上下文时降级为不落库。 */
     override suspend fun executeWithContext(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
         return executeInternal(args, context.sessionId)
+    }
+
+    /** L7 事件自声明：写入成功后广播 file.written（field 级 hash/diff 由执行结果附带）。 */
+    override fun buildPostExecutionEvent(
+        toolCall: ToolCall,
+        result: ToolResult,
+        context: AgentContext
+    ): ToolEvent? {
+        val path = (toolCall.arguments["path"] as? JsonPrimitive)?.contentOrNull ?: return null
+        return ToolEvent.FileWritten(path = path, size = 0, hash = "", sessionId = context.sessionId)
     }
 
     private suspend fun executeInternal(args: Map<String, JsonElement>, sessionId: String?): ToolResult {

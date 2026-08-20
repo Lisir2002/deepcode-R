@@ -3,6 +3,8 @@ package com.R.codecore.feature.agent.domain.tool.editor
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
 import com.R.codecore.feature.agent.domain.tool.PendingToolPermission
+import com.R.codecore.feature.agent.domain.tool.ToolCall
+import com.R.codecore.feature.agent.domain.tool.ToolEvent
 import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
 import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
@@ -125,6 +127,16 @@ class EditFileTool @Inject constructor(
     /** F-3：优先走 executeWithContext 以获得会话 ID，用于 hunk 落库；无上下文时降级为不落库。 */
     override suspend fun executeWithContext(args: Map<String, JsonElement>, context: AgentContext): ToolResult {
         return executeInternal(args, context.sessionId)
+    }
+
+    /** L7 事件自声明：编辑成功后广播 file.edited（字段级 hash/diff 由本工具在执行结果中附带）。 */
+    override fun buildPostExecutionEvent(
+        toolCall: ToolCall,
+        result: ToolResult,
+        context: AgentContext
+    ): ToolEvent? {
+        val path = (toolCall.arguments["path"] as? JsonPrimitive)?.contentOrNull ?: return null
+        return ToolEvent.FileEdited(path = path, oldHash = null, newHash = "", diffSummary = "", sessionId = context.sessionId)
     }
 
     private suspend fun executeInternal(args: Map<String, JsonElement>, sessionId: String?): ToolResult {

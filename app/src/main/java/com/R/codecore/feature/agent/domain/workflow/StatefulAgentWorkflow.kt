@@ -1055,55 +1055,15 @@ class StatefulAgentWorkflow @Inject constructor(
     }
 
     /**
-     * L7 事件发布：工具成功后广播对应事件，驱动缓存失效、上下文增量刷新等联动。
+     * L7 事件发布（事件解耦 M1）：工具成功后广播对应事件，驱动缓存失效、上下文增量刷新等联动。
      *
-     * 事件类型按工具名映射：文件写（file.edited / file.written）、待办（todo.updated）、
-     * 记忆（state.memory.updated）、技能（state.skill.loaded）、模式（state.mode.changed）。
-     * hash/diff 等字段级详情由工具自身发布，此处先建立机制。
+     * 事件全部由工具自身经 [AgentTool.buildPostExecutionEvent] 钩子声明（file.edited / file.written /
+     * todo.updated / state.memory.updated / state.skill.loaded / state.mode.changed / file.mutated），
+     * 本方法只解析工具实例、统一查询钩子并发布，不再感知具体工具名；hash/diff 等字段级详情由工具侧组装。
      */
     private suspend fun publishToolEvent(name: String, toolCall: ToolCall, result: ToolResult, context: AgentContext) {
-        val sessionId = context.sessionId
-        val event: ToolEvent? = when (name) {
-            "editFile" -> {
-                val path = (toolCall.arguments["path"] as? JsonPrimitive)?.contentOrNull ?: return
-                ToolEvent.FileEdited(path = path, oldHash = null, newHash = "", diffSummary = "", sessionId = sessionId)
-            }
-            "writeFile" -> {
-                val path = (toolCall.arguments["path"] as? JsonPrimitive)?.contentOrNull ?: return
-                ToolEvent.FileWritten(path = path, size = 0, hash = "", sessionId = sessionId)
-            }
-            "todo" -> {
-                // 快照式接口：每次提交完整列表，统一按 todo.updated 广播，负载含完整待办列表。
-                val fullList = context.sessionState?.todoSnapshot.orEmpty()
-                ToolEvent.TodoUpdated(todoId = "", changedFields = listOf("items"), fullList = fullList, sessionId = sessionId)
-            }
-            "memory" -> {
-                // 仅写操作（save/edit/delete）广播记忆变更，read/list 不触发。
-                val action = (toolCall.arguments["action"] as? JsonPrimitive)?.contentOrNull
-                if (action !in setOf("save", "edit", "delete")) return
-                val memoryKey = (toolCall.arguments["name"] as? JsonPrimitive)?.contentOrNull ?: ""
-                val summary = (result as? ToolResult.Success)?.data
-                    ?.let { (it as? JsonPrimitive)?.contentOrNull } ?: ""
-                ToolEvent.StateMemoryUpdated(memoryKey = memoryKey, summary = summary, sessionId = sessionId)
-            }
-            "loadSkill" -> {
-                val skillName = (toolCall.arguments["skill_name"] as? JsonPrimitive)?.contentOrNull ?: ""
-                ToolEvent.StateSkillLoaded(skillName = skillName, toolCount = 0, sessionId = sessionId)
-            }
-            "switchMode" -> {
-                val to = (toolCall.arguments["mode"] as? JsonPrimitive)?.contentOrNull ?: ""
-                val reason = (toolCall.arguments["reason"] as? JsonPrimitive)?.contentOrNull ?: ""
-                ToolEvent.StateModeChanged(from = context.mode.name, to = to, reason = reason, sessionId = sessionId)
-            }
-            "Bash" -> {
-                // 任意 shell 命令可能改动工作区文件，具体影响不可静态判定。
-                // 广播 file.mutated 保守失效所有文件类缓存（readFile/search/list），保证缓存新鲜度。
-                val command = (toolCall.arguments["command"] as? JsonPrimitive)?.contentOrNull ?: ""
-                ToolEvent.FileSystemMutated(reason = command.take(200), sessionId = sessionId)
-            }
-            else -> null
-        }
-        event?.let { toolEventBus.publish(it) }
+        val tool = toolRegistry.getTool(name) ?: return
+        tool.buildPostExecutionEvent(toolCall, result, context)?.let { toolEventBus.publish(it) }
     }
 
     /**
