@@ -1,21 +1,26 @@
 package com.R.codecore.feature.agent.domain.skill
 
+import android.content.Context
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.domain.container.ContainerInstaller
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class LocalDirectorySkillSource @Inject constructor(
-    private val containerInstaller: ContainerInstaller,
-    private val builtinSkillSeeder: BuiltinSkillSeeder
+    @ApplicationContext private val context: Context,
+    private val containerInstaller: ContainerInstaller
 ) : SkillSource, MutableSkillSource {
 
     private companion object {
         const val TAG = "LocalDirectorySkillSource"
         const val BUILTIN_MARKER = ".builtin"
     }
+
+    /** 内置技能首启引导（普通辅助类，非 DI 节点，直接构造）。 */
+    private val builtinSkillSeeder = BuiltinSkillSeeder(context, containerInstaller)
 
     override val skillsRoot: File by lazy {
         File(containerInstaller.rcodecoreDir, "skills").also { it.mkdirs() }
