@@ -97,6 +97,34 @@
   - `loadSkill` → `StateSkillLoaded`（LoadSkillTool 重写）
 - 收益：主循环不再认识具体工具名；新工具/技能只需在自身类重写钩子即可发事件，与 `AgentTool.provides`（产出能力元数据）呼应。
 
+### 4.5 技能作用域分级（Skill Scope）
+
+为支撑「多 Agent（后续不止编程）」演进，给 `Skill` 增加**作用域**维度，与 `type`（执行形态）、`modes`（执行模式）正交：
+
+```kotlin
+/** 技能作用域：定义「谁能用、能否被用户关闭」。 */
+enum class SkillScope {
+    GLOBAL, // 全局：系统级强制激活，所有 agent 必有，用户不可关闭
+    COMMON, // 通用：所有 agent 默认全局可用，用户在设置里可自定义开关
+    AGENT,  // agent 级：仅绑定 agentType 的 agent 可用
+}
+
+data class Skill(
+    // ...既有字段不变...
+    val scope: SkillScope = SkillScope.COMMON,
+    val agentType: String? = null, // 当 scope == AGENT 时必填（如 "coding"）
+)
+```
+
+- 承载于 Frontmatter：新增 `scope: global|common|agent` 与 `agent-type: coding`（仅 agent 级需要）；
+- 与既有字段正交：`modes`（BUILD/PLAN/AUTO，执行模式）不变，`scope` 只管适用范围。
+
+**继承/激活规则（自动携带 全局+本 agent）**：
+- 某 agent 激活时，`SkillToolBindingManager` 依序注册 `scope=GLOBAL`（**常驻不可关**）→ `scope=COMMON`（且用户开关已开启）→ `scope=AGENT && agentType == 当前 agent`；
+- 即：全局技能开箱即用、通用技能默认可用（可关）、agent 级技能仅对应 agent 激活时注入，禁用/卸载时对应 `releaseForSkill` 回收。
+
+**对 R1 的影响**（见 §6）：技能「激活态」语义据此定死为**会话/agent 激活态**——GLOBAL 常驻、COMMON 随「用户开关 × 当前 agent 激活」、AGENT 仅当对应 agent 激活；工具命名空间化（`<skillId>.<name>`）仍用于规避全局注册表竞争。
+
 ---
 
 ## 5. 影响面 / 改动清单
@@ -108,6 +136,7 @@
 **修改**
 - `LoadSkillTool.kt`：改 `executeWithContext` + 依赖真注入 + 调 `registerForSkill` + 重写事件钩子
 - `SkillExecutor.kt`：`execute(skill, args, ctx)` 签名带 `SkillExecutionContext`，`sessionId` 贯穿
+- `Skill.kt`：新增 `scope: SkillScope`（GLOBAL/COMMON/AGENT）与 `agentType: String?`，Frontmatter 增加 `scope`/`agent-type`
 - `AgentTool.kt`：新增 `buildPostExecutionEvent` open 钩子
 - `StatefulAgentWorkflow.kt`：删除 `publishToolEvent` 的 `when`，改为按 `ToolRegistry` 查钩子
 - 各工具类：`writeFile/todo/memory/switchMode/Bash` 迁移事件分支
@@ -123,7 +152,7 @@
 
 | # | 风险/待定 | 说明 | 建议 |
 |---|---|---|---|
-| R1 | `ToolRegistry` 全局单例 vs 技能专属工具的注册作用域 | 动态注册进全局表会跨会话可见，多个技能并发激活可能命名冲突 | 工具名命名空间化（`<skillId>.<name>`）；明确"技能激活态"语义（会话级 or 全局） |
+| R1 | `ToolRegistry` 全局单例 vs 技能专属工具的注册作用域 | 动态注册进全局表会跨会话可见，多个技能并发激活可能命名冲突 | **已收敛**：技能「激活态」= 会话/agent 激活态（见 §4.5）——GLOBAL 常驻、COMMON 随「用户开关 × 当前 agent 激活」、AGENT 仅当对应 agent 激活；工具名命名空间化（`<skillId>.<name>`）规避冲突 |
 | R2 | 审批移到带 `sessionId` 后 UI 交互回归 | 当前以 `loadSkill` 名义、无会话；改后确认卡归属/取消需要回归 | 真机验证脚本技能拒绝/批准/停止三条线 |
 | R3 | PROMPT 依赖"注入"的确切语义 | 拼接全部依赖指令 vs 仅声明 | 倾向"按依赖序拼接 + 去重"，但需定上下文膨胀上限 |
 | R4 | `provides` 元数据 vs `buildPostExecutionEvent` 二义 | 两者都表示"技能产出"，可能重叠 | 统一为「`provides`=能力/事件类型声明，`buildPostExecutionEvent`=具体实例化」，二者对齐 |

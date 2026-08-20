@@ -134,7 +134,24 @@
 3. **专属工具动态注册/回收 `SkillToolBindingManager`**（@Singleton）：对 `skill.requiredTools` 逐项校验全局已注册工具存在且启用，或动态 `ToolRegistry.register` 技能自带 `AgentTool` 并记入回收表；技能加载成功 → `registerForSkill`，禁用/卸载 → `releaseForSkill`（只回收动态注册工具，不删内置全局工具）。工具名命名空间化（`<skillId>.<name>`）规避全局注册表跨会话冲突。
 4. **事件自声明**：`AgentTool` 增加 open 钩子 `buildPostExecutionEvent(toolCall, result, context): ToolEvent?`；删除 `StatefulAgentWorkflow.publishToolEvent` 中整段 `when(toolName)` 硬编码，改为按 `toolRegistry.getTool(name)?.buildPostExecutionEvent(...)?.let { toolEventBus.publish(it) }`。各分支迁入各自工具类（writeFile→`FileWritten`、todo→`TodoUpdated`、memory→`StateMemoryUpdated`、switchMode→`StateModeChanged`、Bash→`FileSystemMutated`、loadSkill→`StateSkillLoaded`），与 `AgentTool.provides` 能力元数据呼应。
 
-**新增文件**：`domain/skill/SkillExecutionContext.kt`、`domain/skill/SkillToolBindingManager.kt`。**相关改动**：`LoadSkillTool`（executeWithContext + 依赖注入 + 注册工具 + 事件钩子）、`SkillExecutor`（带上下文）、`AgentTool`（新增钩子）、`StatefulAgentWorkflow`（删除硬编码 when）、`AgentModule`（DI 注册 `SkillToolBindingManager`）。
+#### 3.6.2 技能作用域分级（Skill Scope，多 Agent 演进）
+
+支撑「后续不止编程 agent」：给 `Skill` 增加与 `type`/`modes` **正交**的作用域维度，定义「谁能用、能否被用户关闭」：
+
+```kotlin
+enum class SkillScope {
+    GLOBAL, // 全局：系统级强制激活，所有 agent 必有，用户不可关闭
+    COMMON, // 通用：所有 agent 默认全局可用，用户在设置里可自定义开关
+    AGENT,  // agent 级：仅绑定 agentType 的 agent 可用
+}
+// Skill 新增：scope: SkillScope = COMMON，agentType: String? = null（scope==AGENT 时必填，如 "coding"）
+```
+
+- Frontmatter 承载 `scope: global|common|agent` + `agent-type`；`modes`（BUILD/PLAN/AUTO）只管执行模式，`scope` 只管适用范围。
+- **激活规则（自动携带 全局+本 agent）**：agent 激活时 `SkillToolBindingManager` 依序注册 `GLOBAL`（常驻不可关）→ `COMMON`（用户开关已开启）→ `AGENT && agentType==当前 agent`；禁用/卸载走 `releaseForSkill` 回收。
+- 技能「激活态」据此定死为**会话/agent 激活态**（GLOBAL 常驻、COMMON 随「用户开关 × agent 激活」、AGENT 仅当对应 agent 激活），收敛原 R1 风险。
+
+**新增文件**：`domain/skill/SkillExecutionContext.kt`、`domain/skill/SkillToolBindingManager.kt`。**相关改动**：`Skill.kt`（新增 `scope`/`agentType`）、`LoadSkillTool`（executeWithContext + 依赖注入 + 按作用域注册工具 + 事件钩子）、`SkillExecutor`（带上下文）、`AgentTool`（新增钩子）、`StatefulAgentWorkflow`（删除硬编码 when）、`AgentModule`（DI 注册 `SkillToolBindingManager`）。
 
 ### 3.7 ZTH 零信任防护（ZthGuardAggregateFacade）
 
