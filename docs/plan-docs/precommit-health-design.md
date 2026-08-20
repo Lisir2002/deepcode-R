@@ -1,6 +1,7 @@
 # precommit-health-design
 
-> 评审状态：✅ 已实施（首款内置技能 pre-commit-health 已落地并出包 v0.1.0-rc175）
+> 评审状态：✅ 已实施（首款内置技能 pre-commit-health 已落地；v0.1.0-rc175 首包，
+> v0.1.0-rc176 携带 B1 分层 + busybox 兼容修复 + CI 语法护栏）
 >
 > 主题：首款内置 Skill「提交前规范体检」（pre-commit-health）的设计。定义体检范围、执行契约
 > （SCRIPT 脚本 + PROMPT 修复指引双形态）与工程化落地清单。
@@ -69,6 +70,16 @@
 > C-1 与 `.githooks/pre-commit`、W-4/C-1 与 `.githooks/commit-msg` 口径一致；本技能是在 hook 之外
 > 的**更早、更全**的一次体检，把「提交失败」前移到「提交前主动把关」。
 
+### 4.3 B1 分层检查（非 Android 项目不误报）
+
+脚本入口先判定项目类型并打印 `[类型]` 行：
+
+- 识别为 **Android 项目**（项目根存在 `app/build.gradle.kts` 或 `app/build.gradle`）→ 执行全部
+  Android 专属检查（C-1/C-2/C-3/C-5/W-1/W-2/W-3）+ 通用检查（C-4/W-4/W-5）。
+- 识别为 **非 Android 项目**（纯前端/后端/脚本仓库等）→ 自动跳过 Android 专属项，仅执行
+  C-4 敏感信息、W-4 提交信息格式、W-5 分支纪律；W-4 会按前端扩展名（js/ts/css/html/vue/jsx/tsx）
+  建议 `feat`/`fix`，避免"纯前端仓库被 Android 规则误报"。
+
 ## 5. 执行契约（SKILL_PROJECT_PATH）
 
 复用 [SkillExecutor](../modules/agent.md) 既有 SCRIPT 链路：`cd $containerSkillDir && env ... $shell $entry`。
@@ -96,14 +107,20 @@ SKILL_PROJECT_PATH=<ctx.projectPath 经容器映射后的容器侧路径>
 
 - **契约注入**：`SkillExecutor.kt` 组装 SCRIPT env 时追加 `SKILL_PROJECT_PATH`（取自 `ctx.projectPath`）。
 - **技能资产**：`app/src/main/assets/skills/pre-commit-health/`
-  - `SKILL.md`（Frontmatter：name/type=script/scope=common/entry=entry/run.sh，正文 C/W 检查口径 + 修复指引）
-  - `entry/run.sh`（容器内 bash：按 `SKILL_PROJECT_PATH` 圈定改动面，执行 C/W 检查并输出 UTF-8 报告）
+  - `SKILL.md`（Frontmatter：name/type=script/scope=common/entry=entry/run.sh，正文 C/W 检查口径 + 修复指引
+    + 通用触发词 + 分层说明 + 故障口径「只读不修」）
+  - `entry/run.sh`（容器内 busybox sh：按 `SKILL_PROJECT_PATH` 圈定改动面，B1 分层执行 C/W 检查并输出 UTF-8 报告）
 - **首启引导**：`BuiltinSkillSeeder` 首启把 `assets/skills/*` 引导（copy）进 `skillsRoot`，标记 `source=BUILTIN`、
   只读、禁止卸载覆盖。
-- **文档同步**：`docs/modules/agent.md` 技能章节、`app/src/main/assets/docs/mcp-and-skills.md` 使用说明更新。
+- **CI 护栏**：`.github/workflows/ci.yml` 新增「Check skill script syntax (sh -n)」步骤，对 `assets/skills/**/*.sh`
+  逐个 `sh -n` 校验（POSIX 语法，防止 busybox 不可解析的脚本合入）。
+- **文档同步**：`docs/modules/agent.md` 技能章节（3.6.3 分层/兼容/护栏）、
+  `app/src/main/assets/docs/mcp-and-skills.md` 使用说明更新。
 
 ## 8. 里程碑
 
 - [x] M1：`SKILL_PROJECT_PATH` 契约注入（SkillExecutor 小改动）。
 - [x] M2：内置技能资产（SKILL.md + entry/run.sh）与 BuiltinSkillSeeder 首启引导。
 - [x] M3：文档同步 + 提交/CI/发版（v0.1.0-rc175 已出包）。
+- [x] M4：busybox 兼容修复（C-2 awk 改字节 grep、统一 grep -E 防 BRE alternation 失效、修 W-4 前端扩展名匹配）
+  + B1 分层检查 + CI 语法护栏 + SKILL.md 触发词/故障口径（v0.1.0-rc176）。

@@ -50,6 +50,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # skill 脚本语法冒烟护栏：内置技能入口脚本运行于 Alpine(busybox ash)，语法必须兼容 POSIX sh。
+      # 用 sh -n（dash 解析，与 busybox ash 同为 POSIX 语法）对所有 SCRIPT 型技能入口做语法校验，
+      # 防止 gawk/GNU 专属语法（\x{...}、\s、\d）合入导致容器内执行即崩。
+      - name: Check skill script syntax (sh -n)
+        run: |
+          set -e
+          find app/src/main/assets/skills -type f -name '*.sh' -print0 | while IFS= read -r -d '' f; do
+            echo "==> sh -n $f"
+            sh -n "$f"
+          done
+          echo "All skill scripts pass POSIX sh syntax check"
+
       # CI 跑 Ubuntu runner：自动生成 debug keystore 供 signingConfigs.release/androidDebug 回退使用。
       # 必须放在 Set up JDK 之后（keytool 是 JDK bin 下的工具，JAVA_HOME 未注入前调不到）。
       # 若 ~/.android/debug.keystore 缺失，AGP 会报 Keystore file not found，本步骤零配置兜底。

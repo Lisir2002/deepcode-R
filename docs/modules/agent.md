@@ -145,6 +145,17 @@
 - **脚本项目路径契约（SKILL_PROJECT_PATH）**：`SkillExecutor.executeScript` 组装入口脚本环境时注入 `SKILL_PROJECT_PATH`。宿主导入 `projectPath` 由 `LinuxContainerEngine` 经 proot `-b` 绑定到容器内固定点 `/root/workspace`，故统一注入容器侧 `/root/workspace`；`projectPath` 为空则注入空（纯静态检查）。供脚本技能在内定位真实项目并执行 git / 文件检查。
 - 首个内置技能：**pre-commit-health**（提交前规范体检，`assets/skills/pre-commit-health/`），scope=COMMON、type=SCRIPT；依据 `SKILL_PROJECT_PATH` 圈定待提交改动，输出「阻断项/建议项」报告（模块文档同步、strings.xml、版本号、敏感信息、targetSdk、prompts/docs 资产、迁移 SQL、提交信息格式、分支纪律），有阻断项时退出码非 0。
 
+#### 3.6.3 pre-commit-health 分层检查 / busybox 兼容 / CI 护栏
+
+- **B1 分层检查**：脚本先按 `app/build.gradle.kts` / `app/build.gradle` 是否存在于项目根判定类型并打印 `[类型]` 行。
+  - 通用检查（任意 git 项目）：C-4 敏感信息、W-4 提交信息格式、W-5 分支纪律。
+  - Android 专属检查（仅识别为 Android 项目时执行）：C-1 模块文档同步、C-2 `.kt` 硬编码中文、C-3 手写版本号、C-5 targetSdk 锁定、W-1 prompts/docs 资产同步、W-2 模块文档行为变化、W-3 迁移 SQL 字面量。
+  - 非 Android 项目自动跳过 Android 专属项，避免误报。
+- **busybox 兼容约束**：目标运行环境为 Alpine（busybox ash/grep/sed）。脚本禁用 gawk 专属正则（`\x{...}`、`\s`、`\d`）；字符检测改用 `LC_ALL=C grep -n '[^ -~]'` 按字节判非可打印 ASCII；`has_pref` 统一用 `grep -E`（ERE），避免 BRE 中 `|` 为字面量、`\|` 依赖 GNU 扩展导致 alternation 失效的坑。新增检查项须经本地 `sh -n` 验证。
+- **CI 护栏**：`.github/workflows/ci.yml` 在 JDK 之后新增「Check skill script syntax (sh -n)」步骤，对 `assets/skills/**/*.sh` 逐个 `sh -n` 校验，防止不合 POSIX 语法的脚本合入后容器内执行即崩。
+- **故障口径（只读不修）**：脚本运行时若报语法错误/无法完成，AI 不就地修改内置资产（`entry/run.sh`/`SKILL.md`），应如实报告原因（脚本 bug / 环境缺依赖）；确为脚本 bug 由维护者修复后经 `sh -n` + CI 护栏双验证再发版。
+- **SKILL.md 触发词**：description 含通用触发词（提交前检查 / 规范体检 / pre-commit / commit 前体检），并写明输出解读、修复口径与分层说明。
+
 ### 3.7 ZTH 零信任防护（ZthGuardAggregateFacade）
 
 - 聚合门面串联四方联动：熔断器（`ZthCircuitBreakerManager`）、计划审批（`ZthPlanApprovalManagerWrapper`）、确认卡片（`ZthConfirmationCardManager` + `ZthConfirmationCardStateMachine`）、检查点（`ZthCheckpointRepository`）。

@@ -3,7 +3,13 @@
 # 契约：SKILL_PROJECT_PATH 为容器内项目路径（宿主导入 /root/workspace，见 SkillExecutor）。
 # 只读，不改任何文件；有阻断项（C-*）时退出码非 0。
 #
-# 需容器内具备: git / grep / sed / awk（内置 Alpine 已含）。个别特性缺失时降级为部分检查。
+# 兼容性：目标运行环境为 Alpine（busybox ash / busybox awk / busybox grep）。
+#   严禁使用 gawk 专属正则（\x{...}、\s、\d）与 GNU 扩展，避免解析即崩。
+# 分层：通用检查（敏感信息/提交信息格式/分支纪律）对任意 git 项目生效；
+#   Android 专属检查（模块文档/strings.xml/版本号/targetSdk/prompts|docs 资产/迁移 SQL）
+#   仅当识别为 Android 项目（存在 app/build.gradle.kts）时执行，否则降级提示跳过。
+#
+# 需容器内具备: git / grep / sed（内置 Alpine 已含）。个别特性缺失时降级为部分检查。
 
 set -u
 export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=C
@@ -13,6 +19,7 @@ BLOCKERS=0
 WARNINGS=0
 ROOT=""
 IS_GIT=false
+IS_ANDROID=false
 # 管道子 shell 无法回写外层计数，用临时文件记录阻断项
 TMPB="$(mktemp 2>/dev/null || echo /tmp/pch.blockers)"
 
@@ -32,6 +39,14 @@ else
   [ -z "$ROOT" ] && ROOT="/root/workspace"
 fi
 
+# ---- 项目类型识别（B1 分层）：Android 专属检查的开关 ----
+if [ -f "$ROOT/app/build.gradle.kts" ] || [ -f "$ROOT/app/build.gradle" ]; then
+  IS_ANDROID=true
+  echo "[类型] Android 项目（应用 Gradle 构建）"
+else
+  echo "[类型] 非 Android 项目 —— 跳过 Android 专属检查（模块文档/strings.xml/版本号/targetSdk/迁移 SQL），仅执行通用检查"
+fi
+
 # ---- 收集待提交改动文件（去重、去空） ----
 CHANGED=""
 if $IS_GIT; then
@@ -45,18 +60,13 @@ if [ -z "$CHANGED" ]; then
 fi
 echo "[改动面] 本次待提交/变更文件数: $(printf '%s\n' "$CHANGED" | sed '/^$/d' | wc -l | tr -d ' ')"
 
-has() { printf '%s\n' "$CHANGED" | grep -qx "$1"; }
-has_pref() { printf '%s\n' "$CHANGED" | grep -q "$1"; }
-feature_module_of() { # 从路径提取 feature/<mod>/ 的 mod
-  printf '%s\n' "$1" | sed -n 's|.*/com/R/codecore/feature/\([^/]*\)/.*|\1|p'
-}
+# busybox 兼容：统一用 grep -E（ERE），BRE 的 | 是字面量、\| 依赖 GNU 扩展，易踩坑
+has_pref() { printf '%s\n' "$CHANGED" | LC_ALL=C grep -E -q "$1"; }
+
+if $IS_ANDROID; then
 
 # ================= 阻断项 C-1：模块文档同步 =================
 mods=$(printf '%s\n' "$CHANGED" | while read -r f; do
-  case "$f" in
-    app/src/main/java/com/R/codecore/feature/*/*.kt|app/src/main/java/com/R/codecore/feature/*/) ;;
-    app/src/main/java/com/R/codecore/feature/*/*) : ;;
-  esac
   m=$(printf '%s\n' "$f" | sed -n 's|.*/com/R/codecore/feature/\([^/]*\)/.*|\1|p')
   [ -n "$m" ] && printf '%s\n' "$m"
 done | sort -u)
@@ -81,23 +91,25 @@ if [ -d "$ROOT/docs/modules" ]; then
 fi
 
 # ================= 阻断项 C-2：.kt 硬编码中文（走 strings.xml） =================
+# busybox 兼容：不依赖 gawk 的 \x{...} Unicode 语法，改按字节检测「非可打印 ASCII」。
+# 在 UTF-8/C locale 下中文等非 ASCII 字符的高字节 >0x7E，[^ -~] 即可命中。
 : > "$TMPB"
 printf '%s\n' "$CHANGED" | while read -r f; do
   case "$f" in *.kt) : ;; *) continue ;; esac
   [ -f "$ROOT/$f" ] || continue
-  awk '
-    /^[[:space:]]*(\/\/|#|\*|\/\*)/ { next }          # 纯注释行跳过
-    {
-      # 含中文字符 且 非 stringResource/R.getString 引用 且 疑似出现在字符串里
-      if ($0 ~ /[\x{4e00}-\x{9fff}]/ && $0 !~ /R\.string\./ && $0 !~ /stringResource/ && $0 !~ /getString/) {
-        if ($0 ~ /=?[[:space:]]*"|<string>|append\("|"[:-]?[^"]*[\x{4e00}-\x{9fff}]/ ) {
-          printf "   %s: %s\n", FILENAME, $0
-        }
-      }
-    }' "$ROOT/$f"
-done | head -40 | while IFS= read -r ln; do
-  echo "❌ [C-2] 疑似硬编码中文（应走 R.string.*）: $ln"
-  echo x >> "$TMPB"
+  LC_ALL=C grep -n '[^ -~]' "$ROOT/$f" 2>/dev/null | head -40 | while IFS=: read -r ln rest; do
+    # 跳过 stringResource / R.string / getString 引用行
+    case "$rest" in
+      *stringResource*|*R.string*|*getString*) continue ;;
+    esac
+    # 跳过纯注释行（前导空白后是 // 或 *）
+    case "$rest" in
+      *'//'*) continue ;;
+    esac
+    if printf '%s' "$rest" | LC_ALL=C grep -q '^[[:space:]]*\*'; then continue; fi
+    echo "❌ [C-2] 疑似硬编码中文（应走 R.string.*）: $f:$ln $rest"
+    echo x >> "$TMPB"
+  done
 done
 
 # ================= 阻断项 C-3：手写 versionName/versionCode =================
@@ -108,33 +120,17 @@ if [ -f "$ROOT/app/build.gradle.kts" ]; then
   fi
 fi
 
-# ================= 阻断项 C-4：敏感信息 =================
-printf '%s\n' "$CHANGED" | while read -r f; do
-  case "$f" in
-    *.kt|*.kts|*.md|*.pro|*.xml|*.properties|*.json|*.sql|*.sh|*.yml|*.yaml) : ;;
-    *) continue ;;
-  esac
-  [ -f "$ROOT/$f" ] || continue
-  if grep -nE 'ghp_[A-Za-z0-9]{6,}|api[_-]?key[[:space:]]*=[[:space:]]*["'"']?[A-Za-z0-9]{12,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|gho_|sk-[A-Za-z0-9]{16,}' "$ROOT/$f" 2>/dev/null | grep -v 'example\|sample\|<your' | head -20 | grep -q .; then
-    echo "❌ [C-4] $f 出现疑似敏感信息（token/密钥），请勿提交"
-    echo x >> "$TMPB"
-  fi
-done
-
 # ================= 阻断项 C-5：targetSdk 锁定 28 =================
 if [ -f "$ROOT/app/build.gradle.kts" ]; then
-  tsdk=$(grep -oE 'targetSdk[[:space:]]*=[[:space:]]*[0-9]+' "$ROOT/app/build.gradle.kts" | grep -oE '[0-9]+' | tr -d ' ')
-  [ -z "$tsdk" ] && tsdk=0
-  # 计算是否确有更高值（含 lint/legacy 配置里的 target）
-  hi=$(grep -oE 'target(Sdk)?[[:space:]]*=?(=?\s*)[0-9]{3}' "$ROOT/app/build.gradle.kts" | grep -oE '[0-9]{3}' | awk -v cur="$tsdk" '$1>28{print $1}' | head -1)
-  if [ -n "$hi" ]; then
-    echo "❌ [C-5] targetSdk 被提高到 $hi（探测到 28+ 值），须保持 28（PRoot W^X 绕过）"
+  # 仅在同时存在 targetSdk 赋值且值 >28 时拦截（busybox 兼容，无 \s/\d 依赖）
+  if LC_ALL=C grep -nE 'targetSdk[[:space:]]*=[[:space:]]*[0-9]+' "$ROOT/app/build.gradle.kts" | LC_ALL=C grep -E 'targetSdk[[:space:]]*=[[:space:]]*(2[9]|[3-9][0-9])' | grep -q .; then
+    echo "❌ [C-5] targetSdk 被提高到 28 以上，须保持 28（PRoot W^X 绕过）"
     BLOCKERS=$((BLOCKERS+1))
   fi
 fi
 
 # ================= 建议项 W-1：prompts/docs 资产同步 =================
-if has_pref '^app/src/main/assets/prompts/' || has_pref '^app/src/main/java/com/R/codecore/feature/.*/.*Tool\.kt' || has_pref 'AgentTool\.kt\|StatefulAgentWorkflow\.kt'; then
+if has_pref '^app/src/main/assets/prompts/' || has_pref '^app/src/main/java/com/R/codecore/feature/.*/.*Tool\.kt' || has_pref '(AgentTool\.kt|StatefulAgentWorkflow\.kt)'; then
   echo "⚠️  [W-1] 变更涉 AI 工作流/工具：检查 assets/prompts/ 与 assets/docs/ 是否需同步（prompts/docs 资产同步纪律）"
   WARNINGS=$((WARNINGS+1))
 fi
@@ -149,21 +145,44 @@ fi
 if has_pref '^app/src/main/assets/migrations/.*\.sql$'; then
   printf '%s\n' "$CHANGED" | while read -r f; do
     case "$f" in app/src/main/assets/migrations/*.sql)
-      [ -f "$ROOT/$f" ] && grep -nE "';|;'" "$ROOT/$f" && \
-        echo "⚠️  [W-3] $f 字符串字面量含分号，迁移按 ';' 切分会误切，应用 char(59)"
+      [ -f "$ROOT/$f" ] && LC_ALL=C grep -nE "';|;'" "$ROOT/$f" | head -10 | while IFS= read -r hit; do
+        echo "⚠️  [W-3] $f: $hit 字符串字面量含分号，迁移按 ';' 切分会误切，应用 char(59)"
+      done
     ;; esac
   done
 fi
 
-# ================= 建议项 W-4：提交信息格式建议 =================
-suggested_type=""
-if has_pref '^app/src/main/java/com/R/codecore/feature/'; then suggested_type="feat"; fi
-has_pref '\.kt$' && [ -z "$suggested_type" ] && suggested_type="fix"
-has_pref 'docs/|\.md$' && [ -z "$suggested_type" ] && suggested_type="docs"
-has_pref '\.github/|\.githooks/' && [ -z "$suggested_type" ] && suggested_type="ci"
-[ -z "$suggested_type" ] && suggested_type="chore"
+fi # end IS_ANDROID
+
+# ================= 阻断项 C-4：敏感信息（通用） =================
+printf '%s\n' "$CHANGED" | while read -r f; do
+  case "$f" in
+    *.kt|*.kts|*.md|*.pro|*.xml|*.properties|*.json|*.sql|*.sh|*.yml|*.yaml|*.js|*.ts|*.css|*.html) : ;;
+    *) continue ;;
+  esac
+  [ -f "$ROOT/$f" ] || continue
+  if LC_ALL=C grep -nE "ghp_[A-Za-z0-9]{6,}|api[_-]?key[[:space:]]*=[[:space:]]*['\"][A-Za-z0-9]{12,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|gho_|sk-[A-Za-z0-9]{16,}" "$ROOT/$f" 2>/dev/null | grep -v 'example\|sample\|<your' | head -20 | grep -q .; then
+    echo "❌ [C-4] $f 出现疑似敏感信息（token/密钥），请勿提交"
+    echo x >> "$TMPB"
+  fi
+done
+
+# ================= 建议项 W-4：提交信息格式建议（通用） =================
+suggested_type="chore"
+if $IS_ANDROID; then
+  if has_pref '^app/src/main/java/com/R/codecore/feature/'; then suggested_type="feat"; fi
+  has_pref '\.kt$' && [ "$suggested_type" = "chore" ] && suggested_type="fix"
+  has_pref '(\.github/|\.githooks/)' && [ "$suggested_type" = "chore" ] && suggested_type="ci"
+else
+  has_pref '\.github/' && suggested_type="ci"
+  # 前端源码改动建议 feat（ERE 扩展名匹配）
+  if [ "$suggested_type" = "chore" ] && printf '%s\n' "$CHANGED" | LC_ALL=C grep -E '\.(js|ts|css|html|vue|jsx|tsx)$' | grep -q .; then
+    suggested_type="feat"
+  fi
+fi
+if [ "$suggested_type" = "chore" ] && has_pref '(docs/|\.md$)'; then suggested_type="docs"; fi
 scop=""
-if [ -n "$mods" ]; then scop=$(printf '%s' "$mods" | head -1); fi
+if [ -n "${mods:-}" ]; then scop=$(printf '%s' "$mods" | head -1); fi
 if [ -n "$scop" ]; then
   echo "⚠️  [W-4] 建议提交信息: $suggested_type($scop): 简述本次改动（type ∈ feat/fix/refactor/docs/style/chore/ci/build/perf/test，不加句号）"
 else
@@ -171,7 +190,7 @@ else
 fi
 WARNINGS=$((WARNINGS+1))
 
-# ================= 建议项 W-5：分支纪律 =================
+# ================= 建议项 W-5：分支纪律（通用） =================
 if $IS_GIT; then
   branch=$(git -C "$ROOT" branch --show-current 2>/dev/null || true)
   case "$branch" in
