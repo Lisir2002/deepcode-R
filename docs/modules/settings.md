@@ -4,7 +4,7 @@
 
 ## 1. 模块定位
 
-负责 R-CodeCore 的**全部应用设置**：AI Provider（供应商/API Key/模型）管理与模型能力元数据解析、日志（等级/查看器/筛选/实时尾随）、主题、语言、后台保活、MCP 服务器、权限规则、容器 Profile 与执行模式（本地 PRoot / 远程 SSH）、安全设置（凭据加密状态/密钥轮换/ZTH 档位）、技能中心、关于/更新等。
+负责 R-CodeCore 的**全部应用设置**：AI Provider（供应商/API Key/模型）管理与模型能力元数据解析、日志（等级/查看器/筛选/实时尾随）、主题、后台保活、MCP 服务器、权限规则、容器 Profile 与执行模式（本地 PRoot / 远程 SSH）、安全设置（凭据加密状态/密钥轮换/ZTH 档位）、技能中心、关于/更新等。
 
 核心是 **Activity 级复用单例 `SettingsViewModel`**：一次性注入十几个 DataStore/Room 仓库 + 跨模块服务（MCP、权限、容器、远程 SSH），以多个 StateFlow 驱动设置页各二级分区（`SettingsSection`）。数据层统一两种持久化：**Room（`ai_providers` 表）** 存 AI 供应商，**DataStore/SharedPreferences** 存各类设置项，均以 `Flow` 对外暴露。
 
@@ -22,7 +22,6 @@
 | `data/repository/ContainerSettingsRepository.kt` | 容器 profile 选择、自定义 profile 列表、共享设备存储开关（DataStore） |
 | `data/repository/KeepaliveSettingsRepository.kt` | 后台保活常驻通知开关（AIEditorApp 监听后启停 Service） |
 | `data/repository/ThemeSettingsRepository.kt` | 应用主题模式（AUTO/DARK/LIGHT），兼容旧深色开关 |
-| `data/repository/LanguageSettingsRepository.kt` | 应用语言（BCP-47 tag，null 跟随系统），双写 DataStore+SharedPreferences |
 | `data/repository/LogSettingsRepository.kt` | 日志最低记录等级 |
 | `data/repository/LogFilterSettingsRepository.kt` | 日志查看器筛选偏好（等级/Tag/日期范围模式） |
 | `data/repository/VisionModelSettingsRepository.kt` | 识图专用模型（providerId+model） |
@@ -51,7 +50,7 @@
 | `presentation/component/DefaultModelsSection.kt` | 默认模型选择 |
 | `presentation/component/ContainerSettingsSection.kt` | 容器 profile 管理与共享存储开关 |
 | `presentation/component/PermissionsSettingsSection.kt` | 权限规则（全局/项目）管理与提升 |
-| `presentation/component/LanguageSettingsSection.kt` / `ThemeSelectionSheet.kt` | 语言选择 / 主题选择 |
+| `presentation/component/ThemeSelectionSheet.kt` | 主题选择 |
 | `presentation/component/SkillsScreen.kt` | 技能中心 UI |
 | `presentation/component/AboutSection.kt` | 关于页：统计、FAQ、开源致谢、版本比较工具 |
 | `presentation/component/SearchUtils.kt` | 通用搜索工具 |
@@ -123,7 +122,7 @@ catalog 刷新：App 启动调 `refreshFromNetworkIfStale()`；`init` 中监听 
 | `RemoteConnectionSettings.resolveSshConfigOrNull` | 供启动连接链路把 v2 占位配置解析成真实 `RemoteConnectionConfig` |
 | `ZthTierRepository` | 被 `ZthGuardAggregateFacade.prepareEnv` 与安全设置页消费 |
 | `KeepaliveSettingsRepository` | `AIEditorApp` 监听 `enabledFlow` 启停 `TerminalKeepaliveService` |
-| `ThemeSettingsRepository` / `LanguageSettingsRepository` | `AIEditorApp` 监听应用主题 / `AppCompatDelegate.setApplicationLocales` |
+| `ThemeSettingsRepository` | `AIEditorApp` 监听应用主题 |
 | 备份模块 | 备份/还原各设置项调用本模块各仓库的 `snapshot()`/`restore()`（Theme/Log/Keepalive/Vision/Compaction/Default/Compatibility 等） |
 
 ## 5. 关键设计点与约束

@@ -139,7 +139,6 @@ fun SettingsScreen(
     val currentProjectName by viewModel.currentProjectName.collectAsStateWithLifecycle()
     val keepaliveEnabled by viewModel.keepaliveEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val languageTag by viewModel.languageTag.collectAsStateWithLifecycle()
     val visionProviderId by viewModel.visionProviderId.collectAsStateWithLifecycle()
     val visionModel by viewModel.visionModel.collectAsStateWithLifecycle()
     val compactionProviderId by viewModel.compactionProviderId.collectAsStateWithLifecycle()
@@ -158,14 +157,6 @@ fun SettingsScreen(
     var editingMcp by remember { mutableStateOf<McpServerConfig?>(null) }
     var showContainerAddSheet by remember { mutableStateOf(false) }
     var showThemeSheet by remember { mutableStateOf(false) }
-    var showLanguageSheet by remember { mutableStateOf(false) }
-
-    val currentLanguageDisplayName = if (languageTag.isNullOrBlank()) {
-        stringResource(R.string.language_follow_system)
-    } else {
-        com.R.codecore.core.util.LanguageRegistry.languages.firstOrNull { it.tag == languageTag }?.displayName
-            ?: stringResource(R.string.language_follow_system)
-    }
 
     // RC62：跨屏跳转（terminal_settings → settings → RemoteServers）：接收来自 SettingsViewModel
     //   的 openSection 请求，切到 SettingsScreen 内部的 section。
@@ -291,8 +282,6 @@ fun SettingsScreen(
                     onOpenThemeSheet = { showThemeSheet = true },
                     keepaliveEnabled = keepaliveEnabled,
                     onToggleKeepalive = { viewModel.setKeepaliveEnabled(it) },
-                    currentLanguageDisplayName = currentLanguageDisplayName,
-                    onOpenLanguageSheet = { showLanguageSheet = true },
                     onOpen = {
                         if (it == SettingsSection.Logs) {
                             logReturnSection = SettingsSection.Menu
@@ -443,14 +432,6 @@ fun SettingsScreen(
         )
     }
 
-    if (showLanguageSheet) {
-        LanguageSelectionSheet(
-            currentTag = languageTag,
-            onSelect = { viewModel.setLanguage(it) },
-            onDismiss = { showLanguageSheet = false }
-        )
-    }
-
     if (showAddProviderSheet) {
         AddProviderSheet(
             viewModel = viewModel,
@@ -495,8 +476,6 @@ internal fun SettingsMenu(
     onOpenThemeSheet: () -> Unit,
     keepaliveEnabled: Boolean,
     onToggleKeepalive: (Boolean) -> Unit,
-    currentLanguageDisplayName: String,
-    onOpenLanguageSheet: () -> Unit,
     onOpen: (SettingsSection) -> Unit,
     onNavigateToTerminalSettings: () -> Unit = {},
     onNavigateToNetProxy: () -> Unit = {},
@@ -674,15 +653,6 @@ internal fun SettingsMenu(
             icon = FeatherIcons.Moon,
             keywords = listOf("theme", "appearance", "外观", "深色", "浅色", "模式", "主题"),
             action = onOpenThemeSheet
-        ),
-        MenuItem(
-            section = null,
-            group = groupSystem,
-            title = stringResource(R.string.settings_language),
-            subtitle = stringResource(R.string.settings_log_current, currentLanguageDisplayName),
-            icon = FeatherIcons.Globe,
-            keywords = listOf("language", "语言", "i18n", "多语言", "locale", "localeConfig"),
-            action = onOpenLanguageSheet
         ),
         MenuItem(
             section = null,

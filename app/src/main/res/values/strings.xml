@@ -37,10 +37,6 @@
     <string name="settings_security">安全</string>
     <string name="settings_remote_audit_logs">远程连接审计</string>
     <string name="settings_about">关于</string>
-    <string name="settings_language">语言</string>
-
-    <!-- 语言设置页 -->
-    <string name="language_follow_system">跟随系统</string>
 
     <!-- SettingsScreen 通用 -->
     <string name="common_back">返回</string>

@@ -31,7 +31,7 @@ import com.R.codecore.feature.settings.data.repository.CompactionModelSettingsRe
 import com.R.codecore.feature.settings.data.repository.ExecutionModeHolder
 import com.R.codecore.feature.settings.data.repository.ExecutionModeRepository
 import com.R.codecore.feature.settings.data.repository.KeepaliveSettingsRepository
-import com.R.codecore.feature.settings.data.repository.LanguageSettingsRepository
+
 import com.R.codecore.core.util.LogLineParser
 import com.R.codecore.feature.settings.data.repository.LogFilterSettingsRepository
 import com.R.codecore.feature.settings.data.repository.LogSettingsRepository
@@ -105,7 +105,6 @@ class SettingsViewModel @Inject constructor(
     private val logFilterSettingsRepository: LogFilterSettingsRepository,
     private val themeSettingsRepository: ThemeSettingsRepository,
     private val keepaliveSettingsRepository: KeepaliveSettingsRepository,
-    private val languageSettingsRepository: LanguageSettingsRepository,
     private val mcpConfigRepository: McpConfigRepository,
     private val mcpManager: McpManager,
     private val mcpServerManager: McpServerManager,
@@ -199,10 +198,6 @@ class SettingsViewModel @Inject constructor(
 
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
-
-    /** 用户选择的应用语言 tag（null 表示跟随系统）。 */
-    private val _languageTag = MutableStateFlow<String?>(null)
-    val languageTag: StateFlow<String?> = _languageTag.asStateFlow()
 
     private val _mcpServers = MutableStateFlow<List<McpServerConfig>>(emptyList())
     val mcpServers: StateFlow<List<McpServerConfig>> = _mcpServers.asStateFlow()
@@ -391,12 +386,6 @@ class SettingsViewModel @Inject constructor(
             launch {
                 themeSettingsRepository.themeModeFlow.collectLatest {
                     _themeMode.value = it
-                }
-            }
-
-            launch {
-                languageSettingsRepository.languageFlow.collectLatest {
-                    _languageTag.value = it
                 }
             }
 
@@ -877,13 +866,6 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: AppThemeMode) {
         viewModelScope.launch {
             themeSettingsRepository.setThemeMode(mode)
-        }
-    }
-
-    /** 设置应用语言；tag 为空字符串或 null 表示跟随系统。 */
-    fun setLanguage(tag: String?) {
-        viewModelScope.launch {
-            languageSettingsRepository.setLanguage(tag?.takeIf { it.isNotBlank() })
         }
     }
 

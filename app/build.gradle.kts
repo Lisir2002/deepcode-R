@@ -404,9 +404,6 @@ dependencies {
     implementation("androidx.core:core:1.16.0")
     // WebView 文档起始注入（addDocumentStartJavaScript，用于内置浏览器动态数据捕获的 fetch/XHR/WS/SSE 插桩）
     implementation("androidx.webkit:webkit:1.13.0")
-    // AppCompat — 提供 AppCompatDelegate.setApplicationLocales 实现 per-app 语言切换
-    implementation("androidx.appcompat:appcompat:1.7.0")
-
     // Testing
     testImplementation("junit:junit:4.13.2")
     // MigrationSchemaConsistencyTest：解析 Room 导出的 schema JSON（app/schemas/）做迁移一致性校验

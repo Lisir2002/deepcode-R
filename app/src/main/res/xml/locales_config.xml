@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 应用锁定中文：只支持 zh，不再提供英文（双语切换功能已移除）。 -->
 <locale-config xmlns:android="http://schemas.android.com/apk/res/android">
     <locale android:name="zh" />
-    <locale android:name="en" />
 </locale-config>

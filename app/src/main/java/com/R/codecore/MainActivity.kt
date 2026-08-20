@@ -67,8 +67,6 @@ import com.R.codecore.feature.terminal.presentation.component.TerminalSettingsSc
 import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -84,10 +82,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var themeSettings: ThemeSettingsRepository
-
-    /** 语言偏好：attachBaseContext 时同步读取以应用 locale，变化时 recreate。 */
-    @Inject
-    lateinit var languageSettings: com.R.codecore.feature.settings.data.repository.LanguageSettingsRepository
 
     /** App 回到前台时，远程模式下若 SSH 断了触发重连。 */
     @Inject
@@ -130,21 +124,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun attachBaseContext(newBase: android.content.Context) {
-        // 在 Activity 创建前同步应用用户选择的语言，确保冷启动也生效。
-        // Hilt 尚未注入，直接从 SharedPreferences 同步读取。
-        val tag = newBase.getSharedPreferences("language_prefs_sync", android.content.Context.MODE_PRIVATE)
-            .getString("language_tag", null)
-        val context = if (tag.isNullOrBlank()) {
-            newBase
-        } else {
-            val config = android.content.res.Configuration(newBase.resources.configuration)
-            config.setLocale(java.util.Locale.forLanguageTag(tag))
-            newBase.createConfigurationContext(config)
-        }
-        super.attachBaseContext(context)
-    }
-
     @Suppress("DEPRECATION") // 全局更新 application resources locale，createConfigurationContext 无法替代
     override fun onCreate(savedInstanceState: Bundle?) {
         // RC61b：enableEdgeToEdge() 必须在 super.onCreate() 之后调用（ComponentActivity 基类要求）。
@@ -152,25 +131,6 @@ class MainActivity : ComponentActivity() {
         // 会在低版本 AndroidX Activity 上触发 NPE 或警告，导致冷启动偶发 1-2s 秒退。
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // 监听语言偏好变化，更新 Application/Activity locale 后重建。
-        lifecycleScope.launch {
-            languageSettings.languageFlow.drop(1).distinctUntilChanged().collect { tag ->
-                // 同步更新 Application context 的 Configuration，确保非 Activity 来源的
-                // Resources（如 ViewModel 中 context.getString）也能拿到正确 locale。
-                val app = applicationContext
-                if (tag.isNullOrBlank()) {
-                    // 跟随系统：重置为系统默认 Configuration
-                    val sysConfig = android.content.res.Configuration(resources.configuration)
-                    sysConfig.setLocale(java.util.Locale.getDefault())
-                    app.resources.updateConfiguration(sysConfig, app.resources.displayMetrics)
-                } else {
-                    val config = android.content.res.Configuration(app.resources.configuration)
-                    config.setLocale(java.util.Locale.forLanguageTag(tag))
-                    app.resources.updateConfiguration(config, app.resources.displayMetrics)
-                }
-                recreate()
-            }
-        }
         requestLegacyStoragePermissionIfNeeded()
         // API 30+：全局切到 ADJUST_NOTHING，由 rememberImeBottomInset() 接管键盘内边距。
         // 必须在 Activity 级别统一设置，不能在每个 composable 里各自 save/restore——
