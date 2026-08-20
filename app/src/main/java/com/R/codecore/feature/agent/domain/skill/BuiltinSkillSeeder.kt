@@ -9,7 +9,7 @@ import java.io.File
 /**
  * 内置技能首启引导（Seeder）。
  *
- * 把随 App 预置的 `assets/skills/*`（每个子目录一个技能：SKILL.md + entry/ 等）在**首次**扫描时
+ * 把随 App 预置的 `assets/skills`（每个子目录一个技能：SKILL.md + entry/ 等）在**首次**扫描时
  * 引导（copy）进本地技能根目录 `skillsRoot`，使内置技能与用户技能走同一 [SkillSource] 扫描链路。
  *
  * - **幂等**：目标目录已存在则跳过，绝不覆盖；已存在的 SDK 升级仅补齐“不存在的目录”，满足“首启”语义。
