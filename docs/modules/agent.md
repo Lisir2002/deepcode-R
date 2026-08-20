@@ -125,6 +125,17 @@
 - `Skill` 支持三种执行形态：PROMPT（注入指令，无执行）、SCRIPT（容器内沙箱执行入口脚本，需 ZTH 审批）、MCP（映射到已连接 MCP 工具）。
 - `SkillParser` 解析带 Frontmatter 的技能文件（版本/作者/标签/适用模式/依赖/requiredTools/requiresRuntime 等），`SkillRepository` 管理来源，`SkillStateRepository` 用 Room 持久化启用状态，`LoadSkillTool` 加载执行，`SkillExecutor` 负责运行。
 
+#### 3.6.1 技能 × Agent × 工具 三方协作（设计方向，见 [skill-collaboration-design](../plan-docs/skill-collaboration-design.md)）
+
+> 以下为 📝 草案设计方向，尚未落地实现。触发模型维持「AI 驱动 loadSkill」不变，目标是把三方职责与协作调度理顺：技能携带自己的上下文与工具、自己声明产出事件，主循环不再感知具体工具名。四个收敛方向：
+
+1. **依赖真正注入**：`resolveSkillWithDependencies` 目前只校验。`LoadSkillTool` 按依赖序先加载依赖——PROMPT 依赖的 `instructions` 拼接到返回结果供 AI 参考；SCRIPT/MCP 依赖按其类型在技能主体前按需预执行/校验。
+2. **上下文贯穿 `SkillExecutionContext`**：新增 `SkillExecutionContext(sessionId, mode, projectPath, executionMode)`，由 `AgentContext` 派生。`LoadSkillTool` 改重写 `executeWithContext(args, context)`，`SkillExecutor.execute` 签名带 `SkillExecutionContext`，脚本审批与审计的 `sessionId` 贯通会话（替代当前 `null`），解决上下文脱节。
+3. **专属工具动态注册/回收 `SkillToolBindingManager`**（@Singleton）：对 `skill.requiredTools` 逐项校验全局已注册工具存在且启用，或动态 `ToolRegistry.register` 技能自带 `AgentTool` 并记入回收表；技能加载成功 → `registerForSkill`，禁用/卸载 → `releaseForSkill`（只回收动态注册工具，不删内置全局工具）。工具名命名空间化（`<skillId>.<name>`）规避全局注册表跨会话冲突。
+4. **事件自声明**：`AgentTool` 增加 open 钩子 `buildPostExecutionEvent(toolCall, result, context): ToolEvent?`；删除 `StatefulAgentWorkflow.publishToolEvent` 中整段 `when(toolName)` 硬编码，改为按 `toolRegistry.getTool(name)?.buildPostExecutionEvent(...)?.let { toolEventBus.publish(it) }`。各分支迁入各自工具类（writeFile→`FileWritten`、todo→`TodoUpdated`、memory→`StateMemoryUpdated`、switchMode→`StateModeChanged`、Bash→`FileSystemMutated`、loadSkill→`StateSkillLoaded`），与 `AgentTool.provides` 能力元数据呼应。
+
+**新增文件**：`domain/skill/SkillExecutionContext.kt`、`domain/skill/SkillToolBindingManager.kt`。**相关改动**：`LoadSkillTool`（executeWithContext + 依赖注入 + 注册工具 + 事件钩子）、`SkillExecutor`（带上下文）、`AgentTool`（新增钩子）、`StatefulAgentWorkflow`（删除硬编码 when）、`AgentModule`（DI 注册 `SkillToolBindingManager`）。
+
 ### 3.7 ZTH 零信任防护（ZthGuardAggregateFacade）
 
 - 聚合门面串联四方联动：熔断器（`ZthCircuitBreakerManager`）、计划审批（`ZthPlanApprovalManagerWrapper`）、确认卡片（`ZthConfirmationCardManager` + `ZthConfirmationCardStateMachine`）、检查点（`ZthCheckpointRepository`）。
