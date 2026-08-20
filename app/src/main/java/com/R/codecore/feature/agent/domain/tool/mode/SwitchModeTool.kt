@@ -8,6 +8,8 @@ import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.tool.AbstractContextualTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
 import com.R.codecore.feature.agent.domain.tool.PendingToolPermission
+import com.R.codecore.feature.agent.domain.tool.ToolCall
+import com.R.codecore.feature.agent.domain.tool.ToolEvent
 import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
 import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
@@ -117,6 +119,17 @@ class SwitchModeTool @Inject constructor(
         )
 
         return ToolResult.Success(JsonPrimitive("成功切换至 ${targetMode.name} 模式。"))
+    }
+
+    /** L7 事件自声明：切换成功后广播 state.mode.changed，触发上下文增量刷新。 */
+    override fun buildPostExecutionEvent(
+        toolCall: ToolCall,
+        result: ToolResult,
+        context: AgentContext
+    ): ToolEvent? {
+        val to = (toolCall.arguments["mode"] as? JsonPrimitive)?.contentOrNull ?: ""
+        val reason = (toolCall.arguments["reason"] as? JsonPrimitive)?.contentOrNull ?: ""
+        return ToolEvent.StateModeChanged(from = context.mode.name, to = to, reason = reason, sessionId = context.sessionId)
     }
 
     /**

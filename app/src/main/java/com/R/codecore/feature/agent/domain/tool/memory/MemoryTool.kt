@@ -49,6 +49,20 @@ class MemoryTool @Inject constructor(
     override val description =
         "管理 AI 的长期记忆。当用户告知新的偏好、项目约定、架构设计，或者你发现了有价值的规律时，使用此工具将其永久记录。"
 
+    /** L7 事件自声明：仅写操作（save/edit/delete）广播 state.memory.updated；read/list 不触发。 */
+    override fun buildPostExecutionEvent(
+        toolCall: ToolCall,
+        result: ToolResult,
+        context: AgentContext
+    ): ToolEvent? {
+        val action = (toolCall.arguments["action"] as? JsonPrimitive)?.contentOrNull
+        if (action !in setOf("save", "edit", "delete")) return null
+        val memoryKey = (toolCall.arguments["name"] as? JsonPrimitive)?.contentOrNull ?: ""
+        val summary = (result as? ToolResult.Success)?.data
+            ?.let { (it as? JsonPrimitive)?.contentOrNull } ?: ""
+        return ToolEvent.StateMemoryUpdated(memoryKey = memoryKey, summary = summary, sessionId = context.sessionId)
+    }
+
     /** edits 数组单个元素的结构，供 function-calling 的 items schema，语义与 editFile 一致。 */
     private val editItemSchema: Map<String, Any> = mapOf(
         "type" to "object",

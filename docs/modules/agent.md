@@ -50,7 +50,7 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `tool/AgentTool.kt` | 工具基类：`ToolResult`（Success/Error/Partial）、`ToolParameter`、`ToolCapability`、`ToolPermissionPolicy`、`RetryPolicy`/`ToolErrorClass`（L3 错误分类）、`provides/consumes`（L3 结果协议）、`dependsOn`（L4 依赖）、`subscribedEvents`（L7 事件）、`StreamingAgentTool` 流式接口、`ToolCall` |
+| `tool/AgentTool.kt` | 工具基类：`ToolResult`（Success/Error/Partial）、`ToolParameter`、`ToolCapability`、`ToolPermissionPolicy`、`RetryPolicy`/`ToolErrorClass`（L3 错误分类）、`provides/consumes`（L3 结果协议）、`dependsOn`（L4 依赖）、`subscribedEvents`（L7 事件）、`buildPostExecutionEvent`（L7 事件自声明钩子，事件由工具自声取代工作流硬编码 mapping）、`StreamingAgentTool` 流式接口、`ToolCall` |
 | `tool/ToolRegistry.kt` | 单例工具注册表（`ConcurrentHashMap`），注册/查找/列出可用工具 |
 | `tool/ToolResultCache.kt` | L5 结果缓存：会话级 + TTL（默认 60s），文件类工具按 mtime 失效 |
 | `tool/ToolResultTypeRegistry.kt` | L3 结构化结果类型登记 |
@@ -100,6 +100,7 @@
 - 所有能力以 `AgentTool` 子类表达：声明 `name`、`description`、`parameters`、`capabilities`、`permissionPolicy`，实现 `execute`；需要过程输出的工具同时实现 `StreamingAgentTool.executeStream`。
 - `ToolRegistry`（单例）统一注册与按名查找；`AIAgentViewModel` 从注册表取全部工具传给工作流，再转换为各 Provider 的 function-calling schema（`toToolDefinition`/`toJsonSchema`，MCP 工具可透传服务端原始 inputSchema）。
 - 工具间协作维度：`provides/consumes`（L3 结果类型直连）、`dependsOn`（L4 依赖调度）、`subscribedEvents`（L7 事件总线）、`ToolResultCache`（L5 结果去重）。
+- **L7 事件自声明（事件解耦）**：工具成功产出事件由工具自身经 `AgentTool.buildPostExecutionEvent(toolCall, result, context)` 钩子声明（file.edited / file.written / file.mutated / todo.updated / state.memory.updated / state.skill.loaded / state.mode.changed）；`StatefulAgentWorkflow.publishToolEvent` 只做 `toolRegistry.getTool(name)` → 统一查询钩子并 `toolEventBus.publish`，不再硬编码 `when(toolName)`，新增工具无需改动工作流。
 
 ### 3.3 容器 / 命令执行（CommandEngine）
 

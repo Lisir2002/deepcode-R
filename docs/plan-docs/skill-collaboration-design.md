@@ -90,7 +90,7 @@ enum class SkillScope {
 ## 6. 里程碑（R1 已完成素，剩余规划）
 
 - [x] 技能作用域分级（GLOBAL/COMMON/AGENT）+ 上下文贯穿 + 工具绑定。
-- [ ] M1：`AgentTool.buildPostExecutionEvent` 钩子 + 迁移 `loadSkill` 事件；工作流 `publishToolEvent` 由硬编码 `when` 改为查钩子；其余工具（writeFile/todo/memory/switchMode/Bash）逐步迁移。
+- [x] M1：`AgentTool.buildPostExecutionEvent` 钩子 + 迁移全部既有事件分支（writeFile/todo/memory/switchMode/Bash/loadSkill）；工作流 `publishToolEvent` 由硬编码 `when` 改为查钩子（`toolRegistry.getTool(name)` → `buildPostExecutionEvent`），不再感知具体工具名。
 - [ ] M2：多 Agent 激活时按作用域动态注册/回收（`SkillToolBindingManager` 在 agent 激活处接入）。
 
 > 注：R1 中的事件解耦（M1）为纯架构清洁，不改变任何可观测行为，独立里程碑推进，避免挤压发布窗口。
