@@ -226,7 +226,10 @@ class CheckEnvironmentTool @Inject constructor(
          *
          * 关键修复：
          * - 包管理器 token（apk/apt）不返回自身作为组件，避免探测与项目构建无关的包管理器名；
-         * - 命令程序名规范化为已知组件名（python3→Python、node→Node），确保 UI 展示和 bin 映射一致。
+         * - 命令程序名规范化为已知组件名（python3→Python、node→Node），确保 UI 展示和 bin 映射一致；
+         * - 段首 rawToken 必须是「合理的程序名」：纯数字（`head -1` 中的 `1`、`tail -n 4` 中的 `4` 段首被错误解析时）、
+         *   以 `-` 开头的 flag（`--version`、`-n` 被当段首）、绝对/相对路径（`/tmp/x.log`）、含 `.ext` 的路径片段
+         *   一律过滤为非组件，避免 UI 出现名为「1」「2」「/tmp/sdk.log」的无意义「缺失」项（BusyBox 管道输出段曾被误拆为段首）。
          */
         fun inferComponentsFromCommand(command: String): List<String> {
             if (command.isBlank()) return emptyList()
@@ -241,6 +244,7 @@ class CheckEnvironmentTool @Inject constructor(
                     ?.trim()
                     ?: continue
                 if (rawToken.isBlank()) continue
+                if (looksLikeNonProgramToken(rawToken)) continue
                 // 1. 已知映射优先（规范化组件名）
                 val normalized = TOKEN_TO_COMPONENT[rawToken]
                 if (normalized != null) {
@@ -260,6 +264,62 @@ class CheckEnvironmentTool @Inject constructor(
         }
 
         private val ENV_ASSIGN = Regex("^[A-Za-z_][A-Za-z0-9_]*=.*$")
+
+        /**
+         * rawToken 看起来像「非程序名」应直接跳过：纯数字、flag、路径、常见日志后缀、空壳。
+         * 宁可少探测不可乱探测——命中 1 次 "1" 的「缺失」条目比漏探测一个罕见 build.sh 要难看得多。
+         */
+        private fun looksLikeNonProgramToken(raw: String): Boolean {
+            if (raw.isEmpty()) return true
+            // 纯数字（head/seq/tail 的参数、管道中的段）
+            if (raw.all { it.isDigit() }) return true
+            // flag（--version、-n 之类）
+            if (raw.startsWith("-")) return true
+            // 绝对/相对路径（含 / 的路径片段；取 basename 后仍含 / 一般不可能）
+            if (raw.contains('/')) return true
+            // 典型路径/文件后缀：日志/临时/脚本路径文本，不会是程序名
+            if (raw.endsWith(".log") || raw.endsWith(".txt") ||
+                raw.endsWith(".tmp") || raw.endsWith(".out") ||
+                raw.endsWith(".err") || raw.endsWith(".json") ||
+                raw.endsWith(".zip") || raw.endsWith(".apk")
+            ) return true
+            // 完全由非字母数字符号组成（| & ; 的边界残片）
+            if (raw.none { it.isLetterOrDigit() }) return true
+            return false
+        }
+
+        /**
+         * 把 "--version" 的结果里"看起来像 stderr 报错"的内容清空，避免污染 UI 的「版本号」列。
+         * 脚本层已用退出码 rc==0 做了主保护；这里做解析层兜底，防止 BusyBox 工具在某些情况下
+         * 退出码仍为 0 但输出仍然是 Usage/unrecognized option 时（如旧脚本版本回退/未来回归）
+         * 把报错文本当「installed 版本号」展示。只做启发式，误伤面为 0（清空即不显示版本号）。
+         *
+         * 访问级别：internal + @PublishedApi，方便同包测试与外层断言。
+         */
+        private val STDERR_TELLTALES = listOf(
+            "unrecognized option",
+            "invalid option",
+            "unknown option",
+            "Usage:",
+            "Usage :",
+            "illegal option",
+            "try --help",
+            "Try '--help'",
+            "option requires an argument",
+            "Bad port",
+            "No such file or directory",
+            "Permission denied"
+        )
+
+        internal fun sanitizeVersion(ver: String): String {
+            val v = ver.trim()
+            if (v.isEmpty()) return ""
+            val lower = v.lowercase()
+            if (STDERR_TELLTALES.any { sig -> sig.lowercase() in lower }) return ""
+            // BusyBox 的 Usage 段典型 "multi-call binary" 前缀也像报错
+            if ("multi-call binary" in lower) return ""
+            return v
+        }
     }
 
     override val name = "check_environment"
@@ -347,7 +407,19 @@ class CheckEnvironmentTool @Inject constructor(
               local name="${'$'}1" bin="${'$'}2"
               if command -v "${'$'}bin" >/dev/null 2>&1; then
                 local path="${'$'}(command -v "${'$'}bin")"
-                local ver="${'$'}("${'$'}bin" --version 2>&1 | grep -v '^${'$'}' | head -1)"
+                local raw_ver rc
+                # 用临时文件捕获 stderr/stdout 与真实退出码；管道 `| head` 会把 $? 覆盖为 head 的退出码，
+                # 导致 BusyBox 工具无 --version 支持时的错误 stderr 被误判为版本号（退出码 0）。
+                raw_ver="$("${'$'}bin" --version 2>&1)"
+                rc="${'$'}?"
+                if [ "${'$'}rc" -eq 0 ]; then
+                  local ver
+                  ver="$(printf '%s\n' "${'$'}raw_ver" | grep -v '^${'$'}' | head -1)"
+                else
+                  # 程序不支持 --version（典型 BusyBox 工具 tail/grep 等）：留空 version，
+                  # 不让 stderr 的 "unrecognized option: version" 被 UI 当版本号展示为「已安装」。
+                  ver=""
+                fi
                 echo "${'$'}name|installed|${'$'}path|${'$'}ver"
               else
                 echo "${'$'}name|missing||"
@@ -417,7 +489,7 @@ class CheckEnvironmentTool @Inject constructor(
                     val name = parts[0]
                     val status = parts[1]
                     val path = parts[2]
-                    val version = parts.getOrElse(3) { "" }
+                    val version = sanitizeVersion(parts.getOrElse(3) { "" })
                     // 已存在（如 Android SDK 的 ANDROID_HOME 补充行）时保留非 missing 状态
                     if (status == "installed" || !found.containsKey(name)) {
                         found[name] = Triple(status, path, version)
