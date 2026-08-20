@@ -80,7 +80,10 @@ class LoadSkillTool @Inject constructor(
 
     override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
         // 缺省路径：无 AgentContext 时以「无会话上下文」执行（兼容无上下文调用场景）。
-        return executeWithContext(args, AgentContext(currentFile = null, selectedCode = null, projectRoot = ""))
+        return executeWithContext(
+            args,
+            AgentContext(currentFile = null, selectedCode = null, projectRoot = "", language = null)
+        )
     }
 
     override suspend fun executeWithContext(
