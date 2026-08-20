@@ -481,12 +481,12 @@ private fun TerminalFirstRunBanner(
     val showDismiss: Boolean
     when (banner) {
         TerminalViewModel.BannerType.ContainerNotInstalled -> {
-            title = "本地容器还未初始化"
+            title = stringResource(R.string.ui___________aac0fde9)
             desc = "容器未就绪时仅可使用手机原生 shell（命令较少）。\n点下方「初始化环境」解锁 Alpine Linux + PRoot 以及 Python / Node / Git 等 6 大功能包。"
             showDismiss = false
         }
         TerminalViewModel.BannerType.PythonMissing -> {
-            title = "AI 代码运行需要 Python"
+            title = stringResource(R.string.ui_ai_8049975d)
             desc = "AI 的「Run Code / Search / git diff」依赖 Python 运行时。建议先一键安装 AI 推荐组合。"
             showDismiss = true
         }
@@ -539,7 +539,7 @@ private fun TerminalFirstRunBanner(
                         )
                     ) {
                         Text(
-                            "暂不提醒",
+                            stringResource(R.string.ui______c8c4516c),
                             fontSize = ButtonSpec.TextFontSize,
                         )
                     }
@@ -558,24 +558,24 @@ private fun TerminalFirstRunBanner(
                         PrimaryButton(
                             onClick = onInitContainer,
                             icon = FeatherIcons.Plus,
-                            text = "初始化环境"
+                            text = stringResource(R.string.ui_______30947f5e)
                         )
                         SecondaryButton(
                             onClick = onGoSettings,
                             icon = FeatherIcons.Settings,
-                            text = "去终端设置"
+                            text = stringResource(R.string.ui_______dc25a273)
                         )
                     }
                     TerminalViewModel.BannerType.PythonMissing -> {
                         PrimaryButton(
                             onClick = onInstallRecommended,
                             icon = FeatherIcons.Cpu,
-                            text = "立即装 Python"
+                            text = stringResource(R.string.ui_____ebd237c5)
                         )
                         SecondaryButton(
                             onClick = onGoSettings,
                             icon = FeatherIcons.Settings,
-                            text = "去终端设置"
+                            text = stringResource(R.string.ui_______dc25a273_2)
                         )
                     }
                 }

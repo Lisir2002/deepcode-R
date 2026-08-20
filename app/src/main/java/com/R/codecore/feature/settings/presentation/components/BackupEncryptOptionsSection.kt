@@ -1,5 +1,6 @@
 package com.R.codecore.feature.settings.presentation.components
-
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,12 +48,12 @@ fun BackupEncryptOptionsSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "使用密码加密备份",
+                    text = stringResource(R.string.ui__________a9f97089),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "跨设备导入时使用同一密码解密，不依赖设备本地密钥",
+                    text = stringResource(R.string.ui______________1084389e),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -72,7 +73,7 @@ fun BackupEncryptOptionsSection(
                     OutlinedTextField(
                         value = password,
                         onValueChange = onPasswordChange,
-                        label = { Text("备份密码") },
+                        label = { Text(stringResource(R.string.ui______a1731a9b)) },
                         singleLine = true,
                         isError = passwordError != null,
                         supportingText = passwordError?.let { { Text(it) } },
@@ -82,7 +83,7 @@ fun BackupEncryptOptionsSection(
                     Spacer(Modifier.height(Spacing.sm))
 
                     Text(
-                        text = "加密范围",
+                        text = stringResource(R.string.ui______f0aacd4f),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -94,7 +95,7 @@ fun BackupEncryptOptionsSection(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            text = "全量加密（推荐）",
+                            text = stringResource(R.string.ui______cfd4afc8),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f)
                         )
@@ -114,7 +115,7 @@ fun BackupEncryptOptionsSection(
                     }
 
                     Text(
-                        text = "全量加密：tar.gz 整体加密，导入需密码；仅加密凭据：tar.gz 可见，但敏感字段密文",
+                        text = stringResource(R.string.ui______59590ca2),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

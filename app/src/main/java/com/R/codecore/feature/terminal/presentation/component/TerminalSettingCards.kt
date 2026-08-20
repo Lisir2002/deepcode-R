@@ -1,5 +1,7 @@
 package com.R.codecore.feature.terminal.presentation.component
 
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
@@ -140,7 +142,7 @@ internal fun SharedContainerEnvCard(
 ) {
     val archLabel: String = when (profileArch) {
         ContainerArch.ARM64 -> "arm64-v8a · PRoot"
-        ContainerArch.X86_64 -> "x86_64 · QEMU 转译 · PRoot"
+        ContainerArch.X86_64 -> stringResource(R.string.ui_x86_64_a2f3daf8)
     }
     val processingTextWhenReady: String? = run {
         // 安装/卸载功能包时，initProgress 会是 BundleInstalling / BundleUninstalling（而非 Ready），
@@ -156,19 +158,19 @@ internal fun SharedContainerEnvCard(
                 "正在安装${bundleId.stableKey}…"
             initProgress is ContainerInitState.BundleUninstalling && bundleId != null ->
                 "正在卸载${bundleId.stableKey}…"
-            customInstallState is BundleInstallState.Installing -> "正在安装自定义包…"
-            customInstallState is BundleInstallState.Uninstalling -> "正在卸载自定义包…"
+            customInstallState is BundleInstallState.Installing -> stringResource(R.string.ui__________0e1c26ee)
+            customInstallState is BundleInstallState.Uninstalling -> stringResource(R.string.ui__________b17be76a)
             else -> null
         }
     }
     val statusText = when (initProgress) {
-        is ContainerInitState.Idle -> "未初始化"
-        is ContainerInitState.ExtractingRootfs -> "正在解压 rootfs…"
-        ContainerInitState.DeployingProot -> "正在部署 proot…"
-        is ContainerInitState.Ready -> processingTextWhenReady ?: "已就绪"
+        is ContainerInitState.Idle -> stringResource(R.string.ui______aeade8e9)
+        is ContainerInitState.ExtractingRootfs -> stringResource(R.string.ui______c95456ed)
+        ContainerInitState.DeployingProot -> stringResource(R.string.ui______c5778ca3)
+        is ContainerInitState.Ready -> processingTextWhenReady ?: stringResource(R.string.ui_____c30ecc7a)
         is ContainerInitState.BundleInstalling ->
             "已就绪（正在安装${initProgress.bundleId?.stableKey ?: "功能包"}…）"
-        is ContainerInitState.BundleUninstalling -> "已就绪（正在卸载…）"
+        is ContainerInitState.BundleUninstalling -> stringResource(R.string.ui_____cc71b3ef)
         is ContainerInitState.Failed -> "失败：${initProgress.reason.take(20)}…"
     }
     val dotColor: Color = when {
@@ -200,7 +202,7 @@ internal fun SharedContainerEnvCard(
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(Spacing.sm))
-                Text(text = "本地容器环境", style = MaterialTheme.typography.titleMedium)
+                Text(text = stringResource(R.string.ui________3eb03d3e), style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.weight(1f))
                 Box(
                     modifier = Modifier
@@ -218,7 +220,7 @@ internal fun SharedContainerEnvCard(
             Text(
                 text = when {
                     containerInstalled -> "占用 $storageUsedMb MB · Alpine 3.21 · $archLabel"
-                    else -> "rootfs 解压后约 150 MB，按需安装 Bundle 后 300-500 MB"
+                    else -> stringResource(R.string.ui_rootfs_602d203f)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -228,21 +230,21 @@ internal fun SharedContainerEnvCard(
                     Spacer(modifier = Modifier.height(Spacing.sm))
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         if (!containerInstalled) {
-                            PrimaryButton(onClick = onInit, icon = FeatherIcons.Plus, text = "初始化环境")
+                            PrimaryButton(onClick = onInit, icon = FeatherIcons.Plus, text = stringResource(R.string.ui_______30947f5e))
                         }
                         if (containerInstalled) {
                             SecondaryButton(
                                 onClick = onPickMirror,
                                 icon = FeatherIcons.Globe,
-                                text = "切换镜像源"
+                                text = stringResource(R.string.ui_______52fffa6f)
                             )
-                            DangerTextButton(onClick = onReset, icon = FeatherIcons.Trash2, text = "重置环境")
+                            DangerTextButton(onClick = onReset, icon = FeatherIcons.Trash2, text = stringResource(R.string.ui______fce7f40c))
                         }
                     }
                 }
                 ContainerCardMode.INIT_ONLY -> if (!containerInstalled) {
                     Spacer(modifier = Modifier.height(Spacing.sm))
-                    PrimaryButton(onClick = onInit, icon = FeatherIcons.Plus, text = "初始化容器")
+                    PrimaryButton(onClick = onInit, icon = FeatherIcons.Plus, text = stringResource(R.string.ui_______89a64382))
                 }
                 ContainerCardMode.READ_ONLY -> Unit // no CTA
             }
@@ -284,14 +286,14 @@ internal fun SharedAiRecommendationStrip(
                 )
                 Spacer(modifier = Modifier.width(Spacing.sm))
                 Text(
-                    text = "AI 推荐组合（Python + rg + Git + Bash + Curl）",
+                    text = stringResource(R.string.ui_ai_b07ec14f),
                     style = MaterialTheme.typography.titleSmall
                 )
             }
             Spacer(modifier = Modifier.height(Spacing.xs))
             Text(
                 text = if (allInstalled) "全部组件已就绪，AI 运行代码块/搜索/git 开箱即用。"
-                else "共约 75 MB，覆盖 AI 代码运行与搜索。推荐使用 AI 功能的用户一键安装。",
+                else stringResource(R.string.ui____2441ae83),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -302,7 +304,7 @@ internal fun SharedAiRecommendationStrip(
                     leadingIcon = {
                         Icon(Icons.Default.Check, null, modifier = Modifier.size(ButtonSpec.ChipIndicatorSize))
                     },
-                    label = { Text("已完成", fontSize = ButtonSpec.TextFontSize) },
+                    label = { Text(stringResource(R.string.ui_____fad5222c), fontSize = ButtonSpec.TextFontSize) },
                     enabled = false
                 )
             } else {
@@ -310,7 +312,7 @@ internal fun SharedAiRecommendationStrip(
                     onClick = onInstallAll,
                     enabled = containerReady,
                     icon = FeatherIcons.Plus,
-                    text = "一键安装"
+                    text = stringResource(R.string.ui______04a0913e)
                 )
             }
         }
@@ -331,15 +333,15 @@ internal fun SharedBundleCard(
     data class Status(val text: String, val color: Color, val showProgress: Boolean)
     val status = when (state) {
         is BundleInstallState.NotInstalled ->
-            Status("未安装", MaterialTheme.colorScheme.onSurfaceVariant, false)
+            Status(stringResource(R.string.ui_____f45c4e65), MaterialTheme.colorScheme.onSurfaceVariant, false)
         is BundleInstallState.Installing ->
             Status("安装中…${state.line?.take(30) ?: ""}", SemanticColors.InProgress, true)
         is BundleInstallState.Uninstalling ->
-            Status("卸载中…", SemanticColors.InProgress, true)
+            Status(stringResource(R.string.ui_____69827c2b), SemanticColors.InProgress, true)
         is BundleInstallState.Failed ->
             Status("失败：${state.reason.take(16)}", SemanticColors.Error, false)
         is BundleInstallState.Installed ->
-            Status("已安装", SemanticColors.Success, false)
+            Status(stringResource(R.string.ui_____9d5bf2a1), SemanticColors.Success, false)
     }
 
     val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = TerminalCardsSpec.BorderAlpha)
@@ -390,7 +392,7 @@ internal fun SharedBundleCard(
                     is BundleInstallState.Installing -> "状态：${status.text.take(50)} …"
                     is BundleInstallState.Failed -> "状态：${status.text}"
                     is BundleInstallState.Installed -> "状态：已安装 · 配置版本 v${bundle.version}"
-                    is BundleInstallState.Uninstalling -> "状态：正在卸载…"
+                    is BundleInstallState.Uninstalling -> stringResource(R.string.ui____ef1eb44a)
                     else -> "状态：${status.text}"
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -404,15 +406,15 @@ internal fun SharedBundleCard(
             Spacer(modifier = Modifier.height(Spacing.sm))
             when (state) {
                 is BundleInstallState.Installed ->
-                    DangerOutlinedButton(onClick = onUninstall, icon = FeatherIcons.Trash2, text = "卸载")
+                    DangerOutlinedButton(onClick = onUninstall, icon = FeatherIcons.Trash2, text = stringResource(R.string.ui____81824cff))
                 is BundleInstallState.Installing, is BundleInstallState.Uninstalling ->
-                    ProgressPlaceholderButton(text = "处理中…")
+                    ProgressPlaceholderButton(text = stringResource(R.string.ui_____cf978c02))
                 else ->
                     PrimaryButton(
                         onClick = onInstall,
                         enabled = containerReady,
                         icon = FeatherIcons.Plus,
-                        text = "安装"
+                        text = stringResource(R.string.ui____e655a410_2)
                     )
             }
         }

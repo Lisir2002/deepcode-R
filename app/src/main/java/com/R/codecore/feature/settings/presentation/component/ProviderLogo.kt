@@ -46,7 +46,7 @@ fun modelBrandKey(modelName: String): String {
         // minimax 必须排在 grok 之前：minimaxai 等名称含 "xai"，否则会被 grok 规则误匹配
         target.contains("minimax") || target.contains("abab") -> "minimax"
         target.contains("moonshot") || target.contains("kimi") -> "moonshot"
-        target.contains("zhipu") || target.contains("智谱") || target.contains("bigmodel") || target.contains("glm") -> "zhipu"
+        target.contains("zhipu") || target.contains("通义") || target.contains("bigmodel") || target.contains("glm") -> "zhipu"
         target.contains("qwen") || target.contains("通义") -> "qwen"
         target.contains("deepseek") || target.contains("deep-seek") -> "deepseek"
         target.contains("grok") || target.contains("xai") -> "grok"

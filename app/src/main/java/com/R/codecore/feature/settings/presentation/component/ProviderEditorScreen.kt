@@ -763,12 +763,12 @@ internal fun defaultProviderBaseUrl(type: ProviderType): String = when (type) {
 private fun policyDisplayName(p: DefaultPolicy): String = when (p) {
     DefaultPolicy.STRICT -> "严格模式（推荐·默认）—— 和官方收录模型走同一规则，避免 RC62e 那种「全部模型都支持多模态」的副作用"
     DefaultPolicy.HEURISTIC -> "启发式模式（=RC62d）—— 按 probablyVision / probablyTools / probablyReasoning 的名字匹配自动判定"
-    DefaultPolicy.LAX -> "宽松模式（=RC62e）—— 所有未收录模型一律三能力开，小白拿不准先试试这个，不行再切回来"
+    DefaultPolicy.LAX -> "完全手动—— 三能力默认全关，必须在单模型齿轮按钮里手动勾选你要的能力"
     DefaultPolicy.MANUAL -> "完全手动—— 三能力默认全关，必须在单模型齿轮按钮里手动勾选你要的能力"
 }
 
 private fun viewImageGuardDisplayName(p: ViewImageUnknownGuardPolicy): String = when (p) {
-    ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL -> "自动兜底识图模型（推荐·默认）—— 聊天模型不能识图时，自动用设置里的「识图专用模型」理解图片再把文本送回去"
+    ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL -> "立即报错并提醒配置 —— 聊天模型不能识图时，直接提示用户去设置里配置专用识图模型或手动覆盖，方便排查"
     ViewImageUnknownGuardPolicy.FAIL_FAST -> "立即报错并提醒配置 —— 聊天模型不能识图时，直接提示用户去设置里配置专用识图模型或手动覆盖，方便排查"
 }
 
@@ -788,7 +788,7 @@ private fun CompatibilityPolicyDropdown(
             value = policyDisplayName(currentPolicy),
             onValueChange = { },
             readOnly = true,
-            label = { Text("兼容端点 · 能力判定默认策略") },
+            label = { Text(stringResource(R.string.ui______d0034676)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .fillMaxWidth()
@@ -836,7 +836,7 @@ private fun ViewImageGuardDropdown(
             value = viewImageGuardDisplayName(current),
             onValueChange = { },
             readOnly = true,
-            label = { Text("viewImage 识图工具守卫策略") },
+            label = { Text(stringResource(R.string.ui_viewimage_1d14f381)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .fillMaxWidth()
@@ -850,7 +850,7 @@ private fun ViewImageGuardDropdown(
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Text(if (g == ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL) "自动兜底识图模型（推荐）" else "立即报错", fontWeight = FontWeight.SemiBold)
+                            Text(if (g == ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL) stringResource(R.string.ui__________14922199) else stringResource(R.string.ui______4a7b080f), fontWeight = FontWeight.SemiBold)
                             Text(
                                 viewImageGuardDisplayName(g).substringAfter("—— ").trim(),
                                 style = MaterialTheme.typography.bodySmall,

@@ -1,5 +1,6 @@
 package com.R.codecore.feature.proxy.presentation.component
-
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -129,10 +130,10 @@ fun ProxyNodesScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             AppTopAppBar(
-                title = "节点管理",
+                title = stringResource(R.string.ui______b26d228a_2),
                 onNavigateBack = onNavigateBack,
                 navigationIcon = FeatherIcons.ArrowLeft,
-                navigationContentDescription = "返回",
+                navigationContentDescription = stringResource(R.string.ui____5f411223_2),
                 actions = {
                     IconButton(onClick = {
                         val id = activeProfileId ?: return@IconButton
@@ -141,7 +142,7 @@ fun ProxyNodesScreen(
                     }) {
                         Icon(
                             imageVector = FeatherIcons.RefreshCw,
-                            contentDescription = "刷新",
+                            contentDescription = stringResource(R.string.ui____694fc5ef),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -152,13 +153,13 @@ fun ProxyNodesScreen(
         when {
             profiles.isEmpty() -> AppEmptyState(
                 icon = FeatherIcons.Zap,
-                title = "还没有代理配置",
-                subtitle = "请先到「网络代理」页导入订阅或手动配置"
+                title = stringResource(R.string.ui_________cf00a0da),
+                subtitle = stringResource(R.string.ui_____94418224)
             )
             activeProfileId == null -> AppEmptyState(
                 icon = FeatherIcons.Zap,
-                title = "尚未选择活跃配置",
-                subtitle = "请先到「网络代理」页把某个配置设为活跃"
+                title = stringResource(R.string.ui__________8e8c2508),
+                subtitle = stringResource(R.string.ui_____bab1bef4)
             )
             else -> NodeManagerContent(
                 viewModel = viewModel,
@@ -308,7 +309,7 @@ private fun StatusHero(
                 )
                 Spacer(Modifier.width(Spacing.sm))
                 Text(
-                    text = if (enabled) "代理已开启" else "代理已关闭",
+                    text = if (enabled) stringResource(R.string.ui_______4d1f56d6_2) else stringResource(R.string.ui_______b5fb1ee7_2),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -366,9 +367,9 @@ private fun StatusHero(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = when {
-                    enabled && !reachable -> "内核未就绪，代理暂时不可用"
-                    enabled -> "mixed-port 7890 · 控制面 127.0.0.1:9090"
-                    else -> "当前未启用，启用后即可测速与切换节点"
+                    enabled && !reachable -> stringResource(R.string.ui_______950d8300)
+                    enabled -> stringResource(R.string.ui_mixed_76b25e4d)
+                    else -> stringResource(R.string.ui_______019bfe60)
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White.copy(alpha = 0.85f)
@@ -383,7 +384,7 @@ private fun StatusHero(
                     ),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("启用代理", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.ui______06fef6bd), fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -422,9 +423,9 @@ private fun ToolbarRow(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
                 Spacer(Modifier.width(6.dp))
-                Text("测速中")
+                Text(stringResource(R.string.ui_____33aac613))
             } else {
-                Text("全部测速")
+                Text(stringResource(R.string.ui______98322500))
             }
         }
     }
@@ -444,7 +445,7 @@ private fun SegmentedControl(
             )
             .padding(4.dp)
     ) {
-        listOf("分组" to 0, "节点" to 1).forEach { (label, idx) ->
+        listOf(stringResource(R.string.ui____829abe5a) to 0, stringResource(R.string.ui____3bf3c0a8) to 1).forEach { (label, idx) ->
             val selected = tab == idx
             Box(
                 modifier = Modifier
@@ -498,7 +499,7 @@ private fun NodeSearchBar(
             Box(modifier = Modifier.weight(1f)) {
                 if (!hasText) {
                     Text(
-                        text = "搜索分组 / 节点",
+                        text = stringResource(R.string.ui______2cf95afa),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         maxLines = 1
@@ -547,7 +548,7 @@ private fun GroupsTab(
     }
 
     when {
-        groupsView?.loading == true -> AppLoadingState("加载分组中…")
+        groupsView?.loading == true -> AppLoadingState(stringResource(R.string.ui_______5f2b08e6))
         !enabled || !(groupsView?.running == true) -> Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -556,12 +557,12 @@ private fun GroupsTab(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "代理未启用，无法读取分组与实时流量。",
+                text = stringResource(R.string.ui_______82079093),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(Spacing.md))
-            Button(onClick = { viewModel.toggleEnabled(true) }) { Text("立即启用代理") }
+            Button(onClick = { viewModel.toggleEnabled(true) }) { Text(stringResource(R.string.ui________fc797319)) }
         }
         groupsView?.error != null -> Text(
             text = groupsView.error!!,
@@ -570,7 +571,7 @@ private fun GroupsTab(
             modifier = Modifier.padding(Spacing.md)
         )
         groups.isEmpty() -> Text(
-            text = if (query.isNotBlank()) "没有匹配的分组" else "没有可用的策略分组",
+            text = if (query.isNotBlank()) stringResource(R.string.ui_________cdfdedf4) else stringResource(R.string.ui___________b04bfd3c),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(Spacing.md)
@@ -715,7 +716,7 @@ private fun GroupMemberRow(
         )
         if (selected) {
             Text(
-                text = "已选",
+                text = stringResource(R.string.ui____7bf54e28_2),
                 style = MaterialTheme.typography.labelSmall,
                 color = Color(0xFF0984E3),
                 modifier = Modifier
@@ -739,7 +740,7 @@ private fun NodesTab(
     query: String
 ) {
     when {
-        loading -> AppLoadingState("加载节点中…")
+        loading -> AppLoadingState(stringResource(R.string.ui_______3fd48e2f_2))
         error != null -> Text(
             text = error,
             style = MaterialTheme.typography.bodyMedium,
@@ -748,9 +749,9 @@ private fun NodesTab(
         )
         totalNodes == 0 -> Text(
             text = if (hasProviderNodes) {
-                "节点全部来自 proxy-provider，由内核动态加载；请到「分组」Tab 查看实时节点与延迟"
+                stringResource(R.string.ui________1eb92978)
             } else {
-                "该配置没有可展示的节点"
+                stringResource(R.string.ui_____________5831cb18)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -794,9 +795,9 @@ private fun NodeStatsBar(total: Int, latencies: Map<String, Long?>) {
         modifier = Modifier.fillMaxWidth().padding(top = Spacing.xs),
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        StatChip(label = "节点", value = "$total")
-        StatChip(label = "已测", value = "$tested")
-        StatChip(label = "平均", value = if (avg != null) "$avg ms" else "—")
+        StatChip(label = stringResource(R.string.ui____3bf3c0a8_2), value = "$total")
+        StatChip(label = stringResource(R.string.ui____f7c02897), value = "$tested")
+        StatChip(label = stringResource(R.string.ui____33875c86), value = if (avg != null) "$avg ms" else "—")
     }
 }
 
@@ -864,8 +865,8 @@ private fun NodeRowItem(
 @Composable
 private fun LatencyPill(tested: Boolean, delayMs: Long?) {
     val (text, color) = when {
-        !tested -> "未测" to MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        delayMs == null -> "超时" to LatencyBad
+        !tested -> stringResource(R.string.ui____21df949d_2) to MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        delayMs == null -> stringResource(R.string.ui____e944c7c9_2) to LatencyBad
         else -> "${delayMs} ms" to latencyColor(delayMs)
     }
     Text(

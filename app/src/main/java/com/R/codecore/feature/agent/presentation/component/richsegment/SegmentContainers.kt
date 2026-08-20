@@ -1,5 +1,6 @@
 package com.R.codecore.feature.agent.presentation.component.richsegment
-
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -408,7 +409,7 @@ private fun CodeBlockCard(seg: RichSegment.CodeBlock, isDark: Boolean) {
             ) {
                 Icon(
                     FeatherIcons.Clipboard,
-                    contentDescription = "复制代码",
+                    contentDescription = stringResource(R.string.ui______224996c0),
                     tint = Color.White.copy(alpha = 0.9f),
                     modifier = Modifier.size(15.dp)
                 )
@@ -420,7 +421,7 @@ private fun CodeBlockCard(seg: RichSegment.CodeBlock, isDark: Boolean) {
                 ) {
                     Icon(
                         if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
-                        contentDescription = if (expanded) "收起" else "展开",
+                        contentDescription = if (expanded) stringResource(R.string.ui____def9e98b) else stringResource(R.string.ui____e2edde5a),
                         tint = Color.White.copy(alpha = 0.9f),
                         modifier = Modifier.size(15.dp)
                     )
@@ -560,7 +561,7 @@ private fun CommandCard(command: String, isDark: Boolean) {
         androidx.compose.material3.IconButton(onClick = { clipboard.setText(AnnotatedString(command)) }) {
             Icon(
                 FeatherIcons.Clipboard,
-                contentDescription = "复制命令",
+                contentDescription = stringResource(R.string.ui______ee92cd5e),
                 tint = Color.White.copy(alpha = 0.8f),
                 modifier = Modifier.size(16.dp)
             )

@@ -217,7 +217,7 @@ internal fun McpServerSection(
                             },
                             contentPadding = PaddingValues(horizontal = Spacing.md, vertical = 8.dp)
                         ) {
-                            Text("保存")
+                            Text(stringResource(R.string.ui____be5fbbe3))
                         }
                     }
 

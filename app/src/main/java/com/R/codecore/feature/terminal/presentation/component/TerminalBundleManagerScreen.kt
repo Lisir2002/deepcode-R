@@ -124,7 +124,7 @@ fun TerminalBundleManagerScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             AppTopAppBar(
-                title = "功能包管理",
+                title = stringResource(R.string.ui_______dbda4e51),
                 onNavigateBack = onNavigateBack,
                 navigationIcon = FeatherIcons.ArrowLeft,
                 navigationContentDescription = stringResource(R.string.common_back),
@@ -133,7 +133,7 @@ fun TerminalBundleManagerScreen(
                     IconButton(onClick = viewModel::refreshBundles) {
                         Icon(
                             imageVector = FeatherIcons.RefreshCw,
-                            contentDescription = "刷新安装状态",
+                            contentDescription = stringResource(R.string.ui________22653573),
                             tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
@@ -170,12 +170,12 @@ fun TerminalBundleManagerScreen(
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("预设独立功能包", fontSize = 14.sp) }
+                        text = { Text(stringResource(R.string.ui_________b6349a50), fontSize = 14.sp) }
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = { Text("自定义功能包", fontSize = 14.sp) }
+                        text = { Text(stringResource(R.string.ui________2d661dab), fontSize = 14.sp) }
                     )
                 }
             }
@@ -184,14 +184,14 @@ fun TerminalBundleManagerScreen(
                 when (selectedTab) {
                 0 -> {
                     // ── Tab 1：预设独立功能包（原功能包管理页内容） ──────────
-                    AppSectionHeader(text = "AI 推荐组合")
+                    AppSectionHeader(text = stringResource(R.string.ui_ai_5dcf4fe7))
                     SharedAiRecommendationStrip(
                         allInstalled = aiAllInstalled,
                         containerReady = containerInstalled,
                         onInstallAll = viewModel::installAiRecommended
                     )
 
-                    AppSectionHeader(text = "独立功能包")
+                    AppSectionHeader(text = stringResource(R.string.ui_______15dd3f3e))
                     Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                         var openDialogFor by remember { mutableStateOf<TerminalBundleId?>(null) }
                         val agg by viewModel.aggregateProgress.collectAsStateWithLifecycle()
@@ -385,13 +385,13 @@ private fun CustomInstallCard(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    placeholder = { Text("包名空格分隔，如 htop neofetch openssh") }
+                    placeholder = { Text(stringResource(R.string.ui________02fc9934)) }
                 )
                 PrimaryButton(
                     onClick = onInstallClick,
                     enabled = containerReady && customInstallInput.isNotBlank() && installIdle,
                     icon = FeatherIcons.Plus,
-                    text = "安装"
+                    text = stringResource(R.string.ui____e655a410)
                 )
             }
             if (customInstallState is BundleInstallState.Installing) {
@@ -411,7 +411,7 @@ private fun CustomInstallCard(
             }
             if (!containerReady) {
                 Text(
-                    text = "容器未初始化，暂不可安装自定义包",
+                    text = stringResource(R.string.ui________b9d9ca01),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -452,7 +452,7 @@ private fun QuickPacksChipRow(
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
             Text(
-                "一键安装 Alpine 社区常用包。安装后会出现在「已安装自定义包」列表里。",
+                stringResource(R.string.ui______d33d3880),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -631,7 +631,7 @@ private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit, skin: Termin
                 tint = if (full) skin.keyGroupDFg else skin.onSurfaceVariant
             )
             Text(
-                text = if (full) "完整" else "简洁",
+                text = if (full) stringResource(R.string.ui____63c59813) else stringResource(R.string.ui____e7e07e58),
                 fontSize = 12.sp,
                 color = if (full) skin.keyGroupDFg else skin.onSurface
             )
@@ -647,7 +647,7 @@ private fun CtrlChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkin
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = {
             PlainTooltip {
-                Text("先点击开启，再按键盘上的字母发送 Ctrl+X")
+                Text(stringResource(R.string.ui_______35e60ae6))
             }
         },
         state = state
@@ -670,7 +670,7 @@ private fun AltChipWithTooltip(viewModel: TerminalViewModel, skin: TerminalSkinS
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = {
             PlainTooltip {
-                Text("先点击开启，再按键盘上的字母发送 Alt+X")
+                Text(stringResource(R.string.ui_______13de17e1))
             }
         },
         state = state
@@ -754,7 +754,7 @@ fun ReconnectDropdown(
             }
         )
         DropdownMenuItem(
-            text = { Text("重连全部标签") },
+            text = { Text(stringResource(R.string.ui________1614f33f)) },
             onClick = onReconnectAll,
             leadingIcon = {
                 Icon(FeatherIcons.RotateCcw, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -762,7 +762,7 @@ fun ReconnectDropdown(
         )
         HorizontalDivider(Modifier.padding(horizontal = Spacing.sm))
         DropdownMenuItem(
-            text = { Text("重启容器") },
+            text = { Text(stringResource(R.string.ui______fbf624a8)) },
             onClick = onRestartContainer,
             leadingIcon = {
                 Icon(FeatherIcons.Trash2, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -794,29 +794,29 @@ fun TerminalOperationsMenu(
 ) {
     val expanded = anchor != null
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        DropdownMenuItem(text = { Text("复制") }, onClick = onCopy,
+        DropdownMenuItem(text = { Text(stringResource(R.string.ui____79d3abe9)) }, onClick = onCopy,
             leadingIcon = { Icon(FeatherIcons.Copy, null, Modifier.size(18.dp)) })
-        DropdownMenuItem(text = { Text("粘贴") }, onClick = onPaste,
+        DropdownMenuItem(text = { Text(stringResource(R.string.ui____eafbece1)) }, onClick = onPaste,
             leadingIcon = { Icon(FeatherIcons.Terminal, null, Modifier.size(18.dp)) })
-        DropdownMenuItem(text = { Text("全选") }, onClick = onSelectAll,
+        DropdownMenuItem(text = { Text(stringResource(R.string.ui____66eeacd9)) }, onClick = onSelectAll,
             leadingIcon = { Icon(FeatherIcons.Type, null, Modifier.size(18.dp)) })
         HorizontalDivider(Modifier.padding(horizontal = Spacing.sm))
-        DropdownMenuItem(text = { Text("清屏") }, onClick = onClearScreen,
+        DropdownMenuItem(text = { Text(stringResource(R.string.ui____91382d9c)) }, onClick = onClearScreen,
             leadingIcon = { Icon(FeatherIcons.Trash2, null, Modifier.size(18.dp)) })
-        DropdownMenuItem(text = { Text("搜索") }, onClick = onSearch,
+        DropdownMenuItem(text = { Text(stringResource(R.string.ui____e5f71fc3)) }, onClick = onSearch,
             leadingIcon = { Icon(FeatherIcons.Search, null, Modifier.size(18.dp)) })
-        DropdownMenuItem(text = { Text("重命名标签") }, onClick = onRenameTab,
+        DropdownMenuItem(text = { Text(stringResource(R.string.ui_______a4986174)) }, onClick = onRenameTab,
             leadingIcon = { Icon(FeatherIcons.Edit3, null, Modifier.size(18.dp)) })
         if (allowSendToAI && onSendToAI != null) {
-            DropdownMenuItem(text = { Text("发送最后 100 行给 AI") }, onClick = onSendToAI,
+            DropdownMenuItem(text = { Text(stringResource(R.string.ui______38154828)) }, onClick = onSendToAI,
                 leadingIcon = { Icon(FeatherIcons.Share2, null, Modifier.size(18.dp)) })
         }
         HorizontalDivider(Modifier.padding(horizontal = Spacing.sm))
-        DropdownMenuItem(text = { Text(if (fullExtraKeys) "完整键盘（开启中）" else "完整键盘（关闭中）") }, onClick = onToggleFullKeys,
+        DropdownMenuItem(text = { Text(if (fullExtraKeys) stringResource(R.string.ui______6a988d97) else stringResource(R.string.ui______1ae98d49)) }, onClick = onToggleFullKeys,
             leadingIcon = { Icon(FeatherIcons.Grid, null, Modifier.size(18.dp)) })
-        DropdownMenuItem(text = { Text("字号增大") }, onClick = onFontSizeStepUp,
+        DropdownMenuItem(text = { Text(stringResource(R.string.ui______3b73382e)) }, onClick = onFontSizeStepUp,
             leadingIcon = { Icon(FeatherIcons.Plus, null, Modifier.size(18.dp)) })
-        DropdownMenuItem(text = { Text("字号减小") }, onClick = onFontSizeStepDown,
+        DropdownMenuItem(text = { Text(stringResource(R.string.ui______9dd74977)) }, onClick = onFontSizeStepDown,
             leadingIcon = { Icon(FeatherIcons.X, null, Modifier.size(18.dp)) })
     }
 }
@@ -867,13 +867,13 @@ fun TabLongPressDialog(
                     onClick = onTogglePin,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (tab.isPinned) "取消固定" else "固定标签")
+                    Text(if (tab.isPinned) stringResource(R.string.ui______a2b5d9e1) else stringResource(R.string.ui______cb33d371))
                 }
 
                 HorizontalDivider()
 
                 // 颜色标记选择
-                Text("颜色标记：", fontSize = 13.sp)
+                Text(stringResource(R.string.ui______aedaf872), fontSize = 13.sp)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically
@@ -900,7 +900,7 @@ fun TabLongPressDialog(
                         onClick = { onSetColorMarker(TabColorMarker.NONE) },
                         enabled = tab.colorMarker != TabColorMarker.NONE
                     ) {
-                        Text("清除", fontSize = 12.sp)
+                        Text(stringResource(R.string.ui____4403fca0), fontSize = 12.sp)
                     }
                 }
             }
@@ -909,7 +909,7 @@ fun TabLongPressDialog(
             TextButton(onClick = onClose) {
                 Icon(FeatherIcons.X, null, Modifier.size(16.dp))
                 Spacer(Modifier.size(Spacing.xs))
-                Text("关闭")
+                Text(stringResource(R.string.ui____b15d9127))
             }
         },
         dismissButton = {
@@ -917,13 +917,13 @@ fun TabLongPressDialog(
                 TextButton(onClick = onRename) {
                     Icon(FeatherIcons.Edit3, null, Modifier.size(16.dp))
                     Spacer(Modifier.size(Spacing.xs))
-                    Text("重命名")
+                    Text(stringResource(R.string.ui_____c8ce4b36))
                 }
                 Spacer(Modifier.size(Spacing.sm))
                 TextButton(onClick = onCloseOthers) {
                     Icon(FeatherIcons.Trash2, null, Modifier.size(16.dp))
                     Spacer(Modifier.size(Spacing.xs))
-                    Text("关闭其他")
+                    Text(stringResource(R.string.ui______6816da19))
                 }
             }
         }
@@ -941,16 +941,16 @@ fun ConfirmActionDialog(
 ) {
     val (title, text, isDestructive) = when (action) {
         is TerminalViewModel.ConfirmAction.CloseTab -> {
-            Triple("关闭标签「${action.title}」", "该标签有进程正在运行，确定要关闭吗？", true)
+            Triple("关闭标签「${action.title}」", stringResource(R.string.ui____________b8ee30bb), true)
         }
         is TerminalViewModel.ConfirmAction.CloseOtherTabs -> {
-            Triple("关闭其他标签", "确定要关闭除当前标签外的所有标签吗？", true)
+            Triple(stringResource(R.string.ui________c65c616b), stringResource(R.string.ui______________9b871ba4), true)
         }
         is TerminalViewModel.ConfirmAction.RestartContainer -> {
-            Triple("重启容器", "重启容器将终止所有运行中的进程并关闭所有标签，确定继续吗？", true)
+            Triple(stringResource(R.string.ui______fbf624a8_2), stringResource(R.string.ui______________d8a0d499), true)
         }
         is TerminalViewModel.ConfirmAction.ReconnectAll -> {
-            Triple("重连全部标签", "确定要重连所有标签吗？", false)
+            Triple(stringResource(R.string.ui________1614f33f_2), stringResource(R.string.ui____________c8c18a50), false)
         }
     }
 
@@ -969,12 +969,12 @@ fun ConfirmActionDialog(
                     androidx.compose.material3.ButtonDefaults.textButtonColors()
                 }
             ) {
-                Text("确定")
+                Text(stringResource(R.string.ui____38cf16f2))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.ui____625fb26b))
             }
         }
     )
@@ -992,7 +992,7 @@ fun RenameTabDialog(
     var input by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("重命名标签") },
+        title = { Text(stringResource(R.string.ui_______a4986174_2)) },
         text = {
             OutlinedTextField(
                 value = input,
@@ -1002,10 +1002,10 @@ fun RenameTabDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(input.trim().ifBlank { initial }) }) { Text("保存") }
+            TextButton(onClick = { onConfirm(input.trim().ifBlank { initial }) }) { Text(stringResource(R.string.ui____be5fbbe3)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui____625fb26b_2)) }
         }
     )
 }
@@ -1084,7 +1084,7 @@ fun BoxScope.TerminalSearchOverlay(
                         value = query,
                         onValueChange = { query = it; matchIndex = 0 },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text("搜索终端输出") },
+                        placeholder = { Text(stringResource(R.string.ui________a7e95b4c)) },
                         singleLine = true,
                         leadingIcon = {
                             Icon(FeatherIcons.Search, null, Modifier.size(18.dp))
@@ -1107,7 +1107,7 @@ fun BoxScope.TerminalSearchOverlay(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (matches.isEmpty()) "无匹配" else "${matchIndex.coerceIn(0, max(0, matches.lastIndex)) + 1} / ${matches.size}",
+                        text = if (matches.isEmpty()) stringResource(R.string.ui_____b5738da7) else "${matchIndex.coerceIn(0, max(0, matches.lastIndex)) + 1} / ${matches.size}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1158,11 +1158,11 @@ fun CtrlHintBubble(modifier: Modifier, onGotIt: () -> Unit) {
         ) {
             Icon(FeatherIcons.Info, null, Modifier.size(18.dp))
             Text(
-                text = "先按 Ctrl 开启，再按键盘上的字母即可发送 Ctrl+X（例如 Ctrl+C 中断进程）。字母发出后自动关闭。",
+                text = stringResource(R.string.ui____d59d86f6),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f)
             )
-            TextButton(onClick = onGotIt) { Text("知道了") }
+            TextButton(onClick = onGotIt) { Text(stringResource(R.string.ui_____ce26955a)) }
         }
     }
 }

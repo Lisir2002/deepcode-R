@@ -1,5 +1,7 @@
 package com.R.codecore.feature.terminal.presentation.component
 
+import com.R.codecore.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
@@ -309,7 +311,7 @@ private fun InstallingProgressLayout(
             )
             Icon(
                 imageVector = FeatherIcons.ChevronDown,
-                contentDescription = "展开日志",
+                contentDescription = stringResource(R.string.ui______34c1ac67),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .size(16.dp)
@@ -357,7 +359,7 @@ private fun DoneSummaryBoard(
             // 蓝块：下载量
             StatMiniTile(
                 icon = FeatherIcons.Download,
-                label = "下载",
+                label = stringResource(R.string.ui____f26ef914),
                 value = stats?.bytesDownloaded?.let { formatBytesShort(it) } ?: "—",
                 bg = Color(0xFFE3F2FD), fg = Color(0xFF1565C0),
                 modifier = Modifier.weight(1f),
@@ -365,7 +367,7 @@ private fun DoneSummaryBoard(
             // 绿块：耗时
             StatMiniTile(
                 icon = FeatherIcons.Clock,
-                label = "耗时",
+                label = stringResource(R.string.ui____39f1374d),
                 value = stats?.let { String.format("%.1fs", it.elapsedMs / 1000f) } ?: "—",
                 bg = Color(0xFFE8F5E9), fg = Color(0xFF2E7D32),
                 modifier = Modifier.weight(1f),
@@ -373,7 +375,7 @@ private fun DoneSummaryBoard(
             // 青块：包数
             StatMiniTile(
                 icon = FeatherIcons.Package,
-                label = "包数",
+                label = stringResource(R.string.ui____a95f0fbe),
                 value = stats?.let { "${it.packagesInstalled}" } ?: "—",
                 bg = Color(0xFFE0F7FA), fg = Color(0xFF00838F),
                 modifier = Modifier.weight(1f),
@@ -382,7 +384,7 @@ private fun DoneSummaryBoard(
             val avg = stats?.averageSpeedBps()
             StatMiniTile(
                 icon = FeatherIcons.Zap,
-                label = "均速",
+                label = stringResource(R.string.ui____adbe74f8),
                 value = avg?.let { formatBps(it) } ?: "—",
                 bg = Color(0xFFF3E5F5), fg = Color(0xFF6A1B9A),
                 modifier = Modifier.weight(1f),
@@ -399,7 +401,7 @@ private fun DoneSummaryBoard(
                 ElevatedAssistChip(
                     onClick = onUninstallClick,
                     leadingIcon = { Icon(FeatherIcons.Trash2, null, modifier = Modifier.size(14.dp)) },
-                    label = { Text("卸载", style = MaterialTheme.typography.labelMedium) },
+                    label = { Text(stringResource(R.string.ui____81824cff_2), style = MaterialTheme.typography.labelMedium) },
                     colors = AssistChipDefaults.elevatedAssistChipColors(
                         containerColor = Color(0xFFFFEBEE),
                         labelColor = Color(0xFFC62828),
@@ -410,7 +412,7 @@ private fun DoneSummaryBoard(
             ElevatedAssistChip(
                 onClick = onOpenLogDialog,
                 leadingIcon = { Icon(FeatherIcons.ChevronUp, null, modifier = Modifier.size(14.dp).rotate(180f)) },
-                label = { Text("查看全量日志", style = MaterialTheme.typography.labelMedium) },
+                label = { Text(stringResource(R.string.ui________cdb7838f), style = MaterialTheme.typography.labelMedium) },
             )
         }
     }
@@ -463,7 +465,7 @@ private fun FailedSummaryBoard(
                     Spacer(Modifier.weight(1f))
                     Icon(
                         imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
-                        contentDescription = if (expanded) "收起" else "展开",
+                        contentDescription = if (expanded) stringResource(R.string.ui____def9e98b_3) else stringResource(R.string.ui____e2edde5a_2),
                         tint = Color(0xFFC62828),
                         modifier = Modifier.size(14.dp),
                     )
@@ -479,7 +481,7 @@ private fun FailedSummaryBoard(
             ElevatedAssistChip(
                 onClick = onRetry,
                 leadingIcon = { Icon(FeatherIcons.RefreshCw, null, modifier = Modifier.size(14.dp)) },
-                label = { Text("一键重试", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)) },
+                label = { Text(stringResource(R.string.ui______82a5909b), style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 colors = AssistChipDefaults.elevatedAssistChipColors(
                     containerColor = Color(0xFFFFF3E0),
                     labelColor = Color(0xFFE65100),
@@ -490,12 +492,12 @@ private fun FailedSummaryBoard(
                 onClick = { onCopyError?.invoke(reason) },
                 enabled = onCopyError != null,
                 leadingIcon = { Icon(FeatherIcons.Copy, null, modifier = Modifier.size(14.dp)) },
-                label = { Text("复制错误详情", style = MaterialTheme.typography.labelMedium) },
+                label = { Text(stringResource(R.string.ui________49838cc2), style = MaterialTheme.typography.labelMedium) },
             )
             ElevatedAssistChip(
                 onClick = onOpenLogDialog,
                 leadingIcon = { Icon(FeatherIcons.Settings, null, modifier = Modifier.size(14.dp)) },
-                label = { Text("查看日志", style = MaterialTheme.typography.labelMedium) },
+                label = { Text(stringResource(R.string.ui______0ea78e42), style = MaterialTheme.typography.labelMedium) },
             )
         }
     }
@@ -556,19 +558,19 @@ private fun InstallActionsChip(
         is BundleInstallState.Installed -> DangerOutlinedButton(
             onClick = onUninstall,
             icon = FeatherIcons.Trash2,
-            text = "卸载",
+            text = stringResource(R.string.ui____81824cff_3),
         )
         is BundleInstallState.Installing, BundleInstallState.Uninstalling ->
-            ProgressPlaceholderButton(text = "处理中…")
+            ProgressPlaceholderButton(text = stringResource(R.string.ui_____cf978c02))
         is BundleInstallState.Failed -> PrimaryButton(
             onClick = onInstall,
             icon = FeatherIcons.Plus,
-            text = "重试",
+            text = stringResource(R.string.ui____132c5cdc),
         )
         BundleInstallState.NotInstalled -> PrimaryButton(
             onClick = onInstall,
             icon = FeatherIcons.Plus,
-            text = "安装",
+            text = stringResource(R.string.ui____e655a410),
         )
     }
 }
@@ -820,7 +822,7 @@ private fun MicroSlotBlock(slot: DownloadSlot, size: Dp, onClick: () -> Unit) {
                         )
                     } else if (slot.status == SlotStatus.FAILED) {
                         Text(
-                            text = slot.failReason?.take(32) ?: "预取失败",
+                            text = slot.failReason?.take(32) ?: stringResource(R.string.ui______12d84fd7),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onErrorContainer,
                         )
@@ -1124,7 +1126,7 @@ private fun TokenizedStatusLine(
                             state.line?.take(40) ?: "准备安装 ${bundle.title}…",
                         )
                         BundleInstallState.Uninstalling -> Triple(
-                            Color(0xFFC62828), FeatherIcons.Trash2, "正在卸载…",
+                            Color(0xFFC62828), FeatherIcons.Trash2, stringResource(R.string.ui______3988af2e),
                         )
                         is BundleInstallState.Installed -> Triple(
                             Color(0xFF2E7D32), FeatherIcons.Check,
@@ -1136,7 +1138,7 @@ private fun TokenizedStatusLine(
                         )
                         BundleInstallState.NotInstalled -> Triple(
                             MaterialTheme.colorScheme.onSurfaceVariant, FeatherIcons.Package,
-                            "点击「安装」开始",
+                            stringResource(R.string.ui____f2f411c4),
                         )
                     }
                     SmallRoundedChip(icon = icon, text = text, bg = color.copy(alpha = 0.08f), fg = color)
@@ -1157,7 +1159,7 @@ private fun TokenizedStatusLine(
                             bg = Color(0xFFE3F2FD), fg = Color(0xFF1565C0),
                         )
                     } else {
-                        SmallRoundedChip(text = "下载中", bg = Color(0xFFE3F2FD), fg = Color(0xFF1565C0))
+                        SmallRoundedChip(text = stringResource(R.string.ui_____2d455ce5), bg = Color(0xFFE3F2FD), fg = Color(0xFF1565C0))
                     }
                     // 槽小点组（5 小圆点，绿=DONE / 蓝=DLING / 灰=WAITING）
                     if (agg.slots.isNotEmpty()) {
@@ -1207,7 +1209,7 @@ private fun TokenizedStatusLine(
                             bg = Color(0xFFE8F5E9), fg = Color(0xFF2E7D32),
                         )
                     } else {
-                        SmallRoundedChip(text = "安装阶段…", bg = Color(0xFFE8F5E9), fg = Color(0xFF2E7D32))
+                        SmallRoundedChip(text = stringResource(R.string.ui______54561b28), bg = Color(0xFFE8F5E9), fg = Color(0xFF2E7D32))
                     }
                     agg.installingCurrent?.let { cur ->
                         SmallRoundedChip(
@@ -1235,7 +1237,7 @@ private fun TokenizedStatusLine(
                         )
                     }
                     SmallRoundedChip(
-                        text = "后处理脚本…",
+                        text = stringResource(R.string.ui_______9e0727c5),
                         bg = Color(0xFFFFF3E0), fg = Color(0xFFE65100),
                     )
                 }
@@ -1247,7 +1249,7 @@ private fun TokenizedStatusLine(
                         modifier = Modifier.size(14.dp),
                     )
                     SmallRoundedChip(
-                        text = "已就绪",
+                        text = stringResource(R.string.ui_____c30ecc7a),
                         bg = Color(0xFFE8F5E9), fg = Color(0xFF2E7D32),
                     )
                     val st = agg.finishStats
@@ -1270,11 +1272,11 @@ private fun TokenizedStatusLine(
                         modifier = Modifier.size(14.dp),
                     )
                     SmallRoundedChip(
-                        text = "失败",
+                        text = stringResource(R.string.ui____acd5cb84),
                         bg = Color(0xFFFFEBEE), fg = Color(0xFFC62828),
                     )
                     SmallRoundedChip(
-                        text = agg.failSummary?.take(28) ?: "安装失败",
+                        text = agg.failSummary?.take(28) ?: stringResource(R.string.ui______6f5b5ee2),
                         bg = Color(0xFFFFEBEE), fg = Color(0xFFB71C1C),
                     )
                 }

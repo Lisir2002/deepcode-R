@@ -1,5 +1,6 @@
 package com.R.codecore.feature.settings.presentation.components
-
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,7 +66,7 @@ fun RemoteAuditLogsScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "远程连接审计日志",
+                text = stringResource(R.string.ui__________43ed2ff2),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
@@ -78,7 +79,7 @@ fun RemoteAuditLogsScreen(
                     }
                 }
             ) {
-                Text("清理过期")
+                Text(stringResource(R.string.ui______9b49362a))
             }
         }
 
@@ -94,7 +95,7 @@ fun RemoteAuditLogsScreen(
             }
         } else if (logs.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂无审计日志", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.ui________4351f800), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn {

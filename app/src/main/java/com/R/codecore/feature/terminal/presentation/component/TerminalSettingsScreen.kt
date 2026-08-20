@@ -185,12 +185,12 @@ fun TerminalSettingsScreen(
                 onPickMirror = { showMirrorPicker = true }
             )
 
-            AppSectionHeader(text = "容器与依赖")
+            AppSectionHeader(text = stringResource(R.string.ui_______b37d4c61))
             AppSectionGroup {
                 val installedBundleCount = bundleStates.count { it.value is BundleInstallState.Installed }
                 _MenuRow(
                     icon = FeatherIcons.Box,
-                    title = "功能包管理",
+                    title = stringResource(R.string.ui_______dbda4e51_2),
                     subtitle = "官方 Bundle · 共 ${viewModel.bundles().size} 个，已安装 $installedBundleCount${if (aiAllInstalled) " · AI 组合已就绪" else ""}",
                     onClick = onNavigateToBundleManager,
                     showDivider = false
@@ -202,7 +202,7 @@ fun TerminalSettingsScreen(
             AppSectionGroup {
                 _StepperRow(
                     icon = FeatherIcons.Type,
-                    title = "终端字号",
+                    title = stringResource(R.string.ui______58a3ff82),
                     subtitle = "${fontSizeSp} sp（推荐 11-14 sp）",
                     showDivider = true,
                     onDecrease = {
@@ -218,19 +218,19 @@ fun TerminalSettingsScreen(
                 )
                 _MenuRow(
                     icon = FeatherIcons.Moon,
-                    title = "终端内容配色",
+                    title = stringResource(R.string.ui________48cee970),
                     subtitle = when (theme) {
-                        TerminalTheme.FOLLOW_APP -> "跟随程序（暗/亮自动切换）"
-                        TerminalTheme.PURE_BLACK -> "黑底白字（对比最强）"
-                        TerminalTheme.PURE_WHITE -> "白底黑字（对比最强）"
+                        TerminalTheme.FOLLOW_APP -> stringResource(R.string.ui______40b081ab)
+                        TerminalTheme.PURE_BLACK -> stringResource(R.string.ui______f5242d83)
+                        TerminalTheme.PURE_WHITE -> stringResource(R.string.ui______c68108f0)
                     },
                     onClick = { showThemePicker = true },
                     showDivider = true
                 )
                 _SwitchRow(
                     icon = FeatherIcons.Grid,
-                    title = "显示 Tab 栏",
-                    subtitle = "关闭后多标签完全靠键盘切换",
+                    title = stringResource(R.string.ui____caa23c17),
+                    subtitle = stringResource(R.string.ui______________aeee5eb0),
                     checked = showTabBar,
                     onCheckedChange = viewModel::setShowTabBar,
                     showDivider = false
@@ -238,11 +238,11 @@ fun TerminalSettingsScreen(
             }
 
             // G2 键盘 & 交互
-            AppSectionHeader(text = "键盘 & 交互")
+            AppSectionHeader(text = stringResource(R.string.ui____e1dd53a4))
             AppSectionGroup {
                 _SwitchRow(
                     icon = FeatherIcons.Grid,
-                    title = "完整功能键行",
+                    title = stringResource(R.string.ui________bd4b33a0),
                     subtitle = "关闭为精简布局（仅 Ctrl/Alt/Fn/方向）",
                     checked = fullExtraKeys,
                     onCheckedChange = viewModel::setFullExtraKeys,
@@ -250,60 +250,60 @@ fun TerminalSettingsScreen(
                 )
                 _SwitchRow(
                     icon = FeatherIcons.RefreshCw,
-                    title = "缩放手势持久化字号",
-                    subtitle = "关闭时双指缩放只临时改变显示，不记忆",
+                    title = stringResource(R.string.ui___________19a36c2d),
+                    subtitle = stringResource(R.string.ui______________82f9dac5),
                     checked = scalePersists,
                     onCheckedChange = viewModel::setScaleGesturePersists,
                     showDivider = true
                 )
                 _SwitchRow(
                     icon = FeatherIcons.Terminal,
-                    title = "切标签自动弹键盘",
-                    subtitle = "关闭时切换后需手动点屏幕唤起键盘",
+                    title = stringResource(R.string.ui__________a6cbf757),
+                    subtitle = stringResource(R.string.ui______________05546ade),
                     checked = autoPopIme,
                     onCheckedChange = viewModel::setAutoPopImeOnSwitch,
                     showDivider = true
                 )
                 _MenuRow(
                     icon = FeatherIcons.Settings,
-                    title = "重置 Ctrl 使用提示",
-                    subtitle = "下次点 Ctrl 按钮时再显示首次气泡",
+                    title = stringResource(R.string.ui____2959acd6),
+                    subtitle = stringResource(R.string.ui_____18a3cbe4),
                     onClick = viewModel::resetCtrlHint,
                     showDivider = false
                 )
             }
 
             // G3 行为
-            AppSectionHeader(text = "行为")
+            AppSectionHeader(text = stringResource(R.string.ui____a0496123))
             AppSectionGroup {
                 _SwitchRow(
                     icon = FeatherIcons.XCircle,
-                    title = "后台标签新输出显示红点",
-                    subtitle = "非当前 Tab 有新输出时右上角红点",
+                    title = stringResource(R.string.ui_____________996140c5),
+                    subtitle = stringResource(R.string.ui_____46f74d41),
                     checked = newOutputIndicator,
                     onCheckedChange = viewModel::setNewOutputIndicator,
                     showDivider = true
                 )
                 _SwitchRow(
                     icon = FeatherIcons.Plus,
-                    title = "关闭最后一标签自动新建",
-                    subtitle = "保证总有一个可交互标签",
+                    title = stringResource(R.string.ui_____________0184da1b),
+                    subtitle = stringResource(R.string.ui_____________73b957c1),
                     checked = autoNewTabOnCloseLast,
                     onCheckedChange = viewModel::setAutoNewTabOnCloseLast,
                     showDivider = true
                 )
                 _SwitchRow(
                     icon = FeatherIcons.Server,
-                    title = "离开终端页保持会话",
-                    subtitle = "关闭则每次离开后台会话会销毁",
+                    title = stringResource(R.string.ui___________37172e85),
+                    subtitle = stringResource(R.string.ui______________427e9b33),
                     checked = keepSession,
                     onCheckedChange = viewModel::setKeepSessionWhenLeave,
                     showDivider = true
                 )
                 _SwitchRow(
                     icon = FeatherIcons.Database,
-                    title = "粘贴为纯文本",
-                    subtitle = "粘贴时自动剥掉富文本格式",
+                    title = stringResource(R.string.ui________52007b14),
+                    subtitle = stringResource(R.string.ui______________eb6dcb95),
                     checked = pasteAsPlain,
                     onCheckedChange = viewModel::setPasteAsPlainText,
                     showDivider = false
@@ -311,12 +311,12 @@ fun TerminalSettingsScreen(
             }
 
             // G4 SSH 常用
-            AppSectionHeader(text = "SSH 远程终端")
+            AppSectionHeader(text = stringResource(R.string.ui_ssh_ac7515bd))
             AppSectionGroup {
                 _SwitchRow(
                     icon = FeatherIcons.RefreshCw,
-                    title = "断线自动重连",
-                    subtitle = "网络切换/恢复时自动重新连接",
+                    title = stringResource(R.string.ui________66d1f9aa),
+                    subtitle = stringResource(R.string.ui______f096b834),
                     checked = sshAutoReconnect,
                     onCheckedChange = viewModel::setSshAutoReconnect,
                     showDivider = true
@@ -324,21 +324,21 @@ fun TerminalSettingsScreen(
                 _SwitchRow(
                     icon = FeatherIcons.Server,
                     title = "TCP KeepAlive",
-                    subtitle = "定期发心跳包避免连接被运营商静默中断",
+                    subtitle = stringResource(R.string.ui______________8a0ba94d),
                     checked = sshKeepalive,
                     onCheckedChange = viewModel::setSshKeepalive,
                     showDivider = true
                 )
                 _MenuRow(
                     icon = FeatherIcons.Cpu,
-                    title = "心跳间隔",
+                    title = stringResource(R.string.ui______9901e9b6),
                     subtitle = SshHeartbeatSeconds.fromSeconds(sshHeartbeat).display,
                     onClick = { showHeartbeatPicker = true },
                     showDivider = true
                 )
                 _MenuRow(
                     icon = FeatherIcons.Server,
-                    title = "管理 SSH 主机配置",
+                    title = stringResource(R.string.ui____9c828e97),
                     subtitle = "新增/编辑/删除 SSH 主机和密钥",
                     onClick = onNavigateToSshHosts,
                     showDivider = false
@@ -352,11 +352,11 @@ fun TerminalSettingsScreen(
     if (showResetConfirm) {
         AlertDialog(
             onDismissRequest = { showResetConfirm = false },
-            title = { Text("重置容器？") },
+            title = { Text(stringResource(R.string.ui______8415b836)) },
             text = {
                 Text(
-                    "会物理删除 rootfs 和 proot，所有已安装的 Bundle 和自定义包都会丢失。\n" +
-                        "app 配置（本页所有开关、SSH 主机、凭据、聊天历史）不受影响。"
+                    stringResource(R.string.ui_______f68e836c) +
+                        stringResource(R.string.ui_app_d6e3250f)
                 )
             },
             confirmButton = {
@@ -367,7 +367,7 @@ fun TerminalSettingsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showResetConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showResetConfirm = false }) { Text(stringResource(R.string.ui____625fb26b_3)) }
             }
         )
     }
@@ -585,7 +585,7 @@ private fun MirrorPickerDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择 apk 镜像源") },
+        title = { Text(stringResource(R.string.ui____1d3311a8)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 options.forEach { (label, url) ->
@@ -609,10 +609,10 @@ private fun MirrorPickerDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(options.first { it.first == selected }.second) }) {
-                Text("确认")
+                Text(stringResource(R.string.ui____e83a256e))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui____625fb26b_4)) } }
     )
 }
 
@@ -623,14 +623,14 @@ private fun ThemePickerDialog(
     onConfirm: (TerminalTheme) -> Unit
 ) {
     val options = listOf(
-        TerminalTheme.FOLLOW_APP to "跟随程序（暗/亮自动切换）",
-        TerminalTheme.PURE_BLACK to "黑底白字 · 对比最强",
-        TerminalTheme.PURE_WHITE to "白底黑字 · 对比最强"
+        TerminalTheme.FOLLOW_APP to stringResource(R.string.ui______40b081ab_2),
+        TerminalTheme.PURE_BLACK to stringResource(R.string.ui______27771d06),
+        TerminalTheme.PURE_WHITE to stringResource(R.string.ui______909e0e94)
     )
     var selected by remember { mutableStateOf(current) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("终端内容配色") },
+        title = { Text(stringResource(R.string.ui________48cee970_2)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 options.forEach { (v, label) ->
@@ -642,8 +642,8 @@ private fun ThemePickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(selected) }) { Text("确认") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        confirmButton = { TextButton(onClick = { onConfirm(selected) }) { Text(stringResource(R.string.ui____e83a256e_2)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui____625fb26b_5)) } }
     )
 }
 
@@ -657,7 +657,7 @@ private fun HeartbeatPickerDialog(
     var selected by remember { mutableStateOf(SshHeartbeatSeconds.fromSeconds(current)) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("SSH 心跳间隔") },
+        title = { Text(stringResource(R.string.ui_ssh_1fd07b48)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 options.forEach { o ->
@@ -669,7 +669,7 @@ private fun HeartbeatPickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(selected.seconds) }) { Text("确认") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        confirmButton = { TextButton(onClick = { onConfirm(selected.seconds) }) { Text(stringResource(R.string.ui____e83a256e_3)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui____625fb26b_6)) } }
     )
 }

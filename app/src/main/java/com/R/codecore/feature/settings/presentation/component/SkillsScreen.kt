@@ -1,5 +1,7 @@
 package com.R.codecore.feature.settings.presentation.component
 
+import com.R.codecore.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,13 +59,13 @@ fun SkillsScreen(viewModel: SkillsViewModel) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "暂无技能",
+                    text = stringResource(R.string.ui______2ce87dbc),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 Text(
-                    text = "技能存放在容器 skills 目录（SKILL.md），或通过后续导入功能安装。",
+                    text = stringResource(R.string.ui_________1e96bf39),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -94,16 +96,16 @@ fun SkillsScreen(viewModel: SkillsViewModel) {
     pendingDelete?.let { skill ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("卸载技能") },
+            title = { Text(stringResource(R.string.ui______74389db8)) },
             text = { Text("确定卸载技能「${skill.name}」（v${skill.version}）吗？此操作会删除技能文件。") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.uninstall(skill)
                     pendingDelete = null
-                }) { Text("卸载") }
+                }) { Text(stringResource(R.string.ui____81824cff)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+                TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.ui____625fb26b_2)) }
             }
         )
     }
@@ -140,7 +142,7 @@ private fun SkillCard(
                 }
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    text = skill.description.ifBlank { "（无描述）" },
+                    text = skill.description.ifBlank { stringResource(R.string.ui_____d496aef9) },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2
@@ -192,13 +194,13 @@ private fun SkillDetailDialog(skill: Skill, onDismiss: () -> Unit) {
                 skill.mcpTool?.let { Text("MCP 工具: $it", style = MaterialTheme.typography.bodyMedium) }
                 Spacer(Modifier.height(Spacing.sm))
                 Text(
-                    text = skill.description.ifBlank { "（无描述）" },
+                    text = skill.description.ifBlank { stringResource(R.string.ui_____d496aef9_2) },
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui____b15d9127)) }
         }
     )
 }
