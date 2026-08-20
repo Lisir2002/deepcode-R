@@ -5,6 +5,7 @@ import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ToolRegistry
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
@@ -19,7 +20,9 @@ import javax.inject.Singleton
  */
 @Singleton
 class SkillToolBindingManager @Inject constructor(
-    private val toolRegistry: ToolRegistry
+    // 注入 Provider 打破 ToolRegistry → SkillToolBindingManager → LoadSkillTool → provideToolRegistry(ToolRegistry) 的 Dagger 依赖环；
+    // 与 SkillExecutor.toolRegistryProvider 采用同一模式（工具系统在 AgentModule 内自举注册）。
+    private val toolRegistryProvider: Provider<ToolRegistry>
 ) {
     private companion object {
         const val TAG = "SkillToolBindingManager"
@@ -38,8 +41,9 @@ class SkillToolBindingManager @Inject constructor(
         releaseForSkill(skill.id)
 
         val missing = mutableListOf<String>()
+        val registry = toolRegistryProvider.get()
         for (toolName in skill.requiredTools) {
-            val registered = toolRegistry.hasTool(toolName)
+            val registered = registry.hasTool(toolName)
             if (!registered) {
                 missing.add(toolName)
             }
@@ -60,8 +64,9 @@ class SkillToolBindingManager @Inject constructor(
      */
     suspend fun releaseForSkill(skillId: String) {
         val names = bound.remove(skillId) ?: return
+        val registry = toolRegistryProvider.get()
         for (name in names) {
-            toolRegistry.unregister(name)
+            registry.unregister(name)
             FileLogger.d(TAG, "回收技能动态工具: $skillId -> $name")
         }
     }
