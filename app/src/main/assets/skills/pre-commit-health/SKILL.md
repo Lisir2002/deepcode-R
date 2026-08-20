@@ -1,7 +1,7 @@
 ---
 name: pre-commit-health
 description: 提交前规范体检。当用户要求"提交前检查/体检/跑一下体检/commit 前规范检查"或 AI 准备执行 git commit 时调用本技能，对工作区待提交改动做一次仓库纪律体检（模块文档同步 / strings.xml 同步 / 版本号纪律 / 敏感信息 / targetSdk / prompts|docs 资产同步 / 迁移 SQL / 提交信息格式 / 分支纪律），输出阻断项与建议项报告并按报告修复，确保提交符合 AGENTS.md 纪律、减少 CI 返工。通用触发词：提交前检查、规范体检、pre-commit、commit 前体检。
-version: 1.0.0
+version: 1.0.1
 author: R-CodeCore
 tags:
   - git

@@ -12,7 +12,10 @@ import java.io.File
  * 把随 App 预置的 `assets/skills`（每个子目录一个技能：SKILL.md + entry/ 等）在**首次**扫描时
  * 引导（copy）进本地技能根目录 `skillsRoot`，使内置技能与用户技能走同一 [SkillSource] 扫描链路。
  *
- * - **幂等**：目标目录已存在则跳过，绝不覆盖；已存在的 SDK 升级仅补齐“不存在的目录”，满足“首启”语义。
+ * - **幂等**：目标目录已存在则跳过，绝不覆盖；已存在的 SDK 升级仅补齐"不存在的目录"，满足"首启"语义。
+ * - **升级覆盖（内置技能内容随版本走）**：对已落地且带 `.builtin` 标记的内置技能，按 `SKILL.md`
+ *   frontmatter 的 `version` 字段与 assets 侧比对：**不一致时重新落地为新版**（官方内容升级随 App 生效），
+ *   一致则不动。这保证内置技能 bug 修复/功能演进能随新包自动到达用户，无需手动清理旧副本。
  * - **只读标记**：落地后在技能目录写入隐藏标记文件 `.builtin`，供 [LocalDirectorySkillSource] 识别为
  *   [SkillSourceType.BUILTIN]（只读、禁止卸载覆盖）。原生 assets 本身不可写，无需再做写保护。
  *
@@ -35,8 +38,9 @@ class BuiltinSkillSeeder(
     }
 
     /**
-     * 执行一次首启引导：检测到缺失的内置技能即从 assets 复制落地。
-     * 每次扫描调用都幂等可重入。返回本次实际补齐的技能名列表（空表示无需补齐/无内置资产）。
+     * 执行一次首启引导：检测到缺失的内置技能即从 assets 复制落地；
+     * 已落地的内置技能按 `version` 比对，不一致时升级为新版。
+     * 每次扫描调用都幂等可重入。返回本次实际补齐/升级的技能名列表（空表示无需处理）。
      */
     fun seedIfNeeded(): List<String> {
         return runCatching {
@@ -47,7 +51,16 @@ class BuiltinSkillSeeder(
                 if (!isAssetDir(SKILLS_ASSET_DIR, name)) continue
                 val target = File(skillsRoot, name)
                 val marker = File(target, BUILTIN_MARKER)
-                if (target.exists() && marker.exists()) continue // 首启已落地过，不覆盖
+                if (target.exists() && marker.exists()) {
+                    // 已落地过：仅当 assets 侧 version 与本地不一致时升级覆盖（内置技能官方升级）
+                    if (shouldUpgradeBuiltin(name, target)) {
+                        target.deleteRecursively() // 干净重建，避免旧文件残留
+                        copyAssetDir(context.assets, listOf(SKILLS_ASSET_DIR, name), target, marker)
+                        seeded += name
+                        FileLogger.i(TAG, "内置技能已升级: $name -> v${assetVersionOf(name) ?: "?"}")
+                    }
+                    continue
+                }
                 if (target.exists()) {
                     // 已存在但无内置标记（可能是同名用户技能）：不覆盖，视为跳过，避免误删用户数据。
                     continue
@@ -60,6 +73,41 @@ class BuiltinSkillSeeder(
         }.onFailure { e ->
             FileLogger.e(TAG, "内置技能首启引导失败", e)
         }.getOrDefault(emptyList())
+    }
+
+    /** 内置技能是否需要升级覆盖：assets 侧存在 version 且与本地落地 version 不一致时覆盖。 */
+    private fun shouldUpgradeBuiltin(name: String, target: File): Boolean {
+        val assetVersion = assetVersionOf(name) ?: return false
+        val localVersion = fileVersionOf(File(target, "SKILL.md")) ?: return false
+        return assetVersion != localVersion
+    }
+
+    /** 读取 assets 侧技能 SKILL.md 的 frontmatter `version` 字段。 */
+    private fun assetVersionOf(name: String): String? {
+        return runCatching {
+            context.assets.open("$SKILLS_ASSET_DIR/$name/SKILL.md").use { input ->
+                extractVersion(input.bufferedReader().readText())
+            }
+        }.getOrNull()
+    }
+
+    /** 读取本地技能 SKILL.md 的 frontmatter `version` 字段。 */
+    private fun fileVersionOf(skillFile: File): String? {
+        if (!skillFile.isFile) return null
+        return runCatching { extractVersion(skillFile.readText()) }.getOrNull()
+    }
+
+    /** 从 SKILL.md 文本中提取 frontmatter 的 `version: x.y.z`（兼容行首空白）。 */
+    private fun extractVersion(text: String): String? {
+        return text.lineSequence()
+            .firstNotNullOfOrNull { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith("version:")) {
+                    trimmed.removePrefix("version:").trim().takeIf { it.isNotEmpty() }
+                } else {
+                    null
+                }
+            }
     }
 
     private fun isAssetDir(prefix: String, name: String): Boolean {

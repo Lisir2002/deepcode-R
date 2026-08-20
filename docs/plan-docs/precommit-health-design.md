@@ -111,7 +111,8 @@ SKILL_PROJECT_PATH=<ctx.projectPath 经容器映射后的容器侧路径>
     + 通用触发词 + 分层说明 + 故障口径「只读不修」）
   - `entry/run.sh`（容器内 busybox sh：按 `SKILL_PROJECT_PATH` 圈定改动面，B1 分层执行 C/W 检查并输出 UTF-8 报告）
 - **首启引导**：`BuiltinSkillSeeder` 首启把 `assets/skills/*` 引导（copy）进 `skillsRoot`，标记 `source=BUILTIN`、
-  只读、禁止卸载覆盖。
+  只读、禁止卸载覆盖；**升级覆盖**——已落地内置技能按 `SKILL.md` version 与 assets 比对，不一致时干净重建为新版，
+  保证内置技能 bug 修复/演进随新包自动到达用户。
 - **CI 护栏**：`.github/workflows/ci.yml` 新增「Check skill script syntax (sh -n)」步骤，对 `assets/skills/**/*.sh`
   逐个 `sh -n` 校验（POSIX 语法，防止 busybox 不可解析的脚本合入）。
 - **文档同步**：`docs/modules/agent.md` 技能章节（3.6.3 分层/兼容/护栏）、
@@ -124,3 +125,5 @@ SKILL_PROJECT_PATH=<ctx.projectPath 经容器映射后的容器侧路径>
 - [x] M3：文档同步 + 提交/CI/发版（v0.1.0-rc175 已出包）。
 - [x] M4：busybox 兼容修复（C-2 awk 改字节 grep、统一 grep -E 防 BRE alternation 失效、修 W-4 前端扩展名匹配）
   + B1 分层检查 + CI 语法护栏 + SKILL.md 触发词/故障口径（v0.1.0-rc176）。
+- [x] M5：内置技能**升级覆盖**机制（BuiltinSkillSeeder 按 version 比对重建）+ pre-commit-health v1.0.1
+  （修复 153 行 `unexpected "("` 旧包副本问题，rc177）。

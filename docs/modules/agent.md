@@ -140,7 +140,7 @@
 
 #### 3.6.2 内置技能（BuiltinSkillSeeder）与脚本项目路径契约
 
-- `BuiltinSkillSeeder`：首启把 `assets/skills/*`（每个子目录一个内置技能）幂等引导（copy）进技能根目录 `skillsRoot`，并写入 `.builtin` 只读标记；`LocalDirectorySkillSource.listSkills()` 每次扫描前调用 `seedIfNeeded()` 补齐缺失项，扫描时据此把已落地目录识别为 `SkillSourceType.BUILTIN`。
+- `BuiltinSkillSeeder`：首启把 `assets/skills/*`（每个子目录一个内置技能）幂等引导（copy）进技能根目录 `skillsRoot`，并写入 `.builtin` 只读标记；`LocalDirectorySkillSource.listSkills()` 每次扫描前调用 `seedIfNeeded()` 补齐缺失项，扫描时据此把已落地目录识别为 `SkillSourceType.BUILTIN`。**内置技能升级覆盖**：对已落地带 `.builtin` 标记的技能，按 `SKILL.md` frontmatter `version` 与 assets 侧比对，不一致时 `deleteRecursively` 干净重建为新版（官方内容升级随新包自动生效），一致则不动；无 `.builtin` 标记的同名用户技能仍不覆盖。
 - **内置技能只读保护**：`LocalDirectorySkillSource.uninstall/install/update` 检测到 `.builtin` 标记即拒绝卸载/覆盖/更新（内置技能随版本升级，不可被用户改删）。
 - **脚本项目路径契约（SKILL_PROJECT_PATH）**：`SkillExecutor.executeScript` 组装入口脚本环境时注入 `SKILL_PROJECT_PATH`。宿主导入 `projectPath` 由 `LinuxContainerEngine` 经 proot `-b` 绑定到容器内固定点 `/root/workspace`，故统一注入容器侧 `/root/workspace`；`projectPath` 为空则注入空（纯静态检查）。供脚本技能在内定位真实项目并执行 git / 文件检查。
 - 首个内置技能：**pre-commit-health**（提交前规范体检，`assets/skills/pre-commit-health/`），scope=COMMON、type=SCRIPT；依据 `SKILL_PROJECT_PATH` 圈定待提交改动，输出「阻断项/建议项」报告（模块文档同步、strings.xml、版本号、敏感信息、targetSdk、prompts/docs 资产、迁移 SQL、提交信息格式、分支纪律），有阻断项时退出码非 0。

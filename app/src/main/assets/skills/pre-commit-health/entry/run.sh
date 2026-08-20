@@ -102,11 +102,16 @@ printf '%s\n' "$CHANGED" | while read -r f; do
     case "$rest" in
       *stringResource*|*R.string*|*getString*) continue ;;
     esac
-    # 跳过纯注释行（前导空白后是 // 或 *）
+    # 跳过注释行：// 单行注释、/* 或 /** 块注释（含单行 KDoc）、块注释续行（前导空白后是 *）
     case "$rest" in
       *'//'*) continue ;;
+      *'/*'*) continue ;;
     esac
     if printf '%s' "$rest" | LC_ALL=C grep -q '^[[:space:]]*\*'; then continue; fi
+    # 跳过日志语句：FileLogger 输出为诊断日志，非用户可见 UI 文案（AGENTS.md 仅约束 UI 文案走 strings.xml）
+    case "$rest" in
+      *'FileLogger.'*) continue ;;
+    esac
     echo "❌ [C-2] 疑似硬编码中文（应走 R.string.*）: $f:$ln $rest"
     echo x >> "$TMPB"
   done
