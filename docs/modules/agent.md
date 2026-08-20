@@ -107,6 +107,13 @@
 - `CommandEngine` 抽象同步/流式命令执行、容器状态与初始化进度（`initProgress: StateFlow<ContainerInitState>`）。
 - `LinuxContainerEngine`：本地 PRoot 容器实现；`RemoteSshEngine`：SSH exec（基于 `RemoteSshConnection` 共享 sshj 连接，与 SFTP 文件访问复用同一连接）；`DelegatingCommandEngine` 按当前模式/配置把调用委派给本地或远程后端。
 - `ExecuteCommandTool`（`Bash`）把 shell 命令交给 `CommandEngine`，流式输出、限长截断、环境同步，并按计划/自动/常规模式受权限引擎约束。
+- **命令执行护栏（`CommandLoopGuard` + `BusyBoxCompatibilityGuard`）**：`tool/container/` 两个静态检测器在命令执行前预检，预防 AI 写出「永不结束 / BusyBox 不兼容 / 危险爆炸」的命令。
+  - `CommandLoopGuard`：检测无界循环（`while true`/`while :`/`while [ 1 ]`/`until false`/`for ((;;))`，刻意不命中 `while read`/条件循环/`for i in ...` 等有界用法）与经典 fork bomb（`:(){ :|:& };:`）。命中无界循环时：
+    - `Bash`（`ExecuteCommandTool`）：把超时钳制为 30 秒（默认 120s 提前强制终止），权限卡 `details` 附加警告。
+    - `terminal(action="start")`（`TerminalSessionTool`）：常驻终端无超时，**直接拒绝启动**并提示改用 `Bash`，防止 AI 把循环塞进常驻终端无限刷屏/空耗。
+    - fork bomb 两个工具都**直接拒绝**（`&` 后台自复制，超时无法可靠终止）。
+  - `BusyBoxCompatibilityGuard`：识别 BusyBox 不支持的 GNU 专属参数（`nc -q`/`grep -P`/grep 模式 `\d\s\w`/`find -printf`/`xargs -d`/`cp --parents`）与无限 `ping`（未带 `-c|-w`）。**只预警不拦截**：权限卡 `details` 附加提示，并把提示拼进工具结果末尾，让 AI 看到并改用兼容写法。
+  - 背景：容器为 Alpine（BusyBox），AI 曾写出 `while true; do nc -q ...; done`（`nc -q` 为 GNU netcat 语法，BusyBox 不支持，每次调用失败又重试）塞进常驻终端导致无限刷屏，此护栏 + 提示词约束（`prompts/60-tools-and-paths.md`「容器命令兼容性与执行纪律」）双管齐下。
 - `ContainerInstaller` + `progress/` 子包负责环境安装与进度聚合解析（`RealProgressAggregator`/`InstallProgressParser`/`ApkStdoutParser`）。
 - **双架构容器（真机 + 模拟器）**：`ContainerInstaller` 支持 `container/arm`（arm64）与 `container/x86_64`（x86_64 rootfs + x86_64 原生 proot + qemu 转译器）双 rootfs 资产，`prootBinFor/rootfsDirFor` 按 `ContainerProfile.arch + EnvironmentDetector` 选择；`LinuxContainerEngine` 首次启动按宿主架构自动落到对应内置 profile（x86_64 宿主 → `BUILTIN_ALPINE_X86`），`buildBaseProotArgv` 仅「x86_64 容器 + 非 x86_64 宿主」时注入 `-q qemu`；容器不可用环境走明确降级报错，AI 核心（文件/对话/远程 SSH）不受影响（见 [emulator-support-design](../plan-docs/emulator-support-design.md)）。
 

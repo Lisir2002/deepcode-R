@@ -141,6 +141,23 @@ class ExecuteCommandTool @Inject constructor(
         return seconds.coerceIn(1L, MAX_TIMEOUT_SECONDS) * 1000L
     }
 
+    /**
+     * 解析最终生效超时：检测到无界循环（while true/until false/for((;;)) 等）时，
+     * 把超时钳制到 [CommandLoopGuard.GUARDED_TIMEOUT_SECONDS]，避免长段刷屏/空耗。
+     * @return (超时毫秒, 是否因无界循环被钳制)
+     */
+    private fun resolveEffectiveTimeoutMs(
+        args: Map<String, JsonElement>,
+        command: String
+    ): Pair<Long, Boolean> {
+        val base = resolveTimeoutMs(args)
+        if (CommandLoopGuard.hasUnboundedLoop(command)) {
+            val guarded = CommandLoopGuard.GUARDED_TIMEOUT_SECONDS * 1000L
+            return if (guarded < base) guarded to true else base to false
+        }
+        return base to false
+    }
+
     /** 解析 strict 参数：缺省 false，保持旧行为兼容。 */
     private fun resolveStrict(args: Map<String, JsonElement>): Boolean =
         args["strict"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
@@ -151,15 +168,27 @@ class ExecuteCommandTool @Inject constructor(
         argsPreview: String
     ): PendingToolPermission {
         val command = args["command"]?.jsonPrimitive?.contentOrNull ?: "未知命令"
-        val timeoutSeconds = resolveTimeoutMs(args) / 1000L
+        val (timeoutMs, loopGuarded) = resolveEffectiveTimeoutMs(args, command)
+        val timeoutSeconds = timeoutMs / 1000L
         val strict = resolveStrict(args)
         return PendingToolPermission(
             id = callId,
             toolName = name,
             title = "确认执行命令",
             summary = command,
-            details = "将在当前执行环境中执行。\n超时：${timeoutSeconds} 秒" +
-                if (strict) "\n严格模式：非零退出码将按失败返回" else "",
+            details = buildString {
+                append("将在当前执行环境中执行。\n超时：${timeoutSeconds} 秒")
+                if (CommandLoopGuard.isForkBomb(command)) {
+                    append("\n⚠️ ${CommandLoopGuard.forkBombWarningMessage()}")
+                }
+                if (loopGuarded) {
+                    append("\n⚠️ ${CommandLoopGuard.warningMessage()}超时已自动钳制为 ${timeoutSeconds} 秒，到点强制终止。")
+                }
+                if (strict) {
+                    append("\n严格模式：非零退出码将按失败返回")
+                }
+                BusyBoxCompatibilityGuard.warningMessage(command)?.let { append("\n$it") }
+            },
             argsPreview = argsPreview
         )
     }
@@ -167,13 +196,20 @@ class ExecuteCommandTool @Inject constructor(
     override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
         val command = args["command"]?.jsonPrimitive?.contentOrNull
             ?: return ToolResult.Error("缺少必需参数: command")
+        if (CommandLoopGuard.isForkBomb(command)) {
+            FileLogger.e(TAG, "拦截 fork bomb 命令: $command")
+            return ToolResult.Error(CommandLoopGuard.forkBombWarningMessage() + "禁止执行此类命令。")
+        }
 
         return try {
             // 在当前工作区目录内执行，与文件工具保持同一根目录
             val workdir = workspaceRepository.currentPath()
-            val timeoutMs = resolveTimeoutMs(args)
+            val (timeoutMs, loopGuarded) = resolveEffectiveTimeoutMs(args, command)
             val strict = resolveStrict(args)
-            FileLogger.d(TAG, "execute_command (timeout=${timeoutMs}ms, strict=$strict): $command")
+            FileLogger.d(TAG, "execute_command (timeout=${timeoutMs}ms, strict=$strict, loopGuarded=$loopGuarded): $command")
+            if (loopGuarded) {
+                FileLogger.w(TAG, "命令含无界循环，超时钳制为 ${timeoutMs / 1000}s: $command")
+            }
             // 用 runCommandSyncWithExit 拿真实退出码（超时/异常时为 null），供 strict 模式判定失败；
             // 其 output 与旧 runCommandSync 返回的同一份 BoundedOutput 限幅结果，非 strict 行为不变。
             var result: CommandResult = commandEngine.runCommandSyncWithExit(command, workdir, timeoutMs)
@@ -184,7 +220,7 @@ class ExecuteCommandTool @Inject constructor(
             }
             FileLogger.v(TAG, "execute_command 完成，输出 ${result.output.length} 字符，exit=${result.exitCode}")
             maybeSyncBundleStates(command)
-            aggregateResult(result.output, result.exitCode, strict)
+            aggregateResult(BusyBoxCompatibilityGuard.appendHint(command, result.output), result.exitCode, strict)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -207,6 +243,11 @@ class ExecuteCommandTool @Inject constructor(
             emit(ToolStreamEvent.Completed(ToolResult.Error("缺少必需参数: command")))
             return@flow
         }
+        if (CommandLoopGuard.isForkBomb(command)) {
+            FileLogger.e(TAG, "拦截 fork bomb 命令(流式): $command")
+            emit(ToolStreamEvent.Completed(ToolResult.Error(CommandLoopGuard.forkBombWarningMessage() + "禁止执行此类命令。")))
+            return@flow
+        }
         val strict = resolveStrict(args)
 
         // 限幅累积：喂回模型的最终结果只保留开头+结尾，避免超大输出撑爆上下文。
@@ -215,8 +256,11 @@ class ExecuteCommandTool @Inject constructor(
         var exitCode: Int? = null
         try {
             val workdir = workspaceRepository.currentPath()
-            val timeoutMs = resolveTimeoutMs(args)
-            FileLogger.d(TAG, "execute_command(流式, timeout=${timeoutMs}ms, strict=$strict): $command")
+            val (timeoutMs, loopGuarded) = resolveEffectiveTimeoutMs(args, command)
+            FileLogger.d(TAG, "execute_command(流式, timeout=${timeoutMs}ms, strict=$strict, loopGuarded=$loopGuarded): $command")
+            if (loopGuarded) {
+                FileLogger.w(TAG, "命令含无界循环，超时钳制为 ${timeoutMs / 1000}s(流式): $command")
+            }
             // 单次流式执行；@retry 时复用同一累积器，使重试输出并入结果。
             suspend fun runOnce() {
                 commandEngine.runCommandStream(command, workdir, timeoutMs).collect { event ->
@@ -239,7 +283,7 @@ class ExecuteCommandTool @Inject constructor(
             }
             FileLogger.v(TAG, "execute_command(流式) 完成，输出 ${accumulated.totalChars} 字符，exit=$exitCode")
             maybeSyncBundleStates(command)
-            emit(ToolStreamEvent.Completed(aggregateResult(accumulated.build(), exitCode, strict)))
+            emit(ToolStreamEvent.Completed(aggregateResult(BusyBoxCompatibilityGuard.appendHint(command, accumulated.build()), exitCode, strict)))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

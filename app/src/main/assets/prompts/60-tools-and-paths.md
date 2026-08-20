@@ -30,6 +30,22 @@
 - 选择：短且会自行结束的命令用 `Bash`；耗时长但会结束、需要等结果的用 `terminal(action="start", notify=true)`（等系统主动回调，勿轮询）；常驻服务用 `terminal(action="start", notify=false)`，再配合 `read`/`send`/`key`/`close`。
 - **驱动交互式程序**：`terminal` 还能驱动行式交互程序（`git commit` 编辑器、`npm init` 问答、`python` REPL、`ssh` 密码提示等）。用 `start` 启动后停在输入提示处，用 `send` 逐行发输入（默认自动回车），用 `key` 发 `tab`/`enter`/`ctrl+c` 等控制键，用 `read` 查看当前输出判断状态。这是 `Bash` 做不到的——`Bash` 一次性执行等命令结束，无法中途交互。
 
+## 容器命令兼容性与执行纪律（重要）
+执行环境是 **Alpine Linux（BusyBox ash/awk/grep/nc/sed 等）**，不是 GNU/Linux。写命令必须 **POSIX / BusyBox 兼容**，禁用 GNU 专属语法——否则命令解析即报错、重试又失败，白白消耗时间。系统会对命令做静态护栏检测（无界循环 / fork bomb / 常用 BusyBox 不兼容参数 / 无限 ping），命中时会拒绝执行或把提示拼进结果，**按提示修正即可，不要无视提示盲目重跑**。
+
+- **常用 GNU → BusyBox 对照（写命令前自查）**：
+  - `nc -q 1 host port`（GNU netcat「EOF 后等待」）→ **BusyBox 不支持**，用 `nc -w 1 host port`，或改用 `wget -T 2 -O /dev/null URL` / `curl --connect-timeout 2 -s`。
+  - `grep -P`/`grep \d`/`grep \s` → busybox 无 `-P`、不认 `\d\s`，用 `grep -E` + `[0-9]`/`[[:space:]]`，或 `LC_ALL=C grep '[^ -~]'` 做字节级非 ASCII 检测。
+  - `awk '\x{4e00}'`（gawk Unicode 语法）→ busybox awk 不支持，用 `LC_ALL=C` 字节判断。
+  - `find -printf` / `xargs -d` / `cp --parents` / `sed -i.bak` 备份后缀 → busybox 均不支持，换 `ls`/`stat` 拼接、`xargs -0`、自建目录、先 `cp` 再 `sed`。
+  - `date -d '...'` → busybox 无 GNU `-d` 自然语言解析（`-d @epoch` 部分支持），跨平台优先用 `date +%s` / `date -u +%FT%TZ`。
+  - `head -n -N` / `tail -n +N` 负数写法 → busybox 部分版本不支持，用 `awk`/`sed` 替代。
+- **严禁无界循环**：禁止 `while true; do ...; done`、`while :`、`until false`、`for ((;;))` 这类**没有退出条件**的循环（尤其配合 nc/ping/curl/wget/重试时），会无限刷屏、空耗 CPU。需要等待/轮询时：**有限次数**（如 `for i in 1 2 3 4 5` / `seq`）+ `sleep` 间隔 + 明确退出条件，并在超时前结束。
+- **`ping` 必须带次数/时限**：`ping host` 会一直 ping 不结束，必须写 `ping -c 3 host`（或 `-w <秒>`）。同理 `nc host port` 连接探测用 `nc -w 1 -z host port`。
+- **严禁 fork bomb**：禁止 `:(){ :|:& };:` 这类自复制函数，会瞬间耗尽容器 CPU/内存导致系统卡死；系统检测到会直接拒绝。
+- **`terminal(action="start")` 常驻模式没有超时**：`notify=false` 的常驻终端命令会一直运行直到手动停止，**只适合真正常驻的服务**（`npm run dev`、`python server.py` 等）。一次性命令、探测、循环、构建等**会自行结束的任务**一律用 `Bash`（有超时强制终止）或 `terminal(action="start", notify=true)`（结束后自动回调）。把循环/探测塞进常驻终端 = 停不下来的刷屏。
+- **失败先修根因，不要盲目重试**：命令失败先读报错定位原因（如上面的 BusyBox 兼容问题）再修；同一条命令连续失败 2 次就换方法或向用户说明，不要反复原样重试。
+
 ## 代码探索工具（只读）
 - `list`：ls 风格列目录。参数 `args`，如 `list(args="-la ~/workspace/app")`；不传默认 `~/workspace`。支持 `-a -A -l -R -d -1 -h -r -t -S -v -f --`。
 - `search`：rg 风格搜索。参数 `args`，如 `search(args="-n \"fun main\" ~/workspace/app")`。只接受 ripgrep 参数，不要混入 shell 管道（`|`）、`grep`/`head` 等外部命令或重定向——需要后处理用 `Bash`。

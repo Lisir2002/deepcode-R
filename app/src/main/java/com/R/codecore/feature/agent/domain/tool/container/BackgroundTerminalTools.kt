@@ -182,7 +182,16 @@ class TerminalSessionTool @Inject constructor(
                 toolName = name,
                 title = "确认启动后台命令",
                 summary = command,
-                details = "后台标签：${title?.takeIf { it.isNotBlank() } ?: "自动命名"}\n命令会持续运行，直到进程退出或手动停止。",
+                details = buildString {
+                    append("后台标签：${title?.takeIf { it.isNotBlank() } ?: "自动命名"}\n命令会持续运行，直到进程退出或手动停止。")
+                    if (CommandLoopGuard.isForkBomb(command)) {
+                        append("\n⚠️ ${CommandLoopGuard.forkBombWarningMessage()}")
+                    }
+                    if (CommandLoopGuard.hasUnboundedLoop(command)) {
+                        append("\n⚠️ ${CommandLoopGuard.warningMessage()}常驻终端没有超时，此命令将被拒绝执行；请改用 Bash 工具（有超时强制终止）。")
+                    }
+                    BusyBoxCompatibilityGuard.warningMessage(command)?.let { append("\n$it") }
+                },
                 argsPreview = argsPreview
             )
         }
@@ -268,6 +277,16 @@ class TerminalSessionTool @Inject constructor(
             emit(ToolStreamEvent.Completed(ToolResult.Error("start 操作缺少必需参数: command")))
             return
         }
+        if (CommandLoopGuard.isForkBomb(command)) {
+            FileLogger.e(TAG, "拒绝常驻启动 fork bomb 命令: $command")
+            emit(ToolStreamEvent.Completed(ToolResult.Error(CommandLoopGuard.forkBombWarningMessage() + "禁止执行此类命令。")))
+            return
+        }
+        if (CommandLoopGuard.hasUnboundedLoop(command)) {
+            FileLogger.w(TAG, "拒绝常驻启动无界循环命令: $command")
+            emit(ToolStreamEvent.Completed(ToolResult.Error(loopBlockedMessage())))
+            return
+        }
         val title = args["title"]?.asPlainString()
         val notify = args["notify"]?.asPlainString()?.toBooleanStrictOrNull() ?: false
         val tabId = try {
@@ -282,7 +301,7 @@ class TerminalSessionTool @Inject constructor(
 
         FileLogger.i(TAG, "后台命令已启动 tab=$tabId(流式捕获): $command")
         captureOutputFor(tabId, initialOutput = "")
-        val result = withContext(Dispatchers.Main) { capturedResult(tabId, actionLabel = "start") }
+        val result = withContext(Dispatchers.Main) { capturedResult(tabId, actionLabel = "start", compatCommand = command) }
         emit(ToolStreamEvent.Completed(result))
     }
 
@@ -350,6 +369,14 @@ class TerminalSessionTool @Inject constructor(
     private suspend fun start(args: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.Main) {
         val command = args["command"]?.asPlainString()
             ?: return@withContext ToolResult.Error("start 操作缺少必需参数: command")
+        if (CommandLoopGuard.isForkBomb(command)) {
+            FileLogger.e(TAG, "拒绝常驻启动 fork bomb 命令: $command")
+            return@withContext ToolResult.Error(CommandLoopGuard.forkBombWarningMessage() + "禁止执行此类命令。")
+        }
+        if (CommandLoopGuard.hasUnboundedLoop(command)) {
+            FileLogger.w(TAG, "拒绝常驻启动无界循环命令: $command")
+            return@withContext ToolResult.Error(loopBlockedMessage())
+        }
         val title = args["title"]?.asPlainString()
         val notify = args["notify"]?.asPlainString()?.toBooleanStrictOrNull() ?: false
         try {
@@ -373,7 +400,7 @@ class TerminalSessionTool @Inject constructor(
                     mapOf(
                         "tab_id" to JsonPrimitive(tabId),
                         "running" to JsonPrimitive(running),
-                        "output" to JsonPrimitive(output)
+                        "output" to JsonPrimitive(BusyBoxCompatibilityGuard.appendHint(command, output))
                     )
                 )
             )
@@ -523,7 +550,13 @@ class TerminalSessionTool @Inject constructor(
     private fun normalizeKey(key: String): String =
         key.trim().lowercase().replace(" ", "").replace("_", "+").replace("-", "+")
 
-    private fun capturedResult(tabId: String, actionLabel: String): ToolResult {
+    /** 无界循环被拒绝时的统一提示文案。 */
+    private fun loopBlockedMessage(): String =
+        CommandLoopGuard.warningMessage() +
+            "常驻终端没有超时，已拒绝启动，避免无限刷屏/空耗。请改用 Bash 工具（有超时强制终止），" +
+            "并给循环加次数上限与 sleep 间隔（如需等待/轮询）。"
+
+    private fun capturedResult(tabId: String, actionLabel: String, compatCommand: String? = null): ToolResult {
         val tab = sessionManager.listTabs().firstOrNull { it.id == tabId }
             ?: return ToolResult.Error("未找到终端标签: $tabId")
         val rawOutput = sessionManager.getTabOutput(tabId) ?: ""
@@ -531,12 +564,13 @@ class TerminalSessionTool @Inject constructor(
             TAG,
             "$actionLabel 捕获 tab=$tabId running=${tab.running} 输出 ${rawOutput.length} 字符"
         )
+        val output = compatCommand?.let { BusyBoxCompatibilityGuard.appendHint(it, rawOutput) } ?: rawOutput
         return ToolResult.Success(
             JsonObject(
                 mapOf(
                     "tab_id" to JsonPrimitive(tabId),
                     "running" to JsonPrimitive(tab.running),
-                    "output" to JsonPrimitive(rawOutput)
+                    "output" to JsonPrimitive(output)
                 )
             )
         )
