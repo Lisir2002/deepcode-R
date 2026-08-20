@@ -8,11 +8,13 @@ import javax.inject.Singleton
 
 @Singleton
 class LocalDirectorySkillSource @Inject constructor(
-    private val containerInstaller: ContainerInstaller
+    private val containerInstaller: ContainerInstaller,
+    private val builtinSkillSeeder: BuiltinSkillSeeder
 ) : SkillSource, MutableSkillSource {
 
     private companion object {
         const val TAG = "LocalDirectorySkillSource"
+        const val BUILTIN_MARKER = ".builtin"
     }
 
     override val skillsRoot: File by lazy {
@@ -20,6 +22,8 @@ class LocalDirectorySkillSource @Inject constructor(
     }
 
     override fun listSkills(): List<Skill> {
+        // 首启引导：确保内置技能资产已落地（幂等，缺失才补齐），再走统一扫描。
+        builtinSkillSeeder.seedIfNeeded()
         if (!skillsRoot.exists()) return emptyList()
         val skillFiles = skillsRoot.walkTopDown()
             .maxDepth(4) // 允许一定的嵌套深度（比如 repo/skills/my-skill/SKILL.md）
@@ -28,7 +32,12 @@ class LocalDirectorySkillSource @Inject constructor(
 
         return skillFiles.mapNotNull { file -> file.parentFile }
             .distinct() // 如果同一个目录下同时存在这两种文件，只解析一次
-            .mapNotNull { dir -> SkillParser.parse(dir, SkillSourceType.LOCAL) }
+            .mapNotNull { dir ->
+                (SkillParser.parse(dir, SkillSourceType.LOCAL))?.let {
+                    // 带内置标记的目录识别为只读 BUILTIN 来源（首启由 BuiltinSkillSeeder 落地）。
+                    if (File(dir, BUILTIN_MARKER).exists()) it.copy(source = SkillSourceType.BUILTIN) else it
+                }
+            }
             .sortedBy { it.name.lowercase() }
     }
 
@@ -51,6 +60,11 @@ class LocalDirectorySkillSource @Inject constructor(
             }
 
         val target = File(skillsRoot, probe.id)
+        // 内置技能只读：同名内置技能禁止覆盖式安装/更新（首启由 BuiltinSkillSeeder 落地）。
+        if (target.exists() && File(target, BUILTIN_MARKER).exists()) {
+            FileLogger.w(TAG, "拒绝覆盖内置技能（只读）: ${probe.id}")
+            return null
+        }
         try {
             // 目标已存在则先清理（覆盖式安装），保证幂等。
             if (target.exists()) target.deleteRecursively()
@@ -75,6 +89,11 @@ class LocalDirectorySkillSource @Inject constructor(
     override fun uninstall(id: String): Boolean {
         val target = File(skillsRoot, id)
         if (!target.exists()) return true // 技能不存在视为成功
+        // 内置技能只读：禁止卸载（首启由 BuiltinSkillSeeder 落地，带内置标记）。
+        if (File(target, BUILTIN_MARKER).exists()) {
+            FileLogger.w(TAG, "拒绝卸载内置技能（只读）: $id")
+            return false
+        }
         return try {
             target.deleteRecursively()
             FileLogger.i(TAG, "技能已卸载: $id")
@@ -102,6 +121,10 @@ class LocalDirectorySkillSource @Inject constructor(
         val target = File(skillsRoot, id)
         if (!target.exists()) {
             FileLogger.w(TAG, "更新技能失败：目标技能不存在 $id")
+            return null
+        }
+        if (File(target, BUILTIN_MARKER).exists()) {
+            FileLogger.w(TAG, "拒绝更新内置技能（只读）: $id")
             return null
         }
         return try {

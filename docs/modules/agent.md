@@ -41,7 +41,7 @@
 | `domain/prompt/SystemPromptProvider.kt` | 增量式系统提示词：按 `PromptSource` 组装静态规则/计划模式/工作区上下文等片段，维护缓存与快照 |
 | `domain/provider/` | AI Provider 抽象：`AIProvider`（complete / completeStream，含 reasoning、signature、token 统计）、`OpenAIAdapter`、`AnthropicAdapter`、`GeminiAdapter`、`RetryPolicy`、`HttpErrorEnricher`（把 HTTP 错误体拼进 message） |
 | `domain/session/` | 会话用例：`SessionUseCase`、`MessagePersistenceUseCase` |
-| `domain/skill/` | 技能系统：`Skill` 模型（PROMPT/SCRIPT/MCP 三形态、BUILTIN/LOCAL 来源）、`SkillParser`、`SkillRepository`、`SkillExecutor`、`SkillSource` + `LocalDirectorySkillSource`、`SkillStateRepository`（Room 持久化启用状态） |
+| `domain/skill/` | 技能系统：`Skill` 模型（PROMPT/SCRIPT/MCP 三形态、BUILTIN/LOCAL 来源）、`SkillParser`、`SkillRepository`、`SkillExecutor`、`SkillSource` + `LocalDirectorySkillSource`、`BuiltinSkillSeeder`（首启引导内置技能）、`SkillStateRepository`（Room 持久化启用状态） |
 | `domain/tool/` | 工具系统（详见 2.3） |
 | `domain/workflow/` | Agent 工作流：`AgentWorkflow`（接口 + `AgentEvent` 事件集）、`StatefulAgentWorkflow`（MVI 状态机实现）、`ContextCompactor`（上下文压缩） |
 | `domain/zth/` | ZTH 零信任防护：`ZthGuardAggregateFacade`（聚合门面）、`ZthCircuitBreakerManager`、`ZthConfirmationCardManager` + `ZthConfirmationCardStateMachine`、`ZthPlanApprovalManagerWrapper`、`ZthContentReviewer`、`ZthToolOutputGuard`、`ZthCapabilityGuard`、`ZthFailureClassifier`、`ZthWorkflowHooks`、`ZthDomainModels`、`TerminalBundleMirrorRotator` |
@@ -137,6 +137,13 @@
 - `SkillToolBindingManager`：技能加载成功时校验并登记 `requiredTools`（缺失给明确错误 `SKILL_MISSING_TOOL`），技能禁用/卸载时回收本管理器动态注册的工具（绝不删除内置全局工具）。
 - `LoadSkillTool.executeWithContext`：GLOBAL/COMMON 直接放行加载；AGENT 级按声明 agentType 校验；加载前登记专属工具、构建 `SkillExecutionContext` 贯穿执行。当前为单 Agent 场景，AGENT 级按声明放行，多 Agent 演进后改为 `<skill.agentType> == 当前激活 agentType` 才放行。
 - 技能「激活态」语义（R1）：GLOBAL 常驻、COMMON 随「用户开关 × agent 激活」、AGENT 仅当对应 agent 激活——实际按作用域动态注册/回收由 `SkillToolBindingManager` 在 agent 激活时执行。
+
+#### 3.6.2 内置技能（BuiltinSkillSeeder）与脚本项目路径契约
+
+- `BuiltinSkillSeeder`：首启把 `assets/skills/*`（每个子目录一个内置技能）幂等引导（copy）进技能根目录 `skillsRoot`，并写入 `.builtin` 只读标记；`LocalDirectorySkillSource.listSkills()` 每次扫描前调用 `seedIfNeeded()` 补齐缺失项，扫描时据此把已落地目录识别为 `SkillSourceType.BUILTIN`。
+- **内置技能只读保护**：`LocalDirectorySkillSource.uninstall/install/update` 检测到 `.builtin` 标记即拒绝卸载/覆盖/更新（内置技能随版本升级，不可被用户改删）。
+- **脚本项目路径契约（SKILL_PROJECT_PATH）**：`SkillExecutor.executeScript` 组装入口脚本环境时注入 `SKILL_PROJECT_PATH`。宿主导入 `projectPath` 由 `LinuxContainerEngine` 经 proot `-b` 绑定到容器内固定点 `/root/workspace`，故统一注入容器侧 `/root/workspace`；`projectPath` 为空则注入空（纯静态检查）。供脚本技能在内定位真实项目并执行 git / 文件检查。
+- 首个内置技能：**pre-commit-health**（提交前规范体检，`assets/skills/pre-commit-health/`），scope=COMMON、type=SCRIPT；依据 `SKILL_PROJECT_PATH` 圈定待提交改动，输出「阻断项/建议项」报告（模块文档同步、strings.xml、版本号、敏感信息、targetSdk、prompts/docs 资产、迁移 SQL、提交信息格式、分支纪律），有阻断项时退出码非 0。
 
 ### 3.7 ZTH 零信任防护（ZthGuardAggregateFacade）
 

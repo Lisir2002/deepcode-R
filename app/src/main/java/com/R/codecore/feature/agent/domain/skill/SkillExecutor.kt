@@ -109,8 +109,13 @@ class SkillExecutor @Inject constructor(
             return SkillExecutionResult.Error("用户拒绝了脚本技能「${skill.name}」的执行", "SKILL_REJECTED")
         }
 
-        // 组装命令：进入技能目录，把参数作为环境变量 SKILL_ARG_* 传入，执行入口脚本
+        // 组装命令：进入技能目录，把参数作为环境变量 SKILL_ARG_* 传入，执行入口脚本。
+        // 项目路径契约（SKILL_PROJECT_PATH）：宿主的 projectPath 由 LinuxContainerEngine 经 proot -b
+        // 绑定到容器内固定点 /root/workspace，因此此处统一注入容器侧路径 /root/workspace，
+        // 供脚本技能入口脚本定位真实项目并在其上执行 git / 文件检查；ctx.projectPath 为 null 时注入空（纯静态检查）。
         val env = buildString {
+            val projContainerPath = if (ctx.projectPath != null) "/root/workspace" else ""
+            append("SKILL_PROJECT_PATH=${shellQuote(projContainerPath)} ")
             args.forEach { (k, v) ->
                 append("SKILL_ARG_${k.uppercase()}=${shellQuote(v)} ")
             }
