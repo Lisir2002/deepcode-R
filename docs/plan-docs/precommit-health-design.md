@@ -1,6 +1,6 @@
 # precommit-health-design
 
-> 评审状态：📝 草案
+> 评审状态：✅ 已实施（首款内置技能 pre-commit-health 已落地并出包 v0.1.0-rc175）
 >
 > 主题：首款内置 Skill「提交前规范体检」（pre-commit-health）的设计。定义体检范围、执行契约
 > （SCRIPT 脚本 + PROMPT 修复指引双形态）与工程化落地清单。
@@ -106,4 +106,4 @@ SKILL_PROJECT_PATH=<ctx.projectPath 经容器映射后的容器侧路径>
 
 - [x] M1：`SKILL_PROJECT_PATH` 契约注入（SkillExecutor 小改动）。
 - [x] M2：内置技能资产（SKILL.md + entry/run.sh）与 BuiltinSkillSeeder 首启引导。
-- [ ] M3：文档同步 + 提交/CI/发版。
+- [x] M3：文档同步 + 提交/CI/发版（v0.1.0-rc175 已出包）。
