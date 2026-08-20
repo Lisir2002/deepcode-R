@@ -1,5 +1,7 @@
 package com.R.codecore.feature.agent.presentation.component
 
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -98,7 +100,7 @@ fun ZthConfirmationCardSheet(
                     onClick = { vm.onClickCancel() },
                     enabled = !ui.committing && payload.tier.tier <= 1
                 ) {
-                    Text(if (payload.tier.tier >= 2) "禁止取消(tier≥2)" else "取消")
+                    Text(if (payload.tier.tier >= 2) stringResource(R.string.ui______6e2b79aa_2) else stringResource(R.string.ui____625fb26b_7))
                 }
             }
 
@@ -166,24 +168,24 @@ fun ZthConfirmationCardSheet(
                         onClick = { showEdit = true; vm.onClickModifyPlan() },
                         enabled = !ui.committing,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-                    ) { Text("✏️ 修改计划后再确认") }
+                    ) { Text(stringResource(R.string.ui__________ea569350_2)) }
                 }
             } else {
-                Text("修改计划（修改后仍需 SwipeToConfirm）：", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.ui______621aea14_2), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 OutlinedTextField(
                     value = editText,
                     onValueChange = { editText = it },
                     modifier = Modifier.fillMaxWidth().height(120.dp),
-                    placeholder = { Text("在这里修改计划；删除危险操作、限制影响范围后再滑动确认。") }
+                    placeholder = { Text(stringResource(R.string.ui_________b19d3f5d_2)) }
                 )
                 Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { showEdit = false; vm.onAbortEdit() }) { Text("取消编辑") }
+                    TextButton(onClick = { showEdit = false; vm.onAbortEdit() }) { Text(stringResource(R.string.ui______cbb46593_2)) }
                     Button(
                         onClick = { showEdit = false; vm.onDoneEdit(editText) },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
-                    ) { Text("保存修改并继续") }
+                    ) { Text(stringResource(R.string.ui_________00433286_2)) }
                 }
             }
 
@@ -201,10 +203,10 @@ fun ZthConfirmationCardSheet(
                     },
                     enabled = !ui.committing,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
-                ) { Text("❌ 拒绝计划") }
+                ) { Text(stringResource(R.string.ui______36d2d19a_2)) }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { vm.onClickCancel() }, enabled = !ui.committing && payload.tier.tier <= 1) {
-                    Text(if (payload.tier.tier >= 2) "取消不可用" else "稍后处理")
+                    Text(if (payload.tier.tier >= 2) stringResource(R.string.ui_______e6f7b9c8_2) else stringResource(R.string.ui______45292500_2))
                 }
             }
             Spacer(Modifier.height(Spacing.sm))
@@ -213,7 +215,7 @@ fun ZthConfirmationCardSheet(
                 enabled = !ui.committing && payload.tier.tier <= 1 || (payload.tier.tier >= 2 && !ui.committing),
                 label = buildString {
                     append("滑动≥92% 确认执行（ZTH-0 幻觉零容忍）")
-                    if (ui.currentState == ZthConfirmationCardStateMachine.CardState.CONFIRMING_TX) append(" · LINK-INV 事务中…")
+                    if (ui.currentState == ZthConfirmationCardStateMachine.CardState.CONFIRMING_TX) append(stringResource(R.string.ui_link_24ee85e1_2))
                 },
                 onProgressChange = { pct -> vm.onSwipe(pct) },
                 onConfirmed = { if (ui.confirmButtonEnabled) vm.onClickConfirm() }
@@ -221,7 +223,7 @@ fun ZthConfirmationCardSheet(
             if (ui.committing) {
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    "事务提交中（LINK-INV 4 写），请稍候…",
+                    stringResource(R.string.ui_______e8de15ba_2),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -240,10 +242,10 @@ private fun RiskBadge(confidence: Float, tier: Int) {
     val tierBoost = tier * 0.05f
     val adjusted = (confidence + tierBoost).coerceIn(0f, 1f)
     val (bg, fg, text) = when {
-        adjusted >= 0.90f -> Triple(Color(0xFFB71C1C), Color.White, "CRITICAL · 幻觉高风险")
-        adjusted >= 0.60f -> Triple(Color(0xFFE65100), Color.White, "HIGH · 幻觉中高风险")
-        adjusted >= 0.30f -> Triple(Color(0xFFF9A825), Color.Black, "MED · 幻觉存疑")
-        else -> Triple(Color(0xFF2E7D32), Color.White, "LOW · 规则触发")
+        adjusted >= 0.90f -> Triple(Color(0xFFB71C1C), Color.White, stringResource(R.string.ui_critical_b86271d9_2))
+        adjusted >= 0.60f -> Triple(Color(0xFFE65100), Color.White, stringResource(R.string.ui_high_821cf95f_2))
+        adjusted >= 0.30f -> Triple(Color(0xFFF9A825), Color.Black, stringResource(R.string.ui_med_b6334d78_2))
+        else -> Triple(Color(0xFF2E7D32), Color.White, stringResource(R.string.ui_low_44246029_2))
     }
     Box(
         Modifier

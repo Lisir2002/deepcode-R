@@ -440,9 +440,9 @@ private fun TriStateCapabilityRow(
             label = {
                 Text(
                     text = when (overrideValue) {
-                        true -> "✅ 已手动开启"
-                        false -> "❌ 已手动关闭"
-                        null -> "跟随自动推荐"
+                        true -> stringResource(R.string.ui_______9188121c)
+                        false -> stringResource(R.string.ui_______73f7db5e)
+                        null -> stringResource(R.string.ui________be725ae0)
                     }
                 )
             },
@@ -459,12 +459,12 @@ private fun TriStateCapabilityRow(
             Text(
                 text = buildString {
                     append(description)
-                    append(" · 自动推荐：")
-                    append(if (autoValue) "✅ 开启" else "❌ 关闭")
+                    append(stringResource(R.string.ui______d8195afb))
+                    append(if (autoValue) stringResource(R.string.ui____5f15d40d) else stringResource(R.string.ui____127dc326))
                     append(
                         when (overrideValue) {
-                            true -> " · 你手动覆盖为：✅ 开启"
-                            false -> " · 你手动覆盖为：❌ 关闭"
+                            true -> stringResource(R.string.ui________3eeb0c16)
+                            false -> stringResource(R.string.ui________b9cce01f)
                             null -> ""
                         }
                     )
@@ -542,7 +542,7 @@ internal fun CapabilityOverrideSheet(
             Text(
                 text = buildString {
                     append("模型：$modelId")
-                    append(if (metadata?.source == ModelMetadata.Source.MODELS_DEV) "（官方收录）" else "（启发式/兼容端点）")
+                    append(if (metadata?.source == ModelMetadata.Source.MODELS_DEV) "（官方收录）" else "（官方收录）")
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -637,8 +637,8 @@ internal fun CapabilityOverrideSheet(
                     Icon(FeatherIcons.Check, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(Spacing.xs))
                     Text(
-                        if (!dirty) "保持现状"
-                        else if (draftVision == null && draftTools == null && draftReasoning == null) "不覆盖任何项"
+                        if (!dirty) "保存覆盖"
+                        else if (draftVision == null && draftTools == null && draftReasoning == null) "保存覆盖"
                         else "保存覆盖"
                     )
                 }

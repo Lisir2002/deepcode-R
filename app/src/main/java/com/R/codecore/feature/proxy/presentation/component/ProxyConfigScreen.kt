@@ -1,5 +1,6 @@
 package com.R.codecore.feature.proxy.presentation.component
-
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -75,7 +76,7 @@ import kotlinx.coroutines.withContext
 private enum class ImportMode { SUBSCRIPTION, MANUAL, FILE }
 
 private const val FIXED_OVERRIDE_HINT =
-    "固定覆盖块（系统持有，订阅更新不会冲掉）：mixed-port 7890 · 仅绑定 127.0.0.1 · " +
+    "external-controller 127.0.0.1:9090 · secret 随机会话 · mode rule · 内网 DIRECT 兜底" +
         "external-controller 127.0.0.1:9090 · secret 随机会话 · mode rule · 内网 DIRECT 兜底"
 
 /**
@@ -113,10 +114,10 @@ fun ProxyConfigScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             AppTopAppBar(
-                title = "网络代理",
+                title = stringResource(R.string.ui______d3ec5010),
                 onNavigateBack = onNavigateBack,
                 navigationIcon = FeatherIcons.ArrowLeft,
-                navigationContentDescription = "返回"
+                navigationContentDescription = stringResource(R.string.ui____5f411223)
             )
         }
     ) { padding ->
@@ -151,7 +152,7 @@ fun ProxyConfigScreen(
                     Button(
                         onClick = { showImport = !showImport },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (showImport) "收起导入向导" else "导入配置（订阅 / 手动 / 文件）") }
+                    ) { Text(if (showImport) stringResource(R.string.ui________8e335748) else "导入配置（订阅 / 手动 / 文件）") }
                 }
 
                 if (showImport) {
@@ -246,13 +247,13 @@ private fun MasterToggle(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (enabled) "代理已开启" else "代理已关闭",
+                    text = if (enabled) stringResource(R.string.ui_______4d1f56d6) else stringResource(R.string.ui_______b5fb1ee7),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    text = activeProfileId?.let { "活跃配置：#$it" } ?: "暂无活跃配置（需先导入）",
+                    text = activeProfileId?.let { "活跃配置：#$it" } ?: stringResource(R.string.ui________ae157e74),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -303,16 +304,16 @@ private fun NodesEntryCard(
             Spacer(Modifier.width(Spacing.md))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "节点管理",
+                    text = stringResource(R.string.ui______b26d228a),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = when {
-                        profileCount == 0 -> "先导入配置，即可管理分组 / 节点"
-                        enabled -> "分组 · 节点 · 状态 · 测速 · 切换，一站式操作"
-                        else -> "当前未启用：可查看节点与测速，切换需先启用代理"
+                        profileCount == 0 -> stringResource(R.string.ui_______98d7e010)
+                        enabled -> stringResource(R.string.ui____d934fb06)
+                        else -> stringResource(R.string.ui_______20fa5aa5)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -376,7 +377,7 @@ private fun ImportEditor(
                 .padding(Spacing.md)
         ) {
             Text(
-                text = "导入配置",
+                text = stringResource(R.string.ui______04522145),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -384,9 +385,9 @@ private fun ImportEditor(
             Spacer(Modifier.height(Spacing.sm))
 
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                ModeChip("订阅 URL", selected = mode == ImportMode.SUBSCRIPTION, enabled = !busy) { mode = ImportMode.SUBSCRIPTION }
-                ModeChip("手动 YAML", selected = mode == ImportMode.MANUAL, enabled = !busy) { mode = ImportMode.MANUAL }
-                ModeChip("从文件导入", selected = false, enabled = !busy) { filePicker.launch("*/*") }
+                ModeChip(stringResource(R.string.ui____701515e9), selected = mode == ImportMode.SUBSCRIPTION, enabled = !busy) { mode = ImportMode.SUBSCRIPTION }
+                ModeChip(stringResource(R.string.ui____601a29b5), selected = mode == ImportMode.MANUAL, enabled = !busy) { mode = ImportMode.MANUAL }
+                ModeChip(stringResource(R.string.ui_______d9a6706f), selected = false, enabled = !busy) { filePicker.launch("*/*") }
             }
 
             Spacer(Modifier.height(Spacing.sm))
@@ -394,7 +395,7 @@ private fun ImportEditor(
             OutlinedTextField(
                 value = nameField,
                 onValueChange = { nameField = it },
-                label = { Text("名称（可选，模型 list_subscriptions 展示用）") },
+                label = { Text(stringResource(R.string.ui____8d9d1723)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -406,7 +407,7 @@ private fun ImportEditor(
                     OutlinedTextField(
                         value = urlField,
                         onValueChange = { urlField = it },
-                        label = { Text("订阅 URL（token 加密存储、界面不显示明文）") },
+                        label = { Text(stringResource(R.string.ui____3208b62d)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -414,14 +415,14 @@ private fun ImportEditor(
                     OutlinedButton(
                         onClick = { onPreview(urlField.trim(), null) },
                         enabled = urlField.isNotBlank() && !busy
-                    ) { Text("预检") }
+                    ) { Text(stringResource(R.string.ui____bb872a0c)) }
                     SaveHint()
                 }
                 ImportMode.MANUAL -> {
                     OutlinedTextField(
                         value = yamlField,
                         onValueChange = { yamlField = it },
-                        label = { Text("手动粘贴 Clash YAML") },
+                        label = { Text(stringResource(R.string.ui______f388b5eb)) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(160.dp)
@@ -430,12 +431,12 @@ private fun ImportEditor(
                     OutlinedButton(
                         onClick = { onPreview(null, yamlField) },
                         enabled = yamlField.isNotBlank() && !busy
-                    ) { Text("预检") }
+                    ) { Text(stringResource(R.string.ui____bb872a0c_2)) }
                     SaveHint()
                 }
                 ImportMode.FILE -> {
                     Text(
-                        text = "点上方「从文件导入」选择 .yaml / .txt，将回填到手动 YAML 编辑器",
+                        text = stringResource(R.string.ui_____24992b8d),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -457,11 +458,11 @@ private fun ImportEditor(
                     OutlinedButton(
                         enabled = resolvedSource && !busy,
                         onClick = { onCommit(nameField, kind, secret, false) }
-                    ) { Text("仅保存") }
+                    ) { Text(stringResource(R.string.ui_____ee99388d)) }
                     Button(
                         enabled = resolvedSource && !busy,
                         onClick = { onCommit(nameField, kind, secret, true) }
-                    ) { Text("保存并启用") }
+                    ) { Text(stringResource(R.string.ui_______3eb4be1b)) }
                 }
             }
         }
@@ -487,7 +488,7 @@ private fun ModeChip(label: String, selected: Boolean, enabled: Boolean, onClick
 @Composable
 private fun SaveHint() {
     Text(
-        text = "预检通过后才会出现「仅保存 / 保存并启用」按钮",
+        text = stringResource(R.string.ui___________717dcdaa),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         modifier = Modifier.fillMaxWidth()
@@ -543,7 +544,7 @@ private fun OverrideCard() {
             Spacer(Modifier.width(Spacing.sm))
             Column {
                 Text(
-                    text = "固定覆盖块（系统持有）",
+                    text = stringResource(R.string.ui_______79cf38fa),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -592,7 +593,7 @@ private fun ProfileRow(
                 Spacer(Modifier.width(Spacing.sm))
                 if (isActive) {
                     Text(
-                        text = "活跃",
+                        text = stringResource(R.string.ui____fe32def4),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
@@ -607,28 +608,28 @@ private fun ProfileRow(
             Spacer(Modifier.height(Spacing.xs))
             Text(
                 text = when (profile.kind) {
-                    ProxySubscription.KIND_SUBSCRIPTION -> "来源：订阅 URL"
-                    ProxySubscription.KIND_MANUAL -> "来源：手动 YAML"
+                    ProxySubscription.KIND_SUBSCRIPTION -> stringResource(R.string.ui____adfb869d)
+                    ProxySubscription.KIND_MANUAL -> stringResource(R.string.ui____9c4530f5)
                     else -> "来源：${profile.kind}"
-                } + (if (isEnabled && isActive) " · 已启用" else ""),
+                } + (if (isEnabled && isActive) stringResource(R.string.ui_____0ddc086b) else ""),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(Spacing.sm))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 OutlinedButton(onClick = onActivate, enabled = !isActive) {
-                    Text(if (isActive) "活跃" else "设为活跃")
+                    Text(if (isActive) stringResource(R.string.ui____fe32def4_2) else stringResource(R.string.ui______f67c4924))
                 }
-                OutlinedButton(onClick = onDelete) { Text("删除") }
+                OutlinedButton(onClick = onDelete) { Text(stringResource(R.string.ui____2f4aaddd)) }
                 OutlinedButton(onClick = onToggleExpand) {
-                    Text(if (expanded) "收起" else "查看节点")
+                    Text(if (expanded) stringResource(R.string.ui____def9e98b_2) else stringResource(R.string.ui______47434b27))
                 }
             }
             if (expanded) {
                 Spacer(Modifier.height(Spacing.sm))
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    TabChip("节点列表", selected = expandedTab == 0) { onTabChange(0) }
-                    TabChip("分组 · 流量", selected = expandedTab == 1) { onTabChange(1) }
+                    TabChip(stringResource(R.string.ui______ce9e92bd), selected = expandedTab == 0) { onTabChange(0) }
+                    TabChip(stringResource(R.string.ui____76992f37), selected = expandedTab == 1) { onTabChange(1) }
                 }
                 Spacer(Modifier.height(Spacing.sm))
                 when (expandedTab) {
@@ -666,7 +667,7 @@ private fun NodeListView(view: ProfileNodesView?, onTestLatency: () -> Unit) {
     when {
         view == null || view.loading -> {
             Text(
-                text = "加载节点中…",
+                text = stringResource(R.string.ui_______3fd48e2f),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -697,16 +698,16 @@ private fun NodeListView(view: ProfileNodesView?, onTestLatency: () -> Unit) {
                         onClick = onTestLatency,
                         enabled = view.summary.nodes.isNotEmpty() && !view.testing
                     ) {
-                        Text(if (view.testing) "测速中…" else "测速")
+                        Text(if (view.testing) stringResource(R.string.ui_____7765b216) else stringResource(R.string.ui____c7f8d9cc))
                     }
                 }
                 Spacer(Modifier.height(Spacing.sm))
                 if (view.summary.nodes.isEmpty()) {
                     Text(
                         text = if (view.summary.providerCount > 0) {
-                            "节点来自 proxy-provider，由内核动态加载；启用代理后可经 network_proxy list_proxies 查看实时节点与延迟"
+                            stringResource(R.string.ui______18fa8b71)
                         } else {
-                            "该配置没有内联节点"
+                            stringResource(R.string.ui___________ff57a25f)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -762,8 +763,8 @@ private fun NodeRow(node: ProxyNodeInfo, tested: Boolean, delay: Long?) {
 @Composable
 private fun LatencyBadge(tested: Boolean, delayMs: Long?) {
     val (text, color) = when {
-        !tested -> "未测" to MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        delayMs == null -> "超时" to Color(0xFFC62828)
+        !tested -> stringResource(R.string.ui____21df949d) to MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        delayMs == null -> stringResource(R.string.ui____e944c7c9) to Color(0xFFC62828)
         else -> "${delayMs} ms" to Color(0xFF2E7D32)
     }
     Text(
@@ -784,14 +785,14 @@ private fun GroupsTrafficView(
     when {
         view == null || view.loading -> {
             Text(
-                text = "加载分组/流量中…",
+                text = stringResource(R.string.ui______6f516f09),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         !view.running -> {
             Text(
-                text = "代理未启用，无法读取分组与实时流量；请先「设为活跃 / 开启代理」。",
+                text = stringResource(R.string.ui_______e1a5bd7a),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -807,7 +808,7 @@ private fun GroupsTrafficView(
             Column(modifier = Modifier.fillMaxWidth()) {
                 if (!isActive) {
                     Text(
-                        text = "该配置未设为活跃：下方分组/流量为当前活跃配置的运行态。",
+                        text = stringResource(R.string.ui__________154de4a1),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -854,7 +855,7 @@ private fun TrafficCard(traffic: ProxyTraffic?) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "实时流量",
+                text = stringResource(R.string.ui______c1fbcbfb),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold
             )
@@ -947,7 +948,7 @@ private fun GroupNodeCard(group: ProxyGroupInfo, onSelectGroupNode: (String, Str
                     )
                     if (selected) {
                         Text(
-                            text = "已选",
+                            text = stringResource(R.string.ui____7bf54e28),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )

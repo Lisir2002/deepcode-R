@@ -1,5 +1,7 @@
 package com.R.codecore.feature.terminal.presentation.component
 
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -148,12 +150,12 @@ fun BundleLogDialog(
                         Column {
                             Text(
                                 text = buildString {
-                                    append("安装日志 · ").append(bundle.title)
+                                    append(stringResource(R.string.ui______f2d2a5f3)).append(bundle.title)
                                     append(
                                         when {
-                                            modeReal -> " · 实时"
-                                            hasArchive -> " · 档案"
-                                            else -> " · 空"
+                                            modeReal -> stringResource(R.string.ui____8371d7a6)
+                                            hasArchive -> stringResource(R.string.ui____f517bf4a)
+                                            else -> stringResource(R.string.ui___3479daf9)
                                         }
                                     )
                                 },
@@ -171,7 +173,7 @@ fun BundleLogDialog(
                     actions = {
                         val ctx = LocalContext.current
                         IconButton(onClick = { copyAll(ctx, actualState) }) {
-                            Icon(FeatherIcons.Copy, contentDescription = "复制全部")
+                            Icon(FeatherIcons.Copy, contentDescription = stringResource(R.string.ui______2733a243))
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -197,7 +199,7 @@ fun BundleLogDialog(
                         leadingIcon = { Icon(FeatherIcons.Radio, null, modifier = Modifier.size(12.dp)) },
                         label = {
                             Text(
-                                text = if (isCurrentSession) "当前会话" else "实时 (空)",
+                                text = if (isCurrentSession) stringResource(R.string.ui______00e43644) else stringResource(R.string.ui____12a64640),
                                 style = MaterialTheme.typography.labelSmall,
                                 softWrap = false,
                                 maxLines = 1,
@@ -219,7 +221,7 @@ fun BundleLogDialog(
                         leadingIcon = { Icon(FeatherIcons.Archive, null, modifier = Modifier.size(12.dp)) },
                         label = {
                             Text(
-                                text = if (hasArchive) "历史档案" else "无存档",
+                                text = if (hasArchive) stringResource(R.string.ui______ed7db4af) else stringResource(R.string.ui_____3e090c84),
                                 style = MaterialTheme.typography.labelSmall,
                                 softWrap = false,
                                 maxLines = 1,
@@ -238,7 +240,7 @@ fun BundleLogDialog(
                     if (archiveSnapshot?.isTerminal == true) {
                         archiveSnapshot.finishStats?.let { fs ->
                             Text(
-                                text = "✨ %.1fs · %d 包".format(fs.elapsedMs / 1000f, fs.packagesInstalled),
+                                text = stringResource(R.string.ui_1fs_960c9b8d).format(fs.elapsedMs / 1000f, fs.packagesInstalled),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFF2E7D32),
                                 modifier = Modifier
@@ -249,7 +251,7 @@ fun BundleLogDialog(
                         }
                         archiveSnapshot.failSummary?.let {
                             Text(
-                                text = "✗ 失败",
+                                text = stringResource(R.string.ui____3dc27dd7),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFFC62828),
                                 modifier = Modifier
@@ -303,7 +305,7 @@ fun BundleLogDialog(
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md),
                     leadingIcon = { Icon(FeatherIcons.Search, contentDescription = null) },
-                    placeholder = { Text("搜索包名/关键字…") },
+                    placeholder = { Text(stringResource(R.string.ui______362c323d)) },
                     singleLine = true,
                 )
                 Spacer(Modifier.height(Spacing.xs))
@@ -816,7 +818,7 @@ private fun ErrorRowCard(line: LogLine, fg: Color, ctx: Context, modifier: Modif
                 ) {
                     Icon(
                         imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
-                        contentDescription = if (expanded) "收起" else "展开",
+                        contentDescription = if (expanded) stringResource(R.string.ui____def9e98b) else stringResource(R.string.ui____e2edde5a),
                         tint = fg,
                         modifier = Modifier.size(16.dp),
                     )

@@ -263,7 +263,7 @@ private fun ColumnScope.LogViewerContent(
                 IconButton(onClick = onToggleLiveTail) {
                     Icon(
                         imageVector = if (state.liveTailEnabled) FeatherIcons.Square else FeatherIcons.Play,
-                        contentDescription = if (state.liveTailEnabled) "停止尾随" else "实时尾随",
+                        contentDescription = if (state.liveTailEnabled) stringResource(R.string.ui______f5c9f705) else stringResource(R.string.ui______87c117ed),
                         tint = if (state.liveTailEnabled) {
                             MaterialTheme.colorScheme.primary
                         } else {
@@ -349,7 +349,7 @@ private fun ColumnScope.LogViewerContent(
             trailingIcon = {
                 if (state.searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onSearchQuery("") }) {
-                        Icon(FeatherIcons.X, contentDescription = "清除", modifier = Modifier.size(18.dp))
+                        Icon(FeatherIcons.X, contentDescription = stringResource(R.string.ui____4403fca0), modifier = Modifier.size(18.dp))
                     }
                 }
             },

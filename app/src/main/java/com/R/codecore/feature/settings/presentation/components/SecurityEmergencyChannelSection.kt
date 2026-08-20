@@ -1,5 +1,6 @@
 package com.R.codecore.feature.settings.presentation.components
-
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,14 +53,14 @@ fun SecurityEmergencyChannelSection(
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
             Text(
-                text = "紧急解锁主密钥",
+                text = stringResource(R.string.ui_________e229ee7f),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.error
             )
             Spacer(Modifier.height(Spacing.xs))
             Text(
-                text = "当 Keystore 主密钥丢失/损坏、所有凭据无法解密时使用。" +
-                    "输入任一有效 SSH 连接的认证信息验证身份，验证通过后系统将生成新主密钥，所有凭据需要重新录入。",
+                text = stringResource(R.string.ui___6435a24f) +
+                    stringResource(R.string.ui________11361eb5),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -71,7 +72,7 @@ fun SecurityEmergencyChannelSection(
                 ),
                 enabled = !isResetting
             ) {
-                Text(if (isResetting) "重置中…" else "验证身份并重置主密钥")
+                Text(if (isResetting) stringResource(R.string.ui_____9c56ac70) else stringResource(R.string.ui____________2a7d3cb0))
             }
 
             if (errorMessage != null) {
@@ -88,18 +89,18 @@ fun SecurityEmergencyChannelSection(
     if (showDialog && !isResetting) {
         AlertDialog(
             onDismissRequest = { showDialog = false },
-            title = { Text("验证身份") },
+            title = { Text(stringResource(R.string.ui______5a4c4869)) },
             text = {
                 Column {
                     Text(
-                        text = "输入任一 SSH 远程连接的认证信息以验证身份：",
+                        text = stringResource(R.string.ui______aede9341),
                         style = MaterialTheme.typography.bodySmall
                     )
                     Spacer(Modifier.height(Spacing.sm))
                     OutlinedTextField(
                         value = host,
                         onValueChange = { host = it; localError = null },
-                        label = { Text("主机") },
+                        label = { Text(stringResource(R.string.ui____65227369)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -108,7 +109,7 @@ fun SecurityEmergencyChannelSection(
                         OutlinedTextField(
                             value = portText,
                             onValueChange = { portText = it; localError = null },
-                            label = { Text("端口") },
+                            label = { Text(stringResource(R.string.ui____c76cfefe)) },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -116,7 +117,7 @@ fun SecurityEmergencyChannelSection(
                         OutlinedTextField(
                             value = username,
                             onValueChange = { username = it; localError = null },
-                            label = { Text("用户名") },
+                            label = { Text(stringResource(R.string.ui_____819767ad)) },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -125,7 +126,7 @@ fun SecurityEmergencyChannelSection(
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it; localError = null },
-                        label = { Text("密码") },
+                        label = { Text(stringResource(R.string.ui____a8105204)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -157,12 +158,12 @@ fun SecurityEmergencyChannelSection(
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("验证并重置")
+                    Text(stringResource(R.string.ui_______92d31ad1))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.ui____625fb26b_3))
                 }
             }
         )

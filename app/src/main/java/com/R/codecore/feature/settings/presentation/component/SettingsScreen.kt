@@ -514,7 +514,7 @@ internal fun SettingsMenu(
                     (activeProviderName?.let { stringResource(R.string.settings_providers_active, it) } ?: "")
             },
             icon = FeatherIcons.Cloud,
-            keywords = listOf("provider", "模型", "api", "key", "providers", "提供商"),
+            keywords = listOf("provider", stringResource(R.string.ui____8000f187), "api", "key", "providers", stringResource(R.string.ui_____8da5f75a)),
             action = { onOpen(SettingsSection.Providers) }
         ),
         MenuItem(
@@ -532,7 +532,7 @@ internal fun SettingsMenu(
                 if (parts.isEmpty()) stringResource(R.string.settings_default_models_empty) else parts.joinToString("\n")
             },
             icon = FeatherIcons.Cpu,
-            keywords = listOf("model", "default", "默认", "识图", "vision", "压缩", "compaction", "模型", "多模态"),
+            keywords = listOf("model", "default", stringResource(R.string.ui____18c63459), stringResource(R.string.ui____faa3c555), "vision", stringResource(R.string.ui____6612548a), "compaction", stringResource(R.string.ui____8000f187_2), stringResource(R.string.ui_____37acc94c)),
             action = { onOpen(SettingsSection.DefaultModels) }
         ),
         MenuItem(
@@ -544,7 +544,7 @@ internal fun SettingsMenu(
             else
                 stringResource(R.string.settings_mcp_count_connected, mcpCount, mcpConnected),
             icon = FeatherIcons.Box,
-            keywords = listOf("mcp", "server", "工具", "function", "协议", "服务器"),
+            keywords = listOf("mcp", "server", stringResource(R.string.ui____20dce2c6), "function", stringResource(R.string.ui____faa1ad5e), stringResource(R.string.ui_____c566ca59)),
             action = { onOpen(SettingsSection.Mcp) }
         ),
         MenuItem(
@@ -555,7 +555,7 @@ internal fun SettingsMenu(
                 if (mcpServerRunning) R.string.settings_mcp_server_running else R.string.settings_mcp_server_stopped
             ),
             icon = FeatherIcons.Server,
-            keywords = listOf("mcp", "server", "服务端", "开放", "内置", "服务器"),
+            keywords = listOf("mcp", "server", stringResource(R.string.ui_____55abea2d), stringResource(R.string.ui____4dbd9aec), stringResource(R.string.ui____89e180d6), stringResource(R.string.ui_____c566ca59_2)),
             action = { onOpen(SettingsSection.McpServer) }
         ),
         MenuItem(
@@ -567,7 +567,7 @@ internal fun SettingsMenu(
             else
                 stringResource(R.string.settings_permissions_count, permissionRuleCount),
             icon = FeatherIcons.Lock,
-            keywords = listOf("perm", "授权", "规则", "permission", "allow", "工具", "tool"),
+            keywords = listOf("perm", stringResource(R.string.ui____98a315c0), stringResource(R.string.ui____b0fae043), "permission", "allow", stringResource(R.string.ui____20dce2c6_2), "tool"),
             action = { onOpen(SettingsSection.Permissions) }
         ),
         MenuItem(
@@ -576,16 +576,16 @@ internal fun SettingsMenu(
             title = stringResource(R.string.settings_terminal),
             subtitle = stringResource(R.string.settings_terminal_subtitle),
             icon = FeatherIcons.Terminal,
-            keywords = listOf("terminal", "终端", "ssh", "shell", "bash", "命令"),
+            keywords = listOf("terminal", stringResource(R.string.ui____4722bc0c), "ssh", "shell", "bash", stringResource(R.string.ui____ddf7d2a5)),
             action = onNavigateToTerminalSettings
         ),
         MenuItem(
             section = null,
             group = groupEnv,
-            title = "网络代理",
-            subtitle = "mihomo 代理（VPN）· 导入订阅 / 手动 YAML · 交给模型自理",
+            title = stringResource(R.string.ui______d3ec5010_2),
+            subtitle = stringResource(R.string.ui_mihomo_8fdcce67),
             icon = FeatherIcons.Globe,
-            keywords = listOf("proxy", "代理", "vpn", "clash", "mihomo", "订阅", "network"),
+            keywords = listOf("proxy", stringResource(R.string.ui____fc954d25), "vpn", "clash", "mihomo", stringResource(R.string.ui____02daf71f), "network"),
             action = onNavigateToNetProxy
         ),
         MenuItem(
@@ -597,7 +597,7 @@ internal fun SettingsMenu(
                 activeContainerProfileName ?: stringResource(R.string.settings_container_builtin_alpine)
             ),
             icon = FeatherIcons.HardDrive,
-            keywords = listOf("container", "docker", "镜像", "alpine", "容器", "proot", "环境"),
+            keywords = listOf("container", "docker", stringResource(R.string.ui____34772285), "alpine", stringResource(R.string.ui____22c79904), "proot", stringResource(R.string.ui____fa405f59)),
             action = { onOpen(SettingsSection.Container) }
         ),
         MenuItem(
@@ -606,7 +606,7 @@ internal fun SettingsMenu(
             title = stringResource(SettingsSection.RemoteServers.titleRes),
             subtitle = stringResource(R.string.settings_remote_subtitle),
             icon = FeatherIcons.Server,
-            keywords = listOf("remote", "ssh", "sftp", "服务器", "工作区", "同步", "远程"),
+            keywords = listOf("remote", "ssh", "sftp", stringResource(R.string.ui_____c566ca59_3), stringResource(R.string.ui_____4fa8c1a3), stringResource(R.string.ui____6a620e3c), stringResource(R.string.ui____a7d3091f)),
             action = { onOpen(SettingsSection.RemoteServers) }
         ),
         MenuItem(
@@ -615,7 +615,7 @@ internal fun SettingsMenu(
             title = stringResource(SettingsSection.Backup.titleRes),
             subtitle = stringResource(R.string.settings_backup_subtitle),
             icon = FeatherIcons.Save,
-            keywords = listOf("backup", "备份", "还原", "export", "导出", "导入", "加密"),
+            keywords = listOf("backup", stringResource(R.string.ui____664b37da), stringResource(R.string.ui____69de8d7f), "export", stringResource(R.string.ui____55405ea6), stringResource(R.string.ui____8d9a071e), stringResource(R.string.ui____56563edf)),
             action = { onOpen(SettingsSection.Backup) }
         ),
         MenuItem(
@@ -624,7 +624,7 @@ internal fun SettingsMenu(
             title = stringResource(SettingsSection.Security.titleRes),
             subtitle = stringResource(R.string.settings_security_subtitle),
             icon = FeatherIcons.Lock,
-            keywords = listOf("security", "加密", "生物识别", "凭据", "password", "安全", "pin"),
+            keywords = listOf("security", stringResource(R.string.ui____56563edf_2), stringResource(R.string.ui______05ad4f31), stringResource(R.string.ui____5f811dd8), "password", stringResource(R.string.ui____fdbc77bd), "pin"),
             action = { onOpen(SettingsSection.Security) }
         ),
         MenuItem(
@@ -633,7 +633,7 @@ internal fun SettingsMenu(
             title = stringResource(SettingsSection.RemoteAuditLogs.titleRes),
             subtitle = stringResource(R.string.settings_remote_audit_subtitle),
             icon = FeatherIcons.FileText,
-            keywords = listOf("audit", "审计", "log", "连接", "事件", "ssh", "备份"),
+            keywords = listOf("audit", stringResource(R.string.ui____771dc11a), "log", stringResource(R.string.ui____30f7dd4e), stringResource(R.string.ui____10b2761d), "ssh", stringResource(R.string.ui____664b37da_2)),
             action = { onOpen(SettingsSection.RemoteAuditLogs) }
         ),
         MenuItem(
@@ -642,7 +642,7 @@ internal fun SettingsMenu(
             title = stringResource(SettingsSection.Logs.titleRes),
             subtitle = stringResource(R.string.settings_log_subtitle, logLevelLabel),
             icon = FeatherIcons.FileText,
-            keywords = listOf("log", "日志", "debug", "trace", "错误", "bug", "filter"),
+            keywords = listOf("log", stringResource(R.string.ui____456d29ef), "debug", "trace", stringResource(R.string.ui____7030ff64), "bug", "filter"),
             action = { onOpen(SettingsSection.Logs) }
         ),
         MenuItem(
@@ -651,7 +651,7 @@ internal fun SettingsMenu(
             title = stringResource(R.string.settings_theme_title),
             subtitle = stringResource(R.string.settings_log_current, themeLabel),
             icon = FeatherIcons.Moon,
-            keywords = listOf("theme", "appearance", "外观", "深色", "浅色", "模式", "主题"),
+            keywords = listOf("theme", "appearance", stringResource(R.string.ui____afcde261), stringResource(R.string.ui____41e8e8b9), stringResource(R.string.ui____48d0a09b), stringResource(R.string.ui____f0789e79), stringResource(R.string.ui____9970ad07)),
             action = onOpenThemeSheet
         ),
         MenuItem(
@@ -660,7 +660,7 @@ internal fun SettingsMenu(
             title = stringResource(R.string.settings_keepalive_title),
             subtitle = stringResource(R.string.settings_keepalive_subtitle),
             icon = FeatherIcons.RefreshCw,
-            keywords = listOf("keepalive", "保活", "后台", "foreground", "通知", "杀死", "进程"),
+            keywords = listOf("keepalive", stringResource(R.string.ui____bc28072c), stringResource(R.string.ui____066ae8d7), "foreground", stringResource(R.string.ui____5660bcd2), stringResource(R.string.ui____f0d6210d), stringResource(R.string.ui____f88522cf)),
             action = { onToggleKeepalive(!keepaliveEnabled) },
             trailing = {
                 Switch(
@@ -679,7 +679,7 @@ internal fun SettingsMenu(
             title = stringResource(SettingsSection.About.titleRes),
             subtitle = stringResource(R.string.settings_about_subtitle),
             icon = FeatherIcons.Info,
-            keywords = listOf("about", "关于", "version", "release", "更新", "许可证", "license", "作者"),
+            keywords = listOf("about", stringResource(R.string.ui____81d9f505), "version", "release", stringResource(R.string.ui____32ac152b), stringResource(R.string.ui_____20a28457), "license", stringResource(R.string.ui____62cea749)),
             action = { onOpen(SettingsSection.About) }
         )
     )

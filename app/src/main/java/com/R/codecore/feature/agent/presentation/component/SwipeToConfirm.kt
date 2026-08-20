@@ -1,5 +1,6 @@
 package com.R.codecore.feature.agent.presentation.component
-
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -49,7 +50,7 @@ import androidx.compose.ui.unit.dp
 fun SwipeToConfirm(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    label: String = "滑动确认以执行（C.4.8 最严格模式）",
+    label: String = stringResource(R.string.ui_________2c6d64d2),
     thumbSizeDp: Dp = 56.dp,
     trackHeightDp: Dp = 64.dp,
     cornerRadiusDp: Dp = 28.dp,
@@ -205,7 +206,7 @@ fun SwipeToConfirm(
 
         // 文字标签（始终显示；右半部分被滑快遮罩不影响，因为透明度低）
         Text(
-            text = if (confirmed) "✓ 已滑动确认（SwipeVerified）" else label,
+            text = if (confirmed) stringResource(R.string.ui_______98c64e35) else label,
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.labelLarge,

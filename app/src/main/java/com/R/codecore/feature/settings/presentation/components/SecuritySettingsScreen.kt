@@ -1,5 +1,6 @@
 package com.R.codecore.feature.settings.presentation.components
-
+import androidx.compose.ui.res.stringResource
+import com.R.codecore.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,13 +66,13 @@ fun SecuritySettingsScreen(
         ) {
             Column(modifier = Modifier.padding(Spacing.md)) {
                 Text(
-                    text = "生物识别保护凭据",
+                    text = stringResource(R.string.ui__________5d343f60),
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
                     text = "开启后，30 秒内首次访问 SSH 密码/私钥需验证指纹或面容。\n" +
-                        "此操作会重新生成主密钥，请保持电量充足，中途不要退出应用。",
+                        stringResource(R.string.ui_____________ad003eae),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -104,12 +105,12 @@ fun SecuritySettingsScreen(
         ) {
             Column(modifier = Modifier.padding(Spacing.md)) {
                 Text(
-                    text = "凭据密钥轮换",
+                    text = stringResource(R.string.ui________3b563f02),
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    text = "生成新的 DEK (Data Encryption Key) 并重新加密所有凭据。" +
+                    text = stringResource(R.string.ui______86c9e6c1) +
                         "当前轮换次数: ${uiState.rotationCounter}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -125,7 +126,7 @@ fun SecuritySettingsScreen(
                             strokeWidth = 2.dp
                         )
                     }
-                    Text(if (uiState.rotating) "轮换中…" else "立即轮换密钥")
+                    Text(if (uiState.rotating) stringResource(R.string.ui_____6b53d706) else stringResource(R.string.ui________fb25794a))
                 }
             }
         }
@@ -151,7 +152,7 @@ fun SecuritySettingsScreen(
         ) {
             Column(modifier = Modifier.padding(Spacing.md)) {
                 Text(
-                    text = "ZTH 零幻觉容忍模式（幻觉零容忍 ZTH-0）",
+                    text = stringResource(R.string.ui_zth_5d839930),
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(Modifier.height(Spacing.xs))
@@ -162,13 +163,13 @@ fun SecuritySettingsScreen(
                 )
                 Spacer(Modifier.height(Spacing.sm))
 
-                Text("档位（幻觉敏感度）", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.ui____0f215ee0), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(Spacing.xs))
                 val tiers = listOf(
-                    ZthPresetTier.DISABLED to "关闭（0）—— 完全关闭 ZTH，只保留原有 PlanApproval",
-                    ZthPresetTier.MINIMAL to "轻度（1）—— 8 HIGH 规则 + 幻觉计数阈值=5；允许取消卡片 / 关闭滑动确认",
-                    ZthPresetTier.BALANCED to "均衡（2）—— 20 全规则 + 幻觉阈值=3；禁止取消卡片，必须滑动确认",
-                    ZthPresetTier.STRICT to "严格（3）—— 30 全规则 + 幻觉阈值=2；禁止取消 + 禁止关滑动 + 自动熔断 2 次开"
+                    ZthPresetTier.DISABLED to stringResource(R.string.ui____6f309ebf),
+                    ZthPresetTier.MINIMAL to stringResource(R.string.ui____5c5c0db9),
+                    ZthPresetTier.BALANCED to stringResource(R.string.ui____b6f5f134),
+                    ZthPresetTier.STRICT to stringResource(R.string.ui____b59f6788)
                 )
                 Column {
                     tiers.forEach { (tier, desc) ->
@@ -198,12 +199,12 @@ fun SecuritySettingsScreen(
                 }
 
                 HorizontalDivider(Modifier.padding(vertical = Spacing.sm))
-                Text("性能等级（低端机是否跳过 LLM 终检）", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.ui______e17b4696), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(Spacing.xs))
                 val perfs = listOf(
-                    ZthPerformanceClass.LOW_END_SKIP_LLM to "低端机—— 工具输出幻觉/Plan 二次审查跳过 LLM，只跑本地启发扫 + 弹卡用户",
-                    ZthPerformanceClass.MID_RANGE to "中端—— 阶段 2 LLM 终检开启，预算 ≤ 10s",
-                    ZthPerformanceClass.HIGH_END to "高端—— 2 阶段都跑，预算 ≤ 30s（默认）"
+                    ZthPerformanceClass.LOW_END_SKIP_LLM to stringResource(R.string.ui_____a5d93376),
+                    ZthPerformanceClass.MID_RANGE to stringResource(R.string.ui____b87596cc),
+                    ZthPerformanceClass.HIGH_END to stringResource(R.string.ui____485bd1f1)
                 )
                 Column {
                     perfs.forEach { (perf, desc) ->
@@ -226,7 +227,7 @@ fun SecuritySettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
-                        Text("滑动确认（SwipeToConfirm，C.4.8 方案 C）", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.ui______cd9f5bd3), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                         Text(
                             text = "关闭仅允许 DISABLED / MINIMAL(0/1)；≥2 强制开。",
                             style = MaterialTheme.typography.bodySmall,
@@ -242,7 +243,7 @@ fun SecuritySettingsScreen(
                 if (uiState.zthTier.tier >= 2) {
                     Spacer(Modifier.height(Spacing.xs))
                     Text(
-                        text = "⚠ 档位 BALANCED/STRICT（C.4.8）：必须滑动确认；设置已强制为 ON。",
+                        text = stringResource(R.string.ui____2e6ca1c3),
                         color = Color(0xFF827717),
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -264,11 +265,11 @@ fun SecuritySettingsScreen(
         if (showBiometricConfirm) {
             AlertDialog(
                 onDismissRequest = { showBiometricConfirm = false },
-                title = { Text("启用生物识别凭据保护？") },
+                title = { Text(stringResource(R.string.ui____________d49c5da2)) },
                 text = {
                     Text(
                         "开启后，30 秒内首次访问 SSH 密码/私钥需验证指纹或面容。\n\n" +
-                            "⚠ 此操作会重新生成主密钥，请保持电量充足，中途不要退出应用。"
+                            stringResource(R.string.ui_____________1d8bcba0)
                     )
                 },
                 confirmButton = {
@@ -278,12 +279,12 @@ fun SecuritySettingsScreen(
                             viewModel.toggleBiometric(true)
                         }
                     ) {
-                        Text("确认启用")
+                        Text(stringResource(R.string.ui______38f75a54))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showBiometricConfirm = false }) {
-                        Text("取消")
+                        Text(stringResource(R.string.ui____625fb26b_4))
                     }
                 }
             )
