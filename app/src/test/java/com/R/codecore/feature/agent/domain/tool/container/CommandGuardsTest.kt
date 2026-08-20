@@ -26,11 +26,11 @@ class CommandGuardsTest {
 
     @Test
     fun hasUnboundedLoop_doesNotMatchBoundedOrConditional() {
-        assertFalse(CommandLoopGuard.hasUnboundedLoop("while read line; do echo $line; done < file"))
+        assertFalse(CommandLoopGuard.hasUnboundedLoop("while read line; do echo \$line; done < file"))
         assertFalse(CommandLoopGuard.hasUnboundedLoop("while [ -f /tmp/x ]; do sleep 1; done"))
         assertFalse(CommandLoopGuard.hasUnboundedLoop("until ping -c 1 host; do sleep 1; done"))
-        assertFalse(CommandLoopGuard.hasUnboundedLoop("for i in 1 2 3; do echo $i; done"))
-        assertFalse(CommandLoopGuard.hasUnboundedLoop("for (( i=0; i<10; i++ )); do echo $i; done"))
+        assertFalse(CommandLoopGuard.hasUnboundedLoop("for i in 1 2 3; do echo \$i; done"))
+        assertFalse(CommandLoopGuard.hasUnboundedLoop("for (( i=0; i<10; i++ )); do echo \$i; done"))
         assertFalse(CommandLoopGuard.hasUnboundedLoop("echo mywhile true"))
         assertFalse(CommandLoopGuard.hasUnboundedLoop(""))
     }
@@ -47,7 +47,7 @@ class CommandGuardsTest {
     @Test
     fun isForkBomb_doesNotMatchNormalCommands() {
         assertFalse(CommandLoopGuard.isForkBomb("ls -la"))
-        assertFalse(CommandLoopGuard.isForkBomb("for i in 1 2 3; do echo $i; done"))
+        assertFalse(CommandLoopGuard.isForkBomb("for i in 1 2 3; do echo \$i; done"))
         assertFalse(CommandLoopGuard.isForkBomb(""))
     }
 
