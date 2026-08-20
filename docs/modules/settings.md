@@ -111,6 +111,17 @@ catalog 刷新：App 启动调 `refreshFromNetworkIfStale()`；`init` 中监听 
 
 `openSection(Section)` 用 tick 对比机制（`pendingOpenSectionTick` vs `lastConsumedSectionTick`）实现「外部设置页跳转 SettingsScreen 内部二级分区」，纯状态机保证不漏不重入（如 TerminalSettingsScreen 跳 SSH 主机配置）。
 
+### 3.6 技能中心（SkillsScreen → SkillsViewModel）
+
+设置页以 `SkillsSection` 承接技能管理：`SkillsViewModel` 负责技能启用/禁用/卸载（agent 侧 `SkillStateRepository` 的 Room 状态），`SkillsScreen.kt` 为列表 UI。技能加载/执行语义由 agent 模块承载，见 [agent.md §3.6](./agent.md#36-技能skill)。
+
+**作用域分级在设置侧的体现**（多 Agent 演进）：技能按 `SkillScope`（GLOBAL/COMMON/AGENT）分级，见 [agent.md §3.6.1](./agent.md#361-技能作用域分级skillscope多-agent-演进)：
+- `GLOBAL 全局`：技能中心**不出开关**（不可关闭，系统级强制激活）；
+- `COMMON 通用`：技能中心**展示用户自定义开关**（默认启用，可关）；
+- `AGENT`：**仅当当前 agentType 匹配时才可见/可开关**，非当前 agent 的技能按 agent 维度分组展示或隐藏。
+
+即设置侧只需暴露「能关」的开关：GLOBAL 静默内置、COMMON 提供开关、AGENT 按 agent 过滤；实际的按作用域动态注册/回收由 `SkillToolBindingManager` 在 agent 激活时执行。
+
 ## 4. 对外接口与集成点
 
 | 接口/入口 | 说明 |

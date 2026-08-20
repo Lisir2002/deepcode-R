@@ -34,6 +34,9 @@ sealed class SkillExecutionResult {
  *   执行后记审计日志（复用 [RemoteAuditLogRepository]）。
  * - [SkillType.MCP]：把技能调用映射到 [ToolRegistry] 中已注册的 MCP 工具（命名空间化名）。
  *
+ * 执行需携带 [SkillExecutionContext]（由 LoadSkillTool 从 [AgentContext] 派生），使脚本技能
+ * 审批与审计的 [sessionId] 与当前会话连贯（替代此前传 null 的脱钩问题）。
+ *
  * 线程安全：所有方法为 suspend，调用方需保证在协程内调用。
  */
 @Singleton
@@ -49,20 +52,35 @@ class SkillExecutor @Inject constructor(
         const val SCRIPT_TIMEOUT_MS = 120_000L
     }
 
-    /** 执行一个技能。 */
-    suspend fun execute(skill: Skill, args: Map<String, String> = emptyMap()): SkillExecutionResult {
+    /** 执行一个技能。缺省上下文等价于「无会话上下文」的兼容路径。 */
+    suspend fun execute(
+        skill: Skill,
+        args: Map<String, String> = emptyMap(),
+        ctx: SkillExecutionContext = SkillExecutionContext()
+    ): SkillExecutionResult {
         return when (skill.type) {
-            SkillType.PROMPT -> executePrompt(skill)
-            SkillType.SCRIPT -> executeScript(skill, args)
+            SkillType.PROMPT -> executePrompt(skill, ctx)
+            SkillType.SCRIPT -> executeScript(skill, args, ctx)
             SkillType.MCP -> executeMcp(skill, args)
         }
     }
 
-    private fun executePrompt(skill: Skill): SkillExecutionResult {
-        return SkillExecutionResult.Success(skill.instructions)
+    private fun executePrompt(skill: Skill, ctx: SkillExecutionContext): SkillExecutionResult {
+        val output = if (ctx.sessionId != null) {
+            // PROMPT 技能按依赖序注入依赖的指令正文（见 LoadSkillTool），此处单技能返回自身正文；
+            // 组合技能的依赖拼接由 LoadSkillTool 负责。
+            skill.instructions
+        } else {
+            skill.instructions
+        }
+        return SkillExecutionResult.Success(output)
     }
 
-    private suspend fun executeScript(skill: Skill, args: Map<String, String>): SkillExecutionResult {
+    private suspend fun executeScript(
+        skill: Skill,
+        args: Map<String, String>,
+        ctx: SkillExecutionContext
+    ): SkillExecutionResult {
         val entry = skill.entry?.takeIf { it.isNotBlank() }
             ?: return SkillExecutionResult.Error("SCRIPT 技能缺少 entry 入口脚本", "SKILL_MISSING_ENTRY")
         val skillDir = skill.dir
@@ -72,17 +90,18 @@ class SkillExecutor @Inject constructor(
         val containerSkillDir = "/root/.rcodecore/skills/${skill.id}"
 
         // 审批：所有 SCRIPT 技能执行前必须用户确认（决策点 6：全部审批）。
-        // SkillExecutor 无会话上下文，sessionId 传 null：UI 仍会展示确认卡，
-        // 会话结束/停止时 cancelPending 按「任意会话」兜底清理。
+        // 会话 id 来自执行上下文（ctx.sessionId），使确认卡的归属/取消与当前会话连贯，
+        // 会话结束/停止时 cancelPending 能按会话精准清理（替代此前传 null 的兜底）。
         val approval = toolPermissionManager.awaitApproval(
-            null,
+            ctx.sessionId,
             PendingToolPermission(
                 id = "skill-${skill.id}-${System.currentTimeMillis()}",
                 toolName = "loadSkill",
                 title = "确认执行脚本技能「${skill.name}」",
                 summary = "AI 请求执行脚本技能 ${skill.name}（v${skill.version}）",
                 details = "入口脚本: $entry\n目录: $containerSkillDir\n参数: ${args.entries.joinToString { "${it.key}=${it.value}" }.ifEmpty { "（无）" }}",
-                argsPreview = "skill=${skill.id} entry=$entry"
+                argsPreview = "skill=${skill.id} entry=$entry",
+                sessionId = ctx.sessionId
             )
         )
         if (approval != PermissionChoice.ONCE && approval != PermissionChoice.ALWAYS) {
@@ -100,7 +119,7 @@ class SkillExecutor @Inject constructor(
         val command = "cd $containerSkillDir && $env$shell $entry"
 
         val result = try {
-            commandEngine.runCommandSyncWithExit(command, projectPath = null, timeoutMs = SCRIPT_TIMEOUT_MS)
+            commandEngine.runCommandSyncWithExit(command, projectPath = ctx.projectPath, timeoutMs = SCRIPT_TIMEOUT_MS)
         } catch (e: Exception) {
             FileLogger.e(TAG, "脚本技能执行异常: ${skill.id}", e)
             auditLogRepo.append(

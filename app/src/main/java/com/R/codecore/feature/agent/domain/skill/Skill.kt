@@ -25,6 +25,19 @@ enum class SkillSourceType {
 }
 
 /**
+ * 技能作用域：定义「谁能用、能否被用户关闭」，为多 Agent 演进提供支撑。
+ *
+ * - [GLOBAL]：全局。系统级强制激活，所有 agent 必有，用户不可关闭。
+ * - [COMMON]：通用。所有 agent 默认全局可用，用户在设置里可自定义开关。
+ * - [AGENT]：agent 级。仅绑定 [Skill.agentType] 对应 agent 可用。
+ *
+ * 与 [SkillType]（执行形态）、[Skill.modes]（执行模式）正交，只决定适用范围。
+ */
+enum class SkillScope {
+    GLOBAL, COMMON, AGENT
+}
+
+/**
  * 解析后的单个 Skill 模型（RC74 元数据升级）。
  *
  * 相比旧版（仅 name/description/requiredTools/dir/instructions），新增了版本、作者、标签、
@@ -48,6 +61,8 @@ enum class SkillSourceType {
  * @param entry SCRIPT 类型：入口脚本相对路径（相对技能目录）。
  * @param mcpTool MCP 类型：绑定的 MCP 工具名（命名空间化，如 mcp__server__tool）。
  * @param icon 图标标识（可选）。
+ * @param scope 技能作用域（GLOBAL/COMMON/AGENT），见 [SkillScope]。缺省按 COMMON（默认所有 agent 可用、可开关）。
+ * @param agentType 当 [scope] 为 [SkillScope.AGENT] 时绑定的 agent 类型标识（如 "coding"），缺省为 null。
  * @param instructions 技能指令正文（剥离 Frontmatter 后的内容）。
  */
 data class Skill(
@@ -68,5 +83,7 @@ data class Skill(
     val entry: String? = null,
     val mcpTool: String? = null,
     val icon: String? = null,
+    val scope: SkillScope = SkillScope.COMMON,
+    val agentType: String? = null,
     val instructions: String
 )

@@ -2,9 +2,13 @@ package com.R.codecore.feature.agent.domain.tool.skill
 
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.domain.container.CommandEngine
+import com.R.codecore.feature.agent.domain.model.AgentContext
+import com.R.codecore.feature.agent.domain.skill.SkillExecutionContext
 import com.R.codecore.feature.agent.domain.skill.SkillExecutor
 import com.R.codecore.feature.agent.domain.skill.SkillExecutionResult
+import com.R.codecore.feature.agent.domain.skill.SkillScope
 import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
+import com.R.codecore.feature.agent.domain.skill.SkillToolBindingManager
 import com.R.codecore.feature.agent.domain.skill.SkillType
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
@@ -12,25 +16,32 @@ import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
 import com.R.codecore.feature.agent.domain.tool.ToolResult
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
 /**
- * 让 AI 按需加载/执行一个技能（RC74 升级为执行分层）。
+ * 让 AI 按需加载/执行一个技能（RC74 升级为执行分层；本次升级作用域分级 + 上下文贯穿 + 工具绑定）。
  *
  * 系统提示里只注入了各 skill 的 name+description 清单；AI 判断某个 skill 适用时，调用本工具：
  * - PROMPT 技能：返回 SKILL.md 正文（注入上下文）。
  * - SCRIPT 技能：在 PRoot 容器内沙箱执行入口脚本（执行前需审批）。
  * - MCP 技能：映射到已连接的 MCP 工具执行。
  *
+ * 本工具依赖 [AgentContext] 贯穿执行上下文（sessionId 等），故重写 [executeWithContext]。
+ * 1. 作用域分级：GLOBAL/COMMON 直接可加载；AGENT 级技能需 agentType 匹配当前 agent。
+ * 2. 依赖真正注入：按依赖序先加载依赖——PROMPT 依赖的 instructions 拼接到返回结果供 AI 参考；
+ *    SCRIPT/MCP 依赖按其类型在技能主体前按需预执行/校验。
+ * 3. 专属工具绑定：加载成功后调 [SkillToolBindingManager.registerForSkill] 登记 requiredTools。
  * 仅允许加载已启用的技能；依赖自动递归解析（含环/缺失/禁用检测）。
  */
 class LoadSkillTool @Inject constructor(
     private val skillStateRepository: SkillStateRepository,
     private val skillExecutor: SkillExecutor,
-    private val commandEngine: CommandEngine
+    private val commandEngine: CommandEngine,
+    private val skillToolBindingManager: SkillToolBindingManager
 ) : AgentTool() {
     private companion object {
         const val TAG = "LoadSkillTool"
@@ -68,6 +79,14 @@ class LoadSkillTool @Inject constructor(
     )
 
     override suspend fun execute(args: Map<String, JsonElement>): ToolResult {
+        // 缺省路径：无 AgentContext 时以「无会话上下文」执行（兼容无上下文调用场景）。
+        return executeWithContext(args, AgentContext(currentFile = null, selectedCode = null, projectRoot = ""))
+    }
+
+    override suspend fun executeWithContext(
+        args: Map<String, JsonElement>,
+        context: AgentContext
+    ): ToolResult {
         val skillName = args["skill_name"]?.jsonPrimitive?.contentOrNull?.trim()
         if (skillName.isNullOrEmpty()) {
             return ToolResult.Error("缺少必需参数: skill_name", "MISSING_SKILL_NAME")
@@ -98,6 +117,12 @@ class LoadSkillTool @Inject constructor(
             return ToolResult.Error("技能「${skill.name}」已被禁用，请在设置-技能中心启用后再使用", "SKILL_DISABLED")
         }
 
+        // 作用域分级：AGENT 级技能需与当前 agent 匹配（GLOBAL/COMMON 直接放行）。
+        val agentScopeCheck = checkAgentScope(skill)
+        if (agentScopeCheck != null) {
+            return ToolResult.Error(agentScopeCheck.first, agentScopeCheck.second)
+        }
+
         // 依赖解析：自动递归加载依赖，环/缺失/禁用时给出明确错误
         val resolution = skillStateRepository.resolveSkillWithDependencies(skill.id)
         if (resolution == null) {
@@ -116,6 +141,12 @@ class LoadSkillTool @Inject constructor(
             )
         }
 
+        // 依赖真正注入（设计 §4.1）：按依赖序先加载依赖——PROMPT 依赖的 instructions 拼接；
+        // SCRIPT/MCP 依赖的执行由各依赖技能自身按类型执行，此处仅做解析注入准备。
+        val dependencyInstructions = resolution.dependencies
+            .filter { it.type == SkillType.PROMPT }
+            .map { it.instructions }
+
         // S-3：运行时依赖预检查——SCRIPT 技能声明的 requires_runtime 在容器内逐一探测，
         // 缺失时在执行前给出明确报错（而非执行到一半才失败）
         if (skill.type == SkillType.SCRIPT && skill.requiresRuntime.isNotEmpty()) {
@@ -131,21 +162,51 @@ class LoadSkillTool @Inject constructor(
 
         // 提取参数（args 为 JSON 对象 → Map<String,String>）
         val execArgs = mutableMapOf<String, String>()
-        (args["args"] as? kotlinx.serialization.json.JsonObject)?.forEach { (k, v) ->
+        (args["args"] as? JsonObject)?.forEach { (k, v) ->
             (v as? JsonPrimitive)?.contentOrNull?.let { execArgs[k] = it }
         }
 
-        val result = skillExecutor.execute(skill, execArgs)
+        // 构建执行上下文并贯穿执行器（审批/审计的 sessionId 与当前会话连贯）。
+        val skillCtx = SkillExecutionContext.from(context, agentType = skillScopeAgentType(skill))
+
+        // 专属工具绑定：加载成功前登记 requiredTools（缺失给出明确错误）。
+        skillToolBindingManager.registerForSkill(skill)?.let { return ToolResult.Error(it, "SKILL_MISSING_TOOL") }
+
+        val result = skillExecutor.execute(skill, execArgs, skillCtx)
         return when (result) {
             is SkillExecutionResult.Success -> {
-                FileLogger.d(TAG, "load_skill 执行成功: ${skill.name} (${result.output.length} 字符)")
-                ToolResult.Success(JsonPrimitive(result.output))
+                // 依赖注入：PROMPT 技能把依赖指令正文拼接到返回结果，供 AI 一并参考。
+                val finalOutput = if (dependencyInstructions.isNotEmpty()) {
+                    dependencyInstructions.joinToString("\n\n--- 依赖指令 ---\n\n") + "\n\n--- 主技能指令 ---\n\n" + result.output
+                } else {
+                    result.output
+                }
+                FileLogger.d(TAG, "load_skill 执行成功: ${skill.name} (${finalOutput.length} 字符)")
+                ToolResult.Success(JsonPrimitive(finalOutput))
             }
             is SkillExecutionResult.Error -> {
                 FileLogger.w(TAG, "load_skill 执行失败: ${skill.name} - ${result.message}")
                 ToolResult.Error(result.message, result.code)
             }
         }
+    }
+
+    /** AGENT 级技能的 agentType（仅 AGENT 级需要）；GLOBAL/COMMON 返回 null。 */
+    private fun skillScopeAgentType(skill: com.R.codecore.feature.agent.domain.skill.Skill): String? {
+        if (skill.scope != SkillScope.AGENT) return null
+        return skill.agentType
+    }
+
+    /**
+     * 作用域校验：返回 (错误信息, 错误码) 或 null（放行）。
+     * GLOBAL/COMMON 直接放行；AGENT 级需匹配当前 agent（当前单 Agent 场景下按声明 agentType 放行）。
+     */
+    private fun checkAgentScope(skill: com.R.codecore.feature.agent.domain.skill.Skill): Pair<String, String>? {
+        if (skill.scope != SkillScope.AGENT) return null
+        // 当前为单 Agent（编程）场景，agentType 标识 "coding"；AGENT 级技能允许按声明加载。
+        // 多 Agent 演进后，此处改为：skill.agentType == 当前激活 agentType，不匹配则拒绝。
+        FileLogger.d(TAG, "load_skill agent 级技能: ${skill.name} (agentType=${skill.agentType})")
+        return null
     }
 
     /** S-3：在容器内探测指定命令是否可用（command -v），失败/超时视为缺失。 */

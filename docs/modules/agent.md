@@ -124,6 +124,18 @@
 
 - `Skill` 支持三种执行形态：PROMPT（注入指令，无执行）、SCRIPT（容器内沙箱执行入口脚本，需 ZTH 审批）、MCP（映射到已连接 MCP 工具）。
 - `SkillParser` 解析带 Frontmatter 的技能文件（版本/作者/标签/适用模式/依赖/requiredTools/requiresRuntime 等），`SkillRepository` 管理来源，`SkillStateRepository` 用 Room 持久化启用状态，`LoadSkillTool` 加载执行，`SkillExecutor` 负责运行。
+- `SkillExecutor` 执行链路携带 `SkillExecutionContext`（由 `LoadSkillTool` 从 `AgentContext` 派生，含 sessionId/mode/projectPath/agentType），使脚本技能审批与审计的 sessionId 与当前会话连贯（替代此前传 null 的脱钩问题）。
+
+#### 3.6.1 技能作用域分级（SkillScope，多 Agent 演进）
+
+支撑「后续不止编程 agent」：给 `Skill` 增加与 `type`/`modes` **正交**的作用域维度，定义「谁能用、能否被用户关闭」：
+
+- `SkillScope` 三档：`GLOBAL` 全局（系统级强制激活，所有 agent 必有，用户不可关闭）／`COMMON` 通用（所有 agent 默认可用，用户可开关）／`AGENT` agent 级（仅绑定 `agentType` 的 agent 可用）。
+- `Skill` 新增字段：`scope: SkillScope = COMMON`、`agentType: String? = null`（scope==AGENT 时必填，如 `"coding"`）。
+- Frontmatter 承载 `scope: global|common|agent` + `agent-type`（仅 agent 级需要），缺省按 COMMON 解析。
+- `SkillToolBindingManager`：技能加载成功时校验并登记 `requiredTools`（缺失给明确错误 `SKILL_MISSING_TOOL`），技能禁用/卸载时回收本管理器动态注册的工具（绝不删除内置全局工具）。
+- `LoadSkillTool.executeWithContext`：GLOBAL/COMMON 直接放行加载；AGENT 级按声明 agentType 校验；加载前登记专属工具、构建 `SkillExecutionContext` 贯穿执行。当前为单 Agent 场景，AGENT 级按声明放行，多 Agent 演进后改为 `<skill.agentType> == 当前激活 agentType` 才放行。
+- 技能「激活态」语义（R1）：GLOBAL 常驻、COMMON 随「用户开关 × agent 激活」、AGENT 仅当对应 agent 激活——实际按作用域动态注册/回收由 `SkillToolBindingManager` 在 agent 激活时执行。
 
 ### 3.7 ZTH 零信任防护（ZthGuardAggregateFacade）
 

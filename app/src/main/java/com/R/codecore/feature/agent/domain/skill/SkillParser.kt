@@ -95,6 +95,22 @@ object SkillParser {
         val mcpTool = frontmatter["mcp_tool"]?.toString()?.takeIf { it.isNotBlank() }
         val icon = frontmatter["icon"]?.toString()?.takeIf { it.isNotBlank() }
 
+        // 作用域分级：scope 支持 global / common / agent（缺省 common）；agent 级需 agent-type。
+        val scope = try {
+            val raw = frontmatter["scope"]?.toString()?.trim()?.uppercase()
+            when (raw) {
+                null, "" -> SkillScope.COMMON
+                "GLOBAL", "COMMON", "AGENT" -> SkillScope.valueOf(raw)
+                else -> SkillScope.COMMON
+            }
+        } catch (e: Exception) {
+            SkillScope.COMMON
+        }
+        val agentType = when (scope) {
+            SkillScope.AGENT -> frontmatter["agent_type"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
+            else -> null
+        }
+
         // S-3：requires_runtime 运行时依赖列表，如 ["node", "python3"]
         val requiresRuntime = try {
             val raw = frontmatter["requires_runtime"]
@@ -123,6 +139,8 @@ object SkillParser {
             entry = entry,
             mcpTool = mcpTool,
             icon = icon,
+            scope = scope,
+            agentType = agentType,
             instructions = body.trim()
         )
     }
