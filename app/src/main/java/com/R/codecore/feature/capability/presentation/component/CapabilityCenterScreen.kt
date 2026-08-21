@@ -79,7 +79,9 @@ enum class CapabilityTab(@param:StringRes val titleRes: Int) {
 fun CapabilityCenterScreen(
     viewModel: CapabilityCenterViewModel,
     currentSessionMode: AgentMode,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onOpenSkillDetail: (String) -> Unit = {},
+    onEditSkill: (String) -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(CapabilityTab.TOOLS) }
     val agentInfo by viewModel.agentInfo.collectAsStateWithLifecycle()
@@ -118,7 +120,11 @@ fun CapabilityCenterScreen(
                 )
                 CapabilityTab.SKILLS -> {
                     val skillsViewModel: SkillsViewModel = hiltViewModel()
-                    SkillsScreen(viewModel = skillsViewModel)
+                    SkillsScreen(
+                        viewModel = skillsViewModel,
+                        onOpenSkillDetail = onOpenSkillDetail,
+                        onEditSkill = onEditSkill
+                    )
                 }
             }
         }

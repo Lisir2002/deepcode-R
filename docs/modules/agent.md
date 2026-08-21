@@ -15,9 +15,9 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `data/local/dao/` | Room DAO：`AgentMessageDao`、`ChatSessionDao`、`TodoItemDao`、`SkillStateDao`、`ModeSwitchHistoryDao`、`ModelCapabilityOverrideDao`、Checkpoint 系列（`CheckpointDao`、`CheckpointFileSnapshotDao`、`FileEditHunkDao`）、ZTH 审计系列（`ZthTelemetryEventDao`、`UserConfirmedSentinelDao`、`HallucinationFuseDao`、`SentinelPlanRejectionAuditDao`、`HardConstraintDeleteAuditDao`、`L0SoftCompactRestoreLogDao`） |
-| `data/local/database/AgentDatabase.kt` | 全局 Room 数据库（schema v46，`exportSchema=true`），跨模块聚合 agent/settings/workspace/credentials/t2i 的表 |
-| `data/local/entity/` | 与 DAO 一一对应的实体类（`AgentMessageEntity`、`ChatSessionEntity`、`CheckpointEntity`、`SkillStateEntity`、`TodoItemEntity` 等） |
+| `data/local/dao/` | Room DAO：`AgentMessageDao`、`ChatSessionDao`、`TodoItemDao`、`SkillStateDao`、`SkillConversationStateDao`、`ModeSwitchHistoryDao`、`ModelCapabilityOverrideDao`、Checkpoint 系列（`CheckpointDao`、`CheckpointFileSnapshotDao`、`FileEditHunkDao`）、ZTH 审计系列（`ZthTelemetryEventDao`、`UserConfirmedSentinelDao`、`HallucinationFuseDao`、`SentinelPlanRejectionAuditDao`、`HardConstraintDeleteAuditDao`、`L0SoftCompactRestoreLogDao`） |
+| `data/local/database/AgentDatabase.kt` | 全局 Room 数据库（schema v47，`exportSchema=true`），跨模块聚合 agent/settings/workspace/credentials/t2i 的表 |
+| `data/local/entity/` | 与 DAO 一一对应的实体类（`AgentMessageEntity`、`ChatSessionEntity`、`CheckpointEntity`、`SkillStateEntity`、`SkillConversationStateEntity`、`TodoItemEntity` 等） |
 | `data/remote/anthropic/` | Anthropic API 客户端（`AnthropicApi`、`AnthropicModels`），含 `@Streaming` SSE 流式接口 |
 | `data/remote/openai/` | OpenAI 兼容 API 客户端（`OpenAIApi`、`OpenAIModels`） |
 | `data/remote/gemini/` | Gemini API 客户端（`GeminiApi`） |
@@ -134,16 +134,24 @@
 - `SkillParser` 解析带 Frontmatter 的技能文件（版本/作者/标签/适用模式/依赖/requiredTools/requiresRuntime 等），`SkillRepository` 管理来源，`SkillStateRepository` 用 Room 持久化启用状态，`LoadSkillTool` 加载执行，`SkillExecutor` 负责运行。
 - `SkillExecutor` 执行链路携带 `SkillExecutionContext`（由 `LoadSkillTool` 从 `AgentContext` 派生，含 sessionId/mode/projectPath/agentType），使脚本技能审批与审计的 sessionId 与当前会话连贯（替代此前传 null 的脱钩问题）。
 
-#### 3.6.1 技能作用域分级（SkillScope，多 Agent 演进）
+#### 3.6.1 技能作用域分级（SkillScope v2，多 Agent 演进 + 对话级控制）
 
-支撑「后续不止编程 agent」：给 `Skill` 增加与 `type`/`modes` **正交**的作用域维度，定义「谁能用、能否被用户关闭」：
+给 `Skill` 增加与 `type`/`modes` **正交**的作用域维度，定义「技能在哪些上下文生效、能否被用户关闭」，v47 起为三档：
 
-- `SkillScope` 三档：`GLOBAL` 全局（系统级强制激活，所有 agent 必有，用户不可关闭）／`COMMON` 通用（所有 agent 默认可用，用户可开关）／`AGENT` agent 级（仅绑定 `agentType` 的 agent 可用）。
-- `Skill` 新增字段：`scope: SkillScope = COMMON`、`agentType: String? = null`（scope==AGENT 时必填，如 `"coding"`）。
-- Frontmatter 承载 `scope: global|common|agent` + `agent-type`（仅 agent 级需要），缺省按 COMMON 解析。
+- `SkillScope` 三档：`GLOBAL` 全局（所有 Agent、所有对话默认生效，用户可设置级开关，也可在某个对话内临时禁用）／`AGENT` 指定 Agent 级（仅绑定 `agentType` 的 agent 生效，如 `"coding"`）／`CONVERSATION` 对话级（默认休眠，不进系统提示词、不可调用、不自动触发，仅当用户显式「添加」到某个对话后才在该对话内全面生效）。
+- `Skill` 新增字段：`scope: SkillScope = GLOBAL`、`agentType: String? = null`（scope==AGENT 时必填，如 `"coding"`）。
+- Frontmatter 承载 `scope: global|agent|conversation` + `agent-type`（仅 agent 级需要）；旧 `scope: common` 由 `SkillParser` 兼容映射为 `GLOBAL`（旧 COMMON 语义并入 GLOBAL）。
+- **作用域用户覆盖**：`skill_state` 表新增 `scope_override` / `agent_type_override`（可空），`SkillStateRepository.mergeWithState` 在非空且可解析时覆盖 frontmatter 声明（仅 LOCAL 技能可改），NULL=跟随声明。
+- **对话级双向控制**：`skill_conversation_state(skill_id, session_id, enabled)` 表记录技能在某对话内的生效状态。
+  - `enabled=true`：添加对话级技能（CONVERSATION 技能激活）或对话内恢复；
+  - `enabled=false`：对 GLOBAL/AGENT 技能做对话内临时禁用；
+  - 无绑定记录 = 跟随声明。
+- **作用域严格隐藏（filterVisibleSkills/filterVisibleSkillsSync）**：仅「全局启用 + 作用域匹配 + 未被本对话临时禁用」的技能对模型可见/可调用/可自动触发：
+  - AGENT → 仅 `skill.agentType == 当前 agentType`（无 agentType 上下文不可见）；
+  - CONVERSATION → 需本会话存在 `enabled=true` 绑定；
+  - GLOBAL/AGENT → 本会话存在 `enabled=false` 绑定则排除。
 - `SkillToolBindingManager`：技能加载成功时校验并登记 `requiredTools`（缺失给明确错误 `SKILL_MISSING_TOOL`），技能禁用/卸载时回收本管理器动态注册的工具（绝不删除内置全局工具）。
-- `LoadSkillTool.executeWithContext`：GLOBAL/COMMON 直接放行加载；AGENT 级按声明 agentType 校验；加载前登记专属工具、构建 `SkillExecutionContext` 贯穿执行。当前为单 Agent 场景，AGENT 级按声明放行，多 Agent 演进后改为 `<skill.agentType> == 当前激活 agentType` 才放行。
-- 技能「激活态」语义（R1）：GLOBAL 常驻、COMMON 随「用户开关 × agent 激活」、AGENT 仅当对应 agent 激活——实际按作用域动态注册/回收由 `SkillToolBindingManager` 在 agent 激活时执行。
+- `LoadSkillTool.executeWithContext`：GLOBAL 直接放行；AGENT 级按声明 agentType 校验；加载前登记专属工具、构建 `SkillExecutionContext` 贯穿执行。当前为单 Agent 场景（`DEFAULT_AGENT_TYPE="coding"`），多 Agent 演进后改为 `<skill.agentType> == 当前激活 agentType` 才放行。
 
 #### 3.6.2 内置技能（BuiltinSkillSeeder）与脚本项目路径契约
 
@@ -191,12 +199,13 @@
 - **触发决策铁律（唯一设计原则，后续所有声明 `auto_trigger` 的技能都必须遵循）：模型决策 > 关键词**：
   1. **模型主导（唯一主路径）**：`decideAutoTriggerSkills` 用 LLM 触发决策器（`AIProvider.complete`，reasoningEffort=low）基于 `triggerConditions`/`description` 判断任务意图是否高度匹配，输出技能 name JSON 数组，**宁可少触发、不可误触发**；`trigger_keywords` 仅是「典型触发信号词」喂给模型聚焦，**绝不直接参与触发判定、永不高于模型判断**；
   2. **关键词兜底（降级路径，仅极端保底）**：仅当模型链路完全不可用（异常）时，才回退用 `trigger_keywords` 做关键词匹配触发，避免明确任务极端落空。关键词永远不高于模型判断。
-- **规则快筛（前置过滤，非决策）**：`SkillStateRepository.listSkillsSync()` 中取「启用 + `autoTrigger` + 非 AGENT 级 + 本会话未触发过」的候选，最多 `MAX_AUTO_TRIGGER_SKILLS`（2）个。
-- **执行注入**：命中则走 `SkillExecutor.execute`（PROMPT 注入正文、SCRIPT 走既有 ZTH 审批、MCP 走既有映射），输出以「【系统·自动触发技能…】」UserMessage 注入首轮模型上下文。SCRIPT 自动触发执行前仍弹确认卡（安全审批链路不变），用户拒绝/超时降级为文本注入不阻塞主流程。
+- **规则快筛（前置过滤，非决策）**：候选 = 「启用 + `autoTrigger` + 通过作用域过滤（`filterVisibleSkillsSync`，即对当前会话可见，含对话级激活/禁用的双向过滤）+ 本会话未触发过」，最多 `MAX_AUTO_TRIGGER_SKILLS`（2）个。
+- **触发调度（D12）**：命中技能按作用域优先级 `GLOBAL > AGENT > CONVERSATION` 排序后取前 ≤2 个，避免同轮多审批卡与上下文膨胀；`scopePriority` 实现于 `StatefulAgentWorkflow`。
+- **执行注入**：命中则走 `SkillExecutor.execute`（PROMPT 注入正文、SCRIPT 走既有 ZTH 审批、MCP 走既有映射），输出以「【系统·自动触发技能…】」UserMessage 注入首轮模型上下文；同时向 UI 推送 `AutoTriggered` 事件落库工具卡片，用户可直观看到「某技能被自动触发并加载」的结果。SCRIPT 自动触发执行前仍弹确认卡（审批卡标题带【自动触发】标记，安全审批链路不变），用户拒绝/超时降级为文本注入不阻塞主流程；**仅成功执行后才标记会话级去重**，失败/被拒可重试。
 - **会话级去重**：`ToolSessionState` 新增 `autoTriggeredSkills` 集合，同一技能在同一会话内最多自动触发一次。
 - **已启用声明**：`coding-preflight`（编程前）与 `pre-commit-health`（提交前）两个内置 SCRIPT 技能已在 frontmatter 声明 `auto_trigger: true` + `trigger_conditions` + `trigger_keywords`。
 - **内容升级机制（根治：保证改动到达老设备）**：`BuiltinSkillSeeder` 的内置技能升级判定为「**version 或内容 hash 任一不一致即覆盖**」双保险——(a) frontmatter `version` 显式 bump 时覆盖；(b) 即便忘记 bump version，只要技能内容（SKILL.md / entry / 其它资产）与 assets 侧不一致（如新增 `auto_trigger` 字段），也会按「相对技能目录路径 + 内容」的 SHA-256 组合 hash 比对触发覆盖。从根上避免「只改 frontmatter 却因 version 未变导致改动永不生效」的问题。
-- **决策点**：AGENT 级技能不参与自动触发（多 Agent 演进后可放开）。
+- **决策点**：仅通过作用域过滤（对当前会话可见）的技能参与自动触发；AGENT 级需当前 agent 匹配、CONVERSATION 级需本对话已添加。
 
 ### 3.7 ZTH 零信任防护（ZthGuardAggregateFacade）
 

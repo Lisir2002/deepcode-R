@@ -1028,6 +1028,13 @@ class StatefulAgentWorkflow @Inject constructor(
         val isError: Boolean = false
     )
 
+    /** 自动触发调度优先级（D12）：GLOBAL > AGENT > CONVERSATION。 */
+    private fun scopePriority(scope: SkillScope): Int = when (scope) {
+        SkillScope.GLOBAL -> 0
+        SkillScope.AGENT -> 1
+        SkillScope.CONVERSATION -> 2
+    }
+
     /** 自动触发技能：返回 [AutoTriggerResult] 列表（无候选/未命中/异常时返回空）。 */
     private suspend fun autoTriggerSkills(
         userRequest: String,
@@ -1035,12 +1042,13 @@ class StatefulAgentWorkflow @Inject constructor(
         aiProvider: AIProvider,
         sessionState: ToolSessionState?
     ): List<AutoTriggerResult> {
-        // 1. 候选：启用 + 声明 autoTrigger + 非 AGENT 级（保守，仅对全局/通用技能自动触发）+ 会话内未触发过。
-        //    注意：不做数量截断——完整候选集交给 LLM 决策器判断，命中后再截断（见步骤 2），
+        // 1. 候选：启用 + 声明 autoTrigger + 作用域可见（当前 agent + 当前会话，含对话级双向控制）+
+        //    会话内未触发过。注意：不做数量截断——完整候选集交给 LLM 决策器判断，命中后再调度截断（见步骤 2），
         //    避免「截断优先」导致内置技能在排序变化时被提前过滤掉、永远进不了模型判断。
         val candidates = try {
             skillStateRepository.listSkillsSync()
-                .filter { it.enabled && it.autoTrigger && it.scope != SkillScope.AGENT }
+                .filter { it.enabled && it.autoTrigger }
+                .let { list -> skillStateRepository.filterVisibleSkillsSync(list, context.sessionId) }
                 .filter { sessionState == null || !sessionState.hasAutoTriggeredSkill(it.id) }
         } catch (e: Exception) {
             FileLogger.w(TAG, "技能自动触发：候选读取失败，跳过", e)
@@ -1053,22 +1061,25 @@ class StatefulAgentWorkflow @Inject constructor(
         //    关键词的角色只是「辅助信号」——把技能声明的 trigger_keywords 作为典型信号词喂给模型聚焦，
         //    绝不直接参与触发判定；
         //    兜底路径：仅当模型链路完全不可用（异常）时才回退关键词匹配保底，避免明确任务在极端情况下落空。
-        //    即：关键词永不高于模型判断，模型永远拥有最终决策权。命中后最多取前 MAX_AUTO_TRIGGER_SKILLS 个。
-        val selected: List<String> = try {
+        //    即：关键词永不高于模型判断，模型永远拥有最终决策权。
+        // 3. 触发调度（D12）：命中技能按作用域优先级 GLOBAL > AGENT > CONVERSATION 排序，
+        //    取前 ≤ MAX_AUTO_TRIGGER_SKILLS 个，避免同轮多审批卡与上下文膨胀。
+        val selected: List<Skill> = try {
             decideAutoTriggerSkills(candidates, userRequest, aiProvider)
+                .mapNotNull { name -> candidates.firstOrNull { it.name.trim().equals(name.trim(), ignoreCase = true) } }
+                .sortedBy { scopePriority(it.scope) }
                 .take(MAX_AUTO_TRIGGER_SKILLS)
         } catch (e: Exception) {
             FileLogger.w(TAG, "技能自动触发：LLM 判断失败，回退关键词兜底", e)
             candidates.filter { skill ->
                 skill.triggerKeywords.any { kw -> userRequest.contains(kw, ignoreCase = true) }
-            }.map { it.name }.take(MAX_AUTO_TRIGGER_SKILLS)
+            }.sortedBy { scopePriority(it.scope) }.take(MAX_AUTO_TRIGGER_SKILLS)
         }
         if (selected.isEmpty()) return emptyList()
 
-        // 3. 逐个触发：加载/执行并把输出注入上下文（含 UI 展示结果）。
+        // 4. 逐个触发：加载/执行并把输出注入上下文（含 UI 展示结果）。
         val results = mutableListOf<AutoTriggerResult>()
-        for (skillName in selected) {
-            val skill = candidates.firstOrNull { it.name.trim().equals(skillName.trim(), ignoreCase = true) } ?: continue
+        for (skill in selected) {
             if (sessionState != null && sessionState.hasAutoTriggeredSkill(skill.id)) continue
             val execArgs = if (userRequest.isNotBlank()) mapOf("task" to userRequest) else emptyMap()
             val execCtx = SkillExecutionContext.from(context, autoTrigger = true)

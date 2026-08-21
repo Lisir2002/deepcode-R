@@ -122,10 +122,13 @@ class LoadSkillTool @Inject constructor(
             return ToolResult.Error("技能「${skill.name}」已被禁用，请在设置-技能中心启用后再使用", "SKILL_DISABLED")
         }
 
-        // 作用域分级：AGENT 级技能需与当前 agent 匹配（GLOBAL/COMMON 直接放行）。
-        val agentScopeCheck = checkAgentScope(skill)
-        if (agentScopeCheck != null) {
-            return ToolResult.Error(agentScopeCheck.first, agentScopeCheck.second)
+        // 作用域严格隐藏 + 对话级控制（D7/D8）：仅「当前 agent + 当前会话」可见的技能才可加载。
+        // - AGENT 级：agentType 需匹配当前 agent（当前单 Agent 场景默认 "coding"）；
+        // - CONVERSATION 级：需在当前会话被显式添加（enabled=true），否则休眠不可调用；
+        // - GLOBAL/AGENT：若当前会话存在 enabled=false 绑定（对话内临时禁用），则严格隐藏。
+        val scopeCheck = checkScopeAndConversation(skill, context.sessionId)
+        if (scopeCheck != null) {
+            return ToolResult.Error(scopeCheck.first, scopeCheck.second)
         }
 
         // 依赖解析：自动递归加载依赖，环/缺失/禁用时给出明确错误
@@ -213,15 +216,34 @@ class LoadSkillTool @Inject constructor(
     }
 
     /**
-     * 作用域校验：返回 (错误信息, 错误码) 或 null（放行）。
-     * GLOBAL/COMMON 直接放行；AGENT 级需匹配当前 agent（当前单 Agent 场景下按声明 agentType 放行）。
+     * 作用域严格隐藏 + 对话级控制校验：返回 (错误信息, 错误码) 或 null（放行）。
+     *
+     * 复用 [SkillStateRepository.filterVisibleSkills] 的可见性判定：技能在「当前 agent + 当前会话」
+     * 下不可见时，给出明确的原因（AGENT 不匹配 / CONVERSATION 未添加 / 对话内临时禁用），
+     * 而不是笼统地报「不可用」，便于用户快速定位。
      */
-    private fun checkAgentScope(skill: com.R.codecore.feature.agent.domain.skill.Skill): Pair<String, String>? {
-        if (skill.scope != SkillScope.AGENT) return null
-        // 当前为单 Agent（编程）场景，agentType 标识 "coding"；AGENT 级技能允许按声明加载。
-        // 多 Agent 演进后，此处改为：skill.agentType == 当前激活 agentType，不匹配则拒绝。
-        FileLogger.d(TAG, "load_skill agent 级技能: ${skill.name} (agentType=${skill.agentType})")
-        return null
+    private suspend fun checkScopeAndConversation(
+        skill: com.R.codecore.feature.agent.domain.skill.Skill,
+        sessionId: String?
+    ): Pair<String, String>? {
+        val visible = skillStateRepository.filterVisibleSkills(listOf(skill), sessionId)
+        if (visible.isNotEmpty()) return null
+
+        // 对话级禁用优先给出明确提示（用户可见、可即时恢复）。
+        if (sessionId != null) {
+            val conv = runCatching { skillStateRepository.getConversationState(skill.id, sessionId) }.getOrNull()
+            if (conv?.enabled == false) {
+                return "技能「${skill.name}」在当前对话中已被禁用，请到对话技能面板重新启用后再使用" to "SKILL_CONVERSATION_DISABLED"
+            }
+        }
+        return when (skill.scope) {
+            SkillScope.AGENT -> {
+                FileLogger.d(TAG, "load_skill agent 级技能作用域不匹配: ${skill.name} (agentType=${skill.agentType})")
+                "技能「${skill.name}」仅适用于 ${skill.agentType ?: "指定"} Agent，当前 Agent 不可用" to "SKILL_AGENT_SCOPE_MISMATCH"
+            }
+            SkillScope.CONVERSATION -> "技能「${skill.name}」为对话级技能，需先在对话技能面板添加启用后才能使用" to "SKILL_CONVERSATION_INACTIVE"
+            SkillScope.GLOBAL -> "技能「${skill.name}」当前不可用" to "SKILL_NOT_VISIBLE"
+        }
     }
 
     /** S-3：在容器内探测指定命令是否可用（command -v），失败/超时视为缺失。 */

@@ -35,9 +35,13 @@
 | `domain/model/ModelMetadata.kt` | 模型元数据（上下文/输入输出 token、三能力）+ `Source`(MODELS_DEV/INFERRED) + `InferenceReason` 审计信息 |
 | `domain/model/ModelContextPolicy.kt` | 上下文 token 分配常量与估算工具（usableInputTokens / preserveRecentTokens / estimateTokens） |
 | `domain/repository/AIProviderRepository.kt` | AI 供应商仓储接口（流式 provider 列表 + 同步 active 读取 + `ensureActiveProvider`） |
+| `domain/SkillImporter.kt` | 技能导入管线：ZIP 压缩包 / 单 MD 文件 / 粘贴文本 / URL 下载四来源统一准备（预校验 + Zip Slip 防护 + 冲突检测）→ 确认落地 |
+| `domain/SkillExporter.kt` | 技能导出：LOCAL 技能目录 zip 打包（供分享/迁移） |
 | `presentation/SettingsViewModel.kt` | 设置页编排：所有 StateFlow、Provider CRUD/模型拉取/测试、MCP、权限、容器与执行模式、日志查看器（含 live tail） |
 | `presentation/SecuritySettingsViewModel.kt` | 安全设置：凭据加密状态/迁移/密钥轮换/重置 + ZTH 三字段合成 UI 状态 |
-| `presentation/SkillsViewModel.kt` | 技能中心：启用/禁用/卸载技能 |
+| `presentation/SkillsViewModel.kt` | 技能中心：启用/禁用/卸载、作用域覆盖、统一导入管线（ZIP/MD/粘贴/URL 准备→确认）、导出与分享 |
+| `presentation/SkillDetailViewModel.kt` | 技能查看页：加载技能、构建目录树、文件内容读取/语法高亮分派 |
+| `presentation/SkillEditViewModel.kt` | 技能编辑器：frontmatter 表单解析/回填、正文编辑、新增/删除文件、另存为新技能 |
 | `presentation/AboutStatsViewModel.kt` | 关于页使用统计 |
 | `presentation/component/SettingsScreen.kt` | 设置主屏：`SettingsSection` 二级分区路由、顶栏、各 section 分发、跨屏 openSection 信号 |
 | `presentation/component/ProvidersAndLogSection.kt` | 供应商列表 `ProvidersSection` + `ProviderItem`、空态 |
@@ -51,7 +55,9 @@
 | `presentation/component/ContainerSettingsSection.kt` | 容器 profile 管理与共享存储开关 |
 | `presentation/component/PermissionsSettingsSection.kt` | 权限规则（全局/项目）管理与提升 |
 | `presentation/component/ThemeSelectionSheet.kt` | 主题选择 |
-| `presentation/component/SkillsScreen.kt` | 技能中心 UI |
+| `presentation/component/SkillsScreen.kt` | 技能中心 UI（分组/搜索/筛选/卡片增强/操作按钮化/导入导出入口） |
+| `presentation/component/SkillDetailScreen.kt` | 技能查看页 UI（默认渲染 SKILL.md，顶部按钮唤出半屏目录树弹窗，脚本/代码语法高亮） |
+| `presentation/component/SkillEditScreen.kt` | 技能编辑器 UI（frontmatter 表单 + Markdown 正文 + 新增文件 + 另存为新技能） |
 | `presentation/component/AboutSection.kt` | 关于页：统计、FAQ、开源致谢、版本比较工具 |
 | `presentation/component/SearchUtils.kt` | 通用搜索工具 |
 | `presentation/components/SecuritySettingsScreen.kt` | 安全设置 UI（生物识别/密钥轮换/ZTH） |
@@ -111,16 +117,26 @@ catalog 刷新：App 启动调 `refreshFromNetworkIfStale()`；`init` 中监听 
 
 `openSection(Section)` 用 tick 对比机制（`pendingOpenSectionTick` vs `lastConsumedSectionTick`）实现「外部设置页跳转 SettingsScreen 内部二级分区」，纯状态机保证不漏不重入（如 TerminalSettingsScreen 跳 SSH 主机配置）。
 
-### 3.6 技能中心（SkillsScreen → SkillsViewModel）
+### 3.6 技能中心（SkillsScreen → SkillsViewModel + 详情页 + 编辑器）
 
-设置页以 `SkillsSection` 承接技能管理：`SkillsViewModel` 负责技能启用/禁用/卸载（agent 侧 `SkillStateRepository` 的 Room 状态），`SkillsScreen.kt` 为列表 UI。技能加载/执行语义由 agent 模块承载，见 [agent.md §3.6](./agent.md#36-技能skill)。
+设置页以 `SkillsSection` 承接技能管理：`SkillsViewModel` 负责技能启用/禁用/卸载、作用域覆盖、统一导入管线与导出分享（agent 侧 `SkillStateRepository` 的 Room 状态），`SkillsScreen.kt` 为列表 UI，`SkillDetailScreen`/`SkillEditScreen` 为查看页与编辑器（路由 `skill_detail/{id}` / `skill_edit/{id}`）。技能加载/执行语义由 agent 模块承载，见 [agent.md §3.6](./agent.md#36-技能skill)。
 
-**作用域分级在设置侧的体现**（多 Agent 演进）：技能按 `SkillScope`（GLOBAL/COMMON/AGENT）分级，见 [agent.md §3.6.1](./agent.md#361-技能作用域分级skillscope多-agent-演进)：
-- `GLOBAL 全局`：技能中心**不出开关**（不可关闭，系统级强制激活）；
-- `COMMON 通用`：技能中心**展示用户自定义开关**（默认启用，可关）；
-- `AGENT`：**仅当当前 agentType 匹配时才可见/可开关**，非当前 agent 的技能按 agent 维度分组展示或隐藏。
+**列表页能力**（本期重构）：按来源分组（内置 / 用户）/ 关键词搜索 / 执行形态筛选；卡片增强展示（作用域徽章、自动触发徽章、类型 Pill、版本）；操作按钮化（查看 / 编辑 / 启用开关 / 卸载 / 导出）；顶部「导入」入口（ZIP / 单 MD / 粘贴文本 / URL 四来源）。
 
-即设置侧只需暴露「能关」的开关：GLOBAL 静默内置、COMMON 提供开关、AGENT 按 agent 过滤；实际的按作用域动态注册/回收由 `SkillToolBindingManager` 在 agent 激活时执行。
+**查看页**（仅查看，内置技能只读）：默认渲染 SKILL.md 正文；顶部「目录」按钮唤出半屏目录树弹窗，可查看技能目录下其它规则文档与脚本代码；脚本/代码文件按扩展名推断语言做基础语法高亮；LOCAL 技能可从查看页进入编辑或导出。
+
+**编辑器**（仅 LOCAL 用户技能）：结构化 frontmatter 表单（名称/描述/版本/作者/标签/执行形态/入口脚本/MCP 工具/作用域/agent 类型/自动触发与触发条件/依赖等）+ Markdown 正文编辑；支持新增文件、删除文件、另存为新技能（目录名自动加 `-copy`）；`id` 为目录名不可改。
+
+**导入管线**（`SkillImporter`）：ZIP / 单 MD（选文件）/ 粘贴文本 / URL 下载四来源统一 `prepare` → 预校验（解析 frontmatter、Zip Slip 防护、大小上限、单技能约束）→ `Ready`/`Illegal`/`Conflict` 三态 → 用户确认（含 overwrite 冲突决策）→ 落地安装；无 SKILL.md 的目录自动补默认 frontmatter。
+
+**导出**（`SkillExporter`）：LOCAL 技能目录 zip 打包，经系统分享面板导出。
+
+**作用域分级在设置侧的体现**（多 Agent 演进 + 对话级控制）：技能按 `SkillScope` v2（GLOBAL / AGENT / CONVERSATION）分级，见 [agent.md §3.6.1](./agent.md#361-技能作用域分级skillscope-v2多-agent-演进--对话级控制)：
+- `GLOBAL 全局`：技能中心**默认展示用户开关**（默认启用，可关）；
+- `AGENT`：仅绑定 agentType 匹配当前 agent 时可见/可开关；
+- `CONVERSATION 对话级`：默认休眠，用户需在对话页「技能」面板显式添加后才在该对话生效。
+
+即设置侧暴露「能关」的开关 + 作用域覆盖；对话级双向控制（添加/临时禁用）由对话页 `ConversationSkillsSheet` 承接（agent 模块），运行时按作用域动态注册/回收仍由 `SkillToolBindingManager` 在 agent 激活时执行。
 
 ## 4. 对外接口与集成点
 

@@ -14,6 +14,7 @@ import com.R.codecore.feature.agent.data.local.dao.HardConstraintDeleteAuditDao
 import com.R.codecore.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
 import com.R.codecore.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.R.codecore.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
+import com.R.codecore.feature.agent.data.local.dao.SkillConversationStateDao
 import com.R.codecore.feature.agent.data.local.dao.SkillStateDao
 import com.R.codecore.feature.agent.data.local.dao.TodoItemDao
 import com.R.codecore.feature.agent.data.local.dao.UserConfirmedSentinelDao
@@ -29,6 +30,7 @@ import com.R.codecore.feature.agent.data.local.entity.L0SoftCompactRestoreLogEnt
 import com.R.codecore.feature.agent.data.local.entity.ModeSwitchHistoryEntity
 import com.R.codecore.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.R.codecore.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
+import com.R.codecore.feature.agent.data.local.entity.SkillConversationStateEntity
 import com.R.codecore.feature.agent.data.local.entity.SkillStateEntity
 import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
 import com.R.codecore.feature.agent.data.local.entity.UserConfirmedSentinelEntity
@@ -76,9 +78,10 @@ import com.R.codecore.feature.t2i.data.local.entity.T2ITaskEntity
         T2IProviderEntity::class,
         T2IProviderModelEntity::class,
         T2ITaskEntity::class,
+        SkillConversationStateEntity::class,
         SkillStateEntity::class
     ],
-    version = 46,
+    version = 47,
     exportSchema = true
 )
 abstract class AgentDatabase : RoomDatabase() {
@@ -105,9 +108,10 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun t2iProviderDao(): T2IProviderDao
     abstract fun t2iProviderModelDao(): T2IProviderModelDao
     abstract fun t2iTaskDao(): T2ITaskDao
+    abstract fun skillConversationStateDao(): SkillConversationStateDao
     abstract fun skillStateDao(): SkillStateDao
 
     companion object {
-        const val SCHEMA_VERSION = 46
+        const val SCHEMA_VERSION = 47
     }
 }

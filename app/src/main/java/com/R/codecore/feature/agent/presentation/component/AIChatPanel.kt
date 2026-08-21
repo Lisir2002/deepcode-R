@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.R.codecore.R
 import com.R.codecore.core.theme.Brand
@@ -54,6 +55,7 @@ import com.R.codecore.feature.agent.domain.tool.question.UserQuestionAnswer
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.AgentUIState
 import com.R.codecore.feature.agent.presentation.AIAgentViewModel
+import com.R.codecore.feature.agent.presentation.ConversationSkillsViewModel
 import com.R.codecore.feature.agent.presentation.MessageRole
 import com.R.codecore.feature.agent.presentation.hasVisibleContent
 import com.R.codecore.feature.settings.presentation.SettingsViewModel
@@ -153,6 +155,9 @@ fun AIChatPanel(
     // 编辑态：正在编辑的用户消息 id。发送时若非空则走「截断重发」而非普通发送。
     var editingMessageId by remember { mutableStateOf<String?>(null) }
     var fileDiffsForSheet by remember { mutableStateOf<TaskChangesSheetData?>(null) }
+    // 对话技能面板（D5/D10）：输入栏「技能」按钮唤出，管理对话级添加/禁用。
+    var showConversationSkills by remember { mutableStateOf(false) }
+    val conversationSkillsViewModel: ConversationSkillsViewModel = hiltViewModel()
     val listState = rememberLazyListState()
     val markdownCache = remember { MarkdownRenderCache() }
     val scope = rememberCoroutineScope()
@@ -628,8 +633,18 @@ fun AIChatPanel(
                     if (contextLimit > 0) {
                         sessionLastInputTokens.toFloat() / contextLimit
                     } else 0f
-                }
+                },
+                onOpenSkills = { showConversationSkills = true }
             )
+
+            val skillsSessionId = currentSessionId
+            if (showConversationSkills && skillsSessionId != null) {
+                ConversationSkillsSheet(
+                    viewModel = conversationSkillsViewModel,
+                    sessionId = skillsSessionId,
+                    onDismiss = { showConversationSkills = false }
+                )
+            }
 
             fileDiffsForSheet?.let { sheetData ->
                 FileDiffSheet(

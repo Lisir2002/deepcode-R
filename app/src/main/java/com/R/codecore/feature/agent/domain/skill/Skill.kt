@@ -25,16 +25,20 @@ enum class SkillSourceType {
 }
 
 /**
- * 技能作用域：定义「谁能用、能否被用户关闭」，为多 Agent 演进提供支撑。
+ * 技能作用域 v2：定义「技能在哪些上下文生效」，为多 Agent 演进与对话级控制提供支撑。
  *
- * - [GLOBAL]：全局。系统级强制激活，所有 agent 必有，用户不可关闭。
- * - [COMMON]：通用。所有 agent 默认全局可用，用户在设置里可自定义开关。
- * - [AGENT]：agent 级。仅绑定 [Skill.agentType] 对应 agent 可用。
+ * - [GLOBAL]：全局。所有 Agent、所有对话默认生效；用户可在「设置级」开关（[Skill.enabled]），
+ *   也可在某个对话内临时禁用（per-conversation override）。
+ * - [AGENT]：指定 Agent 级。仅绑定 [Skill.agentType] 对应 agent 生效（当前单 Agent 场景为 "coding"）。
+ * - [CONVERSATION]：对话级。默认休眠（不进系统提示词、不可调用、不自动触发），
+ *   仅当用户显式「添加」到某个对话后，才在该对话内全面生效（可见/可调用/可自动触发）。
  *
  * 与 [SkillType]（执行形态）、[Skill.modes]（执行模式）正交，只决定适用范围。
+ * 兼容说明：旧枚举的 COMMON 语义（默认全 agent 可用、用户可开关）并入 [GLOBAL]；
+ * 旧 frontmatter `scope: common` 由 [com.R.codecore.feature.agent.domain.skill.SkillParser] 映射为 GLOBAL。
  */
 enum class SkillScope {
-    GLOBAL, COMMON, AGENT
+    GLOBAL, AGENT, CONVERSATION
 }
 
 /**
@@ -61,7 +65,7 @@ enum class SkillScope {
  * @param entry SCRIPT 类型：入口脚本相对路径（相对技能目录）。
  * @param mcpTool MCP 类型：绑定的 MCP 工具名（命名空间化，如 mcp__server__tool）。
  * @param icon 图标标识（可选）。
- * @param scope 技能作用域（GLOBAL/COMMON/AGENT），见 [SkillScope]。缺省按 COMMON（默认所有 agent 可用、可开关）。
+ * @param scope 技能作用域（GLOBAL/AGENT/CONVERSATION），见 [SkillScope]。缺省按 GLOBAL（默认所有 agent 可用、可开关）。
  * @param agentType 当 [scope] 为 [SkillScope.AGENT] 时绑定的 agent 类型标识（如 "coding"），缺省为 null。
  * @param instructions 技能指令正文（剥离 Frontmatter 后的内容）。
  */
@@ -83,7 +87,7 @@ data class Skill(
     val entry: String? = null,
     val mcpTool: String? = null,
     val icon: String? = null,
-    val scope: SkillScope = SkillScope.COMMON,
+    val scope: SkillScope = SkillScope.GLOBAL,
     val agentType: String? = null,
     /**
      * 是否参与工作流自动触发：为 true 时，工作流会在新任务到来时智能判断是否自动加载/执行本技能，

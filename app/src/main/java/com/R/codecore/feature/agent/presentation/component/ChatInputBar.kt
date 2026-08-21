@@ -73,6 +73,7 @@ import compose.icons.feathericons.ArrowUp
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Square
+import compose.icons.feathericons.Zap
 
 @Composable
 internal fun ChatInputBar(
@@ -102,7 +103,8 @@ internal fun ChatInputBar(
     slashCommands: List<SlashCommandHandler> = emptyList(),
     queuedRequests: List<QueuedRequest> = emptyList(),
     onRemoveQueued: (String) -> Unit = {},
-    tokenProgress: Float = 0f
+    tokenProgress: Float = 0f,
+    onOpenSkills: () -> Unit = {}
 ) {
     val canSend = (value.isNotBlank() || pendingAttachments.isNotEmpty()) && !isBusy
     var showAttachmentSheet by remember { mutableStateOf(false) }
@@ -285,6 +287,13 @@ internal fun ChatInputBar(
                             effort = reasoningEffort,
                             onChange = onReasoningEffortChange,
                             enabled = !isBusy
+                        )
+
+                        UploadIconButton(
+                            enabled = !isBusy,
+                            icon = FeatherIcons.Zap,
+                            contentDescription = stringResource(R.string.skill_conversation_entry),
+                            onClick = onOpenSkills
                         )
                     }
                     UploadIconButton(

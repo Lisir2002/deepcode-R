@@ -33,6 +33,7 @@ import com.R.codecore.feature.t2i.data.local.dao.T2IProviderDao
 import com.R.codecore.feature.t2i.data.local.dao.T2IProviderModelDao
 import com.R.codecore.feature.t2i.data.local.dao.T2ITaskDao
 import com.R.codecore.feature.agent.data.local.dao.SkillStateDao
+import com.R.codecore.feature.agent.data.local.dao.SkillConversationStateDao
 import com.R.codecore.feature.settings.domain.repository.AIProviderRepository
 import com.R.codecore.feature.agent.data.local.database.AgentDatabase
 import com.R.codecore.feature.agent.data.CodeChangeTracker
@@ -521,6 +522,13 @@ object AgentModule {
     @Singleton
     fun provideSkillStateDao(database: AgentDatabase): SkillStateDao {
         return database.skillStateDao()
+    }
+
+    // ══ 技能作用域 v2：skill_conversation_state DAO 绑定
+    @Provides
+    @Singleton
+    fun provideSkillConversationStateDao(database: AgentDatabase): SkillConversationStateDao {
+        return database.skillConversationStateDao()
     }
 
     // ══ v46 工具系统优化：file_edit_hunks（F-3）/ mode_switch_history（G-1）DAO 绑定

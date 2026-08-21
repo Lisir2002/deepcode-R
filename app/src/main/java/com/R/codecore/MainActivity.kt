@@ -405,7 +405,37 @@ fun AppNavigation(
                 com.R.codecore.feature.capability.presentation.component.CapabilityCenterScreen(
                     viewModel = capabilityViewModel,
                     currentSessionMode = currentSessionMode,
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navController.popBackStack() },
+                    onOpenSkillDetail = { skillId ->
+                        navController.navigate("skill_detail/$skillId")
+                    },
+                    onEditSkill = { skillId ->
+                        navController.navigate("skill_edit/$skillId")
+                    }
+                )
+            }
+            composable("skill_detail/{skillId}") { entry ->
+                val skillId = entry.arguments?.getString("skillId") ?: ""
+                val detailViewModel: com.R.codecore.feature.settings.presentation.SkillDetailViewModel = hiltViewModel()
+                com.R.codecore.feature.settings.presentation.component.SkillDetailScreen(
+                    viewModel = detailViewModel,
+                    skillId = skillId,
+                    onNavigateBack = { navController.popBackStack() },
+                    onEditSkill = { id ->
+                        navController.navigate("skill_edit/$id")
+                    }
+                )
+            }
+            composable("skill_edit/{skillId}") { entry ->
+                val skillId = entry.arguments?.getString("skillId") ?: ""
+                val editViewModel: com.R.codecore.feature.settings.presentation.SkillEditViewModel = hiltViewModel()
+                com.R.codecore.feature.settings.presentation.component.SkillEditScreen(
+                    viewModel = editViewModel,
+                    skillId = skillId,
+                    onNavigateBack = { navController.popBackStack() },
+                    onSaved = { id ->
+                        navController.popBackStack()
+                    }
                 )
             }
             composable("proxy_config") {

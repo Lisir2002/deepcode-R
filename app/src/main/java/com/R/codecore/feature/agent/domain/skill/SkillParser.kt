@@ -96,16 +96,20 @@ object SkillParser {
         val mcpTool = frontmatter["mcp_tool"]?.toString()?.takeIf { it.isNotBlank() }
         val icon = frontmatter["icon"]?.toString()?.takeIf { it.isNotBlank() }
 
-        // 作用域分级：scope 支持 global / common / agent（缺省 common）；agent 级需 agent-type。
+        // 作用域 v2：scope 支持 global / agent / conversation（缺省 global）；旧值 common 兼容映射为 global。
+        // agent 级需 agent-type。
         val scope = try {
             val raw = frontmatter["scope"]?.toString()?.trim()?.uppercase()
             when (raw) {
-                null, "" -> SkillScope.COMMON
-                "GLOBAL", "COMMON", "AGENT" -> SkillScope.valueOf(raw)
-                else -> SkillScope.COMMON
+                null, "" -> SkillScope.GLOBAL
+                "COMMON" -> SkillScope.GLOBAL // 旧枚举兼容：COMMON 并入 GLOBAL
+                "GLOBAL" -> SkillScope.GLOBAL
+                "AGENT" -> SkillScope.AGENT
+                "CONVERSATION" -> SkillScope.CONVERSATION
+                else -> SkillScope.GLOBAL
             }
         } catch (e: Exception) {
-            SkillScope.COMMON
+            SkillScope.GLOBAL
         }
         val agentType = when (scope) {
             SkillScope.AGENT -> frontmatter["agent_type"]?.toString()?.trim()?.takeIf { it.isNotBlank() }

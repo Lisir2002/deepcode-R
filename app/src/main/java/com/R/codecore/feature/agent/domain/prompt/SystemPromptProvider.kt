@@ -79,19 +79,28 @@ class SystemPromptProvider @Inject constructor(
     }
 
     private inner class ActiveSkillsSource : PromptSource {
+        // 可见技能清单按会话不同（作用域/对话级控制），缓存需按 sessionId 区分，避免跨会话泄漏。
         @Volatile private var cached: String? = null
+        @Volatile private var cachedSession: String? = null
 
         override fun build(ctx: AgentContext): String? {
             // 每轮实时扫描磁盘，如有新增立即生效。这里为了避免每次大体积反序列化造成开销，可以简单做内存对比。
-            // 仅列出已启用的技能（启用状态由 Room skill_state 持久化，SkillStateRepository 已叠加）。
-            val skills = try { skillStateRepository.listSkillsSync().filter { it.enabled } } catch (e: Exception) { return null }
+            // 作用域严格隐藏（D7）：仅列出「当前 agent + 当前会话」可见且已启用的技能
+            // （GLOBAL 且未被对话内临时禁用 / AGENT 匹配当前 agent / CONVERSATION 已显式添加）。
+            val skills = try {
+                skillStateRepository.listSkillsSync().let { list ->
+                    skillStateRepository.filterVisibleSkillsSync(list, ctx.sessionId)
+                }
+            } catch (e: Exception) { return null }
             if (skills.isEmpty()) return null
             
             val list = skills.joinToString("\n") { "- ${it.name}: ${it.description.ifBlank { "（无描述）" }}" }
             val newContent = "可用技能 (skills)（格式为 名称: 何时使用；相关时用 loadSkill 传入名称取完整正文，详见上文「技能」说明）：\n当清单里有与当前任务对口的技能时，在合适的时机主动 `loadSkill` 加载并按其正文行事，让技能辅助你更规范、更高效地完成工作，而不是仅凭默认流程硬做。\n$list"
             
-            if (cached != newContent) {
+            // 同一会话内内容未变化时复用缓存快照；会话切换（或内容变化）时重建，避免跨会话串味。
+            if (cachedSession != ctx.sessionId || cached != newContent) {
                 cached = newContent
+                cachedSession = ctx.sessionId
             }
             return cached
         }

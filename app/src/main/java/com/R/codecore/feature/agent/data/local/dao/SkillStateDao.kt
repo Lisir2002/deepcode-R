@@ -28,6 +28,12 @@ interface SkillStateDao {
     @Query("UPDATE skill_state SET enabled = :enabled WHERE id = :id")
     suspend fun setEnabled(id: String, enabled: Boolean)
 
+    @Query("UPDATE skill_state SET scope_override = :scope, agent_type_override = :agentType WHERE id = :id")
+    suspend fun setScopeOverride(id: String, scope: String?, agentType: String?)
+
+    @Query("SELECT * FROM skill_state WHERE scope_override IS NOT NULL")
+    suspend fun getScoped(): List<SkillStateEntity>
+
     @Query("DELETE FROM skill_state WHERE id = :id")
     suspend fun deleteById(id: String)
 }

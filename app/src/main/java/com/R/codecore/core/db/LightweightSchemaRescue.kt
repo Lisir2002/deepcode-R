@@ -16,6 +16,7 @@ import com.R.codecore.feature.agent.data.local.entity.L0SoftCompactRestoreLogEnt
 import com.R.codecore.feature.agent.data.local.entity.ModeSwitchHistoryEntity
 import com.R.codecore.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.R.codecore.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
+import com.R.codecore.feature.agent.data.local.entity.SkillConversationStateEntity
 import com.R.codecore.feature.agent.data.local.entity.SkillStateEntity
 import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
 import com.R.codecore.feature.agent.data.local.entity.UserConfirmedSentinelEntity
@@ -123,6 +124,7 @@ object LightweightSchemaRescue {
         T2IProviderModelEntity::class.java,
         T2ITaskEntity::class.java,
         // ══ RC74 Skill 新增：同步 AgentDatabase.kt @Database entities[21]（skill_state）══
+        SkillConversationStateEntity::class.java,
         SkillStateEntity::class.java
     )
 

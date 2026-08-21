@@ -1,7 +1,9 @@
 package com.R.codecore.feature.agent.domain.skill
 
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.feature.agent.data.local.dao.SkillConversationStateDao
 import com.R.codecore.feature.agent.data.local.dao.SkillStateDao
+import com.R.codecore.feature.agent.data.local.entity.SkillConversationStateEntity
 import com.R.codecore.feature.agent.data.local.entity.SkillStateEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -26,54 +28,73 @@ data class SkillResolution(
 }
 
 /**
- * 技能状态仓库（RC74 新增）。
+ * 技能状态仓库（RC74 新增，v47 扩展作用域覆盖 + 对话级双向控制）。
  *
  * 职责：
  * 1. 聚合磁盘技能扫描（[LocalDirectorySkillSource]）与 Room 运行时状态（[SkillStateDao]），
- *    把 `enabled` 叠加到 [Skill] 上，对外暴露响应式 [skillsFlow]。
+ *    把 `enabled` 与作用域用户覆盖（scope_override/agent_type_override）叠加到 [Skill] 上，
+ *    对外暴露响应式 [skillsFlow]。
  * 2. 提供启用/禁用、安装/卸载/更新的统一入口（同时维护磁盘与 Room 状态）。
  * 3. 依赖解析：自动递归解析技能依赖，含环检测与缺失/禁用检测。
+ * 4. 作用域过滤（[filterVisibleSkills]）：按「当前 agent + 当前会话」严格隐藏不匹配的技能，
+ *    供 SystemPromptProvider / 自动触发候选 / LoadSkillTool 联动使用。
+ * 5. 对话级双向控制：添加对话级技能（enabled=true）与对话内临时禁用（enabled=false）。
  */
 @Singleton
 class SkillStateRepository @Inject constructor(
     private val localDirectorySkillSource: LocalDirectorySkillSource,
-    private val skillStateDao: SkillStateDao
+    private val skillStateDao: SkillStateDao,
+    private val skillConversationStateDao: SkillConversationStateDao
 ) {
     private companion object {
         const val TAG = "SkillStateRepository"
+        const val DEFAULT_AGENT_TYPE = "coding" // 当前单 Agent 场景；多 Agent 演进后由调用方传入动态值
     }
 
     /** 磁盘技能变更刷新触发器（UI 在安装/卸载/更新后自增以触发重扫）。 */
     private val refreshTrigger = MutableStateFlow(0)
 
-    /** 响应式技能列表：磁盘扫描 + Room 启用状态合并。 */
+    /** 响应式技能列表：磁盘扫描 + Room 启用状态与作用域覆盖合并。 */
     val skillsFlow: Flow<List<Skill>> =
         combine(refreshTrigger, skillStateDao.getAll()) { _, states ->
-            mergeEnabled(localDirectorySkillSource.listSkills(), states)
+            mergeWithState(localDirectorySkillSource.listSkills(), states)
         }
 
-    /** 一次性技能列表（含启用状态）。 */
+    /** 一次性技能列表（含启用状态与作用域覆盖）。 */
     suspend fun listSkills(): List<Skill> {
         val states = skillStateDao.getAllOnce()
-        return mergeEnabled(localDirectorySkillSource.listSkills(), states)
+        return mergeWithState(localDirectorySkillSource.listSkills(), states)
     }
 
+    /** 技能根目录（导入/导出/编辑器定位目录用）。 */
+    fun skillsRoot(): java.io.File = localDirectorySkillSource.skillsRoot
+
     /**
-     * 同步一次性技能列表（含启用状态）。
+     * 同步一次性技能列表（含启用状态与作用域覆盖）。
      *
      * 供非协程上下文（如系统提示词构建 [com.R.codecore.feature.agent.domain.prompt.SystemPromptProvider]）
      * 读取技能清单；内部用 [runBlocking] 在 IO 线程读取 Room 状态，避免阻塞调用线程。
      */
     fun listSkillsSync(): List<Skill> {
         val states = runBlocking(Dispatchers.IO) { skillStateDao.getAllOnce() }
-        return mergeEnabled(localDirectorySkillSource.listSkills(), states)
+        return mergeWithState(localDirectorySkillSource.listSkills(), states)
     }
 
-    private fun mergeEnabled(skills: List<Skill>, states: List<SkillStateEntity>): List<Skill> {
+    private fun mergeWithState(skills: List<Skill>, states: List<SkillStateEntity>): List<Skill> {
         val stateById = states.associateBy { it.id }
         return skills.map { skill ->
             val state = stateById[skill.id]
-            if (state == null) skill.copy(enabled = true) else skill.copy(enabled = state.enabled)
+            if (state == null) {
+                skill.copy(enabled = true)
+            } else {
+                skill.copy(
+                    enabled = state.enabled,
+                    // 作用域用户覆盖：非空且可解析时覆盖 frontmatter 声明，否则跟随声明。
+                    scope = state.scopeOverride?.let { ov -> runCatching { SkillScope.valueOf(ov) }.getOrNull() }
+                        ?: skill.scope,
+                    agentType = state.agentTypeOverride ?: skill.agentType
+                )
+            }
         }.sortedBy { it.name.lowercase() }
     }
 
@@ -99,12 +120,14 @@ class SkillStateRepository @Inject constructor(
         return installed
     }
 
-    /** 卸载技能：删除目录 + 删除 Room 状态。 */
+    /** 卸载技能：删除目录 + 删除 Room 状态（含对话级绑定）。 */
     suspend fun uninstall(id: String): Boolean {
         val ok = localDirectorySkillSource.uninstall(id)
         if (ok) {
             runCatching { skillStateDao.deleteById(id) }
                 .onFailure { FileLogger.e(TAG, "删除技能状态失败: $id", it) }
+            runCatching { skillConversationStateDao.deleteBySkill(id) }
+                .onFailure { FileLogger.e(TAG, "清理技能对话绑定失败: $id", it) }
             refreshTrigger.value++
         }
         return ok
@@ -125,6 +148,87 @@ class SkillStateRepository @Inject constructor(
         )
         refreshTrigger.value++
         return updated
+    }
+
+    /** 设置作用域用户覆盖（NULL=清除覆盖，跟随 frontmatter 声明）。AGENT 级可同时设置绑定的 agentType。 */
+    suspend fun setScopeOverride(id: String, scope: SkillScope?, agentType: String? = null) {
+        runCatching {
+            skillStateDao.setScopeOverride(id, scope?.name, if (scope == SkillScope.AGENT) agentType else null)
+        }.onFailure { FileLogger.e(TAG, "更新技能作用域覆盖失败: $id", it) }
+        refreshTrigger.value++
+    }
+
+    /** 对话级双向控制：设置技能在某对话内的生效状态（true=添加/启用，false=本对话临时禁用）。 */
+    suspend fun setConversationEnabled(skillId: String, sessionId: String, enabled: Boolean) {
+        runCatching {
+            skillConversationStateDao.upsert(SkillConversationStateEntity(skillId, sessionId, enabled))
+        }.onFailure { FileLogger.e(TAG, "更新技能对话状态失败: $skillId / $sessionId", it) }
+        refreshTrigger.value++
+    }
+
+    /** 移除技能在某对话的绑定记录（恢复跟随声明）。 */
+    suspend fun removeConversationBinding(skillId: String, sessionId: String) {
+        runCatching { skillConversationStateDao.delete(skillId, sessionId) }
+            .onFailure { FileLogger.e(TAG, "移除技能对话绑定失败: $skillId / $sessionId", it) }
+        refreshTrigger.value++
+    }
+
+    /** 某对话内全部技能关系（供对话技能面板展示）。 */
+    suspend fun listConversationStates(sessionId: String): List<SkillConversationStateEntity> =
+        skillConversationStateDao.getBySession(sessionId)
+
+    /** 某对话内某技能的绑定状态（无绑定返回 null = 跟随声明）。 */
+    suspend fun getConversationState(skillId: String, sessionId: String): SkillConversationStateEntity? =
+        skillConversationStateDao.getBySkillAndSession(skillId, sessionId)
+
+    /**
+     * 作用域严格隐藏过滤：返回在「当前 agent + 当前会话」下可见的技能。
+     *
+     * - 全局 [Skill.enabled] 为 false → 排除。
+     * - [SkillScope.AGENT]：仅当 [Skill.agentType] 与当前 agentType 匹配（无 agentType 上下文时不可见）。
+     * - [SkillScope.CONVERSATION]：需该会话存在 enabled=true 绑定（否则休眠）。
+     * - [SkillScope.GLOBAL]/[SkillScope.AGENT]：若该会话存在 enabled=false 绑定（对话内临时禁用）→ 排除。
+     *
+     * @param sessionId 当前会话 id；为 null 时（无对话上下文）退化为仅按 enabled 过滤。
+     * @param agentType 当前 Agent 类型（当前单 Agent 场景默认 "coding"，多 Agent 演进后由调用方传入动态值）。
+     */
+    suspend fun filterVisibleSkills(
+        skills: List<Skill>,
+        sessionId: String?,
+        agentType: String = DEFAULT_AGENT_TYPE
+    ): List<Skill> {
+        if (sessionId == null) return skills.filter { it.enabled }
+        val convStates = skillConversationStateDao.getBySession(sessionId).associateBy { it.skillId }
+        return filterByConvStates(skills, convStates, agentType)
+    }
+
+    /**
+     * 同步版作用域过滤（供非协程上下文，如 SystemPromptProvider 提示词构建；
+     * 内部用 [runBlocking] 在 IO 线程读取 Room 状态，与 [listSkillsSync] 同模式）。
+     */
+    fun filterVisibleSkillsSync(
+        skills: List<Skill>,
+        sessionId: String?,
+        agentType: String = DEFAULT_AGENT_TYPE
+    ): List<Skill> {
+        if (sessionId == null) return skills.filter { it.enabled }
+        val convStates = runBlocking(Dispatchers.IO) {
+            skillConversationStateDao.getBySession(sessionId)
+        }.associateBy { it.skillId }
+        return filterByConvStates(skills, convStates, agentType)
+    }
+
+    private fun filterByConvStates(
+        skills: List<Skill>,
+        convStates: Map<String, SkillConversationStateEntity>,
+        agentType: String
+    ): List<Skill> = skills.filter { skill ->
+        if (!skill.enabled) return@filter false
+        when (skill.scope) {
+            SkillScope.AGENT -> skill.agentType == agentType
+            SkillScope.CONVERSATION -> convStates[skill.id]?.enabled == true
+            SkillScope.GLOBAL -> convStates[skill.id]?.enabled != false
+        }
     }
 
     /**
