@@ -2,14 +2,13 @@ package com.R.codecore.feature.settings.presentation.component
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,16 +21,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,11 +38,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,12 +56,10 @@ import com.R.codecore.feature.git.presentation.component.inferSyntaxLanguage
 import com.R.codecore.feature.settings.presentation.SkillDetailViewModel
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.File
 import compose.icons.feathericons.Folder
 import compose.icons.feathericons.Share2
-import compose.icons.feathericons.X
 
 /**
  * 技能查看页（skill_detail 路由）。
@@ -128,65 +122,75 @@ fun SkillDetailScreen(
         }
     }
 
-    AppTopAppBar(
-        title = skill?.name ?: stringResource(R.string.skill_edit_title),
-        onNavigateBack = onNavigateBack,
-        navigationIcon = FeatherIcons.ArrowLeft,
-        navigationContentDescription = stringResource(R.string.common_back)
-    ) {
-        if (skill?.source == SkillSourceType.LOCAL) {
-            IconButton(onClick = { viewModel.export() }) {
-                Icon(
-                    imageVector = FeatherIcons.Share2,
-                    contentDescription = stringResource(R.string.skill_detail_export),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            IconButton(onClick = { onEditSkill(skillId) }) {
-                Icon(
-                    imageVector = FeatherIcons.Edit2,
-                    contentDescription = stringResource(R.string.skill_edit),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-        IconButton(onClick = { showDirectorySheet = true }) {
-            Icon(
-                imageVector = FeatherIcons.Folder,
-                contentDescription = stringResource(R.string.skill_detail_directory),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (skill == null) {
-            Text(
-                text = stringResource(R.string.skill_not_found),
-                modifier = Modifier.align(Alignment.Center),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            when (val content = fileContent) {
-                null -> Unit
-                is FileContent.Text -> when (content.kind) {
-                    SkillDetailViewModel.FileKind.MARKDOWN -> MarkdownContent(
-                        text = content.text,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    else -> CodeContentView(code = content.text, path = selectedPath ?: "")
+    // 必须用 Scaffold 把 AppBar 与内容区组织进同一布局体系：
+    // 直接并列排放会让 Box(fillMaxSize) 从屏幕最顶 0 开始绘制，
+    // 顶部内容被 AppBar 遮挡、滚动不到底、底部被系统导航栏裁切。
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            AppTopAppBar(
+                title = skill?.name ?: stringResource(R.string.skill_edit_title),
+                onNavigateBack = onNavigateBack,
+                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationContentDescription = stringResource(R.string.common_back)
+            ) {
+                if (skill?.source == SkillSourceType.LOCAL) {
+                    IconButton(onClick = { viewModel.export() }) {
+                        Icon(
+                            imageVector = FeatherIcons.Share2,
+                            contentDescription = stringResource(R.string.skill_detail_export),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(onClick = { onEditSkill(skillId) }) {
+                        Icon(
+                            imageVector = FeatherIcons.Edit2,
+                            contentDescription = stringResource(R.string.skill_edit),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
-                is FileContent.Image -> ImageContentView(file = content.file)
-                FileContent.Unavailable -> BinaryPlaceholder(path = selectedPath ?: "")
+                IconButton(onClick = { showDirectorySheet = true }) {
+                    Icon(
+                        imageVector = FeatherIcons.Folder,
+                        contentDescription = stringResource(R.string.skill_detail_directory),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            if (skill == null) {
+                Text(
+                    text = stringResource(R.string.skill_not_found),
+                    modifier = Modifier.align(Alignment.Center),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                when (val content = fileContent) {
+                    null -> Unit
+                    is FileContent.Text -> when (content.kind) {
+                        SkillDetailViewModel.FileKind.MARKDOWN -> MarkdownContent(
+                            text = content.text,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        else -> CodeContentView(code = content.text, path = selectedPath ?: "")
+                    }
+                    is FileContent.Image -> ImageContentView(file = content.file)
+                    FileContent.Unavailable -> BinaryPlaceholder(path = selectedPath ?: "")
+                }
             }
         }
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
     }
 
     if (showDirectorySheet) {
