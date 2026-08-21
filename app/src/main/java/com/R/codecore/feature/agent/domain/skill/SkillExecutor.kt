@@ -92,12 +92,14 @@ class SkillExecutor @Inject constructor(
         // 审批：所有 SCRIPT 技能执行前必须用户确认（决策点 6：全部审批）。
         // 会话 id 来自执行上下文（ctx.sessionId），使确认卡的归属/取消与当前会话连贯，
         // 会话结束/停止时 cancelPending 能按会话精准清理（替代此前传 null 的兜底）。
+        // 自动触发（ctx.autoTrigger）时标题加「【自动触发】」前缀，明确提示用户这是系统自动触发的技能执行。
+        val triggerTag = if (ctx.autoTrigger) "【自动触发】" else ""
         val approval = toolPermissionManager.awaitApproval(
             ctx.sessionId,
             PendingToolPermission(
                 id = "skill-${skill.id}-${System.currentTimeMillis()}",
                 toolName = "loadSkill",
-                title = "确认执行脚本技能「${skill.name}」",
+                title = "${triggerTag}确认执行脚本技能「${skill.name}」",
                 summary = "AI 请求执行脚本技能 ${skill.name}（v${skill.version}）",
                 details = "入口脚本: $entry\n目录: $containerSkillDir\n参数: ${args.entries.joinToString { "${it.key}=${it.value}" }.ifEmpty { "（无）" }}",
                 argsPreview = "skill=${skill.id} entry=$entry",

@@ -558,7 +558,7 @@ class StatefulAgentWorkflow @Inject constructor(
         // 任何异常均静默降级：自动触发绝不能阻断主流程。
         // 注意：候选读取（同步 Room）+ 触发决策（LLM 网络调用）+ 技能执行（脚本/审批）都放 IO 线程，
         // 避免在收集线程（主线程）上阻塞拖慢首字节反馈。
-        val autoTriggerNotes = try {
+        val autoTriggerResults = try {
             withContext(Dispatchers.IO) {
                 autoTriggerSkills(userRequest, currentContext, aiProvider, sessionState)
             }
@@ -568,6 +568,13 @@ class StatefulAgentWorkflow @Inject constructor(
             FileLogger.w(TAG, "技能自动触发异常，已跳过", e)
             emptyList()
         }
+        // 自动触发结果双路输出：
+        // ① 推 AgentEvent.AutoTriggered 供 ViewModel 落库为工具卡片，让用户「看见」自动触发的实际效果（含失败也展示）；
+        // ② 把【系统·自动触发技能…】消息注入首轮模型上下文（UserMessage 系统注入，provider 兼容，不另设 system 消息类型）。
+        autoTriggerResults.forEach { result ->
+            send(AgentEvent.AutoTriggered(skillName = result.skillName, output = result.output, isError = result.isError))
+        }
+        val autoTriggerNotes = autoTriggerResults.map { AgentMessage.UserMessage(content = it.noteContent) }
         actionQueue.addLast(
             AgentAction.InitRequest(
                 currentContext.history + autoTriggerNotes + AgentMessage.UserMessage(
@@ -1010,19 +1017,31 @@ class StatefulAgentWorkflow @Inject constructor(
     /** 一次请求最多自动触发的技能数，避免连环触发拖慢首轮。 */
     private val MAX_AUTO_TRIGGER_SKILLS = 2
 
-    /** 自动触发技能并把输出拼装为注入上下文的 UserMessage 列表（无候选/未命中/异常时返回空）。 */
+    /** 自动触发技能的一次执行结果：既用于注入模型上下文，也用于向 UI 推送展示（Autotriggered 事件落库工具卡片）。 */
+    private data class AutoTriggerResult(
+        val skillId: String,
+        val skillName: String,
+        /** 注入模型上下文的系统消息体（【系统·自动触发技能…】UserMessage content）。 */
+        val noteContent: String,
+        /** 展示给用户的技能输出（供 TOOL 卡片渲染，含失败信息）。 */
+        val output: String,
+        val isError: Boolean = false
+    )
+
+    /** 自动触发技能：返回 [AutoTriggerResult] 列表（无候选/未命中/异常时返回空）。 */
     private suspend fun autoTriggerSkills(
         userRequest: String,
         context: AgentContext,
         aiProvider: AIProvider,
         sessionState: ToolSessionState?
-    ): List<AgentMessage> {
+    ): List<AutoTriggerResult> {
         // 1. 候选：启用 + 声明 autoTrigger + 非 AGENT 级（保守，仅对全局/通用技能自动触发）+ 会话内未触发过。
+        //    注意：不做数量截断——完整候选集交给 LLM 决策器判断，命中后再截断（见步骤 2），
+        //    避免「截断优先」导致内置技能在排序变化时被提前过滤掉、永远进不了模型判断。
         val candidates = try {
             skillStateRepository.listSkillsSync()
                 .filter { it.enabled && it.autoTrigger && it.scope != SkillScope.AGENT }
                 .filter { sessionState == null || !sessionState.hasAutoTriggeredSkill(it.id) }
-                .take(MAX_AUTO_TRIGGER_SKILLS)
         } catch (e: Exception) {
             FileLogger.w(TAG, "技能自动触发：候选读取失败，跳过", e)
             return emptyList()
@@ -1034,44 +1053,52 @@ class StatefulAgentWorkflow @Inject constructor(
         //    关键词的角色只是「辅助信号」——把技能声明的 trigger_keywords 作为典型信号词喂给模型聚焦，
         //    绝不直接参与触发判定；
         //    兜底路径：仅当模型链路完全不可用（异常）时才回退关键词匹配保底，避免明确任务在极端情况下落空。
-        //    即：关键词永不高于模型判断，模型永远拥有最终决策权。
+        //    即：关键词永不高于模型判断，模型永远拥有最终决策权。命中后最多取前 MAX_AUTO_TRIGGER_SKILLS 个。
         val selected: List<String> = try {
             decideAutoTriggerSkills(candidates, userRequest, aiProvider)
+                .take(MAX_AUTO_TRIGGER_SKILLS)
         } catch (e: Exception) {
             FileLogger.w(TAG, "技能自动触发：LLM 判断失败，回退关键词兜底", e)
             candidates.filter { skill ->
                 skill.triggerKeywords.any { kw -> userRequest.contains(kw, ignoreCase = true) }
-            }.map { it.name }
+            }.map { it.name }.take(MAX_AUTO_TRIGGER_SKILLS)
         }
         if (selected.isEmpty()) return emptyList()
 
-        // 3. 逐个触发：加载/执行并把输出注入上下文。
-        val notes = mutableListOf<AgentMessage>()
+        // 3. 逐个触发：加载/执行并把输出注入上下文（含 UI 展示结果）。
+        val results = mutableListOf<AutoTriggerResult>()
         for (skillName in selected) {
             val skill = candidates.firstOrNull { it.name.trim().equals(skillName.trim(), ignoreCase = true) } ?: continue
             if (sessionState != null && sessionState.hasAutoTriggeredSkill(skill.id)) continue
-            val output = try {
-                val execArgs = if (userRequest.isNotBlank()) mapOf("task" to userRequest) else emptyMap()
-                val execCtx = SkillExecutionContext.from(context)
+            val execArgs = if (userRequest.isNotBlank()) mapOf("task" to userRequest) else emptyMap()
+            val execCtx = SkillExecutionContext.from(context, autoTrigger = true)
+            val (output, isError) = try {
                 when (val r = skillExecutor.execute(skill, execArgs, execCtx)) {
-                    is SkillExecutionResult.Success -> r.output
+                    is SkillExecutionResult.Success -> r.output to false
                     is SkillExecutionResult.Error -> {
                         FileLogger.w(TAG, "技能自动触发执行失败: ${skill.id} - ${r.message}")
-                        "[自动触发失败] ${r.message}"
+                        "[自动触发失败] ${r.message}" to true
                     }
                 }
             } catch (e: Exception) {
                 FileLogger.w(TAG, "技能自动触发执行异常: ${skill.id}", e)
-                "[自动触发异常] ${e.message}"
+                "[自动触发异常] ${e.message}" to true
             }
-            sessionState?.markSkillAutoTriggered(skill.id)
-            notes.add(
-                AgentMessage.UserMessage(
-                    content = "【系统·自动触发技能「${skill.name}」】\n已自动加载并执行该技能，输出如下（供本次任务参考）：\n\n${output.take(6000)}"
+            // 会话级去重仅在「成功执行」后标记：失败/被用户拒绝不标记，用户可重试后再触发（根治"失败也算触发过"）。
+            if (!isError) {
+                sessionState?.markSkillAutoTriggered(skill.id)
+            }
+            results.add(
+                AutoTriggerResult(
+                    skillId = skill.id,
+                    skillName = skill.name,
+                    noteContent = "【系统·自动触发技能「${skill.name}」】\n已自动加载并执行该技能，输出如下（供本次任务参考）：\n\n${output.take(6000)}",
+                    output = output.take(6000),
+                    isError = isError
                 )
             )
         }
-        return notes
+        return results
     }
 
     /** 触发决策器：让 LLM 基于技能触发条件判断哪些技能应在当前任务自动触发，返回技能 name 列表。 */
@@ -1082,7 +1109,7 @@ class StatefulAgentWorkflow @Inject constructor(
     ): List<String> {
         val catalog = candidates.joinToString("\n") { skill ->
             val kw = skill.triggerKeywords.takeIf { it.isNotEmpty() }?.joinToString("/") ?: "（无）"
-            "- ${skill.name}（${skill.description.take(150)}）\n  触发条件：${skill.triggerConditions ?: skill.description}\n  典型触发信号词（仅供参考，非硬性规则）：$kw"
+            "- ${skill.name}（类型: ${skill.type}；${skill.description.take(150)}）\n  触发条件：${skill.triggerConditions ?: skill.description}\n  典型触发信号词（仅供参考，非硬性规则）：$kw"
         }
         val systemPrompt = """
             你是 R-CodeCore 的技能自动触发决策器。当新任务到来时，由你主导判断哪些「自动触发技能」应该在本任务开始时自动触发，作为自动化流程的一环。

@@ -62,6 +62,14 @@ sealed class AgentEvent {
 
     /** 模式已切换（由 AI 调用 switchMode 触发），UI 据此展示计划审查面板等。 */
     data class ModeChanged(val newMode: AgentMode, val reason: String) : AgentEvent()
+
+    /** 自动触发技能已执行完成（含触发成功与失败）：输出落库渲染为工具卡片，供用户看到「自动触发」的实际效果。
+     *  注意：技能输出已随首轮模型上下文以【系统·自动触发技能…】注入，本事件仅用于 UI 展示，不重复进模型上下文。 */
+    data class AutoTriggered(
+        val skillName: String,
+        val output: String,
+        val isError: Boolean = false
+    ) : AgentEvent()
 }
 
 interface AgentWorkflow {

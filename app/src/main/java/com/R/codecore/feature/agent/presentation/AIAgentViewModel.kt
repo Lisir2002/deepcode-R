@@ -922,6 +922,23 @@ class AIAgentViewModel @Inject constructor(
                         // 模式切换事件：PlanApprovalManager 已在 workflow 层面挂起等待用户批准
                         // 这里只更新 streamingText 显示
                     }
+                    is AgentEvent.AutoTriggered -> {
+                        // 自动触发技能已完成：落库为工具卡片，让用户「看见」自动触发的实际效果（含失败也展示）。
+                        // 技能输出已随首轮模型上下文以【系统·自动触发技能…】注入，这里仅用于 UI 渲染，不重复进模型上下文。
+                        setStreamingText(sessionId, null)
+                        setStreamingReasoning(sessionId, null)
+                        val msgId = "skill_auto_${System.nanoTime()}"
+                        messagePersistenceUseCase.persist(
+                            sessionId,
+                            MessageRole.TOOL,
+                            event.output,
+                            id = msgId,
+                            taskId = taskId,
+                            toolName = event.skillName,
+                            toolArgs = "[auto_trigger]",
+                            isError = event.isError
+                        )
+                    }
                 }
             }
 

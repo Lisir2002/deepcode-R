@@ -15,22 +15,26 @@ import com.R.codecore.feature.agent.domain.model.AgentMode
  *   避免依赖 settings 层 ExecutionModeHolder 造成环依赖）；缺省为 null。
  * - [agentType]：当前 Agent 类型标识（如 "coding"），用于作用域过滤：仅 [SkillScope.AGENT] 级
  *   技能需与之匹配。多 Agent 演进时为必填；当前单 Agent 场景可由调用方传入或置 null。
+ * - [autoTrigger]：是否由「技能自动触发」机制发起（区别于用户手动 loadSkill）。用于审批卡标题等
+ *   提示用户「这是系统自动触发的技能执行」，避免用户不明就里、以为 App 卡住。
  */
 data class SkillExecutionContext(
     val sessionId: String? = null,
     val mode: AgentMode = AgentMode.BUILD,
     val projectPath: String? = null,
     val executionMode: String? = null,
-    val agentType: String? = null
+    val agentType: String? = null,
+    val autoTrigger: Boolean = false
 ) {
     companion object {
         /** 从 [AgentContext] 派生（零改造取用工作流已传入的上下文）。 */
-        fun from(context: AgentContext, agentType: String? = null): SkillExecutionContext {
+        fun from(context: AgentContext, agentType: String? = null, autoTrigger: Boolean = false): SkillExecutionContext {
             return SkillExecutionContext(
                 sessionId = context.sessionId,
                 mode = context.mode,
                 projectPath = context.projectRoot,
-                agentType = agentType
+                agentType = agentType,
+                autoTrigger = autoTrigger
             )
         }
     }
