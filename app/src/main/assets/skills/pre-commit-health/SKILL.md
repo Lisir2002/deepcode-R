@@ -15,6 +15,7 @@ entry: entry/run.sh
 license: Apache-2.0
 auto_trigger: true
 trigger_conditions: 用户请求执行 git 提交（commit）、打 Tag、合并分支、暂存/撤销等版本控制写操作，或准备提交代码之前（首次提交、多文件/新增模块/重构提交时最适用）。纯代码编写、代码审查、答疑等与提交动作无关的任务不触发。
+trigger_keywords: [提交, commit, 打tag, 打 tag, tag, 合并, merge, push, release, 发布, 暂存, stash, 分支, git]
 compatibility: 需要容器内具备 git / grep / sed / awk / tail（内置 Alpine 已含），缺失时自动降级跳过对应检查。
 metadata:
   repo: R-CodeCore

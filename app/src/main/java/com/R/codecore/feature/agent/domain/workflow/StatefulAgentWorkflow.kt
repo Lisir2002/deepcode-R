@@ -1029,13 +1029,18 @@ class StatefulAgentWorkflow @Inject constructor(
         }
         if (candidates.isEmpty()) return emptyList()
 
-        // 2. 智能识别：触发决策器判定哪些技能适用（宁可少触发，不可误触发）。
-        val selected = try {
-            decideAutoTriggerSkills(candidates, userRequest, aiProvider)
+        // 2. 分层智能识别（双保险，规则优先、LLM 兜底）：
+        //    规则层：任务文本命中技能声明的 trigger_keywords（高置信词）→ 直接入选，不依赖 LLM，保证明确场景稳定触发；
+        //    LLM 层：仅对规则未命中的技能做意图二判，覆盖模糊场景；LLM 调用失败时降级为空，不影响规则命中。
+        val ruleHits = candidates.filter { skill -> skill.triggerKeywords.any { kw -> userRequest.contains(kw, ignoreCase = true) } }
+        val llmTargets = candidates.filter { skill -> !skill.triggerKeywords.any { kw -> userRequest.contains(kw, ignoreCase = true) } }
+        val llmHits = try {
+            if (llmTargets.isNotEmpty()) decideAutoTriggerSkills(llmTargets, userRequest, aiProvider) else emptyList()
         } catch (e: Exception) {
-            FileLogger.w(TAG, "技能自动触发：触发决策失败，跳过", e)
-            return emptyList()
+            FileLogger.w(TAG, "技能自动触发：LLM 二判失败，仅按规则命中触发", e)
+            emptyList()
         }
+        val selected = (ruleHits.map { it.name } + llmHits).distinct()
         if (selected.isEmpty()) return emptyList()
 
         // 3. 逐个触发：加载/执行并把输出注入上下文。
@@ -1074,20 +1079,23 @@ class StatefulAgentWorkflow @Inject constructor(
         aiProvider: AIProvider
     ): List<String> {
         val catalog = candidates.joinToString("\n") { skill ->
-            "- ${skill.name}（${skill.description.take(120)}）\n  触发条件：${skill.triggerConditions ?: skill.description}"
+            "- ${skill.name}（${skill.description.take(150)}）\n  触发条件：${skill.triggerConditions ?: skill.description}"
         }
         val systemPrompt = """
             你是 R-CodeCore 的技能自动触发决策器。当新任务到来时，判断哪些「自动触发技能」应该在本任务开始时自动触发，作为自动化流程的一环。
             判断原则：
-            1. 只有任务的意图/场景与技能的「触发条件」高度匹配时才触发；弱相关、纯问答、纯阅读、与技能无关的任务一律不触发（宁可少触发，不可误触发）。
-            2. 一次最多选择 ${MAX_AUTO_TRIGGER_SKILLS} 个最相关的技能，其余不触发。
+            1. 任务的意图/场景与技能的「触发条件」高度匹配时才触发；弱相关、纯问答、纯阅读、与技能无关的任务一律不触发（宁可少触发，不可误触发）。
+            2. 典型应触发场景（命中即应触发，不要犹豫）：
+               - 触发条件含"编程/写代码/写/改代码"的技能：用户要编写、修改、重构、修复、实现任何代码或网页/页面/接口/功能/模块，都属于应触发场景；
+               - 触发条件含"git 提交/提交前"的技能：用户要执行 commit / 合并分支 / 打 tag / push 等 git 写操作，都属于应触发场景。
+            3. 一次最多选择 ${MAX_AUTO_TRIGGER_SKILLS} 个最相关的技能，其余不触发。
             可自动触发的技能清单：
             $catalog
             输出要求：只输出一个 JSON 数组（如 ["skill-a"]），元素为要触发的技能 name；不需要触发任何技能时输出 []。不要输出任何其他文字或解释。
         """.trimIndent()
         val response = aiProvider.complete(
             systemPrompt = systemPrompt,
-            messages = listOf(AgentMessage.UserMessage(content = "用户任务：\n$userRequest")),
+            messages = listOf(AgentMessage.UserMessage(content = "用户任务：\n${userRequest.take(500)}")),
             tools = emptyList(),
             reasoningEffort = "low"
         )

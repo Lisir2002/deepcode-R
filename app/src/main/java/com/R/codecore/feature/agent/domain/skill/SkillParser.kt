@@ -132,6 +132,16 @@ object SkillParser {
         }.getOrDefault(false)
         val triggerConditions = frontmatter["trigger_conditions"]?.toString()?.takeIf { it.isNotBlank() }
 
+        // 自动触发关键词（高置信规则）：支持 YAML list 或逗号分隔字符串，供工作流规则层快筛直接命中。
+        val triggerKeywords = try {
+            val raw = frontmatter["trigger_keywords"]
+            if (raw is List<*>) raw.filterIsInstance<String>().map { it.trim() }.filter { it.isNotBlank() }
+            else if (raw is String) raw.split(',').map { it.trim() }.filter { it.isNotBlank() }
+            else emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
         return Skill(
             id = dir.name,
             name = name,
@@ -154,6 +164,7 @@ object SkillParser {
             agentType = agentType,
             autoTrigger = autoTrigger,
             triggerConditions = triggerConditions,
+            triggerKeywords = triggerKeywords,
             instructions = body.trim()
         )
     }

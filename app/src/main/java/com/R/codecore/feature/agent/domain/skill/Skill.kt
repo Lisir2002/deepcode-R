@@ -95,5 +95,11 @@ data class Skill(
      * 如"用户给出新的编程任务，即将开始写/改代码之前"。缺省回退用 [description] 判断。
      */
     val triggerConditions: String? = null,
+    /**
+     * 自动触发关键词（高置信规则）：用户任务命中任意一个关键词即视为应自动触发本技能，
+     * 走规则快筛直接入选，不依赖 LLM 决策器判断，保证明确的场景稳定触发。
+     * 用于覆盖最典型、最无歧义的触发场景；模糊场景仍由 LLM 决策器兜底。
+     */
+    val triggerKeywords: List<String> = emptyList(),
     val instructions: String
 )
