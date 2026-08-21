@@ -430,6 +430,17 @@ class MigrationSchemaConsistencyTest {
         )
         val files = schemasDir.walkTopDown().filter { it.isFile && it.name.endsWith(".json") }.toList()
         assertTrue("schemas 目录下没有 .json 文件: ${schemasDir.path}", files.isNotEmpty())
-        return files.maxByOrNull { it.lastModified() }!!
+        // 按 schema JSON 内的 database.version 取最高版本作为权威基准，而非文件 lastModified：
+        // CI 上 kspReleaseKotlin 命中 Gradle 构建缓存（FROM-CACHE）时不重写 47.json，
+        // 所有版本 json 的 mtime 同为 checkout 时刻，lastModified 选基准会随机命中旧版本
+        // （如误选 46.json，导致 skill_state 新列被误判不一致）。按版本号选择才是确定性的。
+        return files.maxByOrNull { f ->
+            runCatching {
+                JSONObject(f.readText())
+                    .optJSONObject("database")
+                    ?.optInt("version", -1)
+                    ?: -1
+            }.getOrDefault(-1)
+        }!!
     }
 }
