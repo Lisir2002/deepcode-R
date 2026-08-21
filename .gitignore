@@ -9,6 +9,7 @@ app/build/
 
 # Local config
 local.properties
+gradle-local.properties
 
 # Signing (release keystore + passwords — never commit)
 *.jks

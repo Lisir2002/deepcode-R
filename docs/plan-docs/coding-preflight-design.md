@@ -1,6 +1,7 @@
 # coding-preflight-design
 
-> 评审状态：📝 草案
+> 评审状态：✅ 已评审（M2/M3 已完成，coding-preflight v1.0.0 已落地；与 pre-commit-health 构成
+> 「开工前 → 提交前」全链路闭环）
 >
 > 主题：第二款内置 Skill「编程前准备」（coding-preflight）的设计。定义开工前体检范围（环境/仓库
 > 就绪 + 任务理解与计划拆解 + 上下文与记忆加载 + 纪律与分支前置）、执行契约（SCRIPT 脚本快照 +
@@ -175,8 +176,10 @@ SKILL_PROJECT_PATH=<容器侧项目路径，默认 /root/workspace>
 
 ## 9. 里程碑
 
-- [ ] M1：设计定稿（本文档）。
-- [ ] M2：技能资产（SKILL.md + entry/run.sh）+ 本地 `sh -n` 与真实运行验证。
-- [ ] M3：文档同步（agent.md / mcp-and-skills.md）+ 提交/CI/发版。
+- [x] M1：设计定稿（本文档）。
+- [x] M2：技能资产（SKILL.md + entry/run.sh）+ 本地 `sh -n` 与真实运行验证（Android / 非 Android 双场景通过）。
+- [x] M3：文档同步（agent.md / mcp-and-skills.md / design 状态）+ 提交/CI/发版。
 
-> 注：本设计为草案，待评审确认后按 M2/M3 实施。实施完成前不修改任何编译型代码。
+> 落地记录：coding-preflight v1.0.0 已完成，与 pre-commit-health 构成「开工前 → 提交前」闭环。
+> 实现要点：`SKILL_ARG_TASK` 由 loadSkill args 经 SkillExecutor 注入（机制已存在）；busybox/dash 兼容
+> （命令替换内不嵌套带引号参数，先转存局部变量）；B1 分层（Android / 非 Android）自动切换环境栈推断。

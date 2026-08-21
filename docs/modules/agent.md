@@ -166,6 +166,23 @@
 - **故障口径（只读不修）**：脚本运行时若报语法错误/无法完成，AI 不就地修改内置资产（`entry/run.sh`/`SKILL.md`），应如实报告原因（脚本 bug / 环境缺依赖）；确为脚本 bug 由维护者修复后经 `sh -n` + CI 护栏双验证再发版。
 - **SKILL.md 触发词**：description 含通用触发词（提交前检查 / 规范体检 / pre-commit / commit 前体检），并写明输出解读、修复口径与分层说明。
 
+#### 3.6.4 第二款内置技能 coding-preflight（编程前准备）
+
+- 第二款内置技能：**coding-preflight**（编程前准备，`assets/skills/coding-preflight/`），scope=COMMON、type=SCRIPT、当前版本 v1.0.0；与 pre-commit-health 互补，构成「开工前 → 编程 → 提交前」闭环。
+- **执行契约**：沿用 `SKILL_PROJECT_PATH`；任务描述经 `loadSkill` 的 args 传入，`SkillExecutor` 统一注入为 `SKILL_ARG_TASK` 环境变量（机制已存在，无需新增注入逻辑）。
+- **SCRIPT 自动采集现状快照**：`entry/run.sh` 按 `SKILL_PROJECT_PATH` 定位仓库根后输出：
+  - `[项目]/[类型]`：仓库根、Android/非 Android 分层（存在 `app/build.gradle.kts` 或 `app/build.gradle` 判定）；
+  - `[任务]`：`SKILL_ARG_TASK`（缺省提示先澄清需求）；
+  - `[环境]`：按项目栈推断关键构建组件并探测（Android→Java/Gradle/AndroidSDK；非 Android 按 package.json/go.mod/Cargo.toml/pom.xml/requirements.txt 推断 Node/Go/Cargo/Maven/Python，Git 始终探测），输出 `NAME=installed(版本)/missing`；
+  - `[仓库]`：分支、游离 HEAD、中间操作、未提交改动（已暂存/未暂存/未跟踪）、最近提交；
+  - `[结构]`：feature 模块清单 + `docs/modules/*.md` 存在性、关键目录、`[文件]` AGENTS.md/.gitignore/.gitattributes/README.md 存在性。
+- **就绪判定（输出「阻断项 ❌ / 建议项 ⚠️」，有阻断项退出码非 0）**：
+  - 阻断项：R-1 环境缺关键组件（按项目栈判定）、R-2 仓库中间操作、R-3 游离 HEAD、R-4 有未提交改动（与用户确认同主题或先 stash/提交）、R-5 错误分支（功能/重构在 main/master 时建议建分支）；
+  - 建议项：W-1 记忆未加载、W-2 模块文档缺失/未读、W-3 资产同步面预判（strings.xml/prompts/docs/docs-modules）、W-4 危险/敏感操作前置询问（Ask First）、W-5 未提供任务描述。
+- **PROMPT 引导**：SKILL.md 正文引导 AI 完成「任务理解（只读核实不凭记忆）→ 计划拆解（可执行步骤+验证方式）→ 验收标准 → 纪律自检（AGENTS.md 边界 + 资产同步项）」，末尾输出 `[计划] 建议步骤` 供 AI 落地。
+- **busybox/dash 兼容**：命令替换内不直接嵌套带引号的 `"$2"/"$3"`（部分 sh 解析会崩），先转存局部变量再拼命令；统一 `grep -E`/`sed`/`awk`；全部 git 命令 `-c core.quotepath=false` 防路径转义；`sh -n` + CI 护栏（`assets/skills/**/*.sh`）双验证。
+- **故障口径**：与 pre-commit-health 一致（只读不修 / 先复核再报错 / 降级不硬崩 / 如实报告）。
+
 ### 3.7 ZTH 零信任防护（ZthGuardAggregateFacade）
 
 - 聚合门面串联四方联动：熔断器（`ZthCircuitBreakerManager`）、计划审批（`ZthPlanApprovalManagerWrapper`）、确认卡片（`ZthConfirmationCardManager` + `ZthConfirmationCardStateMachine`）、检查点（`ZthCheckpointRepository`）。
