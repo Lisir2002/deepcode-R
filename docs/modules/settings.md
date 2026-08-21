@@ -56,7 +56,7 @@
 | `presentation/component/PermissionsSettingsSection.kt` | 权限规则（全局/项目）管理与提升 |
 | `presentation/component/ThemeSelectionSheet.kt` | 主题选择 |
 | `presentation/component/SkillsScreen.kt` | 技能中心 UI（分组/搜索/筛选/卡片增强/操作按钮化/导入导出入口） |
-| `presentation/component/SkillDetailScreen.kt` | 技能查看页 UI（默认渲染 SKILL.md，顶部按钮唤出半屏目录树弹窗，脚本/代码语法高亮） |
+| `presentation/component/SkillDetailScreen.kt` | 技能查看页 UI（Hero 元信息卡 + 当前文件面包屑 + 可折叠目录树弹窗 + 代码高亮/图片预览 + 空/加载态） |
 | `presentation/component/SkillEditScreen.kt` | 技能编辑器 UI（frontmatter 表单 + Markdown 正文 + 新增文件 + 另存为新技能） |
 | `presentation/component/AboutSection.kt` | 关于页：统计、FAQ、开源致谢、版本比较工具 |
 | `presentation/component/SearchUtils.kt` | 通用搜索工具 |
@@ -123,7 +123,7 @@ catalog 刷新：App 启动调 `refreshFromNetworkIfStale()`；`init` 中监听 
 
 **列表页能力**（本期重构）：按来源分组（内置 / 用户）/ 关键词搜索 / 执行形态筛选；卡片增强展示（作用域徽章、自动触发徽章、类型 Pill、版本）；操作按钮化（查看 / 编辑 / 启用开关 / 卸载 / 导出）；顶部「导入」入口（ZIP / 单 MD / 粘贴文本 / URL 四来源）。
 
-**查看页**（仅查看，内置技能只读）：默认渲染 SKILL.md 正文；顶部「目录」按钮唤出半屏目录树弹窗，可查看技能目录下其它规则文档与脚本代码；脚本/代码文件按扩展名推断语言做基础语法高亮；LOCAL 技能可从查看页进入编辑或导出。
+**查看页**（仅查看，内置技能只读）：顶部 Hero 卡片展示元信息（名称/类型/来源/作用域/自动触发/版本/描述/标签）；默认文件智能选择（SKILL.md → CLAUDE.md → 第一个文件），避免无 SKILL.md 时空白页；「目录」按钮或当前文件面包屑条唤出半屏目录树弹窗（目录节点可折叠/展开，当前文件高亮），浏览该技能的其它规则文档与脚本代码；脚本/代码文件按扩展名推断语言做基础语法高亮、图片采样解码预览防 OOM；文件读取与导出异步化（IO 线程）避免卡顿；LOCAL 技能可从查看页进入编辑或导出。目录树折叠状态由 `collapsedPaths` 维护，`SkillDetailViewModel` 提供 loading 态与 `findDefaultPath()`。
 
 **编辑器**（仅 LOCAL 用户技能）：结构化 frontmatter 表单（名称/描述/版本/作者/标签/执行形态/入口脚本/MCP 工具/作用域/agent 类型/自动触发与触发条件/依赖等）+ Markdown 正文编辑；支持新增文件、删除文件、另存为新技能（目录名自动加 `-copy`）；`id` 为目录名不可改。
 

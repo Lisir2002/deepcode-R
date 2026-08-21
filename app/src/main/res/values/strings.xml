@@ -1495,7 +1495,9 @@
     <string name="skill_detail_directory">目录</string>
     <string name="skill_detail_export">导出</string>
     <string name="skill_detail_binary">二进制文件（不支持预览）</string>
+    <string name="skill_detail_no_files">技能目录中暂无文件</string>
     <string name="skill_detail_empty">技能内容为空</string>
+    <string name="skill_loading">加载中…</string>
     <string name="skill_not_found">技能不存在或已卸载</string>
     <string name="skill_export_success">已导出技能 zip</string>
     <string name="skill_export_failed">导出失败</string>

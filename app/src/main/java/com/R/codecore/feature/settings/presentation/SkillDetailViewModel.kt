@@ -58,6 +58,9 @@ class SkillDetailViewModel @Inject constructor(
     private val _skill = MutableStateFlow<Skill?>(null)
     val skill: StateFlow<Skill?> = _skill.asStateFlow()
 
+    private val _loading = MutableStateFlow(true)
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
     private val _fileTree = MutableStateFlow<List<SkillFileNode>>(emptyList())
     val fileTree: StateFlow<List<SkillFileNode>> = _fileTree.asStateFlow()
 
@@ -70,6 +73,9 @@ class SkillDetailViewModel @Inject constructor(
      */
     fun load(skillId: String) {
         viewModelScope.launch {
+            _loading.value = true
+            _skill.value = null
+            _fileTree.value = emptyList()
             val skills = runCatching { skillStateRepository.listSkills() }.getOrDefault(emptyList())
             val skill = skills.firstOrNull { it.id == skillId }
             _skill.value = skill
@@ -77,18 +83,30 @@ class SkillDetailViewModel @Inject constructor(
             if (skill == null) {
                 _message.value = context.getString(R.string.skill_not_found)
             }
+            _loading.value = false
         }
     }
 
-    /** 读取技能目录下某文件的文本内容；二进制/不存在返回 null。 */
-    fun readFile(relPath: String): String? {
-        val dir = _skill.value?.dir ?: return null
+    /** 目录树默认展示文件：优先 SKILL.md / CLAUDE.md，否则取第一个文件；无文件返回 null。 */
+    fun findDefaultPath(): String? {
+        val files = mutableListOf<SkillFileNode>()
+        fun collect(nodes: List<SkillFileNode>) {
+            nodes.forEach { if (it.isDirectory) collect(it.children) else files.add(it) }
+        }
+        collect(_fileTree.value)
+        return files.firstOrNull { it.name.equals("SKILL.md", true) || it.name.equals("CLAUDE.md", true) }?.path
+            ?: files.firstOrNull()?.path
+    }
+
+    /** 读取技能目录下某文件的文本内容（IO 线程）；二进制/超大/不存在返回 null。 */
+    suspend fun readFile(relPath: String): String? = withContext(Dispatchers.IO) {
+        val dir = _skill.value?.dir ?: return@withContext null
         val file = File(dir, relPath)
-        if (!file.isFile) return null
-        return try {
+        if (!file.isFile) return@withContext null
+        try {
             val bytes = file.readBytes()
-            if (bytes.size > 1_000_000) return null // 超大文件不预览
-            if (bytes.any { it.toInt() == 0 }) return null // 含 NUL → 二进制
+            if (bytes.size > 1_000_000) return@withContext null // 超大文件不预览
+            if (bytes.any { it.toInt() == 0 }) return@withContext null // 含 NUL → 二进制
             bytes.toString(Charsets.UTF_8)
         } catch (e: Exception) {
             FileLogger.w(TAG, "读取技能文件失败: $relPath", e)
@@ -96,15 +114,18 @@ class SkillDetailViewModel @Inject constructor(
         }
     }
 
-    /** LOCAL 技能打包分享 zip。返回是否成功。 */
-    fun export(): Boolean {
-        val skill = _skill.value ?: return false
-        if (skill.source == SkillSourceType.BUILTIN) return false
-        val ok = runCatching { skillExporter.shareZip(skill) }.getOrDefault(false)
-        _message.value = context.getString(
-            if (ok) R.string.skill_export_success else R.string.skill_export_failed
-        )
-        return ok
+    /** LOCAL 技能打包分享 zip（IO 线程异步，结果经 message 提示）。 */
+    fun export() {
+        val skill = _skill.value ?: return
+        if (skill.source == SkillSourceType.BUILTIN) return
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { skillExporter.shareZip(skill) }.getOrDefault(false)
+            }
+            _message.value = context.getString(
+                if (ok) R.string.skill_export_success else R.string.skill_export_failed
+            )
+        }
     }
 
     fun consumeMessage() {
