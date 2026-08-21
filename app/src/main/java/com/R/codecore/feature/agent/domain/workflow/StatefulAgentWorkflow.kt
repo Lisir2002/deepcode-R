@@ -15,6 +15,12 @@ import com.R.codecore.feature.agent.domain.prompt.SystemPromptProvider
 import com.R.codecore.feature.agent.domain.provider.AIProvider
 import com.R.codecore.feature.agent.domain.provider.AIResponse
 import com.R.codecore.feature.agent.domain.provider.AIStreamChunk
+import com.R.codecore.feature.agent.domain.skill.Skill
+import com.R.codecore.feature.agent.domain.skill.SkillExecutionContext
+import com.R.codecore.feature.agent.domain.skill.SkillExecutionResult
+import com.R.codecore.feature.agent.domain.skill.SkillExecutor
+import com.R.codecore.feature.agent.domain.skill.SkillScope
+import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.StreamingAgentTool
 import com.R.codecore.feature.agent.domain.tool.ToolCall
@@ -63,6 +69,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -109,7 +117,10 @@ class StatefulAgentWorkflow @Inject constructor(
     /** L7 事件总线：工具间事件驱动协作，文件变更事件联动缓存失效。 */
     private val toolEventBus: ToolEventBus,
     /** L6 上下文增量发布：工具动作与轮次快照的增量索引。 */
-    private val incrementalIndexStore: IncrementalIndexStore
+    private val incrementalIndexStore: IncrementalIndexStore,
+    /** 技能自动触发：读取启用的自动触发技能，作为自动化流程的一环智能识别并触发。 */
+    private val skillStateRepository: SkillStateRepository,
+    private val skillExecutor: SkillExecutor
 ) : AgentWorkflow {
 
     init {
@@ -531,14 +542,6 @@ class StatefulAgentWorkflow @Inject constructor(
             currentContext = currentContext.copy(sessionState = sessionState)
         }
         val actionQueue = ArrayDeque<AgentAction>()
-        actionQueue.addLast(
-            AgentAction.InitRequest(
-                currentContext.history + AgentMessage.UserMessage(
-                    content = userRequest,
-                    images = currentContext.inputImages
-                )
-            )
-        )
 
         // 并行化首轮准备：prompt 构建（含文件 IO / Room 同步查询）与 provider 解析（含多次 DB 查询）
         // 互不依赖，放到 IO 线程并行执行，避免在收集线程上串行阻塞、拖慢首字节反馈。
@@ -549,6 +552,30 @@ class StatefulAgentWorkflow @Inject constructor(
         }
         var systemPrompt = prepared.first
         val aiProvider = prepared.second
+
+        // 技能自动触发（自动化流程一环）：对声明 auto_trigger 的技能做智能识别（LLM 触发决策器），
+        // 命中则自动加载/执行并把输出注入上下文（会话级去重，同会话不重复触发）。
+        // 任何异常均静默降级：自动触发绝不能阻断主流程。
+        // 注意：候选读取（同步 Room）+ 触发决策（LLM 网络调用）+ 技能执行（脚本/审批）都放 IO 线程，
+        // 避免在收集线程（主线程）上阻塞拖慢首字节反馈。
+        val autoTriggerNotes = try {
+            withContext(Dispatchers.IO) {
+                autoTriggerSkills(userRequest, currentContext, aiProvider, sessionState)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "技能自动触发异常，已跳过", e)
+            emptyList()
+        }
+        actionQueue.addLast(
+            AgentAction.InitRequest(
+                currentContext.history + autoTriggerNotes + AgentMessage.UserMessage(
+                    content = userRequest,
+                    images = currentContext.inputImages
+                )
+            )
+        )
 
         // 预压缩任务：在工具执行间隙于后台启动，供下一轮 CallLlm 复用，
         // 避免上下文压缩阻塞下一轮 LLM 的首字节。null 表示无待消费的预压缩结果。
@@ -966,6 +993,118 @@ class StatefulAgentWorkflow @Inject constructor(
 
         state.error?.let { send(AgentEvent.Failed(it)) }
         send(AgentEvent.Completed)
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 技能自动触发（自动化流程一环）
+    //
+    // 机制：对声明了 auto_trigger 的已启用技能，新任务到来时先用「LLM 触发决策器」做智能识别
+    // （判断当前任务的意图/场景是否与该技能的触发条件高度匹配），命中则自动加载/执行该技能，
+    // 并把输出作为上下文注入首轮模型请求，全程无需关键词触发或依赖模型自觉调用 loadSkill。
+    // 安全与稳定性：
+    //  - PROMPT 技能仅注入指令正文（无副作用）；SCRIPT/MCP 技能走 [SkillExecutor] 既有审批与审计。
+    //  - 会话级去重（[ToolSessionState]），同一技能在同一个会话内最多自动触发一次。
+    //  - 任何异常静默降级，自动触发绝不阻断主流程。
+    // ════════════════════════════════════════════════════════════════
+
+    /** 一次请求最多自动触发的技能数，避免连环触发拖慢首轮。 */
+    private val MAX_AUTO_TRIGGER_SKILLS = 2
+
+    /** 自动触发技能并把输出拼装为注入上下文的 UserMessage 列表（无候选/未命中/异常时返回空）。 */
+    private suspend fun autoTriggerSkills(
+        userRequest: String,
+        context: AgentContext,
+        aiProvider: AIProvider,
+        sessionState: ToolSessionState?
+    ): List<AgentMessage> {
+        // 1. 候选：启用 + 声明 autoTrigger + 非 AGENT 级（保守，仅对全局/通用技能自动触发）+ 会话内未触发过。
+        val candidates = try {
+            skillStateRepository.listSkillsSync()
+                .filter { it.enabled && it.autoTrigger && it.scope != SkillScope.AGENT }
+                .filter { sessionState == null || !sessionState.hasAutoTriggeredSkill(it.id) }
+                .take(MAX_AUTO_TRIGGER_SKILLS)
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "技能自动触发：候选读取失败，跳过", e)
+            return emptyList()
+        }
+        if (candidates.isEmpty()) return emptyList()
+
+        // 2. 智能识别：触发决策器判定哪些技能适用（宁可少触发，不可误触发）。
+        val selected = try {
+            decideAutoTriggerSkills(candidates, userRequest, aiProvider)
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "技能自动触发：触发决策失败，跳过", e)
+            return emptyList()
+        }
+        if (selected.isEmpty()) return emptyList()
+
+        // 3. 逐个触发：加载/执行并把输出注入上下文。
+        val notes = mutableListOf<AgentMessage>()
+        for (skillName in selected) {
+            val skill = candidates.firstOrNull { it.name.trim().equals(skillName.trim(), ignoreCase = true) } ?: continue
+            if (sessionState != null && sessionState.hasAutoTriggeredSkill(skill.id)) continue
+            val output = try {
+                val execArgs = if (userRequest.isNotBlank()) mapOf("task" to userRequest) else emptyMap()
+                val execCtx = SkillExecutionContext.from(context)
+                when (val r = skillExecutor.execute(skill, execArgs, execCtx)) {
+                    is SkillExecutionResult.Success -> r.output
+                    is SkillExecutionResult.Error -> {
+                        FileLogger.w(TAG, "技能自动触发执行失败: ${skill.id} - ${r.message}")
+                        "[自动触发失败] ${r.message}"
+                    }
+                }
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "技能自动触发执行异常: ${skill.id}", e)
+                "[自动触发异常] ${e.message}"
+            }
+            sessionState?.markSkillAutoTriggered(skill.id)
+            notes.add(
+                AgentMessage.UserMessage(
+                    content = "【系统·自动触发技能「${skill.name}」】\n已自动加载并执行该技能，输出如下（供本次任务参考）：\n\n${output.take(6000)}"
+                )
+            )
+        }
+        return notes
+    }
+
+    /** 触发决策器：让 LLM 基于技能触发条件判断哪些技能应在当前任务自动触发，返回技能 name 列表。 */
+    private suspend fun decideAutoTriggerSkills(
+        candidates: List<Skill>,
+        userRequest: String,
+        aiProvider: AIProvider
+    ): List<String> {
+        val catalog = candidates.joinToString("\n") { skill ->
+            "- ${skill.name}（${skill.description.take(120)}）\n  触发条件：${skill.triggerConditions ?: skill.description}"
+        }
+        val systemPrompt = """
+            你是 R-CodeCore 的技能自动触发决策器。当新任务到来时，判断哪些「自动触发技能」应该在本任务开始时自动触发，作为自动化流程的一环。
+            判断原则：
+            1. 只有任务的意图/场景与技能的「触发条件」高度匹配时才触发；弱相关、纯问答、纯阅读、与技能无关的任务一律不触发（宁可少触发，不可误触发）。
+            2. 一次最多选择 ${MAX_AUTO_TRIGGER_SKILLS} 个最相关的技能，其余不触发。
+            可自动触发的技能清单：
+            $catalog
+            输出要求：只输出一个 JSON 数组（如 ["skill-a"]），元素为要触发的技能 name；不需要触发任何技能时输出 []。不要输出任何其他文字或解释。
+        """.trimIndent()
+        val response = aiProvider.complete(
+            systemPrompt = systemPrompt,
+            messages = listOf(AgentMessage.UserMessage(content = "用户任务：\n$userRequest")),
+            tools = emptyList(),
+            reasoningEffort = "low"
+        )
+        return parseSkillNameArray(response.content)
+    }
+
+    /** 容错解析触发决策器返回的技能 name 数组：优先取首个 [...] JSON 段；解析失败返回空。 */
+    private fun parseSkillNameArray(text: String): List<String> {
+        if (text.isBlank()) return emptyList()
+        val start = text.indexOf('[')
+        val end = text.lastIndexOf(']')
+        if (start < 0 || end <= start) return emptyList()
+        return runCatching {
+            Json.parseToJsonElement(text.substring(start, end + 1)).jsonArray
+                .mapNotNull { it.jsonPrimitive.contentOrNull?.trim() }
+                .filter { it.isNotBlank() }
+        }.getOrDefault(emptyList())
     }
 
     private suspend fun runToolSync(tool: AgentTool?, toolCall: ToolCall, context: AgentContext): ToolRunResult {

@@ -46,6 +46,17 @@ class ToolSessionState(
     /** 记忆缓存（MemoryTool 加载后填充）。 */
     private val memoryCache = ConcurrentHashMap<String, String>()
 
+    /** 本会话已自动触发过的技能 id 集合（会话级去重，避免同一技能在会话内反复自动触发）。 */
+    private val autoTriggeredSkills = ConcurrentHashMap.newKeySet<String>()
+
+    // ---------- auto-trigger dedup ----------
+
+    fun hasAutoTriggeredSkill(skillId: String): Boolean = autoTriggeredSkills.contains(skillId)
+
+    fun markSkillAutoTriggered(skillId: String) {
+        autoTriggeredSkills.add(skillId)
+    }
+
     // ---------- outputs ----------
 
     fun recordOutput(record: ToolOutputRecord) {

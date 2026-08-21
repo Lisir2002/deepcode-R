@@ -780,7 +780,9 @@ object AgentModule {
         dependencyScheduler: com.R.codecore.feature.agent.domain.tool.ToolDependencyScheduler,
         toolResultCache: com.R.codecore.feature.agent.domain.tool.ToolResultCache,
         toolEventBus: com.R.codecore.feature.agent.domain.tool.ToolEventBus,
-        incrementalIndexStore: com.R.codecore.feature.agent.domain.tool.IncrementalIndexStore
+        incrementalIndexStore: com.R.codecore.feature.agent.domain.tool.IncrementalIndexStore,
+        skillStateRepository: com.R.codecore.feature.agent.domain.skill.SkillStateRepository,
+        skillExecutor: com.R.codecore.feature.agent.domain.skill.SkillExecutor
     ): AgentWorkflow {
         return com.R.codecore.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -804,7 +806,9 @@ object AgentModule {
             dependencyScheduler,
             toolResultCache,
             toolEventBus,
-            incrementalIndexStore
+            incrementalIndexStore,
+            skillStateRepository,
+            skillExecutor
         )
     }
 }

@@ -13,6 +13,8 @@ type: script
 scope: common
 entry: entry/run.sh
 license: Apache-2.0
+auto_trigger: true
+trigger_conditions: 用户给出新的编程/开发任务、即将开始编写或修改代码之前（新功能、重构、跨模块改动、修复 bug、对项目现状不熟悉时最适用）。纯问答、纯阅读、与写代码无关的任务不触发。
 compatibility: 需要容器内具备 git / grep / sed / awk（内置 Alpine 已含），缺失时自动降级跳过对应采集/判定。
 metadata:
   repo: R-CodeCore

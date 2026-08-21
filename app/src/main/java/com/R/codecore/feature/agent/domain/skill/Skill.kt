@@ -85,5 +85,15 @@ data class Skill(
     val icon: String? = null,
     val scope: SkillScope = SkillScope.COMMON,
     val agentType: String? = null,
+    /**
+     * 是否参与工作流自动触发：为 true 时，工作流会在新任务到来时智能判断是否自动加载/执行本技能，
+     * 作为自动化流程的一环，无需关键词触发或依赖模型自觉调用 [com.R.codecore.feature.agent.domain.tool.skill.LoadSkillTool]。
+     */
+    val autoTrigger: Boolean = false,
+    /**
+     * 自动触发条件（自然语言）：供工作流触发决策器判断「什么场景该自动触发本技能」，
+     * 如"用户给出新的编程任务，即将开始写/改代码之前"。缺省回退用 [description] 判断。
+     */
+    val triggerConditions: String? = null,
     val instructions: String
 )

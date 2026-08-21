@@ -183,6 +183,19 @@
 - **busybox/dash 兼容**：命令替换内不直接嵌套带引号的 `"$2"/"$3"`（部分 sh 解析会崩），先转存局部变量再拼命令；统一 `grep -E`/`sed`/`awk`；全部 git 命令 `-c core.quotepath=false` 防路径转义；`sh -n` + CI 护栏（`assets/skills/**/*.sh`）双验证。
 - **故障口径**：与 pre-commit-health 一致（只读不修 / 先复核再报错 / 降级不硬崩 / 如实报告）。
 
+#### 3.6.5 技能自动触发（autoTrigger，自动化流程一环）
+
+把技能从「等模型自觉调用 loadSkill」升级为**工作流程序化自动触发**，无需关键词、不依赖模型自觉性，作为自动化流程的一环在新任务到来时智能识别并注入。
+
+- **声明方式**：`Skill` 新增 `autoTrigger: Boolean = false` + `triggerConditions: String? = null` 字段；`SkillParser` 解析 SKILL.md frontmatter 的 `auto_trigger: true` 与 `trigger_conditions: <自然语言触发条件>`，缺省均不参与自动触发。
+- **触发流程**（`StatefulAgentWorkflow.executeEvents` 首轮请求前，IO 线程执行，任何异常静默降级不阻断主流程）：
+  1. **规则快筛**：`SkillStateRepository.listSkillsSync()` 中取「启用 + `autoTrigger` + 非 AGENT 级（保守，仅对全局/通用技能自动触发）+ 本会话未触发过」的候选，最多 `MAX_AUTO_TRIGGER_SKILLS`（2）个；
+  2. **模型二判**：`decideAutoTriggerSkills` 用 LLM 触发决策器（`AIProvider.complete`，reasoningEffort=low）基于 `triggerConditions`/`description` 判断任务意图与触发条件是否高度匹配，输出技能 name JSON 数组，**宁可少触发、不可误触发**；
+  3. **执行注入**：命中则走 `SkillExecutor.execute`（PROMPT 注入正文、SCRIPT 走既有 ZTH 审批、MCP 走既有映射），输出以「【系统·自动触发技能…】」UserMessage 注入首轮模型上下文。
+- **会话级去重**：`ToolSessionState` 新增 `autoTriggeredSkills` 集合，同一技能在同一会话内最多自动触发一次。
+- **已启用声明**：`coding-preflight`（编程前）与 `pre-commit-health`（提交前）两个内置 SCRIPT 技能已在 frontmatter 声明 `auto_trigger: true` + `trigger_conditions`。
+- **决策点**：AGENT 级技能不参与自动触发（多 Agent 演进后可放开）；自动触发执行 SCRIPT 技能仍需用户确认卡，安全审批链路不变。
+
 ### 3.7 ZTH 零信任防护（ZthGuardAggregateFacade）
 
 - 聚合门面串联四方联动：熔断器（`ZthCircuitBreakerManager`）、计划审批（`ZthPlanApprovalManagerWrapper`）、确认卡片（`ZthConfirmationCardManager` + `ZthConfirmationCardStateMachine`）、检查点（`ZthCheckpointRepository`）。

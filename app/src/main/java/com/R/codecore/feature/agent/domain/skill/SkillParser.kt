@@ -14,6 +14,7 @@ object SkillParser {
      *
      * RC74 元数据升级：解析 version/author/tags/modes/type/dependencies/entry/mcp_tool/icon
      * 等新字段，全部向后兼容——缺省字段给默认值，`type` 缺省按 [SkillType.PROMPT]。
+     * 本次新增：auto_trigger（自动触发开关）+ trigger_conditions（自动触发条件，供工作流触发决策器）。
      * `enabled` 不在此处解析（运行时状态由 Room skill_state 表持久化，不写回技能文件），
      * 统一默认 [Skill.enabled] = true，由调用方（SkillStateRepository）叠加启用状态。
      */
@@ -121,6 +122,16 @@ object SkillParser {
             emptyList()
         }
 
+        // 自动触发配置：auto_trigger（bool）+ trigger_conditions（自然语言条件，供工作流触发决策器判断）。
+        val autoTrigger = runCatching {
+            when (val raw = frontmatter["auto_trigger"]) {
+                is Boolean -> raw
+                is String -> raw.trim().equals("true", ignoreCase = true)
+                else -> false
+            }
+        }.getOrDefault(false)
+        val triggerConditions = frontmatter["trigger_conditions"]?.toString()?.takeIf { it.isNotBlank() }
+
         return Skill(
             id = dir.name,
             name = name,
@@ -141,6 +152,8 @@ object SkillParser {
             icon = icon,
             scope = scope,
             agentType = agentType,
+            autoTrigger = autoTrigger,
+            triggerConditions = triggerConditions,
             instructions = body.trim()
         )
     }
