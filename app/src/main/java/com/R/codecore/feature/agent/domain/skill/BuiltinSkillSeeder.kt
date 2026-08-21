@@ -75,11 +75,81 @@ class BuiltinSkillSeeder(
         }.getOrDefault(emptyList())
     }
 
-    /** 内置技能是否需要升级覆盖：assets 侧存在 version 且与本地落地 version 不一致时覆盖。 */
+    /**
+     * 内置技能是否需要升级覆盖：**version 或内容 hash 任一不一致**即覆盖。
+     *
+     * 双保险：
+     * - **version 比对**：官方语义化版本升级（显式 bump 时覆盖）。
+     * - **内容 hash 比对**：即便忘记 bump version，只要技能内容（SKILL.md / entry / 其它资产）
+     *   与 assets 侧不一致，也会覆盖升级。这从根上保证「改了技能内容就一定随新包到达老用户设备」，
+     *   避免只改 frontmatter 字段（如新增 auto_trigger / trigger_keywords）却因 version 未变而永不生效。
+     */
     private fun shouldUpgradeBuiltin(name: String, target: File): Boolean {
         val assetVersion = assetVersionOf(name) ?: return false
         val localVersion = fileVersionOf(File(target, "SKILL.md")) ?: return false
-        return assetVersion != localVersion
+        if (assetVersion != localVersion) return true
+        // 内容 hash 比对：两侧都按「相对技能目录的路径 + 文件内容」算，基准一致才能正确反映内容差异。
+        val assetHash = assetDirContentHash(name)
+        val localHash = localDirContentHash(target)
+        return assetHash != localHash
+    }
+
+    /**
+     * 计算 assets 侧某技能目录的「相对路径 + 内容」SHA-256 组合 hash。
+     * 相对路径以技能目录为根（如 `SKILL.md`、`entry/run.sh`），与本地侧基准一致。
+     */
+    private fun assetDirContentHash(name: String): String? {
+        val root = listOf(SKILLS_ASSET_DIR, name).joinToString("/")
+        return runCatching {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            fun walk(path: String) {
+                context.assets.list(path)?.forEach { child ->
+                    val childPath = "$path/$child"
+                    val subs = context.assets.list(childPath)
+                    if (subs.isNullOrEmpty()) {
+                        // 以「相对技能目录」的路径为 key（剥离 `skills/<name>/` 前缀）
+                        val rel = childPath.removePrefix("$root/")
+                        md.update(rel.toByteArray(Charsets.UTF_8))
+                        md.update(0)
+                        context.assets.open(childPath).use { input -> digestBytes(md, input) }
+                    } else {
+                        walk(childPath)
+                    }
+                }
+            }
+            walk(root)
+            md.digest().joinToString("") { "%02x".format(it) }
+        }.getOrNull()
+    }
+
+    /**
+     * 计算本地某技能目录的「相对路径 + 内容」SHA-256 组合 hash。
+     * 相对路径以技能目录为根，与 assets 侧基准一致；排除 `.builtin` 只读标记文件。
+     */
+    private fun localDirContentHash(target: File): String? {
+        return runCatching {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            target.walkTopDown()
+                .filter { it.isFile && it.name != BUILTIN_MARKER }
+                .sortedBy { it.relativeTo(target).path }
+                .forEach { file ->
+                    val rel = file.relativeTo(target).path
+                    md.update(rel.toByteArray(Charsets.UTF_8))
+                    md.update(0)
+                    file.inputStream().use { input -> digestBytes(md, input) }
+                }
+            md.digest().joinToString("") { "%02x".format(it) }
+        }.getOrNull()
+    }
+
+    /** 把输入流内容全部喂给 MessageDigest。 */
+    private fun digestBytes(md: java.security.MessageDigest, input: java.io.InputStream) {
+        val buf = ByteArray(16 * 1024)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            md.update(buf, 0, n)
+        }
     }
 
     /** 读取 assets 侧技能 SKILL.md 的 frontmatter `version` 字段。 */

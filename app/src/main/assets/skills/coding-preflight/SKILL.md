@@ -1,7 +1,7 @@
 ---
 name: coding-preflight
 description: 编程前准备体检。在你即将开始编写/修改代码（尤其是新功能、重构、跨模块改动，或对项目现状不熟悉）之前调用，自动采集环境组件快照、git 仓库状态（分支/游离/中间操作/未提交改动）、项目结构与 feature 模块清单、关键文件探测，输出「就绪判定（阻断项/建议项）+ 计划建议」，并引导你完成任务理解、计划拆解、验收标准与纪律自检（记忆加载、模块文档、资产同步面、Ask First 前置询问）。与提交前体检 pre-commit-health 互补，构成「开工前 → 编程 → 提交前」闭环，减少中途返工。触发词：开始写代码前、开工前准备、任务准备、preflight、coding-preflight。
-version: 1.0.0
+version: 1.1.0
 author: R-CodeCore
 tags:
   - planning

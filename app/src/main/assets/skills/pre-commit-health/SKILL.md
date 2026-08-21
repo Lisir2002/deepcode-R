@@ -1,7 +1,7 @@
 ---
 name: pre-commit-health
 description: 提交前规范体检。在准备执行 git commit 前调用，对工作区待提交改动做仓库纪律体检并输出「阻断项/建议项」报告：模块文档同步、strings.xml 同步、版本号纪律、targetSdk 锁定、敏感信息与密钥文件（含高熵密钥/二进制文件）、合并冲突标记、Git 中间状态、技能资产 frontmatter、构建产物与超大文件、调试残留、prompts|docs 资产同步、迁移 SQL、提交信息格式、分支纪律、diff 预算与原子性、文件卫生（含 CRLF）、超长行、游离 HEAD、依赖锁定、.gitignore 缺口、子模块嵌套仓库、硬编码绝对路径、shebang 一致性、编码与结构化文件雷区、依赖版本未锁定、大删除确认、.gitattributes 归一化、工作流供应链安全、内网私有 IP；按报告修复后重跑至无阻断项再提交，减少 CI 返工。触发词：提交前检查、规范体检、pre-commit、commit 前体检。
-version: 1.7.0
+version: 1.7.1
 author: R-CodeCore
 tags:
   - git

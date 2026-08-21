@@ -1029,9 +1029,12 @@ class StatefulAgentWorkflow @Inject constructor(
         }
         if (candidates.isEmpty()) return emptyList()
 
-        // 2. 模型主导 + 关键词兜底（双保险，LLM 优先）：
-        //    主路径：模型基于触发条件/关键词信号智能判断任务意图，输出应触发的技能（能识别口语化意图、减少机械误触发）；
-        //    兜底路径：仅当模型调用失败/不可用时，回退用技能声明的 trigger_keywords 做关键词匹配，保住明确场景的召回。
+        // 2. 触发决策铁律：模型决策 > 关键词（唯一设计原则，后续所有技能遵循）。
+        //    主路径：由 LLM 触发决策器主导判断（模型是唯一决策者，能理解口语化意图、识别模糊场景）；
+        //    关键词的角色只是「辅助信号」——把技能声明的 trigger_keywords 作为典型信号词喂给模型聚焦，
+        //    绝不直接参与触发判定；
+        //    兜底路径：仅当模型链路完全不可用（异常）时才回退关键词匹配保底，避免明确任务在极端情况下落空。
+        //    即：关键词永不高于模型判断，模型永远拥有最终决策权。
         val selected: List<String> = try {
             decideAutoTriggerSkills(candidates, userRequest, aiProvider)
         } catch (e: Exception) {

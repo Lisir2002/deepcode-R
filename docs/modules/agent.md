@@ -187,15 +187,16 @@
 
 把技能从「等模型自觉调用 loadSkill」升级为**工作流程序化自动触发**，无需关键词、不依赖模型自觉性，作为自动化流程的一环在新任务到来时智能识别并注入。
 
-- **声明方式**：`Skill` 新增 `autoTrigger: Boolean = false` + `triggerConditions: String? = null` + `triggerKeywords: List<String> = emptyList()` 字段；`SkillParser` 解析 SKILL.md frontmatter 的 `auto_trigger: true`、`trigger_conditions: <自然语言触发条件>` 与 `trigger_keywords: [高置信词, ...]`（支持 YAML list 或逗号分隔），缺省均不参与自动触发。
-- **触发流程**（`StatefulAgentWorkflow.executeEvents` 首轮请求前，IO 线程执行，任何异常静默降级不阻断主流程）：
-  1. **规则快筛**：`SkillStateRepository.listSkillsSync()` 中取「启用 + `autoTrigger` + 非 AGENT 级（保守，仅对全局/通用技能自动触发）+ 本会话未触发过」的候选，最多 `MAX_AUTO_TRIGGER_SKILLS`（2）个；
-  2. **模型主导（主路径）**：`decideAutoTriggerSkills` 用 LLM 触发决策器（`AIProvider.complete`，reasoningEffort=low）基于 `triggerConditions`/`description` + `trigger_keywords`（作为「典型触发信号词」辅助模型聚焦，非硬性规则）判断任务意图是否高度匹配，输出技能 name JSON 数组，**宁可少触发、不可误触发**；
-  3. **关键词兜底（降级路径）**：仅当模型调用失败/不可用（异常）时，回退用 `trigger_keywords` 做关键词匹配触发，保住「写页面/接口/代码」「提交/合并/tag」等无歧义场景的召回；
-  4. **执行注入**：命中则走 `SkillExecutor.execute`（PROMPT 注入正文、SCRIPT 走既有 ZTH 审批、MCP 走既有映射），输出以「【系统·自动触发技能…】」UserMessage 注入首轮模型上下文。
+- **声明方式**：`Skill` 新增 `autoTrigger: Boolean = false` + `triggerConditions: String? = null` + `triggerKeywords: List<String> = emptyList()` 字段；`SkillParser` 解析 SKILL.md frontmatter 的 `auto_trigger: true`、`trigger_conditions: <自然语言触发条件>` 与 `trigger_keywords: [典型信号词, ...]`（支持 YAML list 或逗号分隔），缺省均不参与自动触发。
+- **触发决策铁律（唯一设计原则，后续所有声明 `auto_trigger` 的技能都必须遵循）：模型决策 > 关键词**：
+  1. **模型主导（唯一主路径）**：`decideAutoTriggerSkills` 用 LLM 触发决策器（`AIProvider.complete`，reasoningEffort=low）基于 `triggerConditions`/`description` 判断任务意图是否高度匹配，输出技能 name JSON 数组，**宁可少触发、不可误触发**；`trigger_keywords` 仅是「典型触发信号词」喂给模型聚焦，**绝不直接参与触发判定、永不高于模型判断**；
+  2. **关键词兜底（降级路径，仅极端保底）**：仅当模型链路完全不可用（异常）时，才回退用 `trigger_keywords` 做关键词匹配触发，避免明确任务极端落空。关键词永远不高于模型判断。
+- **规则快筛（前置过滤，非决策）**：`SkillStateRepository.listSkillsSync()` 中取「启用 + `autoTrigger` + 非 AGENT 级 + 本会话未触发过」的候选，最多 `MAX_AUTO_TRIGGER_SKILLS`（2）个。
+- **执行注入**：命中则走 `SkillExecutor.execute`（PROMPT 注入正文、SCRIPT 走既有 ZTH 审批、MCP 走既有映射），输出以「【系统·自动触发技能…】」UserMessage 注入首轮模型上下文。SCRIPT 自动触发执行前仍弹确认卡（安全审批链路不变），用户拒绝/超时降级为文本注入不阻塞主流程。
 - **会话级去重**：`ToolSessionState` 新增 `autoTriggeredSkills` 集合，同一技能在同一会话内最多自动触发一次。
 - **已启用声明**：`coding-preflight`（编程前）与 `pre-commit-health`（提交前）两个内置 SCRIPT 技能已在 frontmatter 声明 `auto_trigger: true` + `trigger_conditions` + `trigger_keywords`。
-- **决策点**：AGENT 级技能不参与自动触发（多 Agent 演进后可放开）；自动触发执行 SCRIPT 技能仍需用户确认卡，安全审批链路不变。
+- **内容升级机制（根治：保证改动到达老设备）**：`BuiltinSkillSeeder` 的内置技能升级判定为「**version 或内容 hash 任一不一致即覆盖**」双保险——(a) frontmatter `version` 显式 bump 时覆盖；(b) 即便忘记 bump version，只要技能内容（SKILL.md / entry / 其它资产）与 assets 侧不一致（如新增 `auto_trigger` 字段），也会按「相对技能目录路径 + 内容」的 SHA-256 组合 hash 比对触发覆盖。从根上避免「只改 frontmatter 却因 version 未变导致改动永不生效」的问题。
+- **决策点**：AGENT 级技能不参与自动触发（多 Agent 演进后可放开）。
 
 ### 3.7 ZTH 零信任防护（ZthGuardAggregateFacade）
 
