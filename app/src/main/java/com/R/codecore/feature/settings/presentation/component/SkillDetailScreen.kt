@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,6 +28,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +48,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.R.codecore.R
 import com.R.codecore.core.theme.AppTopAppBar
@@ -85,10 +89,13 @@ fun SkillDetailScreen(
     var selectedPath by remember { mutableStateOf<String?>(null) }
     var showDirectorySheet by remember { mutableStateOf(false) }
     var fileContent by remember { mutableStateOf<FileContent?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    // 默认选中 SKILL.md；技能加载后若未指定文件则切到 SKILL.md
-    LaunchedEffect(skillId) {
+    // 每次 resume（含从编辑器返回）重新扫描，保证查看的是最新技能内容。
+    // 不能用 LaunchedEffect(skillId)：返回本页时 key 不变不重跑，编辑保存后内容不刷新。
+    LifecycleResumeEffect(Unit) {
         viewModel.load(skillId)
+        onPauseOrDispose { }
     }
     LaunchedEffect(skill) {
         if (skill != null && selectedPath == null) {
@@ -113,8 +120,12 @@ fun SkillDetailScreen(
             SkillDetailViewModel.FileKind.BINARY -> FileContent.Unavailable
         }
     }
+    // 操作结果（导出成功/失败/技能不存在）以 Snackbar 提示，杜绝静默消费
     LaunchedEffect(message) {
-        message?.let { viewModel.consumeMessage() }
+        message?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeMessage()
+        }
     }
 
     AppTopAppBar(
@@ -154,7 +165,7 @@ fun SkillDetailScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         if (skill == null) {
             Text(
-                text = stringResource(R.string.skill_list_empty),
+                text = stringResource(R.string.skill_not_found),
                 modifier = Modifier.align(Alignment.Center),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -172,6 +183,10 @@ fun SkillDetailScreen(
                 FileContent.Unavailable -> BinaryPlaceholder(path = selectedPath ?: "")
             }
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 
     if (showDirectorySheet) {
@@ -188,7 +203,11 @@ fun SkillDetailScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = Spacing.sm)
                 )
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp) // 限制弹窗内列表高度，防止目录过多时撑爆
+                ) {
                     fileTree.forEach { node ->
                         item(key = node.path) {
                             DirectoryNodeRow(

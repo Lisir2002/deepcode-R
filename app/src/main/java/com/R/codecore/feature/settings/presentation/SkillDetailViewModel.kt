@@ -1,13 +1,16 @@
 package com.R.codecore.feature.settings.presentation
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.R.codecore.R
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.domain.skill.Skill
 import com.R.codecore.feature.agent.domain.skill.SkillSourceType
 import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
 import com.R.codecore.feature.settings.domain.SkillExporter
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +28,7 @@ import kotlinx.coroutines.withContext
  */
 @HiltViewModel
 class SkillDetailViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val skillStateRepository: SkillStateRepository,
     private val skillExporter: SkillExporter
 ) : ViewModel() {
@@ -60,17 +64,19 @@ class SkillDetailViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    private val _loadedId = MutableStateFlow<String?>(null)
-
-    /** 加载技能与目录树（幂等：同一 id 不重复加载）。 */
+    /**
+     * 加载技能与目录树（每次重新扫描磁盘，保证从编辑器返回后能看到最新内容；
+     * 数据量小，不做幂等短路，避免「编辑保存后查看页不刷新」）。
+     */
     fun load(skillId: String) {
-        if (_loadedId.value == skillId) return
-        _loadedId.value = skillId
         viewModelScope.launch {
             val skills = runCatching { skillStateRepository.listSkills() }.getOrDefault(emptyList())
             val skill = skills.firstOrNull { it.id == skillId }
             _skill.value = skill
             _fileTree.value = buildTree(skill?.dir)
+            if (skill == null) {
+                _message.value = context.getString(R.string.skill_not_found)
+            }
         }
     }
 
@@ -95,7 +101,9 @@ class SkillDetailViewModel @Inject constructor(
         val skill = _skill.value ?: return false
         if (skill.source == SkillSourceType.BUILTIN) return false
         val ok = runCatching { skillExporter.shareZip(skill) }.getOrDefault(false)
-        _message.value = if (ok) "已导出技能 zip" else "导出失败"
+        _message.value = context.getString(
+            if (ok) R.string.skill_export_success else R.string.skill_export_failed
+        )
         return ok
     }
 
