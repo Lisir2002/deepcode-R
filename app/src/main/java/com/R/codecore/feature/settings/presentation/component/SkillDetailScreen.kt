@@ -29,10 +29,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -104,6 +106,8 @@ fun SkillDetailScreen(
     var fileContent by remember { mutableStateOf<FileContent?>(null) }
     // 目录树折叠集合（存目录 path，展开状态随页面保留）
     var collapsedPaths by remember { mutableStateOf(setOf<String>()) }
+    // 页内 Tab：0=文件，1=详情
+    var selectedTab by remember { mutableStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // 每次 resume（含从编辑器返回）重新扫描，保证查看的是最新技能内容。
@@ -186,49 +190,29 @@ fun SkillDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = Spacing.md)
         ) {
-            // ── Hero 元信息卡片 ──
-            skill?.let { HeroCard(it) }
-
-            // ── 当前文件面包屑条（点击唤出目录树）──
-            if (skill != null) {
-                Spacer(Modifier.height(Spacing.sm))
-                CurrentFileBar(
-                    path = selectedPath ?: "",
-                    onClick = { showDirectorySheet = true }
+            // ── 页内 Tab 导航：文件 / 详情 ──
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text(stringResource(R.string.skill_tab_files)) }
                 )
-                Spacer(Modifier.height(Spacing.sm))
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text(stringResource(R.string.skill_tab_detail)) }
+                )
             }
-
-            // ── 内容渲染区 ──
-            Box(modifier = Modifier.weight(1f)) {
-                when {
-                    loading -> AppLoadingState(stringResource(R.string.skill_loading))
-                    skill == null -> AppEmptyState(
-                        icon = FeatherIcons.File,
-                        title = stringResource(R.string.skill_not_found)
-                    )
-                    selectedPath == null -> AppEmptyState(
-                        icon = FeatherIcons.Folder,
-                        title = stringResource(R.string.skill_detail_no_files)
-                    )
-                    else -> {
-                        val path = selectedPath ?: ""
-                        when (val content = fileContent) {
-                            null -> AppLoadingState(stringResource(R.string.skill_loading))
-                            is FileContent.Text -> when (content.kind) {
-                                SkillDetailViewModel.FileKind.MARKDOWN -> MarkdownContent(
-                                    text = content.text,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                                else -> CodeContentView(code = content.text, path = path)
-                            }
-                            is FileContent.Image -> ImageContentView(file = content.file)
-                            FileContent.Unavailable -> BinaryPlaceholder(path = path)
-                        }
-                    }
-                }
+            when (selectedTab) {
+                0 -> FilesTab(
+                    skill = skill,
+                    loading = loading,
+                    selectedPath = selectedPath,
+                    fileContent = fileContent,
+                    onOpenDirectory = { showDirectorySheet = true }
+                )
+                else -> DetailTab(skill = skill)
             }
         }
     }
@@ -247,6 +231,84 @@ fun SkillDetailScreen(
             },
             onDismiss = { showDirectorySheet = false }
         )
+    }
+}
+
+// ───────────────────────── 文件 Tab / 详情 Tab ─────────────────────────
+
+/** 文件 Tab：当前文件面包屑 + 内容渲染（Markdown 可垂直滚动）。 */
+@Composable
+private fun FilesTab(
+    skill: Skill?,
+    loading: Boolean,
+    selectedPath: String?,
+    fileContent: FileContent?,
+    onOpenDirectory: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = Spacing.md)
+    ) {
+        // ── 当前文件面包屑条（点击唤出目录树）──
+        if (skill != null) {
+            Spacer(Modifier.height(Spacing.sm))
+            CurrentFileBar(path = selectedPath ?: "", onClick = onOpenDirectory)
+            Spacer(Modifier.height(Spacing.sm))
+        }
+        // ── 内容渲染区 ──
+        Box(modifier = Modifier.weight(1f)) {
+            when {
+                loading -> AppLoadingState(stringResource(R.string.skill_loading))
+                skill == null -> AppEmptyState(
+                    icon = FeatherIcons.File,
+                    title = stringResource(R.string.skill_not_found)
+                )
+                selectedPath == null -> AppEmptyState(
+                    icon = FeatherIcons.Folder,
+                    title = stringResource(R.string.skill_detail_no_files)
+                )
+                else -> {
+                    val path = selectedPath ?: ""
+                    when (val content = fileContent) {
+                        null -> AppLoadingState(stringResource(R.string.skill_loading))
+                        is FileContent.Text -> when (content.kind) {
+                            SkillDetailViewModel.FileKind.MARKDOWN -> MarkdownContent(
+                                text = content.text,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                // SegmentedContent 自身无滚动容器，需外层提供垂直滚动
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                            )
+                            else -> CodeContentView(code = content.text, path = path)
+                        }
+                        is FileContent.Image -> ImageContentView(file = content.file)
+                        FileContent.Unavailable -> BinaryPlaceholder(path = path)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 详情 Tab：技能元信息详情（可滚动）。 */
+@Composable
+private fun DetailTab(skill: Skill?) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(Spacing.md)
+    ) {
+        if (skill == null) {
+            AppEmptyState(
+                icon = FeatherIcons.File,
+                title = stringResource(R.string.skill_not_found)
+            )
+        } else {
+            HeroCard(skill)
+        }
     }
 }
 

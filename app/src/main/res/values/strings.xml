@@ -1492,6 +1492,8 @@
     <string name="skill_description">描述</string>
     <string name="skill_import_warnings">警告（可继续）</string>
     <!-- 技能查看页 -->
+    <string name="skill_tab_files">文件</string>
+    <string name="skill_tab_detail">详情</string>
     <string name="skill_detail_directory">目录</string>
     <string name="skill_detail_export">导出</string>
     <string name="skill_detail_binary">二进制文件（不支持预览）</string>
