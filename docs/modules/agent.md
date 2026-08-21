@@ -150,15 +150,18 @@
 - `BuiltinSkillSeeder`：首启把 `assets/skills/*`（每个子目录一个内置技能）幂等引导（copy）进技能根目录 `skillsRoot`，并写入 `.builtin` 只读标记；`LocalDirectorySkillSource.listSkills()` 每次扫描前调用 `seedIfNeeded()` 补齐缺失项，扫描时据此把已落地目录识别为 `SkillSourceType.BUILTIN`。**内置技能升级覆盖**：对已落地带 `.builtin` 标记的技能，按 `SKILL.md` frontmatter `version` 与 assets 侧比对，不一致时 `deleteRecursively` 干净重建为新版（官方内容升级随新包自动生效），一致则不动；无 `.builtin` 标记的同名用户技能仍不覆盖。
 - **内置技能只读保护**：`LocalDirectorySkillSource.uninstall/install/update` 检测到 `.builtin` 标记即拒绝卸载/覆盖/更新（内置技能随版本升级，不可被用户改删）。
 - **脚本项目路径契约（SKILL_PROJECT_PATH）**：`SkillExecutor.executeScript` 组装入口脚本环境时注入 `SKILL_PROJECT_PATH`。宿主导入 `projectPath` 由 `LinuxContainerEngine` 经 proot `-b` 绑定到容器内固定点 `/root/workspace`，故统一注入容器侧 `/root/workspace`；`projectPath` 为空则注入空（纯静态检查）。供脚本技能在内定位真实项目并执行 git / 文件检查。
-- 首个内置技能：**pre-commit-health**（提交前规范体检，`assets/skills/pre-commit-health/`），scope=COMMON、type=SCRIPT；依据 `SKILL_PROJECT_PATH` 圈定待提交改动，输出「阻断项/建议项」报告（模块文档同步、strings.xml、版本号、敏感信息、targetSdk、prompts/docs 资产、迁移 SQL、提交信息格式、分支纪律），有阻断项时退出码非 0。
+- 首个内置技能：**pre-commit-health**（提交前规范体检，`assets/skills/pre-commit-health/`），scope=COMMON、type=SCRIPT、当前版本 v1.7.0；依据 `SKILL_PROJECT_PATH` 圈定待提交改动，输出「阻断项/建议项」报告（C-1~C-13 阻断 + W-1~W-26 建议，覆盖模块文档同步、strings.xml、版本号、敏感信息与高熵密钥、targetSdk、prompts/docs 资产、迁移 SQL、Git 中间状态、技能资产 frontmatter、二进制文件、提交信息格式、分支纪律、diff 预算、文件卫生含 CRLF、超长行、游离 HEAD、依赖锁定、.gitignore 缺口、大小写冲突、损坏符号链接、AI 引用残留、子模块嵌套仓库、硬编码绝对路径、shebang 一致性、编码与结构化文件雷区、依赖版本未锁定、大删除确认、.gitattributes 归一化、工作流供应链安全、内网私有 IP 等），有阻断项时退出码非 0。
 
 #### 3.6.3 pre-commit-health 分层检查 / busybox 兼容 / CI 护栏
 
 - **B1 分层检查**：脚本先按 `app/build.gradle.kts` / `app/build.gradle` 是否存在于项目根判定类型并打印 `[类型]` 行。
-  - 通用检查（任意 git 项目）：C-4 敏感信息、W-4 提交信息格式、W-5 分支纪律。
+  - 通用检查（任意 git 项目，v1.7.0 共 10 阻断 + 23 建议）：C-4 敏感信息、C-6 合并冲突标记、C-7 构建产物/超大文件、C-8 敏感文件类型、C-9 调试残留、C-10 Git 中间状态、C-11 技能资产 frontmatter、C-12 二进制文件、C-13 高熵密钥（正则 + Shannon 熵双层，借鉴 gitleaks/detect-secrets）；W-4 提交信息格式、W-5 分支纪律、W-6 diff 预算、W-7 待办标记、W-8 原子性、W-9 文件卫生、W-10 超长行、W-11 游离 HEAD、W-12 依赖锁定、W-13 .gitignore 缺口、W-14 CRLF 混用、W-15 大小写冲突、W-16 损坏符号链接、W-17 AI 引用残留、W-18 子模块/嵌套仓库、W-19 硬编码绝对路径、W-20 shebang 一致性、W-21 编码/结构化文件雷区、W-22 依赖版本未锁定、W-23 大删除/大改面确认、W-24 .gitattributes 归一化、W-25 工作流供应链安全、W-26 内网私有 IP。
   - Android 专属检查（仅识别为 Android 项目时执行）：C-1 模块文档同步、C-2 `.kt` 硬编码中文、C-3 手写版本号、C-5 targetSdk 锁定、W-1 prompts/docs 资产同步、W-2 模块文档行为变化、W-3 迁移 SQL 字面量。
   - 非 Android 项目自动跳过 Android 专属项，避免误报。
+  - 技能资产目录（`app/src/main/assets/skills/*`）在 C-4/C-13/W-7/W-19/W-26 中整体跳过，避免安全正则字面量对技能自身造成自引用误报。
 - **busybox 兼容约束**：目标运行环境为 Alpine（busybox ash/grep/sed）。脚本禁用 gawk 专属正则（`\x{...}`、`\s`、`\d`）；字符检测改用 `LC_ALL=C grep -n '[^ -~]'` 按字节判非可打印 ASCII；`has_pref` 统一用 `grep -E`（ERE），避免 BRE 中 `|` 为字面量、`\|` 依赖 GNU 扩展导致 alternation 失效的坑。新增检查项须经本地 `sh -n` 验证。
+- **效率优化**（v1.7.0）：C-12 二进制判定采样前 8KB（避免整读超大文件）；W-9/W-14 合并为单次文件遍历减少重复 IO；C-13 先 grep 预筛长串再跑 awk 熵计算；CHANGED 收集改用 `git diff --name-only HEAD` + `git diff --cached --name-only` + `git ls-files --others` 三源合并，并全局 `-c core.quotepath=false` 防路径转义。
+- **降噪优化**（v1.7.0）：C-13 跳过锁文件/压缩产物/测试目录；C-4 移除 "test" 豁免词（防 `sk_test_` 等真实测试密钥漏检）并新增 `changeme|xxxx` 占位符豁免；C-8 不用 `*secret*` 通配拦截文件名（防误伤 SecretService.kt 等合法源码），新增 `.env.local`/`.env.production`/`.aws/credentials` 等敏感变体。
 - **CI 护栏**：`.github/workflows/ci.yml` 在 JDK 之后新增「Check skill script syntax (sh -n)」步骤，对 `assets/skills/**/*.sh` 逐个 `sh -n` 校验，防止不合 POSIX 语法的脚本合入后容器内执行即崩。
 - **故障口径（只读不修）**：脚本运行时若报语法错误/无法完成，AI 不就地修改内置资产（`entry/run.sh`/`SKILL.md`），应如实报告原因（脚本 bug / 环境缺依赖）；确为脚本 bug 由维护者修复后经 `sh -n` + CI 护栏双验证再发版。
 - **SKILL.md 触发词**：description 含通用触发词（提交前检查 / 规范体检 / pre-commit / commit 前体检），并写明输出解读、修复口径与分层说明。
