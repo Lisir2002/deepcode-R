@@ -91,6 +91,7 @@
   - D1 单测 `ApplicationIdStabilityTest`（release classpath，锁死 `com.R.codecore`，禁回退遗留包名）。
   - D2 CI 发版门禁 `.github/workflows/android-release.yml` 的 `Verify applicationId stability`：比对当前 tag 与上一 tag 的 `applicationId`，不一致则 `::error::` 阻断发版。
   - D3 构建期白名单 `app/build.gradle.kts` 的 `androidComponents.onVariants`：`applicationId` 不在 `ALLOWED_APPLICATION_IDS`（`com.R.codecore` / `com.R.codecore.debug`）内 → 构建直接失败。
+  - D3b 系统级云备份兜底（AndroidManifest + `res/xml/`）：`android:allowBackup="true"` + `full_backup_rules.xml`（Android 9-11）+ `data_extraction_rules.xml`（Android 12+），让系统/OEM 换机克隆/Google 云备份保留 Room DB、崩溃备份、ZTH 元数据与 shared_prefs。局限：按包名路由，rebrand 后旧备份不可达，故仅作第三层兜底，主防线仍是应用层双保险备份（D5/D6b）。
 - **防丢失（运行时数据安全网）**：
   - D4 数据完整性哨兵（`DataSentinel` + `AppRunMeta` + `SentinelLogic` + `LegacyPackageDetector`）：启动时读运行元数据与 `ChatSessionDao.count()`，判定 `FIRST_RUN / UPGRADED / NORMAL / DATA_LOST / PACKAGE_CHANGED`。判定优先级：未初始化且无同签名旧包→`FIRST_RUN`；未初始化但有同签名旧包→`PACKAGE_CHANGED`（哨兵记忆随包名隔离丢失时，靠 `LegacyPackageDetector` 识别 rebrand 升级，不再静默当全新安装）；包名不一致→`PACKAGE_CHANGED`（优先于 DATA_LOST）；已初始化但会话数=0→`DATA_LOST`；versionCode 增大→`UPGRADED`；其余→`NORMAL`。`DATA_LOST`/`PACKAGE_CHANGED` 不更新 `lastRun`，保留告警态供 UI 持续提示。
   - D5 升级前自动备份（`AutoBackupManager`）：哨兵判定 `UPGRADED` 时后台执行 `backupAll()` 双保险备份——本机私有目录明文（`filesDir/auto-backups/backup-<epochMs>.tar.gz`，仅本应用可读）+ 外部公共目录签名密钥加密（`Download/RCodeCore/backups/`，包名无关）。各自 `pruneLocked` / `pruneExternalLocked` 轮转保留最近 7 份（纯判定 `excessBackupFiles` / `excessExternalBackups` 可单测）。全程 `runCatching`，失败仅记日志不阻断启动。
