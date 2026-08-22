@@ -138,13 +138,16 @@ internal fun CyberMenuRow(
     onClick: () -> Unit,
     showDivider: Boolean = true,
     highlightQuery: String = "",
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
+    iconBg: Color? = null
 ) {
     val highlightColor = Color(0x330984E3) // 浅蓝高亮
-    val iconBg = cyberColor(CyberColors.IconBg, CyberColors.DarkIconBg)
+    // iconBg 非空时走「彩色图标块」：背景用该色，图标本体固定白色（Material You 设置页风格）；
+    // 否则保持原灰色图标块 + 灰色图标（兼容 About 等复用方）。
+    val effectiveIconBg = iconBg ?: cyberColor(CyberColors.IconBg, CyberColors.DarkIconBg)
+    val effectiveIconTint = if (iconBg != null) Color.White else cyberColor(Color(0xFF344054), CyberColors.DarkCyanDim)
     val titleColor = cyberColor(Color(0xFF101828), CyberColors.DarkTitle)
     val subtitleColor = cyberColor(Color(0xFF475467), CyberColors.DarkSubtitle)
-    val iconColor = cyberColor(Color(0xFF344054), CyberColors.DarkCyanDim)
     val dividerColor = cyberColor(CyberColors.Divider, CyberColors.DarkDivider)
     val effectiveTrailing = trailing ?: {
         Icon(
@@ -225,13 +228,13 @@ internal fun CyberMenuRow(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(color = iconBg),
+                    .background(color = effectiveIconBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = iconColor,
+                    tint = effectiveIconTint,
                     modifier = Modifier.size(20.dp)
                 )
             }

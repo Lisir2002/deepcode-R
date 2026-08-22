@@ -44,6 +44,8 @@ import com.R.codecore.core.theme.CyberCard
 import com.R.codecore.core.theme.CyberSectionHeader
 import com.R.codecore.core.theme.CyberMenuRow
 import com.R.codecore.core.theme.CyberSearchBar
+import com.R.codecore.core.theme.LocalAppDarkMode
+import com.R.codecore.core.theme.cyberColor
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,24 +77,27 @@ import com.R.codecore.feature.settings.presentation.components.RemoteAuditLogsSc
 import com.R.codecore.feature.settings.presentation.components.SecuritySettingsScreen
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Box
 import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Cloud
-import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.FileText
-import compose.icons.feathericons.Globe
-import compose.icons.feathericons.HardDrive
-import compose.icons.feathericons.Info
-import compose.icons.feathericons.Activity
-import compose.icons.feathericons.Archive
-import compose.icons.feathericons.Lock
-import compose.icons.feathericons.Moon
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Search
-import compose.icons.feathericons.Server
-import compose.icons.feathericons.Shield
-import compose.icons.feathericons.Terminal
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lan
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Notes
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Pulse
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Terminal
 
 /** 设置页内部二级菜单分区。Menu 为首页菜单，其余为各自的二级页。 */
 enum class SettingsSection(@param:StringRes val titleRes: Int) {
@@ -452,6 +457,9 @@ internal data class MenuItem(
     val title: String,
     val subtitle: String,
     val icon: ImageVector,
+    /** 彩色图标块背景：日间亮色 / 夜间深色，随主题切换；Color.Unspecified 表示沿用灰色默认。 */
+    val iconBgLight: Color = Color.Unspecified,
+    val iconBgDark: Color = Color.Unspecified,
     val keywords: List<String>,
     val action: () -> Unit,
     val trailing: @Composable (() -> Unit)? = null
@@ -515,7 +523,9 @@ internal fun SettingsMenu(
                 stringResource(R.string.settings_providers_count, providerCount) +
                     (activeProviderName?.let { stringResource(R.string.settings_providers_active, it) } ?: "")
             },
-            icon = FeatherIcons.Cloud,
+            icon = Icons.Rounded.Cloud,
+            iconBgLight = Color(0xFF4C8DFF),
+            iconBgDark = Color(0xFF2B4E9E),
             keywords = listOf("provider", stringResource(R.string.ui____8000f187), "api", "key", "providers", stringResource(R.string.ui_____8da5f75a)),
             action = { onOpen(SettingsSection.Providers) }
         ),
@@ -533,7 +543,9 @@ internal fun SettingsMenu(
                 }
                 if (parts.isEmpty()) stringResource(R.string.settings_default_models_empty) else parts.joinToString("\n")
             },
-            icon = FeatherIcons.Cpu,
+            icon = Icons.Rounded.Memory,
+            iconBgLight = Color(0xFF7C5CFF),
+            iconBgDark = Color(0xFF4A3A8F),
             keywords = listOf("model", "default", stringResource(R.string.ui____18c63459), stringResource(R.string.ui____faa3c555), "vision", stringResource(R.string.ui____6612548a), "compaction", stringResource(R.string.ui____8000f187_2), stringResource(R.string.ui_____37acc94c)),
             action = { onOpen(SettingsSection.DefaultModels) }
         ),
@@ -545,7 +557,9 @@ internal fun SettingsMenu(
                 stringResource(R.string.settings_mcp_empty)
             else
                 stringResource(R.string.settings_mcp_count_connected, mcpCount, mcpConnected),
-            icon = FeatherIcons.Box,
+            icon = Icons.Rounded.Extension,
+            iconBgLight = Color(0xFF00B4A8),
+            iconBgDark = Color(0xFF0E6E68),
             keywords = listOf("mcp", "server", stringResource(R.string.ui____20dce2c6), "function", stringResource(R.string.ui____faa1ad5e), stringResource(R.string.ui_____c566ca59)),
             action = { onOpen(SettingsSection.Mcp) }
         ),
@@ -556,7 +570,9 @@ internal fun SettingsMenu(
             subtitle = stringResource(R.string.settings_mcp_server_subtitle) + " · " + stringResource(
                 if (mcpServerRunning) R.string.settings_mcp_server_running else R.string.settings_mcp_server_stopped
             ),
-            icon = FeatherIcons.Server,
+            icon = Icons.Rounded.Dns,
+            iconBgLight = Color(0xFF00A3C4),
+            iconBgDark = Color(0xFF0B6478),
             keywords = listOf("mcp", "server", stringResource(R.string.ui_____55abea2d), stringResource(R.string.ui____4dbd9aec), stringResource(R.string.ui____89e180d6), stringResource(R.string.ui_____c566ca59_2)),
             action = { onOpen(SettingsSection.McpServer) }
         ),
@@ -568,7 +584,9 @@ internal fun SettingsMenu(
                 stringResource(R.string.settings_permissions_empty)
             else
                 stringResource(R.string.settings_permissions_count, permissionRuleCount),
-            icon = FeatherIcons.Lock,
+            icon = Icons.Rounded.Lock,
+            iconBgLight = Color(0xFFFF9F43),
+            iconBgDark = Color(0xFF9A5B1E),
             keywords = listOf("perm", stringResource(R.string.ui____98a315c0), stringResource(R.string.ui____b0fae043), "permission", "allow", stringResource(R.string.ui____20dce2c6_2), "tool"),
             action = { onOpen(SettingsSection.Permissions) }
         ),
@@ -577,7 +595,9 @@ internal fun SettingsMenu(
             group = groupEnv,
             title = stringResource(R.string.settings_terminal),
             subtitle = stringResource(R.string.settings_terminal_subtitle),
-            icon = FeatherIcons.Terminal,
+            icon = Icons.Rounded.Terminal,
+            iconBgLight = Color(0xFF22C55E),
+            iconBgDark = Color(0xFF14693A),
             keywords = listOf("terminal", stringResource(R.string.ui____4722bc0c), "ssh", "shell", "bash", stringResource(R.string.ui____ddf7d2a5)),
             action = onNavigateToTerminalSettings
         ),
@@ -586,7 +606,9 @@ internal fun SettingsMenu(
             group = groupEnv,
             title = stringResource(R.string.ui______d3ec5010),
             subtitle = stringResource(R.string.ui_mihomo_8fdcce67),
-            icon = FeatherIcons.Globe,
+            icon = Icons.Rounded.Public,
+            iconBgLight = Color(0xFF6366F1),
+            iconBgDark = Color(0xFF4338CA),
             keywords = listOf("proxy", stringResource(R.string.ui____fc954d25), "vpn", "clash", "mihomo", stringResource(R.string.ui____02daf71f), "network"),
             action = onNavigateToNetProxy
         ),
@@ -598,7 +620,9 @@ internal fun SettingsMenu(
                 R.string.settings_container_current,
                 activeContainerProfileName ?: stringResource(R.string.settings_container_builtin_alpine)
             ),
-            icon = FeatherIcons.HardDrive,
+            icon = Icons.Rounded.Storage,
+            iconBgLight = Color(0xFF14B8A6),
+            iconBgDark = Color(0xFF0F766E),
             keywords = listOf("container", "docker", stringResource(R.string.ui____34772285), "alpine", stringResource(R.string.ui____22c79904), "proot", stringResource(R.string.ui____fa405f59)),
             action = { onOpen(SettingsSection.Container) }
         ),
@@ -607,7 +631,9 @@ internal fun SettingsMenu(
             group = groupEnv,
             title = stringResource(SettingsSection.RemoteServers.titleRes),
             subtitle = stringResource(R.string.settings_remote_subtitle),
-            icon = FeatherIcons.Server,
+            icon = Icons.Rounded.Lan,
+            iconBgLight = Color(0xFF3B82F6),
+            iconBgDark = Color(0xFF1E40AF),
             keywords = listOf("remote", "ssh", "sftp", stringResource(R.string.ui_____c566ca59_3), stringResource(R.string.ui_____4fa8c1a3), stringResource(R.string.ui____6a620e3c), stringResource(R.string.ui____a7d3091f)),
             action = { onOpen(SettingsSection.RemoteServers) }
         ),
@@ -616,7 +642,9 @@ internal fun SettingsMenu(
             group = groupData,
             title = stringResource(SettingsSection.Backup.titleRes),
             subtitle = stringResource(R.string.settings_backup_subtitle),
-            icon = FeatherIcons.Archive,
+            icon = Icons.Rounded.Archive,
+            iconBgLight = Color(0xFFF59E0B),
+            iconBgDark = Color(0xFF92400E),
             keywords = listOf("backup", stringResource(R.string.ui____664b37da), stringResource(R.string.ui____69de8d7f), "export", stringResource(R.string.ui____55405ea6), stringResource(R.string.ui____8d9a071e), stringResource(R.string.ui____56563edf)),
             action = { onOpen(SettingsSection.Backup) }
         ),
@@ -625,7 +653,9 @@ internal fun SettingsMenu(
             group = groupData,
             title = stringResource(SettingsSection.Security.titleRes),
             subtitle = stringResource(R.string.settings_security_subtitle),
-            icon = FeatherIcons.Shield,
+            icon = Icons.Rounded.Security,
+            iconBgLight = Color(0xFFEF4444),
+            iconBgDark = Color(0xFFB91C1C),
             keywords = listOf("security", stringResource(R.string.ui____56563edf_2), stringResource(R.string.ui______05ad4f31), stringResource(R.string.ui____5f811dd8), "password", stringResource(R.string.ui____fdbc77bd), "pin"),
             action = { onOpen(SettingsSection.Security) }
         ),
@@ -634,7 +664,9 @@ internal fun SettingsMenu(
             group = groupData,
             title = stringResource(SettingsSection.RemoteAuditLogs.titleRes),
             subtitle = stringResource(R.string.settings_remote_audit_subtitle),
-            icon = FeatherIcons.FileText,
+            icon = Icons.Rounded.Description,
+            iconBgLight = Color(0xFF64748B),
+            iconBgDark = Color(0xFF475569),
             keywords = listOf("audit", stringResource(R.string.ui____771dc11a), "log", stringResource(R.string.ui____30f7dd4e), stringResource(R.string.ui____10b2761d), "ssh", stringResource(R.string.ui____664b37da_2)),
             action = { onOpen(SettingsSection.RemoteAuditLogs) }
         ),
@@ -643,7 +675,9 @@ internal fun SettingsMenu(
             group = groupData,
             title = stringResource(SettingsSection.Logs.titleRes),
             subtitle = stringResource(R.string.settings_log_subtitle, logLevelLabel),
-            icon = FeatherIcons.FileText,
+            icon = Icons.Rounded.Notes,
+            iconBgLight = Color(0xFFF97316),
+            iconBgDark = Color(0xFF9A3412),
             keywords = listOf("log", stringResource(R.string.ui____456d29ef), "debug", "trace", stringResource(R.string.ui____7030ff64), "bug", "filter"),
             action = { onOpen(SettingsSection.Logs) }
         ),
@@ -652,7 +686,9 @@ internal fun SettingsMenu(
             group = groupSystem,
             title = stringResource(R.string.settings_theme_title),
             subtitle = stringResource(R.string.settings_log_current, themeLabel),
-            icon = FeatherIcons.Moon,
+            icon = Icons.Rounded.DarkMode,
+            iconBgLight = Color(0xFF8B5CF6),
+            iconBgDark = Color(0xFF4C1D95),
             keywords = listOf("theme", "appearance", stringResource(R.string.ui____afcde261), stringResource(R.string.ui____41e8e8b9), stringResource(R.string.ui____48d0a09b), stringResource(R.string.ui____f0789e79), stringResource(R.string.ui____9970ad07)),
             action = onOpenThemeSheet
         ),
@@ -661,7 +697,9 @@ internal fun SettingsMenu(
             group = groupSystem,
             title = stringResource(R.string.settings_keepalive_title),
             subtitle = stringResource(R.string.settings_keepalive_subtitle),
-            icon = FeatherIcons.Activity,
+            icon = Icons.Rounded.Pulse,
+            iconBgLight = Color(0xFF2DD4BF),
+            iconBgDark = Color(0xFF115E59),
             keywords = listOf("keepalive", stringResource(R.string.ui____bc28072c), stringResource(R.string.ui____066ae8d7), "foreground", stringResource(R.string.ui____5660bcd2), stringResource(R.string.ui____f0d6210d), stringResource(R.string.ui____f88522cf)),
             action = { onToggleKeepalive(!keepaliveEnabled) },
             trailing = {
@@ -680,7 +718,9 @@ internal fun SettingsMenu(
             group = groupSystem,
             title = stringResource(SettingsSection.About.titleRes),
             subtitle = stringResource(R.string.settings_about_subtitle),
-            icon = FeatherIcons.Info,
+            icon = Icons.Rounded.Info,
+            iconBgLight = Color(0xFF0EA5E9),
+            iconBgDark = Color(0xFF0369A1),
             keywords = listOf("about", stringResource(R.string.ui____81d9f505), "version", "release", stringResource(R.string.ui____32ac152b), stringResource(R.string.ui_____20a28457), "license", stringResource(R.string.ui____62cea749)),
             action = { onOpen(SettingsSection.About) }
         )
@@ -749,6 +789,9 @@ internal fun SettingsMenu(
                                     onClick = item.action,
                                     showDivider = index < items.size - 1,
                                     highlightQuery = searchQuery,
+                                    iconBg = if (item.iconBgLight != Color.Unspecified || item.iconBgDark != Color.Unspecified) {
+                                        if (LocalAppDarkMode.current) item.iconBgDark else item.iconBgLight
+                                    } else null,
                                     trailing = item.trailing ?: {
                                         Icon(
                                             imageVector = FeatherIcons.ChevronRight,
