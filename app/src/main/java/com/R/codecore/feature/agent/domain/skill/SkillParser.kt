@@ -9,6 +9,11 @@ object SkillParser {
     private const val TAG = "SkillParser"
     private const val MAX_DESC_CHARS = 500
 
+    private val VALID_CHECKS = setOf(
+        RuntimeProbe.CHECK_CMD, RuntimeProbe.CHECK_MOD, RuntimeProbe.CHECK_NPM,
+        RuntimeProbe.CHECK_DPKG, RuntimeProbe.CHECK_FILE
+    )
+
     /**
      * 解析一个 skill 目录；无 SKILL.md 或无 name 时视为非法，返回 null。
      *
@@ -116,14 +121,52 @@ object SkillParser {
             else -> null
         }
 
-        // S-3：requires_runtime 运行时依赖列表，如 ["node", "python3"]
+        // S-3：requires_runtime 运行时预检求值树（完整布尔 DSL，见 RuntimeProbeExpr）。
+        // 支持的声明形式（向后兼容）：
+        //   1. expr 字符串："cmd:node>=18<=22 && (mod:numpy || cmd:python3)" —— 完整布尔 DSL
+        //   2. expr 对象：{expr: "..."} —— 同上，包一层键
+        //   3. YAML 对象列表：[{check: cmd, name: node, min_version: "18", max_version: "22", install_hint: "apk add nodejs"}]
+        //   4. 字符串列表：[cmd:node>=18, mod:numpy] —— 兼容旧版，按 atom 解析
+        //   5. 逗号分隔字符串："node, python3" —— 兼容旧版，按 atom 解析
+        //   6. 单对象：{check: cmd, name: node} —— 视为单探针
         val requiresRuntime = try {
             val raw = frontmatter["requires_runtime"]
-            if (raw is List<*>) raw.filterIsInstance<String>().map { it.trim() }.filter { it.isNotBlank() }
-            else if (raw is String) raw.split(',').map { it.trim() }.filter { it.isNotBlank() }
-            else emptyList()
+            when (raw) {
+                is String -> {
+                    val trimmed = raw.trim()
+                    if (trimmed.isEmpty()) null
+                    else SkillProbeExprParser.parse(trimmed)
+                        // DSL 解析失败 → 回退旧逗号分隔格式（不破坏存量技能），仍失败则丢弃并告警
+                        ?: SkillProbeExprParser.fromLeaves(
+                            trimmed.split(',').mapNotNull { SkillProbeExprParser.parseAtomSegment(it) }
+                        )?.also { expr ->
+                            if (expr is RuntimeProbeExpr.And &&
+                                expr.children.size != trimmed.split(',').size
+                            ) {
+                                FileLogger.w(TAG, "requires_runtime 部分项无法解析，已忽略: $trimmed")
+                            }
+                        }
+                }
+                is Map<*, *> -> {
+                    val expr = raw["expr"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
+                    if (expr != null) SkillProbeExprParser.parse(expr)
+                    else parseProbeObject(raw)?.let { RuntimeProbeExpr.Leaf(it) }
+                }
+                is List<*> -> SkillProbeExprParser.fromLeaves(
+                    raw.mapNotNull { item ->
+                        when (item) {
+                            is Map<*, *> -> parseProbeObject(item)
+                            is String -> item.trim().takeIf { it.isNotBlank() }
+                                ?.let { SkillProbeExprParser.parseAtomSegment(it) }
+                            else -> null
+                        }
+                    }
+                )
+                else -> null
+            }
         } catch (e: Exception) {
-            emptyList()
+            FileLogger.w(TAG, "解析 requires_runtime 失败", e)
+            null
         }
 
         // 自动触发配置：auto_trigger（bool）+ trigger_conditions（自然语言条件，供工作流触发决策器判断）。
@@ -171,6 +214,17 @@ object SkillParser {
             triggerKeywords = triggerKeywords,
             instructions = body.trim()
         )
+    }
+
+    /** 从 YAML 对象解析单条探针（`check`/`name`/`min_version`/`max_version`/`install_hint`）；name 缺失返回 null。 */
+    private fun parseProbeObject(item: Map<*, *>): RuntimeProbe? {
+        val check = item["check"]?.toString()?.trim()?.lowercase()
+            ?.takeIf { it in VALID_CHECKS } ?: RuntimeProbe.CHECK_CMD
+        val name = item["name"]?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val minVersion = item["min_version"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
+        val maxVersion = item["max_version"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
+        val installHint = item["install_hint"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
+        return RuntimeProbe(check, name, minVersion, maxVersion, installHint)
     }
 
     /**

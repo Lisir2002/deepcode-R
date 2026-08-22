@@ -136,6 +136,7 @@
 - `SkillParser` 解析带 Frontmatter 的技能文件（版本/作者/标签/适用模式/依赖/requiredTools/requiresRuntime 等），`SkillRepository` 管理来源，`SkillStateRepository` 用 Room 持久化启用状态。
 - **技能调用工具职责拆分（重写后的唯一入口约定）**：`LoadSkillTool`（`loadSkill`）负责**读正文**——PROMPT/SCRIPT 技能均返回 SKILL.md 指令正文（SCRIPT 正文末尾附执行指引），绝不执行任何脚本/工具；`RunSkillScriptTool`（`runSkillScript`）是 SCRIPT 脚本技能的专用执行入口（容器沙箱 + 审批 + 审计 + 运行时预检）；两者共用 `SkillInvocationResolver` 完成定位/版本锁/作用域/依赖校验，`SkillExecutor` 负责实际运行。
 - `SkillExecutor` 执行链路携带 `SkillExecutionContext`（由调用方从 `AgentContext` 派生，含 sessionId/mode/projectPath/agentType），使脚本技能审批与审计的 sessionId 与当前会话连贯（替代此前传 null 的脱钩问题）。
+- **S-3 运行时预检（`SkillRuntimeProbe`）**：SCRIPT 技能可在 frontmatter 声明 `requires_runtime`——布尔求值树（`RuntimeProbeExpr`：Leaf/And/Or/Not），由 `SkillProbeExprParser` 从 `expr` 字符串解析（如 `cmd:node>=18<=22 && (mod:numpy || cmd:python3)`；旧 YAML 对象/字符串列表/逗号串兼容归一为 And）。执行前在容器内受控探测：命令 / Python 模块 / npm 全局包 / deb 包 / 文件，叶子支持版本区间（`min_version`/`max_version`）与 `install_hint` 安装建议；目标名与版本白名单校验、探测命令参数化执行，杜绝 shell 注入，组合逻辑只做纯逻辑求值不 eval。任一条件不满足即返回 `SKILL_MISSING_RUNTIME` 并列出缺什么与安装建议。`RunSkillScriptTool`（手动）与自动触发路径共用同一预检（双路径一致，避免「触发即静默失败」）。
 
 #### 3.6.1 技能作用域分级（SkillScope v2，多 Agent 演进 + 对话级控制）
 

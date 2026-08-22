@@ -1,10 +1,10 @@
 package com.R.codecore.feature.agent.domain.tool.skill
 
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.agent.domain.container.CommandEngine
 import com.R.codecore.feature.agent.domain.model.AgentContext
-import com.R.codecore.feature.agent.domain.skill.SkillExecutor
 import com.R.codecore.feature.agent.domain.skill.SkillExecutionResult
+import com.R.codecore.feature.agent.domain.skill.SkillExecutor
+import com.R.codecore.feature.agent.domain.skill.SkillRuntimeProbe
 import com.R.codecore.feature.agent.domain.skill.SkillType
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
@@ -20,8 +20,8 @@ import javax.inject.Inject
 /**
  * 让 AI 执行一个 SCRIPT 脚本技能（重写「技能调用工具」时新独立出的专用执行入口）。
  *
- * 与 [LoadSkillTool]（仅加载 PROMPT 指令）职责分离：本工具在 PRoot 容器内沙箱执行技能入口脚本，
- * 执行前经 [SkillExecutor] 内部的 [com.R.codecore.feature.agent.domain.tool.ToolPermissionManager]
+ * 与 [LoadSkillTool]（读技能正文，PROMPT/SCRIPT 通用）职责分离：本工具在 PRoot 容器内沙箱执行
+ * 技能入口脚本，执行前经 [SkillExecutor] 内部的 [com.R.codecore.feature.agent.domain.tool.ToolPermissionManager]
  * 审批（会话连贯的确认卡），执行后记审计日志。执行参数以 `SKILL_ARG_*` 环境变量注入，
  * 项目路径按 [com.R.codecore.feature.agent.domain.skill.SkillExecutor] 的容器侧契约注入。
  *
@@ -30,17 +30,15 @@ import javax.inject.Inject
  * - MCP 包装技能已降级为别名——直接调用其绑定的 MCP 工具。
  *
  * 共用 [SkillInvocationResolver] 完成定位/版本锁/作用域/依赖校验；S-3 运行时依赖（requires_runtime）
- * 在容器内逐一预探测，缺失时在执行前给出明确报错。
+ * 由 [SkillRuntimeProbe] 在容器内受控探测（声明式探针，杜绝 shell 注入），缺失时在执行前明确报错。
  */
 class RunSkillScriptTool @Inject constructor(
     private val skillInvocationResolver: SkillInvocationResolver,
     private val skillExecutor: SkillExecutor,
-    private val commandEngine: CommandEngine
+    private val skillRuntimeProbe: SkillRuntimeProbe
 ) : AgentTool() {
     private companion object {
         const val TAG = "RunSkillScriptTool"
-        /** S-3：运行时预检查超时（毫秒）。 */
-        const val RUNTIME_PROBE_TIMEOUT_MS = 15_000L
     }
 
     override val name = "runSkillScript"
@@ -115,17 +113,16 @@ class RunSkillScriptTool @Inject constructor(
                     }
                 }
 
-                // S-3：运行时依赖预检查——SCRIPT 技能声明的 requires_runtime 在容器内逐一探测，
-                // 缺失时在执行前给出明确报错（而非执行到一半才失败）。
-                if (skill.requiresRuntime.isNotEmpty()) {
-                    val missing = skill.requiresRuntime.filter { !runtimeAvailable(it) }
-                    if (missing.isNotEmpty()) {
-                        return ToolResult.Error(
-                            "技能「${skill.name}」需要运行时依赖: ${missing.joinToString(", ")}，但容器内未找到。" +
-                                "请先安装对应运行时（如通过命令工具安装 node/python）后再执行。",
-                            "SKILL_MISSING_RUNTIME"
-                        )
-                    }
+                // S-3：运行时依赖预检查——SCRIPT 技能声明的 requires_runtime 求值树在容器内受控探测，
+                // 任一条件不满足都在执行前明确报错（而非执行到一半才失败）。
+                val runtimeFailures = skillRuntimeProbe.probe(skill.requiresRuntime)
+                if (runtimeFailures.isNotEmpty()) {
+                    val details = runtimeFailures.joinToString("；") { it.reason }
+                    return ToolResult.Error(
+                        "技能「${skill.name}」的运行时依赖未满足：$details。" +
+                            "请按上述安装建议（或通过命令工具安装对应运行时）后再执行。",
+                        "SKILL_MISSING_RUNTIME"
+                    )
                 }
 
                 val result = skillExecutor.execute(skill, r.execArgs, r.ctx)
@@ -147,21 +144,6 @@ class RunSkillScriptTool @Inject constructor(
                     }
                 }
             }
-        }
-    }
-
-    /** S-3：在容器内探测指定命令是否可用（command -v），失败/超时视为缺失。 */
-    private suspend fun runtimeAvailable(command: String): Boolean {
-        return try {
-            val result = commandEngine.runCommandSyncWithExit(
-                command = "command -v $command >/dev/null 2>&1",
-                projectPath = null,
-                timeoutMs = RUNTIME_PROBE_TIMEOUT_MS
-            )
-            result.exitCode == 0
-        } catch (e: Exception) {
-            FileLogger.w(TAG, "运行时探测失败: $command - ${e.message}")
-            false
         }
     }
 }

@@ -191,6 +191,12 @@ fun SkillEditScreen(
                 }
                 FormField(stringResource(R.string.skill_edit_tags), tags) { viewModel.tags.value = it }
                 FormField(stringResource(R.string.skill_edit_required_runtime), requiresRuntime) { viewModel.requiresRuntime.value = it }
+                Text(
+                    text = stringResource(R.string.skill_edit_required_runtime_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
 
                 // type 选择
                 Text(

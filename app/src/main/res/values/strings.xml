@@ -1524,7 +1524,8 @@
     <string name="skill_edit_agent_type">Agent 类型</string>
     <string name="skill_edit_tags">标签（逗号分隔）</string>
     <string name="skill_edit_author">作者</string>
-    <string name="skill_edit_required_runtime">运行时依赖（逗号分隔）</string>
+    <string name="skill_edit_required_runtime">运行时依赖（布尔表达式）</string>
+    <string name="skill_edit_required_runtime_hint">布尔表达式：原子项用 &amp;&amp;（且）/ ||（或）/ !（非）/ 括号组合。原子项格式 [类型:]名称[&gt;=最低][&lt;=最高]，如 cmd:node&gt;=18、cmd:node&gt;=18&lt;=22、mod:numpy、npmpkg:typescript、dpkg:libssl-dev、file:/usr/include/ssl.h；缺省类型为 cmd（命令）。示例：cmd:node&gt;=18 &amp;&amp; (mod:numpy || mod:pandas)</string>
     <string name="skill_edit_mcp_tool">MCP 工具</string>
     <string name="skill_edit_frontmatter_title">基本信息</string>
     <string name="skill_edit_body_title">指令正文（Markdown）</string>

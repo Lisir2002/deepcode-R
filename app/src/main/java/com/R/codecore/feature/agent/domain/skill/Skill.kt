@@ -42,6 +42,59 @@ enum class SkillScope {
 }
 
 /**
+ * 运行时依赖探针声明（S-3 运行时预检）——求值树中的「叶子」。
+ *
+ * 结构化声明一条「容器内必须满足的运行时条件」，由 [SkillRuntimeProbe] 在技能执行前受控探测。
+ * 相比旧版裸字符串（仅 `command -v` 查 PATH 命令），新增：
+ * - 按类型探测：命令 / Python 模块 / npm 全局包 / deb 包 / 文件存在性；
+ * - 版本区间约束（下界 [minVersion] 语义 `>=` + 上界 [maxVersion] 语义 `<=`，语义化版本比较，
+ *   仅 [check]=cmd 与 npmpkg 支持）；
+ * - [installHint]：该探针失败时附带的安装建议（如 `apk add nodejs`），让模型/用户可照做；
+ * - 所有 name/module/path 一律字符白名单校验，探测命令参数化执行，杜绝 shell 注入。
+ *
+ * @param check 探针类型：cmd（PATH 命令）/ mod（Python 模块）/ npmpkg（npm 全局包）/ dpkg（deb 包）/ file（文件存在）。
+ * @param name 探测目标：命令名 / Python 模块名 / npm 包名 / deb 包名 / 文件路径。
+ * @param minVersion 可选最低版本约束（语义 `>=`，如 "18" / "3.9"），仅 cmd 与 npmpkg 支持。
+ * @param maxVersion 可选最高版本约束（语义 `<=`，如 "22"），仅 cmd 与 npmpkg 支持。
+ * @param installHint 可选安装建议，探针失败时拼接到失败原因返回。
+ */
+data class RuntimeProbe(
+    val check: String,
+    val name: String,
+    val minVersion: String? = null,
+    val maxVersion: String? = null,
+    val installHint: String? = null
+) {
+    companion object {
+        const val CHECK_CMD = "cmd"
+        const val CHECK_MOD = "mod"
+        const val CHECK_NPM = "npmpkg"
+        const val CHECK_DPKG = "dpkg"
+        const val CHECK_FILE = "file"
+    }
+}
+
+/**
+ * S-3 运行时预检求值树（完整布尔 DSL）。
+ *
+ * `requires_runtime` 从「探针列表 = 全 AND」升级为可组合的布尔表达式：
+ * - [Leaf]：单条 [RuntimeProbe]（叶子）；
+ * - [And]：所有子项必须全部满足（`&&`）；
+ * - [Or]：任一子项满足即通过（`||`）；
+ * - [Not]：子项不满足才通过（`!`）。
+ *
+ * 由 [SkillProbeExprParser] 从 `expr` 字符串（如 `cmd:node>=18<=22 && (mod:numpy || cmd:python3)`）
+ * 解析生成；旧格式（YAML 对象列表 / 字符串列表 / 逗号串）也统一归一为 [And]。
+ * 求值由 [SkillRuntimeProbe] 完成：只做结构化逻辑组合，绝不 eval，叶子仍走白名单参数化探测。
+ */
+sealed class RuntimeProbeExpr {
+    data class Leaf(val probe: RuntimeProbe) : RuntimeProbeExpr()
+    data class And(val children: List<RuntimeProbeExpr>) : RuntimeProbeExpr()
+    data class Or(val children: List<RuntimeProbeExpr>) : RuntimeProbeExpr()
+    data class Not(val child: RuntimeProbeExpr) : RuntimeProbeExpr()
+}
+
+/**
  * 解析后的单个 Skill 模型（RC74 元数据升级）。
  *
  * 相比旧版（仅 name/description/requiredTools/dir/instructions），新增了版本、作者、标签、
@@ -60,7 +113,7 @@ enum class SkillScope {
  * @param enabled 是否启用（运行时状态，由 Room skill_state 表持久化，不写回技能文件）。
  * @param source 来源类型（BUILTIN/LOCAL）。
  * @param requiredTools 该技能所需的专属工具列表（可选）。
- * @param requiresRuntime 运行时依赖：容器内必须存在的可执行命令，如 [\"node\", \"python\"]，加载时预检查。
+ * @param requiresRuntime 运行时预检求值树（S-3 运行时预检），见 [RuntimeProbeExpr]；null = 无预检。兼容旧版裸命令字符串（按 cmd 处理）。
  * @param dir 技能所在的本地目录。
  * @param entry SCRIPT 类型：入口脚本相对路径（相对技能目录）。
  * @param mcpTool MCP 类型：绑定的 MCP 工具名（命名空间化，如 mcp__server__tool）。
@@ -82,7 +135,7 @@ data class Skill(
     val enabled: Boolean = true,
     val source: SkillSourceType = SkillSourceType.LOCAL,
     val requiredTools: List<String> = emptyList(),
-    val requiresRuntime: List<String> = emptyList(),
+    val requiresRuntime: RuntimeProbeExpr? = null,
     val dir: File? = null,
     val entry: String? = null,
     val mcpTool: String? = null,

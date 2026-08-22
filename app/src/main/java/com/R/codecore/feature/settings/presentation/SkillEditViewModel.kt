@@ -3,7 +3,10 @@ package com.R.codecore.feature.settings.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.feature.agent.domain.skill.RuntimeProbe
+import com.R.codecore.feature.agent.domain.skill.RuntimeProbeExpr
 import com.R.codecore.feature.agent.domain.skill.Skill
+import com.R.codecore.feature.agent.domain.skill.SkillProbeExprParser
 import com.R.codecore.feature.agent.domain.skill.SkillScope
 import com.R.codecore.feature.agent.domain.skill.SkillSourceType
 import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
@@ -102,7 +105,7 @@ class SkillEditViewModel @Inject constructor(
             scope.value = skill.scope
             agentType.value = skill.agentType ?: ""
             mcpTool.value = skill.mcpTool ?: ""
-            requiresRuntime.value = skill.requiresRuntime.joinToString(", ")
+            requiresRuntime.value = skill.requiresRuntime?.toDslString() ?: ""
             body.value = skill.instructions
             refreshFileList()
             switchFile(SKILL_MD)
@@ -129,6 +132,30 @@ class SkillEditViewModel @Inject constructor(
         }
         currentFile.value = path
         currentFileContent.value = content
+    }
+
+    /** 运行时求值树 → DSL 表达式字符串（表单展示用），往返可被 [SkillProbeExprParser.parse] 还原。 */
+    private fun RuntimeProbeExpr.toDslString(): String = when (this) {
+        is RuntimeProbeExpr.Leaf -> probe.toAtomString()
+        is RuntimeProbeExpr.And -> children.joinToString(" && ") { it.grouped() }
+        is RuntimeProbeExpr.Or -> children.joinToString(" || ") { it.grouped() }
+        is RuntimeProbeExpr.Not -> "!${child.grouped()}"
+    }
+
+    /** 子表达式序列化；复合子项一律加括号，保证与解析优先级（! > && > ||）往返一致。 */
+    private fun RuntimeProbeExpr.grouped(): String = when (this) {
+        is RuntimeProbeExpr.Leaf, is RuntimeProbeExpr.Not -> toDslString()
+        else -> "(${toDslString()})"
+    }
+
+    /** 探针 → atom 段：cmd 无前缀，其余带类型前缀，版本段 `>=` 下界 + `<=` 上界。 */
+    private fun RuntimeProbe.toAtomString(): String {
+        val base = if (check == RuntimeProbe.CHECK_CMD) name else "$check:$name"
+        return buildString {
+            append(base)
+            minVersion?.let { append(">=$it") }
+            maxVersion?.let { append("<=$it") }
+        }
     }
 
     /** 新增文件：path 为相对路径（须非空、不越界、不覆盖已有文件）。返回是否成功。 */
@@ -175,6 +202,12 @@ class SkillEditViewModel @Inject constructor(
     fun save() {
         val skillId = _id.value ?: return
         val dir = _dir.value ?: return
+        // 运行时依赖 DSL 语法校验：表达式非空但解析失败 → 中止保存并提示
+        val rtExpr = requiresRuntime.value.trim().takeIf { it.isNotBlank() }
+        if (rtExpr != null && SkillProbeExprParser.parse(rtExpr) == null) {
+            _message.value = "运行时依赖表达式语法错误，请参考下方格式说明"
+            return
+        }
         viewModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 try {
@@ -209,9 +242,8 @@ class SkillEditViewModel @Inject constructor(
                             remove("agent_type")
                         }
                         mcpTool.value.trim().takeIf { it.isNotBlank() }?.let { put("mcp_tool", it) } ?: remove("mcp_tool")
-                        requiresRuntime.value.split(',').map { it.trim() }.filter { it.isNotBlank() }.let {
-                            if (it.isNotEmpty()) put("requires_runtime", it) else remove("requires_runtime")
-                        }
+                        requiresRuntime.value.trim().takeIf { it.isNotBlank() }
+                            ?.let { put("requires_runtime", it) } ?: remove("requires_runtime")
                     }
                     val yaml = Yaml(DumperOptions().apply { defaultFlowStyle = DumperOptions.FlowStyle.BLOCK })
                     val frontmatterStr = yaml.dump(merged).trimEnd()

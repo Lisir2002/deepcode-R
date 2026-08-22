@@ -19,6 +19,7 @@ import com.R.codecore.feature.agent.domain.skill.Skill
 import com.R.codecore.feature.agent.domain.skill.SkillExecutionContext
 import com.R.codecore.feature.agent.domain.skill.SkillExecutionResult
 import com.R.codecore.feature.agent.domain.skill.SkillExecutor
+import com.R.codecore.feature.agent.domain.skill.SkillRuntimeProbe
 import com.R.codecore.feature.agent.domain.skill.SkillScope
 import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
 import com.R.codecore.feature.agent.domain.skill.SkillType
@@ -121,7 +122,9 @@ class StatefulAgentWorkflow @Inject constructor(
     private val incrementalIndexStore: IncrementalIndexStore,
     /** 技能自动触发：读取启用的自动触发技能，作为自动化流程的一环智能识别并触发。 */
     private val skillStateRepository: SkillStateRepository,
-    private val skillExecutor: SkillExecutor
+    private val skillExecutor: SkillExecutor,
+    /** S-3 运行时依赖探针：SCRIPT 技能自动触发前与手动路径（runSkillScript）一致地做预检。 */
+    private val skillRuntimeProbe: SkillRuntimeProbe
 ) : AgentWorkflow {
 
     init {
@@ -1087,11 +1090,24 @@ class StatefulAgentWorkflow @Inject constructor(
             val execArgs = if (userRequest.isNotBlank()) mapOf("task" to userRequest) else emptyMap()
             val execCtx = SkillExecutionContext.from(context, autoTrigger = true)
             val (output, isError) = try {
-                when (val r = skillExecutor.execute(skill, execArgs, execCtx)) {
-                    is SkillExecutionResult.Success -> r.output to false
-                    is SkillExecutionResult.Error -> {
-                        FileLogger.w(TAG, "技能自动触发执行失败: ${skill.id} - ${r.message}")
-                        "[自动触发失败] ${r.message}" to true
+                // S-3：SCRIPT 技能自动触发前同样做运行时依赖预检（与 runSkillScript 手动路径行为一致），
+                // 缺失时跳过执行并把原因注入上下文，避免"触发即静默失败"。
+                val runtimeFailures = if (skill.type == SkillType.SCRIPT) {
+                    skillRuntimeProbe.probe(skill.requiresRuntime)
+                } else {
+                    emptyList()
+                }
+                if (runtimeFailures.isNotEmpty()) {
+                    val details = runtimeFailures.joinToString("；") { it.reason }
+                    FileLogger.w(TAG, "技能自动触发运行时依赖缺失: ${skill.id} - $details")
+                    "[自动触发失败] 技能「${skill.name}」的运行时依赖未满足：$details" to true
+                } else {
+                    when (val r = skillExecutor.execute(skill, execArgs, execCtx)) {
+                        is SkillExecutionResult.Success -> r.output to false
+                        is SkillExecutionResult.Error -> {
+                            FileLogger.w(TAG, "技能自动触发执行失败: ${skill.id} - ${r.message}")
+                            "[自动触发失败] ${r.message}" to true
+                        }
                     }
                 }
             } catch (e: Exception) {

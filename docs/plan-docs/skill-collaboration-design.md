@@ -55,7 +55,9 @@
 ### 4.4 安全与校验（SCRIPT 技能）
 
 - 所有 SCRIPT 技能执行前必须用户确认（决策点 6：全部审批）。
-- S-3 运行时预检查：`requiresRuntime` 在容器内 `command -v` 逐一探测（15s 超时），缺失时先报错再执行。
+- **S-3 运行时预检查（`SkillRuntimeProbe`）**：`requiresRuntime` 声明为**布尔求值树**（`RuntimeProbeExpr`：`Leaf` / `And` / `Or` / `Not`），由 `SkillProbeExprParser` 从 `expr` 字符串解析（如 `cmd:node>=18<=22 && (mod:numpy || cmd:python3)`）。预检在容器内受控探测：命令（`command -v`）/ Python 模块 / npm 全局包 / deb 包 / 文件存在性，叶子可带版本区间（`min_version`=下界 `>=`，`max_version`=上界 `<=`）；目标名与版本一律字符白名单校验、探测命令参数化执行，杜绝 shell 注入；组合逻辑只做纯逻辑求值、**绝不 eval**。任一条件不满足在**执行前**报错（`SKILL_MISSING_RUNTIME`），失败原因沿树汇总并可附带 `install_hint` 安装建议。
+- **双路径统一**：手动 `runSkillScript` 与自动触发路径共用同一 `SkillRuntimeProbe` 预检，避免「触发即静默失败」。
+- **旧声明兼容**：YAML 对象列表 / 字符串列表 / 逗号串由 parser 归一为 `And`，存量技能不受影响。
 
 ### 4.5 技能作用域分级（SkillScope）
 
