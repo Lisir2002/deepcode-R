@@ -1,0 +1,9 @@
+# 文本文件统一 LF 换行
+* text=auto eol=lf
+
+# 指定文本类型
+*.html text
+*.css  text
+*.js   text
+*.php  text
+*.md   text

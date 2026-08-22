@@ -1,0 +1,16 @@
+# 运行/构建产物
+*.log
+*.tmp
+
+# PHP
+*.cache
+/sessions/
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+
+# 系统
+.DS_Store
+Thumbs.db
