@@ -22,9 +22,9 @@ import compose.icons.feathericons.CheckSquare
 import compose.icons.feathericons.Cloud
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.FileText
-import compose.icons.feathericons.Folder
 import compose.icons.feathericons.HardDrive
 import compose.icons.feathericons.Layers
+import compose.icons.feathericons.Link2
 import compose.icons.feathericons.Trash2
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
@@ -267,7 +267,7 @@ fun RemoteMountCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        FeatherIcons.Folder,
+                        FeatherIcons.Link2,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )

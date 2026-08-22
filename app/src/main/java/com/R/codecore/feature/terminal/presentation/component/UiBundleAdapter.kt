@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.R.codecore.feature.terminal.data.bundle.TerminalBundle
 import com.R.codecore.feature.terminal.data.bundle.TerminalBundleId
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.Box
+import compose.icons.feathericons.Code
 import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.Globe
@@ -39,7 +39,7 @@ fun TerminalBundle.toUi(): UiBundle = UiBundle(
 @Composable
 private fun TerminalBundle.iconVector(): ImageVector = when (id) {
     TerminalBundleId.PYTHON -> FeatherIcons.Cpu
-    TerminalBundleId.NODE -> FeatherIcons.Box
+    TerminalBundleId.NODE -> FeatherIcons.Code
     TerminalBundleId.RIPGREP -> FeatherIcons.Search
     TerminalBundleId.GIT -> FeatherIcons.GitBranch
     TerminalBundleId.BASH -> FeatherIcons.Terminal
@@ -49,7 +49,7 @@ private fun TerminalBundle.iconVector(): ImageVector = when (id) {
 
 internal fun bundleIconVector(id: TerminalBundleId): ImageVector = when (id) {
     TerminalBundleId.PYTHON -> FeatherIcons.Cpu
-    TerminalBundleId.NODE -> FeatherIcons.Box
+    TerminalBundleId.NODE -> FeatherIcons.Code
     TerminalBundleId.RIPGREP -> FeatherIcons.Search
     TerminalBundleId.GIT -> FeatherIcons.GitBranch
     TerminalBundleId.BASH -> FeatherIcons.Terminal

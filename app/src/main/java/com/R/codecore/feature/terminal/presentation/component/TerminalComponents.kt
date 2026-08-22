@@ -89,16 +89,18 @@ import com.termux.view.TerminalView
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowDown
 import compose.icons.feathericons.ArrowUp
+import compose.icons.feathericons.Clipboard
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Edit3
-import compose.icons.feathericons.Grid
 import compose.icons.feathericons.Info
+import compose.icons.feathericons.Layout
+import compose.icons.feathericons.Minus
 import compose.icons.feathericons.Plus
+import compose.icons.feathericons.Power
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.RotateCcw
 import compose.icons.feathericons.Search
-import compose.icons.feathericons.Share2
-import compose.icons.feathericons.Terminal
+import compose.icons.feathericons.Send
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.Type
 import compose.icons.feathericons.X
@@ -625,7 +627,7 @@ private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit, skin: Termin
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Icon(
-                FeatherIcons.Grid,
+                FeatherIcons.Layout,
                 contentDescription = null,
                 modifier = Modifier.size(ButtonSpec.ChipIndicatorSize),
                 tint = if (full) skin.keyGroupDFg else skin.onSurfaceVariant
@@ -765,7 +767,7 @@ fun ReconnectDropdown(
             text = { Text(stringResource(R.string.ui______fbf624a8)) },
             onClick = onRestartContainer,
             leadingIcon = {
-                Icon(FeatherIcons.Trash2, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(FeatherIcons.Power, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         )
     }
@@ -797,7 +799,7 @@ fun TerminalOperationsMenu(
         DropdownMenuItem(text = { Text(stringResource(R.string.ui____79d3abe9)) }, onClick = onCopy,
             leadingIcon = { Icon(FeatherIcons.Copy, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui____eafbece1)) }, onClick = onPaste,
-            leadingIcon = { Icon(FeatherIcons.Terminal, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(FeatherIcons.Clipboard, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui____66eeacd9)) }, onClick = onSelectAll,
             leadingIcon = { Icon(FeatherIcons.Type, null, Modifier.size(18.dp)) })
         HorizontalDivider(Modifier.padding(horizontal = Spacing.sm))
@@ -809,15 +811,15 @@ fun TerminalOperationsMenu(
             leadingIcon = { Icon(FeatherIcons.Edit3, null, Modifier.size(18.dp)) })
         if (allowSendToAI && onSendToAI != null) {
             DropdownMenuItem(text = { Text(stringResource(R.string.ui______38154828)) }, onClick = onSendToAI,
-                leadingIcon = { Icon(FeatherIcons.Share2, null, Modifier.size(18.dp)) })
+                leadingIcon = { Icon(FeatherIcons.Send, null, Modifier.size(18.dp)) })
         }
         HorizontalDivider(Modifier.padding(horizontal = Spacing.sm))
         DropdownMenuItem(text = { Text(if (fullExtraKeys) stringResource(R.string.ui______6a988d97) else stringResource(R.string.ui______1ae98d49)) }, onClick = onToggleFullKeys,
-            leadingIcon = { Icon(FeatherIcons.Grid, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(FeatherIcons.Layout, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui______3b73382e)) }, onClick = onFontSizeStepUp,
             leadingIcon = { Icon(FeatherIcons.Plus, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui______9dd74977)) }, onClick = onFontSizeStepDown,
-            leadingIcon = { Icon(FeatherIcons.X, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(FeatherIcons.Minus, null, Modifier.size(18.dp)) })
     }
 }
 

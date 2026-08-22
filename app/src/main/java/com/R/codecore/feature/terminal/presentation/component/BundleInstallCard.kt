@@ -106,10 +106,11 @@ import compose.icons.feathericons.Clock
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.Download
+import compose.icons.feathericons.FileText
 import compose.icons.feathericons.Package
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Settings
+import compose.icons.feathericons.Tool
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.X
 import compose.icons.feathericons.XCircle
@@ -496,7 +497,7 @@ private fun FailedSummaryBoard(
             )
             ElevatedAssistChip(
                 onClick = onOpenLogDialog,
-                leadingIcon = { Icon(FeatherIcons.Settings, null, modifier = Modifier.size(14.dp)) },
+                leadingIcon = { Icon(FeatherIcons.FileText, null, modifier = Modifier.size(14.dp)) },
                 label = { Text(stringResource(R.string.ui______0ea78e42), style = MaterialTheme.typography.labelMedium) },
             )
         }
@@ -1197,7 +1198,7 @@ private fun TokenizedStatusLine(
                 }
                 agg.phase == InstallPhase.INSTALL -> {
                     Icon(
-                        imageVector = FeatherIcons.Settings,
+                        imageVector = FeatherIcons.Package,
                         contentDescription = null,
                         tint = Color(0xFF388E3C),
                         modifier = Modifier.size(14.dp),
@@ -1220,7 +1221,7 @@ private fun TokenizedStatusLine(
                 }
                 agg.phase == InstallPhase.POST_HOOK -> {
                     Icon(
-                        imageVector = FeatherIcons.Settings,
+                        imageVector = FeatherIcons.Tool,
                         contentDescription = null,
                         tint = Color(0xFFF57C00),
                         modifier = Modifier.size(14.dp),

@@ -69,7 +69,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.CheckCircle
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
-import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.Loader
 import compose.icons.feathericons.Tool
 import compose.icons.feathericons.XCircle
 import kotlinx.serialization.json.Json
@@ -826,7 +826,7 @@ private fun EnvironmentStatusStrip(
         else -> Color(0xFFEF4444)
     }
     val statusIcon = when {
-        running -> FeatherIcons.RefreshCw
+        running -> FeatherIcons.Loader
         ready -> FeatherIcons.CheckCircle
         else -> FeatherIcons.XCircle
     }

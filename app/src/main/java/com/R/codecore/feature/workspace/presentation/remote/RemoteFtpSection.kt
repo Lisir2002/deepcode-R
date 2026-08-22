@@ -14,8 +14,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Info
+import compose.icons.feathericons.Server
 import compose.icons.feathericons.Settings
-import compose.icons.feathericons.Share2
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
 
@@ -94,7 +94,7 @@ fun WiFiFtpServerSection(viewModel: RemoteServerViewModel) {
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            FeatherIcons.Share2,
+                            FeatherIcons.Server,
                             contentDescription = null,
                             tint = if (isRunning) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)

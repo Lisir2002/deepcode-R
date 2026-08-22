@@ -62,16 +62,16 @@ import com.R.codecore.feature.agent.domain.container.progress.InstallProgressPar
 import com.R.codecore.feature.agent.domain.permission.ShellCommandParser
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.CheckCircle
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.XCircle
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.FileText
+import compose.icons.feathericons.Loader
 import compose.icons.feathericons.MessageSquare
 import compose.icons.feathericons.Star
 import compose.icons.feathericons.Tool
 import compose.icons.feathericons.User
+import compose.icons.feathericons.XCircle
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -551,7 +551,7 @@ private fun EnvironmentStatusBubble(snapshot: EnvironmentSnapshot) {
         else -> Color(0xFFEF4444)
     }
     val statusIcon = when {
-        running -> FeatherIcons.RefreshCw
+        running -> FeatherIcons.Loader
         ready -> FeatherIcons.CheckCircle
         else -> FeatherIcons.XCircle
     }

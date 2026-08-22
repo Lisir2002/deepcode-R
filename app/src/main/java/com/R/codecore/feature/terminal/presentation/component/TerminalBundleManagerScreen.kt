@@ -68,7 +68,7 @@ import com.R.codecore.feature.terminal.presentation.TerminalSettingsViewModel
 import com.R.codecore.feature.terminal.presentation.component.toUi
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Grid
+import compose.icons.feathericons.Package
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Trash2
@@ -282,7 +282,7 @@ fun TerminalBundleManagerScreen(
                             Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        FeatherIcons.Grid,
+                                        FeatherIcons.Package,
                                         null,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(18.dp)

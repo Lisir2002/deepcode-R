@@ -91,6 +91,7 @@ import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Server
+import compose.icons.feathericons.Shield
 import compose.icons.feathericons.Terminal
 
 /** 设置页内部二级菜单分区。Menu 为首页菜单，其余为各自的二级页。 */
@@ -624,7 +625,7 @@ internal fun SettingsMenu(
             group = groupData,
             title = stringResource(SettingsSection.Security.titleRes),
             subtitle = stringResource(R.string.settings_security_subtitle),
-            icon = FeatherIcons.Lock,
+            icon = FeatherIcons.Shield,
             keywords = listOf("security", stringResource(R.string.ui____56563edf_2), stringResource(R.string.ui______05ad4f31), stringResource(R.string.ui____5f811dd8), "password", stringResource(R.string.ui____fdbc77bd), "pin"),
             action = { onOpen(SettingsSection.Security) }
         ),

@@ -50,7 +50,7 @@ import com.R.codecore.feature.terminal.data.bundle.BundleInstallState
 import com.R.codecore.feature.terminal.data.bundle.TerminalBundle
 import com.R.codecore.feature.terminal.data.bundle.TerminalBundleId
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.Box
+import compose.icons.feathericons.Code
 import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.Globe
@@ -424,7 +424,7 @@ internal fun SharedBundleCard(
 @Composable
 private fun sharedBundleIcon(b: TerminalBundle): ImageVector = when (b.id) {
     TerminalBundleId.PYTHON -> FeatherIcons.Cpu
-    TerminalBundleId.NODE -> FeatherIcons.Box
+    TerminalBundleId.NODE -> FeatherIcons.Code
     TerminalBundleId.RIPGREP -> FeatherIcons.Search
     TerminalBundleId.GIT -> FeatherIcons.GitBranch
     TerminalBundleId.BASH -> FeatherIcons.Terminal

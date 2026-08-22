@@ -62,6 +62,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Cloud
+import compose.icons.feathericons.CornerDownLeft
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.GitCommit
@@ -561,7 +562,7 @@ private sealed class RefAction(
     val isDestructive: Boolean,
     val onClick: () -> Unit
 ) {
-    class Switch(onClick: () -> Unit) : RefAction(R.string.common_switch, FeatherIcons.GitCommit, false, onClick)
+    class Switch(onClick: () -> Unit) : RefAction(R.string.common_switch, FeatherIcons.CornerDownLeft, false, onClick)
     class Rename(onClick: () -> Unit) : RefAction(R.string.common_rename, FeatherIcons.Edit2, false, onClick)
     class Delete(onClick: () -> Unit) : RefAction(R.string.common_delete, FeatherIcons.Trash2, true, onClick)
 }

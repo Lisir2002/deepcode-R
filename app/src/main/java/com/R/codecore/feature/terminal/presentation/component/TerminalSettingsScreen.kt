@@ -79,24 +79,22 @@ import com.R.codecore.feature.terminal.data.repository.TerminalTheme
 import com.R.codecore.feature.terminal.presentation.TerminalSettingsViewModel
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Box
+import compose.icons.feathericons.Activity
+import compose.icons.feathericons.Archive
+import compose.icons.feathericons.Bell
 import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.Database
-import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.Globe
-import compose.icons.feathericons.Grid
-import compose.icons.feathericons.HardDrive
+import compose.icons.feathericons.Clipboard
+import compose.icons.feathericons.Columns
+import compose.icons.feathericons.Info
+import compose.icons.feathericons.Layout
 import compose.icons.feathericons.Moon
+import compose.icons.feathericons.Package
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Search
 import compose.icons.feathericons.Server
-import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Terminal
-import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.Type
-import compose.icons.feathericons.XCircle
+import compose.icons.feathericons.ZoomIn
 import kotlinx.coroutines.launch
 
 /**
@@ -189,7 +187,7 @@ fun TerminalSettingsScreen(
             AppSectionGroup {
                 val installedBundleCount = bundleStates.count { it.value is BundleInstallState.Installed }
                 _MenuRow(
-                    icon = FeatherIcons.Box,
+                    icon = FeatherIcons.Package,
                     title = stringResource(R.string.ui_______dbda4e51_2),
                     subtitle = "官方 Bundle · 共 ${viewModel.bundles().size} 个，已安装 $installedBundleCount${if (aiAllInstalled) " · AI 组合已就绪" else ""}",
                     onClick = onNavigateToBundleManager,
@@ -228,7 +226,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.Grid,
+                    icon = FeatherIcons.Columns,
                     title = stringResource(R.string.ui____caa23c17),
                     subtitle = stringResource(R.string.ui______________aeee5eb0),
                     checked = showTabBar,
@@ -241,7 +239,7 @@ fun TerminalSettingsScreen(
             AppSectionHeader(text = stringResource(R.string.ui____e1dd53a4))
             AppSectionGroup {
                 _SwitchRow(
-                    icon = FeatherIcons.Grid,
+                    icon = FeatherIcons.Layout,
                     title = stringResource(R.string.ui________bd4b33a0),
                     subtitle = "关闭为精简布局（仅 Ctrl/Alt/Fn/方向）",
                     checked = fullExtraKeys,
@@ -249,7 +247,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.RefreshCw,
+                    icon = FeatherIcons.ZoomIn,
                     title = stringResource(R.string.ui___________19a36c2d),
                     subtitle = stringResource(R.string.ui______________82f9dac5),
                     checked = scalePersists,
@@ -265,7 +263,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _MenuRow(
-                    icon = FeatherIcons.Settings,
+                    icon = FeatherIcons.Info,
                     title = stringResource(R.string.ui____2959acd6),
                     subtitle = stringResource(R.string.ui_____18a3cbe4),
                     onClick = viewModel::resetCtrlHint,
@@ -277,7 +275,7 @@ fun TerminalSettingsScreen(
             AppSectionHeader(text = stringResource(R.string.ui____a0496123))
             AppSectionGroup {
                 _SwitchRow(
-                    icon = FeatherIcons.XCircle,
+                    icon = FeatherIcons.Bell,
                     title = stringResource(R.string.ui_____________996140c5),
                     subtitle = stringResource(R.string.ui_____46f74d41),
                     checked = newOutputIndicator,
@@ -293,7 +291,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.Server,
+                    icon = FeatherIcons.Archive,
                     title = stringResource(R.string.ui___________37172e85),
                     subtitle = stringResource(R.string.ui______________427e9b33),
                     checked = keepSession,
@@ -301,7 +299,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.Database,
+                    icon = FeatherIcons.Clipboard,
                     title = stringResource(R.string.ui________52007b14),
                     subtitle = stringResource(R.string.ui______________eb6dcb95),
                     checked = pasteAsPlain,
@@ -330,7 +328,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _MenuRow(
-                    icon = FeatherIcons.Cpu,
+                    icon = FeatherIcons.Activity,
                     title = stringResource(R.string.ui______9901e9b6),
                     subtitle = SshHeartbeatSeconds.fromSeconds(sshHeartbeat).display,
                     onClick = { showHeartbeatPicker = true },

@@ -94,7 +94,7 @@ import compose.icons.feathericons.Flag
 import compose.icons.feathericons.Package
 import compose.icons.feathericons.Radio
 import compose.icons.feathericons.Search
-import compose.icons.feathericons.Settings
+import compose.icons.feathericons.Tool
 import compose.icons.feathericons.X
 import kotlinx.coroutines.launch
 import java.util.EnumMap
@@ -416,7 +416,7 @@ private fun TimelineAnchors(
     val icons = listOf(
         FeatherIcons.Download,
         FeatherIcons.Package,
-        FeatherIcons.Settings,
+        FeatherIcons.Tool,
         if (p == InstallPhase.FAILED) FeatherIcons.AlertTriangle else FeatherIcons.Flag,
     )
     // Phase 定义顺序就是 DOWNLOAD → INSTALL → POST_HOOK → DONE → FAILED，用 ordinal 比大小

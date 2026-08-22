@@ -41,9 +41,9 @@ import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.git.domain.model.GitFileChange
 import com.R.codecore.feature.git.domain.model.GitStatus
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.Check
 import compose.icons.feathericons.DownloadCloud
 import compose.icons.feathericons.GitBranch
+import compose.icons.feathericons.GitCommit
 import compose.icons.feathericons.Minus
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.UploadCloud
@@ -210,7 +210,7 @@ private fun StatusActionsBar(
     BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm)) {
         if (maxWidth < 420.dp) {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                ActionButton(stringResource(R.string.git_commit_changes), FeatherIcons.Check, prominent = true, enabled = canCommit, onClick = onCommit, modifier = Modifier.fillMaxWidth())
+                ActionButton(stringResource(R.string.git_commit_changes), FeatherIcons.GitCommit, prominent = true, enabled = canCommit, onClick = onCommit, modifier = Modifier.fillMaxWidth())
                 if (!hasIdentity) {
                     Text(
                         stringResource(R.string.git_no_identity),
@@ -227,7 +227,7 @@ private fun StatusActionsBar(
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    ActionButton(stringResource(R.string.git_commit_changes), FeatherIcons.Check, prominent = true, enabled = canCommit, onClick = onCommit, modifier = Modifier.weight(1.4f))
+                    ActionButton(stringResource(R.string.git_commit_changes), FeatherIcons.GitCommit, prominent = true, enabled = canCommit, onClick = onCommit, modifier = Modifier.weight(1.4f))
                     ActionButton(stringResource(R.string.git_stage_all), FeatherIcons.Plus, enabled = !busy, onClick = onStageAll, modifier = Modifier.weight(1f))
                     ActionButton(stringResource(R.string.git_pull), FeatherIcons.DownloadCloud, enabled = !busy && hasRemote, onClick = onPull, modifier = Modifier.weight(1f))
                     ActionButton(stringResource(R.string.git_push), FeatherIcons.UploadCloud, enabled = !busy && hasRemote, onClick = onPush, modifier = Modifier.weight(1f))
