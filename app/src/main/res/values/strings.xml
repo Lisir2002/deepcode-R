@@ -305,6 +305,24 @@
     <string name="backup_legacy_found_title">检测到旧版本数据</string>
     <string name="backup_legacy_found_desc">检测到旧版本应用「%1$s」仍安装在本机（与本应用同签名但包名不同）。因包名变更，旧版本的历史对话不会自动迁移。如需找回，请在旧版本中「备份与还原 → 导出备份（勾选聊天历史）」，再在本版本「导入备份」恢复。</string>
 
+    <!-- 数据保全：哨兵 + 本机自动备份 -->
+    <string name="backup_data_lost_title">检测到历史数据可能丢失</string>
+    <string name="backup_data_lost_desc">检测到本应用的数据疑似为空（可能是包名变更导致的数据隔离，或数据被异常清空）。若本机存有自动备份，可尝试从最近的备份恢复。若您是有意清空聊天记录，可忽略本提示。</string>
+    <string name="backup_package_changed_title">检测到包名变更</string>
+    <string name="backup_package_changed_desc">上次运行的包名与当前不一致，历史数据不会自动迁移。请通过「旧版本导出备份 → 本版本导入」找回，或从本机自动备份恢复。</string>
+    <string name="backup_auto_title">本机自动备份</string>
+    <string name="backup_auto_desc">应用会在每次升级前自动把聊天历史等数据备份到本机（仅本应用可读，保存最近 %1$d 份，超出自动清理）。</string>
+    <string name="backup_auto_last">上次自动备份：%1$s</string>
+    <string name="backup_auto_none_label">尚未生成自动备份</string>
+    <string name="backup_auto_none">本机暂无自动备份</string>
+    <string name="backup_auto_backup_now">立即备份到本机</string>
+    <string name="backup_auto_restore">从最近备份恢复</string>
+    <string name="backup_auto_restore_confirm_title">从自动备份恢复？</string>
+    <string name="backup_auto_restore_confirm_desc">将使用本机最近一份自动备份（%1$s）覆盖导入数据。当前数据将被合并，确定继续？</string>
+    <string name="backup_auto_backed_up">已备份到本机</string>
+    <string name="backup_auto_failed">本机自动备份失败</string>
+    <string name="backup_auto_restore_failed">从自动备份恢复失败</string>
+
     <!-- Backup ViewModel -->
     <string name="backup_export_failed">导出失败</string>
     <string name="backup_wrong_password">备份口令错误，或加密备份文件已损坏</string>

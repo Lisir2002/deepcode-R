@@ -311,6 +311,27 @@ gradle.projectsEvaluated {
     tasks.matching { it.name.startsWith("lintVital") }.configureEach { enabled = false }
 }
 
+// ── 数据保全：applicationId 白名单硬校验 ──────────────────────────────
+// 包名（applicationId）变更在 Android 眼里是"全新安装"，私有数据目录随之隔离，
+// 历史对话会全部"消失"（历史上已因此丢失三次，见 docs/plan-docs/data-preservation-design.md）。
+// 这里在配置期对每个 variant 做白名单校验：包名不在白名单内 → 构建直接失败，
+// 与单测 ApplicationIdStabilityTest（release classpath 断言）、CI 发版门禁（Tag 间一致性）
+// 构成三重防线，杜绝 rebrand 误改包名再次造成用户数据丢失。
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        val id: String = variant.applicationId.get()
+        require(id in ALLOWED_APPLICATION_IDS) {
+            "applicationId=$id 不在白名单 $ALLOWED_APPLICATION_IDS 内。禁止变更包名——" +
+                "包名变更在 Android 上是全新安装，会导致用户历史对话不可见" +
+                "（详见 docs/plan-docs/data-preservation-design.md）。" +
+                "如需 rebrand 请只改应用名/图标/namespace，勿改 applicationId。"
+        }
+    }
+}
+
+/** 允许的 applicationId 白名单：release=com.R.codecore，debug 带 .debug 后缀（与 release 数据隔离）。 */
+val ALLOWED_APPLICATION_IDS = setOf("com.R.codecore", "com.R.codecore.debug")
+
 dependencies {
     // Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2025.12.01")

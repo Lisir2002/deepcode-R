@@ -21,6 +21,10 @@ interface ChatSessionDao {
     @Query("SELECT * FROM chat_sessions")
     suspend fun getAllOnce(): List<ChatSessionEntity>
 
+    /** 会话总数。用于数据完整性哨兵（DataSentinel）区分「全新安装」与「数据丢失」。 */
+    @Query("SELECT COUNT(*) FROM chat_sessions")
+    suspend fun count(): Int
+
     /** 分页读取（keyset：按 updatedAtMs,id 字典序取 [limit] 条），供备份流式导出。 */
     @Query("SELECT * FROM chat_sessions WHERE updatedAtMs > :lastUpdatedAtMs OR (updatedAtMs = :lastUpdatedAtMs AND id > :lastId) ORDER BY updatedAtMs ASC, id ASC LIMIT :limit")
     suspend fun getPageAfter(lastUpdatedAtMs: Long, lastId: String, limit: Int): List<ChatSessionEntity>

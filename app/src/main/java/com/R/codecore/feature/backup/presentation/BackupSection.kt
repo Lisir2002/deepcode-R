@@ -58,12 +58,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
+import com.R.codecore.feature.backup.data.guard.SentinelVerdict
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 internal fun BackupSection(viewModel: BackupViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val dataSafety by viewModel.dataSafety.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 进入备份页即刷新数据保全状态（哨兵判定 + 本机自动备份信息）。
+    LaunchedEffect(Unit) {
+        viewModel.refreshDataSafety()
+    }
+
+    var showRestoreConfirm by remember { mutableStateOf(false) }
 
     var password by remember { mutableStateOf("") }
     var pendingAction by remember { mutableStateOf<PendingAction?>(null) }
@@ -110,6 +122,17 @@ internal fun BackupSection(viewModel: BackupViewModel) {
         verticalArrangement = Arrangement.spacedBy(Spacing.md)
     ) {
         LegacyDataRecoveryBanner()
+        DataLossAlertBanner(
+            verdict = dataSafety.verdict,
+            hasBackup = dataSafety.backupCount > 0,
+            onRestore = { showRestoreConfirm = true }
+        )
+        AutoBackupCard(
+            lastBackupTime = dataSafety.lastBackupTime,
+            backupCount = dataSafety.backupCount,
+            working = dataSafety.working,
+            onBackupNow = { viewModel.backupNow() }
+        )
         BackupInfoCard()
         ActionCard(
             icon = FeatherIcons.Download,
@@ -198,6 +221,38 @@ internal fun BackupSection(viewModel: BackupViewModel) {
         }
     }
 
+    // 立即备份完成 → 提示
+    LaunchedEffect(dataSafety.justBackedUp) {
+        if (dataSafety.justBackedUp) {
+            Toast.makeText(context, context.getString(R.string.backup_auto_backed_up), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // 从自动备份恢复前确认
+    if (showRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirm = false },
+            title = { Text(stringResource(R.string.backup_auto_restore_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.backup_auto_restore_confirm_desc,
+                        formatBackupTime(dataSafety.lastBackupTime)
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestoreConfirm = false
+                    viewModel.restoreFromLatest()
+                }) { Text(stringResource(R.string.backup_auto_restore)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
+            }
+        )
+    }
+
     if (state is BackupState.Working) {
         ProgressDialog()
     }
@@ -218,6 +273,114 @@ internal fun BackupSection(viewModel: BackupViewModel) {
 }
 
 private enum class PendingAction { ExportOptions, ExportPassword, Import }
+
+/**
+ * 数据丢失 / 包名变更告警横幅（数据保全防线 D8）。
+ *
+ * 哨兵（DataSentinel）判定本包名下数据疑似为空（DATA_LOST）或包名被改动（PACKAGE_CHANGED）时展示，
+ * 并给出「从最近自动备份恢复」入口（本机有自动备份时）。
+ */
+@Composable
+private fun DataLossAlertBanner(
+    verdict: SentinelVerdict?,
+    hasBackup: Boolean,
+    onRestore: () -> Unit
+) {
+    if (verdict != SentinelVerdict.DATA_LOST && verdict != SentinelVerdict.PACKAGE_CHANGED) return
+
+    val isPackageChanged = verdict == SentinelVerdict.PACKAGE_CHANGED
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radius.md),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF1F2)),
+        border = BorderStroke(1.dp, Color(0xFFFECDD3))
+    ) {
+        Column(
+            modifier = Modifier.padding(Spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+        ) {
+            Text(
+                text = stringResource(
+                    if (isPackageChanged) R.string.backup_package_changed_title
+                    else R.string.backup_data_lost_title
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(
+                    if (isPackageChanged) R.string.backup_package_changed_desc
+                    else R.string.backup_data_lost_desc
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (hasBackup) {
+                TextButton(onClick = onRestore) {
+                    Text(stringResource(R.string.backup_auto_restore))
+                }
+            }
+        }
+    }
+}
+
+/** 本机自动备份卡片（数据保全防线 D6）：展示备份时间/份数，支持立即备份。 */
+@Composable
+private fun AutoBackupCard(
+    lastBackupTime: Long?,
+    backupCount: Int,
+    working: Boolean,
+    onBackupNow: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radius.md),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDF4)),
+        border = BorderStroke(1.dp, Color(0xFFBBF7D0))
+    ) {
+        Column(
+            modifier = Modifier.padding(Spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+        ) {
+            Text(
+                text = stringResource(R.string.backup_auto_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(R.string.backup_auto_desc, AutoBackupKeepMax),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = if (lastBackupTime != null) {
+                    stringResource(R.string.backup_auto_last, formatBackupTime(lastBackupTime))
+                } else {
+                    stringResource(R.string.backup_auto_none_label)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(
+                onClick = onBackupNow,
+                enabled = !working
+            ) {
+                Text(stringResource(R.string.backup_auto_backup_now))
+            }
+        }
+    }
+}
+
+/** 自动备份保留份数（与 AutoBackupManager.KEEP_MAX 一致）。 */
+private const val AutoBackupKeepMax = 7
+
+/** 备份时间戳格式化：yyyy-MM-dd HH:mm。 */
+private fun formatBackupTime(epochMs: Long?): String {
+    val ts = epochMs ?: return ""
+    return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(ts))
+}
 
 /**
  * 历史数据恢复横幅：检测到"同签名但包名不同"的旧版本应用仍安装在本机时展示。

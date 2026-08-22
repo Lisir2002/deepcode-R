@@ -134,6 +134,33 @@ jobs:
           fi
           echo "✓ versionCode 单调递增: $prev_vc -> $cur_vc"
 
+      # 数据保全门禁：校验 applicationId（包名）与上个 Release 一致。
+      # 背景：包名（applicationId）变更在 Android 眼里是"全新安装"，私有数据目录随之隔离，
+      #       历史对话会全部"消失"。历史上包名变更过三次（com.aicodeeditor → com.deep.rcode →
+      #       com.R.codecore），每次都是不可逆的数据丢失事故（详见 docs/plan-docs/data-preservation-design.md）。
+      # 因此发版 Tag 必须与上个 Release 保持同包名，不一致直接阻断，杜绝带新包名的包流入用户。
+      # 仅打 tag 触发时校验；workflow_dispatch（手动，无 tag）跳过。
+      - name: Verify applicationId stability
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -e
+          cur_tag="${GITHUB_REF_NAME}"
+          prev_tag=$(git tag --sort=-creatordate | grep -vE "^${cur_tag}$" | head -1)
+          if [[ -z "$prev_tag" ]]; then
+            echo "无历史 tag，跳过 applicationId 一致性校验（首次发版）"
+            exit 0
+          fi
+          extract_id() { git show "$1:app/build.gradle.kts" | grep -oE 'applicationId = "[^"]+"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/'; }
+          cur_id=$(extract_id "$cur_tag")
+          prev_id=$(extract_id "$prev_tag")
+          echo "上个 Release($prev_tag) applicationId = $prev_id"
+          echo "当前(${cur_tag}) applicationId        = $cur_id"
+          if [[ -z "$prev_id" || "$cur_id" != "$prev_id" ]]; then
+            echo "::error::applicationId 变更: $prev_id -> $cur_id。包名变更在 Android 上是全新安装，会导致用户历史对话不可见。禁止变更 applicationId（详见 docs/plan-docs/data-preservation-design.md）。"
+            exit 1
+          fi
+          echo "✓ applicationId 稳定: $cur_id"
+
       - name: Restore release keystore (if secrets configured)
         env:
           KEYSTORE_BASE64: ${{ secrets.AICODE_KEYSTORE_BASE64 }}

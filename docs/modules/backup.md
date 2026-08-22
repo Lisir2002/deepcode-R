@@ -22,8 +22,12 @@
 | `domain/BackupCrypto.kt` | 对称加解密工具（PBKDF2WithHmacSHA256 + AES/GCM/NoPadding 流式），含 `BackupDecryptionException` |
 | `domain/BackupEncryptScope.kt` | 加密范围枚举（`CREDENTIALS_ONLY` / `FULL`）——当前实现采用全量加密语义，枚举保留 |
 | `domain/BackupSnapshot.kt` | 备份数据模型：`BackupSnapshot`（旧格式）、`BackupMetadata`（流式格式的 metadata.json）及全套 DTO（ProviderDto、GitCredentialDto、RemoteConnectionDto、RemoteMountDto、ChatSessionDto、AgentMessageDto、TodoItemDto） |
-| `presentation/BackupViewModel.kt` | 备份/还原的 UI 状态机（`BackupState`）与流式导入导出编排 |
-| `presentation/BackupSection.kt` | 备份设置页 Compose UI：SAF 文件选择、数据范围勾选、口令输入、进度/结果弹窗、历史数据恢复横幅 |
+| `presentation/BackupViewModel.kt` | 备份/还原的 UI 状态机（`BackupState`）与流式导入导出编排；数据保全 UI 状态（`DataSafetyUiState`，哨兵 + 本机自动备份） |
+| `presentation/BackupSection.kt` | 备份设置页 Compose UI：SAF 文件选择、数据范围勾选、口令输入、进度/结果弹窗、历史数据恢复横幅、数据丢失告警横幅、自动备份卡片 |
+| `data/AutoBackupManager.kt` | 本机自动备份：全量无口令导出到私有目录 `filesDir/auto-backups/`，轮转保留最近 7 份（纯判定 `excessBackupFiles` 可单测） |
+| `data/guard/AppRunMeta.kt` | 应用运行元数据持久化（DataStore `app_run_meta`）：`dataInitialized` / `lastVersionCode` / `lastApplicationId`，哨兵判定依据 |
+| `data/guard/DataSentinel.kt` | 数据完整性哨兵：启动检测「全新安装 / 正常升级 / 数据丢失 / 包名被改」并维护运行元数据 |
+| `data/guard/SentinelLogic.kt` | 哨兵**纯判定逻辑**（`SentinelVerdict` 枚举 + `SentinelLogic.evaluate`，无 Android 依赖，可单测） |
 
 ## 3. 核心架构与主流程
 
@@ -75,6 +79,25 @@
 
 > 背景：applicationId 三次变更（`com.aicodeeditor` → `com.deep.rcode` → `com.R.codecore`），每次变更是完全不同的 App，新包名全新安装导致旧包数据不可见。该横幅与 `ApplicationIdStabilityTest`（锁死 release applicationId）共同防止用户数据再次因改包名而丢失。
 
+### 3.7 数据保全（数据完整性哨兵 + 本机自动备份）
+
+针对「历史对话在升级后清空」这一根因（包名变更 = 全新安装、数据被异常清空不可感知、无自动备份），数据保全用**三层防线**覆盖编译期/发布期/运行期：
+
+- **防变更（编译/发布期）**：
+  - D1 单测 `ApplicationIdStabilityTest`（release classpath，锁死 `com.R.codecore`，禁回退遗留包名）。
+  - D2 CI 发版门禁 `.github/workflows/android-release.yml` 的 `Verify applicationId stability`：比对当前 tag 与上一 tag 的 `applicationId`，不一致则 `::error::` 阻断发版。
+  - D3 构建期白名单 `app/build.gradle.kts` 的 `androidComponents.onVariants`：`applicationId` 不在 `ALLOWED_APPLICATION_IDS`（`com.R.codecore` / `com.R.codecore.debug`）内 → 构建直接失败。
+- **防丢失（运行时数据安全网）**：
+  - D4 数据完整性哨兵（`DataSentinel` + `AppRunMeta` + `SentinelLogic`）：启动时读运行元数据与 `ChatSessionDao.count()`，判定 `FIRST_RUN / UPGRADED / NORMAL / DATA_LOST / PACKAGE_CHANGED`。判定优先级：未初始化→`FIRST_RUN`；包名不一致→`PACKAGE_CHANGED`（优先于 DATA_LOST）；已初始化但会话数=0→`DATA_LOST`；versionCode 增大→`UPGRADED`；其余→`NORMAL`。`DATA_LOST`/`PACKAGE_CHANGED` 不更新 `lastRun`，保留告警态供 UI 持续提示。
+  - D5 升级前自动备份（`AutoBackupManager`）：哨兵判定 `UPGRADED` 时后台执行 `BackupManager.export(null, BackupOptions(), FileOutputStream)` 全量备份到 `filesDir/auto-backups/backup-<epochMs>.tar.gz`（无口令明文，仅本应用私有目录可读），`pruneLocked` 轮转保留最近 7 份（纯判定逻辑 `excessBackupFiles` 可单测）。全程 `runCatching`，失败仅记日志不阻断启动。
+  - D6 自动备份状态可视化：`BackupSection` 顶部 `AutoBackupCard`（上次备份时间、份数、「立即备份到本机」）。
+- **可找回（迁移与恢复入口）**：
+  - D7 同签名旧包检测横幅 `LegacyDataRecoveryBanner`（见 3.6）。
+  - D8 数据丢失告警 `DataLossAlertBanner`：哨兵返回 `DATA_LOST`/`PACKAGE_CHANGED` 时展示红色横幅，本机有自动备份则提供「从最近备份恢复」（`AutoBackupManager.latestBackup()` + `BackupManager.import(file, null)` 无口令导入）。
+  - D9 About 页变体/包名展示（`VariantPill`，见 settings 模块）。
+
+**挂载点**：`AIEditorApp.onCreate` 中 `appScope.launch { delay(500L); when (dataSentinel.check()) { UPGRADED -> autoBackupManager.backupNow() ... } }`，延后首帧且 `runCatching` 兜底，任何失败不影响启动。`DataSentinel` / `AutoBackupManager` 由 Hilt 单例注入。
+
 ## 4. 对外接口与集成点
 
 | 接口/入口 | 说明 |
@@ -83,8 +106,11 @@
 | `BackupManager.exportSession(sessionId, output)` | 单会话导出（无密码） |
 | `BackupManager.import(input, password): Result<RestoreStats>` | 流式还原，返回各段条目统计 |
 | `BackupOptions` | 导出数据范围开关（providers / gitCredentials / remoteConnections / chatHistory / mcpServers / permissionRules / appSettings） |
-| `BackupViewModel` | Hilt ViewModel，`BackupState`：`Idle / Working / ExportDone / ImportSuccess(stats) / Error(message)` |
-| `BackupSection` | Compose 页面，通过 SAF `CreateDocument` / `OpenDocument` 与系统文件选择器交互 |
+| `BackupViewModel` | Hilt ViewModel，`BackupState`：`Idle / Working / ExportDone / ImportSuccess(stats) / Error(message)`；数据保全 `dataSafety: StateFlow<DataSafetyUiState>`，方法 `refreshDataSafety()` / `backupNow()` / `restoreFromLatest()` |
+| `BackupSection` | Compose 页面，通过 SAF `CreateDocument` / `OpenDocument` 与系统文件选择器交互；顶部聚合数据保全 UI（`LegacyDataRecoveryBanner` + `DataLossAlertBanner` + `AutoBackupCard`） |
+| `DataSentinel.check()` | 启动哨兵检测，返回 `SentinelVerdict`；由 `AIEditorApp` 在启动延后 500ms 调用，`UPGRADED` 时联动 `AutoBackupManager.backupNow()` |
+| `AutoBackupManager.backupNow()/backups()/latestBackup()/lastBackupTime()` | 立即备份 / 列出全部（最新在前）/ 取最新一份 / 取上次备份时间；`KEEP_MAX=7` |
+| `SentinelLogic.evaluate(...)` | 哨兵纯判定（无 Android 依赖），`AppRunMeta`/`ChatSessionDao.count()` 之外的逻辑均可直接单测 |
 
 依赖的外部模块：agent（`AgentMessageDao`/`ChatSessionDao`/`TodoItemDao`/`AgentDatabase`/`McpConfigRepository`/`McpManager`/`PermissionRulesRepository`）、credentials（`GitCredentialDao`）、settings（`AIProviderDao` 及 Theme/Keepalive/Log/Vision/Compaction/Sync 设置仓库）、workspace（`RemoteConnectionDao`/`WorkspaceRepository`）、core.security（`CredentialEncryptor`）、core.util（`FileLogger`）。
 
@@ -110,3 +136,8 @@
 - **数据库 schema 升级**：`BackupManagerImpl` 的 DTO↔Entity 转换必须与新 Entity 字段对齐；`currentSchemaVersion()` 自动取自 `AgentDatabase.SCHEMA_VERSION`。
 - **格式变更**：优先在现有 tar 条目内扩展字段（`ignoreUnknownKeys`/默认值保证兼容），避免破坏旧备份导入；如引入新条目文件，需同步 `restoreFromTar` 的 `when` 分支。
 - **测试建议**：构造「导出→导入→对比统计」的往返用例，覆盖加密/未加密、新旧格式、版本过高拒绝、口令错误、单会话导出等路径。
+- **数据保全扩展**：
+  - 哨兵新增判定维度（如按消息数而非会话数）时，先扩展 `RunMeta` 与 `SentinelLogic.evaluate`，同步更新 `SentinelLogicTest`；`DATA_LOST`/`PACKAGE_CHANGED` 的「不更新 lastRun」语义勿破坏（否则告警态会消失）。
+  - 自动备份调整保留份数时，改 `AutoBackupManager.KEEP_MAX`，并同步 `BackupSection.AutoBackupKeepMax`（当前与 UI 文案硬编码一致）与用户文档 `backup-and-restore.md`。
+  - 新增数据段接入自动备份：`AutoBackupManager` 走 `BackupManager.export(null, BackupOptions())` 全量语义，无需单独改动。
+  - **禁止改 applicationId**：改动即被 D1/D3/CI 门禁拦截，如遇 rebrand 需求只允许改应用名/图标/namespace。
