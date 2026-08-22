@@ -70,7 +70,7 @@
 | `tool/proxy/NetworkProxyTool.kt` | 网络代理（mihomo mixed-proxy）管理 |
 | `tool/question/` | `AskUserQuestionTool` + `AskUserQuestionManager` + `UserQuestionModels`（向用户提问并等待回答） |
 | `tool/search/` | `WebSearchTool`、`WebFetchTool` |
-| `tool/skill/LoadSkillTool.kt` | 加载 PROMPT 技能指令正文（含依赖注入、作用域校验、工具绑定） |
+| `tool/skill/LoadSkillTool.kt` | 加载技能指令正文（PROMPT/SCRIPT 通用，仅返回 SKILL.md、不执行；含依赖注入、作用域校验、工具绑定） |
 | `tool/skill/RunSkillScriptTool.kt` | 执行 SCRIPT 脚本技能（容器沙箱 + 审批 + 审计，专用执行入口） |
 | `tool/skill/SkillInvocationResolver.kt` | loadSkill / runSkillScript 共用的技能定位与校验解析器 |
 | `tool/storage/StorageTool.kt` | 设备（外部共享）存储读写，带安全护栏 |
@@ -134,7 +134,7 @@
 
 - `Skill` 支持三种执行形态：PROMPT（注入指令，无执行）、SCRIPT（容器内沙箱执行入口脚本，需 ZTH 审批）、MCP（**已降级为别名**：不再经技能系统执行，AI 直接调用其绑定的 MCP 工具）。
 - `SkillParser` 解析带 Frontmatter 的技能文件（版本/作者/标签/适用模式/依赖/requiredTools/requiresRuntime 等），`SkillRepository` 管理来源，`SkillStateRepository` 用 Room 持久化启用状态。
-- **技能调用工具职责拆分（重写后的唯一入口约定）**：`LoadSkillTool`（`loadSkill`）只加载 PROMPT 技能指令正文，不执行任何脚本/工具；`RunSkillScriptTool`（`runSkillScript`）是 SCRIPT 脚本技能的专用执行入口（容器沙箱 + 审批 + 审计 + 运行时预检）；两者共用 `SkillInvocationResolver` 完成定位/版本锁/作用域/依赖校验，`SkillExecutor` 负责实际运行。
+- **技能调用工具职责拆分（重写后的唯一入口约定）**：`LoadSkillTool`（`loadSkill`）负责**读正文**——PROMPT/SCRIPT 技能均返回 SKILL.md 指令正文（SCRIPT 正文末尾附执行指引），绝不执行任何脚本/工具；`RunSkillScriptTool`（`runSkillScript`）是 SCRIPT 脚本技能的专用执行入口（容器沙箱 + 审批 + 审计 + 运行时预检）；两者共用 `SkillInvocationResolver` 完成定位/版本锁/作用域/依赖校验，`SkillExecutor` 负责实际运行。
 - `SkillExecutor` 执行链路携带 `SkillExecutionContext`（由调用方从 `AgentContext` 派生，含 sessionId/mode/projectPath/agentType），使脚本技能审批与审计的 sessionId 与当前会话连贯（替代此前传 null 的脱钩问题）。
 
 #### 3.6.1 技能作用域分级（SkillScope v2，多 Agent 演进 + 对话级控制）

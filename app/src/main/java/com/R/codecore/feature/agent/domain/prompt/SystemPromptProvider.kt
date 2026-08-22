@@ -98,13 +98,14 @@ class SystemPromptProvider @Inject constructor(
             val list = skills.joinToString("\n") { skill ->
                 val hint = when (skill.type) {
                     SkillType.PROMPT -> "（PROMPT 指令技能：用 loadSkill 取正文）"
-                    SkillType.SCRIPT -> "（SCRIPT 脚本技能：用 runSkillScript 执行）"
+                    SkillType.SCRIPT -> "（SCRIPT 脚本技能：loadSkill 读正文 / runSkillScript 执行）"
                     SkillType.MCP -> "（MCP 包装技能：直接调用工具 ${skill.mcpTool ?: "（未绑定）"}）"
                 }
                 "- ${skill.name}: ${skill.description.ifBlank { "（无描述）" }}$hint"
             }
             val newContent = "可用技能 (skills)（格式为 名称: 何时使用 + 调用方式；详见上文「技能」说明）：\n" +
-                "指令类（PROMPT）技能用 `loadSkill` 加载完整正文；脚本类（SCRIPT）技能用 `runSkillScript` 执行其入口脚本（执行前会征求用户确认）；" +
+                "技能正文用 `loadSkill` 加载（PROMPT/SCRIPT 均可，仅返回 SKILL.md 正文、不执行）；" +
+                "脚本类（SCRIPT）技能需要实际执行时用 `runSkillScript`（执行前会征求用户确认）；" +
                 "MCP 包装技能不执行、直接调用其绑定的 MCP 工具。让技能辅助你更规范、更高效地完成工作，而不是仅凭默认流程硬做。\n$list"
             
             // 同一会话内内容未变化时复用缓存快照；会话切换（或内容变化）时重建，避免跨会话串味。
