@@ -159,6 +159,20 @@ fun AddProviderSheet(
     var customBaseUrl by remember { mutableStateOf("") }
     var customModels by remember { mutableStateOf(listOf<String>()) }
 
+    // 自定义供应商向导「选择模型」步骤的拉取状态（与编辑页/内置向导隔离）
+    val customFetchState by viewModel.customFetchState.collectAsStateWithLifecycle()
+
+    // 进入自定义步骤 2（或切换类型/Key/URL）且已填 API Key 时实时拉取模型列表
+    LaunchedEffect(selectedTab, customStep, customApiKey, customBaseUrl, customType) {
+        if (selectedTab == AddProviderTab.CUSTOM && customStep == 2 && customApiKey.isNotBlank()) {
+            viewModel.fetchCustomModels(
+                customBaseUrl.ifBlank { defaultProviderBaseUrl(customType) },
+                customApiKey,
+                customType
+            )
+        }
+    }
+
     // 当前 Tab 的步骤与总步数
     val currentStep = if (selectedTab == AddProviderTab.BUILT_IN) builtInStep else customStep
     val totalSteps = if (selectedTab == AddProviderTab.BUILT_IN) 3 else 2
@@ -176,7 +190,8 @@ fun AddProviderSheet(
         }
         AddProviderTab.CUSTOM -> when (customStep) {
             1 -> customName.isNotBlank() || customApiKey.isNotBlank() || customBaseUrl.isNotBlank()
-            else -> true
+            // 步骤 2：需至少保留一个模型（拉取勾选或手动添加）才能完成
+            else -> customModels.isNotEmpty()
         }
     }
 
@@ -324,6 +339,14 @@ fun AddProviderSheet(
                         onBaseUrlChange = { customBaseUrl = it },
                         models = customModels,
                         onModelsChange = { customModels = it },
+                        fetchState = customFetchState,
+                        onFetchModels = {
+                            viewModel.fetchCustomModels(
+                                customBaseUrl.ifBlank { defaultProviderBaseUrl(customType) },
+                                customApiKey,
+                                customType
+                            )
+                        },
                         viewModel = viewModel
                     )
                 }
@@ -513,6 +536,8 @@ private fun CustomProviderContent(
     onBaseUrlChange: (String) -> Unit,
     models: List<String>,
     onModelsChange: (List<String>) -> Unit,
+    fetchState: FetchState,
+    onFetchModels: () -> Unit,
     viewModel: SettingsViewModel
 ) {
     Column(
@@ -569,9 +594,15 @@ private fun CustomProviderContent(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                CustomModelList(
+                CustomModelFetchList(
+                    fetchState = fetchState,
                     models = models,
-                    onModelsChange = onModelsChange
+                    onModelsChange = onModelsChange,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl,
+                    type = type,
+                    onFetchModels = onFetchModels,
+                    viewModel = viewModel
                 )
             }
         }
@@ -829,36 +860,200 @@ private fun BuiltInModelFetchList(
     }
 }
 
-/** 自定义供应商模型列表。 */
+/**
+ * 自定义供应商模型列表（支持实时拉取 + 手动添加 + 测试）。
+ *
+ * - 拉取：点击「拉取模型」从服务器拉取候选列表；进入本步骤时若已填 API Key 会自动拉取。
+ * - 手动添加：输入模型名称点击「添加模型」即可入库（不入库则不会保存）。
+ * - 展示：拉取候选 ∪ 已选列表（手动添加项即使不在候选里也保留展示）。
+ */
 @Composable
-private fun CustomModelList(
+private fun CustomModelFetchList(
+    fetchState: FetchState,
     models: List<String>,
-    onModelsChange: (List<String>) -> Unit
+    onModelsChange: (List<String>) -> Unit,
+    apiKey: String,
+    baseUrl: String,
+    type: ProviderType,
+    onFetchModels: () -> Unit,
+    viewModel: SettingsViewModel
 ) {
+    val testResults by viewModel.testResults.collectAsStateWithLifecycle()
+    val testing by viewModel.testing.collectAsStateWithLifecycle()
+    val modelMetadata by viewModel.modelMetadata.collectAsStateWithLifecycle()
+    var newModelName by remember { mutableStateOf("") }
+
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        if (models.isEmpty()) {
-            Text(
-                stringResource(R.string.providers_empty),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        models.forEach { model ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        // ── 拉取按钮 ──
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(
+                onClick = onFetchModels,
+                enabled = apiKey.isNotBlank() && fetchState !is FetchState.Loading
             ) {
                 Icon(
-                    FeatherIcons.Cpu,
+                    FeatherIcons.RefreshCw,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(16.dp)
                 )
-                Spacer(Modifier.width(Spacing.sm))
-                Text(model, modifier = Modifier.weight(1f))
-                TextButton(onClick = { onModelsChange(models - model) }) {
-                    Text(stringResource(R.string.common_delete))
+                Spacer(Modifier.width(Spacing.xs))
+                Text(stringResource(R.string.provider_fetch_models))
+            }
+        }
+
+        // ── 拉取状态指示 ──
+        when (fetchState) {
+            is FetchState.Loading -> {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(Radius.md),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(Spacing.md))
+                        Text(
+                            stringResource(R.string.provider_step_fetch_models),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
+            }
+            is FetchState.Error -> {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(Radius.md),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            stringResource(R.string.provider_fetch_failed, fetchState.message),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(Spacing.sm))
+                        TextButton(onClick = onFetchModels) {
+                            Icon(
+                                FeatherIcons.RefreshCw,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(Spacing.xs))
+                            Text(stringResource(R.string.provider_step_fetch_retry))
+                        }
+                    }
+                }
+            }
+            is FetchState.Success -> {
+                if (models.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.provider_step_fetch_count, fetchState.models.size),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            is FetchState.Idle -> {
+                if (models.isEmpty() && apiKey.isBlank()) {
+                    Text(
+                        stringResource(R.string.provider_step_custom_models_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // ── 手动添加 ──
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = newModelName,
+                onValueChange = { newModelName = it },
+                label = { Text(stringResource(R.string.provider_model_name)) },
+                placeholder = { Text(stringResource(R.string.provider_model_name_hint)) },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = {
+                    val name = newModelName.trim()
+                    if (name.isNotEmpty() && name !in models) {
+                        onModelsChange(models + name)
+                    }
+                    newModelName = ""
+                },
+                enabled = newModelName.isNotBlank()
+            ) {
+                Text(stringResource(R.string.provider_add_model))
+            }
+        }
+
+        // ── 模型列表：拉取候选 ∪ 已选（含手动添加项） ──
+        val fetchedCandidates = if (fetchState is FetchState.Success) fetchState.models else emptyList()
+        val displayModels = (fetchedCandidates + models).distinct()
+        if (displayModels.isEmpty()) {
+            if (fetchState !is FetchState.Loading) {
+                Text(
+                    stringResource(R.string.provider_step_custom_models_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            // 拉取成功但用户把勾选全部取消时给出引导
+            if (fetchState is FetchState.Success && models.isEmpty() && displayModels.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.provider_step_model_select_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            displayModels.forEach { model ->
+                ProviderModelRow(
+                    model = model,
+                    metadata = modelMetadata[model],
+                    hasOverride = false,
+                    testing = model in testing,
+                    result = testResults[model],
+                    // 复选框即「选择」：勾选=入库、取消=不入库
+                    selected = model in models,
+                    onToggleSelected = { checked ->
+                        onModelsChange(if (checked) models + model else models - model)
+                    },
+                    onTest = {
+                        val provider = AIProviderConfig(
+                            id = "custom-test",
+                            name = "自定义供应商",
+                            type = type,
+                            apiKey = apiKey,
+                            baseUrl = baseUrl.ifBlank { defaultProviderBaseUrl(type) },
+                            defaultModel = model,
+                            isActive = false,
+                            models = models,
+                            selectedModel = model,
+                            isEnabled = true
+                        )
+                        viewModel.testModel(provider, model)
+                    },
+                    onRemove = null,
+                    onOpenCapabilityOverride = null
+                )
             }
         }
     }

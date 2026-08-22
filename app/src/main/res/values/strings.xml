@@ -7,15 +7,15 @@
     <string name="settings_search_hint">搜索设置项…</string>
     <string name="settings_search_empty_title">未找到匹配的设置项</string>
     <string name="settings_search_empty_subtitle">未找到包含「%s」的设置项，试试其他关键词</string>
-    <string name="settings_providers">AI 提供商</string>
+    <string name="settings_providers">模型服务商</string>
     <string name="settings_provider_editor">提供商</string>
     <string name="settings_default_models">默认模型</string>
     <string name="settings_default_models_subtitle">配置识图模型（多模态识图 Vision）等默认偏好</string>
     <string name="settings_vision_model">识图模型（多模态识图 Vision）</string>
     <string name="settings_compaction_model">压缩模型</string>
-    <string name="settings_mcp">MCP 服务器</string>
+    <string name="settings_mcp">工具服务</string>
     <string name="settings_container">容器镜像</string>
-    <string name="settings_logs">日志</string>
+    <string name="settings_logs">运行日志</string>
     <string name="settings_log_viewer">日志查看</string>
     <string name="settings_log">日志等级</string>
     <string name="settings_log_subtitle">当前级别：%1$s · Debug/Trace/错误</string>
@@ -34,9 +34,9 @@
     <string name="settings_terminal">终端设置</string>
     <string name="settings_terminal_subtitle">环境、功能包、外观、键盘、SSH</string>
     <string name="settings_backup">备份与还原</string>
-    <string name="settings_security">安全</string>
+    <string name="settings_security">安全设置</string>
     <string name="settings_remote_audit_logs">远程连接审计</string>
-    <string name="settings_about">关于</string>
+    <string name="settings_about">关于应用</string>
 
     <!-- SettingsScreen 通用 -->
     <string name="common_back">返回</string>
@@ -53,7 +53,7 @@
     <string name="settings_compaction_dedicated">专用：%1$s · %2$s</string>
     <string name="settings_mcp_empty">未配置 MCP 服务器</string>
     <string name="settings_mcp_count_connected">%1$d 个 · 已连接 %2$d</string>
-    <string name="settings_mcp_server">MCP 服务端</string>
+    <string name="settings_mcp_server">开放服务</string>
     <string name="settings_mcp_server_subtitle">把本机编码后端开放给外部 MCP 客户端</string>
     <string name="settings_mcp_server_running">运行中</string>
     <string name="settings_mcp_server_stopped">未运行</string>
@@ -723,6 +723,8 @@
     <string name="provider_step_fetch_count">已从服务器获取 %1$d 个模型</string>
     <string name="provider_step_model_select_hint">已取消全部选择，请至少勾选一个模型以继续</string>
     <string name="provider_step_models_empty">暂无可用模型，请重试或切换自定义供应商</string>
+    <string name="provider_step_custom_models_hint">可点击「拉取模型」从服务器获取，或手动输入模型名称添加</string>
+    <string name="provider_step_custom_models_empty">暂无模型，请拉取或手动添加</string>
 
     <!-- Remote Dialogs -->
     <string name="remote_edit_connection">编辑连接通道</string>

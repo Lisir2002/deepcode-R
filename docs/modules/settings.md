@@ -47,7 +47,7 @@
 | `presentation/component/ProvidersAndLogSection.kt` | 供应商列表 `ProvidersSection` + `ProviderItem`、空态 |
 | `presentation/component/ProviderEditorScreen.kt` | 供应商编辑页（Tab0 兼容端点策略 / Tab1 模型列表与三能力覆盖） |
 | `presentation/component/ProviderModelComponents.kt` | `ProviderModelRow`/`FetchModelRow`/`CapabilityOverrideSheet`/能力徽章 |
-| `presentation/component/AddProviderSheet.kt` | 内置供应商向导（StepFun 协议/渠道、内置供应商卡片、分步拉取模型） |
+| `presentation/component/AddProviderSheet.kt` | 供应商添加向导：内置供应商（StepFun 协议/渠道、内置卡片、分步拉取模型）+ 自定义供应商（2 步：基本信息 → 拉取/手动添加/测试模型），拉取状态与编辑页隔离 |
 | `presentation/component/ProviderLogo.kt` | 供应商/品牌 Logo 图标与显示名映射 |
 | `presentation/component/McpSettingsSection.kt` / `McpEditorDialog.kt` / `McpHttpFields.kt` / `McpStdioFields.kt` | MCP 服务器列表、编辑弹窗、HTTP/stdio 字段表单 |
 | `presentation/component/LogSettingsSection.kt` | 日志等级卡片 + 日志查看器（筛选面板/日期/搜索/实时尾随/着色） |
@@ -80,7 +80,7 @@ SettingsScreen / ProviderEditorScreen / AddProviderSheet
 - 读取路径：`getAllProviders()` / `getActiveProvider()` 将 Entity 解密还原为 `AIProviderConfig`，解密失败回退空串不崩 UI。
 - **active 互斥不变量**：`saveProvider`/`setActiveProvider` 都先 `deactivateAllProviders()` 再激活，保证 DB 中 `isActive=1` 最多 1 行。
 - 启动兜底：`ensureActiveProvider()` 保证库中存在供应商时必有激活项，避免主页模型胶囊消失。
-- 模型拉取/测试：`ModelApiService.fetchModels`（OpenAI/Anthropic 用 `/v1/models`，Gemini 用 `/v1beta/models`）；列表接口 404 时探测 `POST /v1/images/generations`，通则回退常见文生图模型名列表；`testModel` 按 ProviderType 构造最小请求并测延迟。
+- 模型拉取/测试：`ModelApiService.fetchModels`（OpenAI/Anthropic 用 `/v1/models`，Gemini 用 `/v1beta/models`）；列表接口 404 时探测 `POST /v1/images/generations`，通则回退常见文生图模型名列表；`testModel` 按 ProviderType 构造最小请求并测延迟。UI 侧拉取状态分三路隔离：编辑页 `_fetchState`、内置向导 `_builtInFetchState`、自定义供应商向导 `_customFetchState`（`fetchCustomModels`），互不覆盖。
 
 ### 3.2 模型元数据决策链（ModelMetadataService）
 

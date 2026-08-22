@@ -230,6 +230,10 @@ class SettingsViewModel @Inject constructor(
     private val _builtInFetchState = MutableStateFlow<FetchState>(FetchState.Idle)
     val builtInFetchState: StateFlow<FetchState> = _builtInFetchState.asStateFlow()
 
+    /** 自定义供应商向导「选择模型」步骤的拉取状态（同样与编辑页 [_fetchState] 隔离）。 */
+    private val _customFetchState = MutableStateFlow<FetchState>(FetchState.Idle)
+    val customFetchState: StateFlow<FetchState> = _customFetchState.asStateFlow()
+
     /**
      * RC72：保存提供商时的错误提示通道（一次性，消费后自动清空）。
      *
@@ -1107,6 +1111,22 @@ class SettingsViewModel @Inject constructor(
                     resolveModelMetadata(type, it)
                 }
                 .onFailure { _builtInFetchState.value = FetchState.Error(it.message ?: "拉取失败") }
+        }
+    }
+
+    /**
+     * 自定义供应商向导：拉取模型列表（步骤 2 使用）。
+     * 复用 [ModelApiService.fetchModels] 的接口探测与 T2I Failover；状态独立于编辑页与内置向导。
+     */
+    fun fetchCustomModels(baseUrl: String, apiKey: String, type: ProviderType) {
+        viewModelScope.launch {
+            _customFetchState.value = FetchState.Loading
+            modelApiService.fetchModels(baseUrl, apiKey, type)
+                .onSuccess {
+                    _customFetchState.value = FetchState.Success(it)
+                    resolveModelMetadata(type, it)
+                }
+                .onFailure { _customFetchState.value = FetchState.Error(it.message ?: "拉取失败") }
         }
     }
 

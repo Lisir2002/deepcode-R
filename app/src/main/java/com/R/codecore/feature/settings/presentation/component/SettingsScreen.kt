@@ -584,7 +584,7 @@ internal fun SettingsMenu(
         MenuItem(
             section = null,
             group = groupEnv,
-            title = stringResource(R.string.ui______d3ec5010_2),
+            title = stringResource(R.string.ui______d3ec5010),
             subtitle = stringResource(R.string.ui_mihomo_8fdcce67),
             icon = FeatherIcons.Globe,
             keywords = listOf("proxy", stringResource(R.string.ui____fc954d25), "vpn", "clash", "mihomo", stringResource(R.string.ui____02daf71f), "network"),
