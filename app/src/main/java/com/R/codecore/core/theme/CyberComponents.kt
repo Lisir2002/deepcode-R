@@ -67,7 +67,22 @@ object CyberColors {
     val IconBg = Color(0xFFF2F3F5)
     val Divider = Color(0xFFEEF0F2)
     val HeaderText = Color(0xFF1D2939)
+
+    // ===== 深色模式配套色（跟随 LocalAppDarkMode，见 cyberColor） =====
+    val DarkCardBg = Color(0xFF0D1B2E)
+    val DarkCardStroke = Color(0xFF223B57)
+    val DarkHeaderText = Color(0xFFEAF2FF)
+    val DarkCyanDim = Color(0xFFB8C7DA)
+    val DarkIconBg = Color(0xFF13273F)
+    val DarkDivider = Color(0xFF223B57)
+    val DarkTitle = Color(0xFFEAF2FF)
+    val DarkSubtitle = Color(0xFFB8C7DA)
 }
+
+/** 赛博组件语义色：按当前日夜模式取浅色/深色值。 */
+@Composable
+internal fun cyberColor(light: Color, dark: Color): Color =
+    if (LocalAppDarkMode.current) dark else light
 
 @Composable
 internal fun CyberCard(
@@ -77,11 +92,11 @@ internal fun CyberCard(
     val shape = RoundedCornerShape(14.dp)
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = CyberColors.CardBg,
+        color = cyberColor(CyberColors.CardBg, CyberColors.DarkCardBg),
         shape = shape,
         shadowElevation = 0.5.dp,
         tonalElevation = 0.dp,
-        border = BorderStroke(0.8.dp, CyberColors.CardStroke)
+        border = BorderStroke(0.8.dp, cyberColor(CyberColors.CardStroke, CyberColors.DarkCardStroke))
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             content()
@@ -110,7 +125,7 @@ internal fun CyberSectionHeader(
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = TextStyle.Default.letterSpacing
             ),
-            color = CyberColors.HeaderText
+            color = cyberColor(CyberColors.HeaderText, CyberColors.DarkHeaderText)
         )
     }
 }
@@ -123,15 +138,21 @@ internal fun CyberMenuRow(
     onClick: () -> Unit,
     showDivider: Boolean = true,
     highlightQuery: String = "",
-    trailing: @Composable () -> Unit = {
+    trailing: (@Composable () -> Unit)? = null
+) {
+    val highlightColor = Color(0x330984E3) // 浅蓝高亮
+    val iconBg = cyberColor(CyberColors.IconBg, CyberColors.DarkIconBg)
+    val titleColor = cyberColor(Color(0xFF101828), CyberColors.DarkTitle)
+    val subtitleColor = cyberColor(Color(0xFF475467), CyberColors.DarkSubtitle)
+    val iconColor = cyberColor(Color(0xFF344054), CyberColors.DarkCyanDim)
+    val dividerColor = cyberColor(CyberColors.Divider, CyberColors.DarkDivider)
+    val effectiveTrailing = trailing ?: {
         Icon(
             imageVector = FeatherIcons.ChevronRight,
             contentDescription = null,
-            tint = CyberColors.CyanDim
+            tint = cyberColor(CyberColors.CyanDim, CyberColors.DarkCyanDim)
         )
     }
-) {
-    val highlightColor = Color(0x330984E3) // 浅蓝高亮
     val bodyLargeStyle = MaterialTheme.typography.bodyLarge
     val bodyMediumStyle = MaterialTheme.typography.bodyMedium
 
@@ -204,13 +225,13 @@ internal fun CyberMenuRow(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(color = CyberColors.IconBg),
+                    .background(color = iconBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = Color(0xFF344054),
+                    tint = iconColor,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -223,25 +244,25 @@ internal fun CyberMenuRow(
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = FontWeight.SemiBold
                     ),
-                    color = Color(0xFF101828)
+                    color = titleColor
                 )
                 if (subtitle.isNotEmpty()) {
                     Spacer(Modifier.height(3.dp))
                     Text(
                         text = highlightedSubtitle,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF475467)
+                        color = subtitleColor
                     )
                 }
             }
 
             Spacer(Modifier.width(8.dp))
-            trailing()
+            effectiveTrailing()
         }
 
         if (showDivider) {
             HorizontalDivider(
-                color = CyberColors.Divider,
+                color = dividerColor,
                 thickness = 0.7.dp,
                 modifier = Modifier.padding(start = 68.dp)
             )
@@ -259,14 +280,18 @@ internal fun CyberSearchBar(
 ) {
     // 紧凑单行搜索栏：44dp 高度、圆角、浅灰填充，占位文案单行省略，避免占用两行空间。
     val hasText = query.isNotEmpty()
+    val bgColor = cyberColor(if (hasText) Color.White else Color(0xFFF2F3F5), if (hasText) Color(0xFF0D1B2E) else Color(0xFF13273F))
+    val strokeColor = cyberColor(Color(0xFFE4E7EC), CyberColors.DarkCardStroke)
+    val hintColor = cyberColor(Color(0xFF98A2B3), CyberColors.DarkSubtitle)
+    val textColor = cyberColor(Color(0xFF101828), CyberColors.DarkTitle)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Spacing.lg)
             .height(44.dp),
         shape = RoundedCornerShape(12.dp),
-        color = if (hasText) Color.White else Color(0xFFF2F3F5),
-        border = BorderStroke(1.dp, Color(0xFFE4E7EC))
+        color = bgColor,
+        border = BorderStroke(1.dp, strokeColor)
     ) {
         Row(
             modifier = Modifier
@@ -277,7 +302,7 @@ internal fun CyberSearchBar(
             Icon(
                 imageVector = FeatherIcons.Search,
                 contentDescription = null,
-                tint = Color(0xFF667085),
+                tint = hintColor,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(8.dp))
@@ -285,7 +310,7 @@ internal fun CyberSearchBar(
                 if (!hasText) {
                     Text(
                         text = placeholder,
-                        color = Color(0xFF98A2B3),
+                        color = hintColor,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -295,8 +320,8 @@ internal fun CyberSearchBar(
                     value = query,
                     onValueChange = onQueryChange,
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFF101828)),
-                    cursorBrush = SolidColor(Color(0xFF101828)),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor),
+                    cursorBrush = SolidColor(textColor),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -305,7 +330,7 @@ internal fun CyberSearchBar(
                 Text(
                     text = "$resultCount",
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                    color = Color(0xFF98A2B3)
+                    color = hintColor
                 )
             }
             if (hasText && onClear != null) {
@@ -316,7 +341,7 @@ internal fun CyberSearchBar(
                 ) {
                     Text(
                         text = "✕",
-                        color = Color(0xFF667085),
+                        color = hintColor,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

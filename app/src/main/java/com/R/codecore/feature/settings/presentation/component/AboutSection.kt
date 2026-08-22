@@ -76,6 +76,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.R.codecore.BuildConfig
 import com.R.codecore.R
 import com.R.codecore.core.theme.CyberColors
+import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.core.theme.CyberCard
@@ -100,6 +101,76 @@ import compose.icons.feathericons.UploadCloud
 // ============================================================
 // Entry point
 // ============================================================
+
+/** 关于页语义色：Light/Dark 双值，由 LocalAppDarkMode 决定当前取值。 */
+private data class AboutColors(
+    val bg: Color,
+    val card: Color,
+    val border: Color,
+    val title: Color,
+    val subtitle: Color,
+    val desc: Color,
+    val faint: Color,
+    val iconGray: Color,
+    val heroBgStart: Color,
+    val heroBgEnd: Color,
+    val heroBorder: Color,
+    val blueBg: Color,
+    val blueBorder: Color,
+    val blueAccent: Color,
+    val greenBg: Color,
+    val greenAccent: Color,
+    val greenText: Color,
+    val amberBg: Color,
+    val amberAccent: Color,
+    val skyBg: Color,
+    val skyAccent: Color,
+    val orangeBg: Color,
+    val orangeBorder: Color,
+    val orangeText: Color,
+    val selectedBg: Color,
+    val selectedBorder: Color,
+    val selectedText: Color,
+    val chipBg: Color,
+    val statGrayBg: Color
+)
+
+@Composable
+private fun aboutColors(): AboutColors {
+    val dark = LocalAppDarkMode.current
+    fun c(light: Color, darkV: Color) = if (dark) darkV else light
+    return AboutColors(
+        bg = c(Color.White, Color(0xFF0D1B2E)),
+        card = c(Color.White, Color(0xFF0D1B2E)),
+        border = c(Color(0xFFE4E7EC), Color(0xFF223B57)),
+        title = c(Color(0xFF101828), Color(0xFFEAF2FF)),
+        subtitle = c(Color(0xFF475467), Color(0xFFB8C7DA)),
+        desc = c(Color(0xFF667085), Color(0xFF8FA3BF)),
+        faint = c(Color(0xFF98A2B3), Color(0xFF6E829C)),
+        iconGray = c(Color(0xFF344054), Color(0xFFB8C7DA)),
+        heroBgStart = c(Color(0xFFEFF4FF), Color(0xFF13273F)),
+        heroBgEnd = c(Color(0xFFE3EDFF), Color(0xFF0F3A63)),
+        heroBorder = c(Color(0xFFD6E4FF), Color(0xFF223B57)),
+        blueBg = c(Color(0xFFEFF6FF), Color(0xFF0F3A63)),
+        blueBorder = c(Color(0xFFBFDBFE), Color(0xFF1E4E8C)),
+        blueAccent = c(Color(0xFF2563EB), Color(0xFF60A5FA)),
+        greenBg = c(Color(0xFFECFDF5), Color(0xFF0B3B2E)),
+        greenAccent = c(Color(0xFF059669), Color(0xFF34D399)),
+        greenText = c(Color(0xFF047857), Color(0xFF6EE7B7)),
+        amberBg = c(Color(0xFFFFFBEB), Color(0xFF451A03)),
+        amberAccent = c(Color(0xFFD97706), Color(0xFFFBBF24)),
+        skyBg = c(Color(0xFFF0F9FF), Color(0xFF0C4A6E)),
+        skyAccent = c(Color(0xFF0284C7), Color(0xFF38BDF8)),
+        orangeBg = c(Color(0xFFFFF3E0), Color(0xFF7C2D12)),
+        orangeBorder = c(Color(0xFFFFD6A5), Color(0xFF9A3412)),
+        orangeText = c(Color(0xFFB45309), Color(0xFFFDBA74)),
+        selectedBg = c(Color(0xFFF0F6FF), Color(0xFF0F3A63)),
+        selectedBorder = c(Color(0xFFBFDBFE), Color(0xFF1E4E8C)),
+        selectedText = c(Color(0xFF2563EB), Color(0xFF60A5FA)),
+        chipBg = c(Color(0xFFDBEAFE), Color(0xFF0F3A63)),
+        statGrayBg = c(Color(0xFFF2F3F5), Color(0xFF13273F))
+    )
+}
 
 @Composable
 internal fun AboutSection() {
@@ -141,11 +212,12 @@ internal fun AboutSection() {
         }.getOrNull() ?: "--"
     }
     var updateDialog by remember { mutableStateOf<UpdateDialogState?>(null) }
+    val ac = aboutColors()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(ac.bg)
             .verticalScroll(rememberScrollState())
             .padding(vertical = Spacing.lg),
         verticalArrangement = Arrangement.spacedBy(Spacing.lg)
@@ -155,7 +227,8 @@ internal fun AboutSection() {
             appName = stringResource(R.string.app_name),
             appIcon = appIcon,
             appInfo = appInfo,
-            isDebug = BuildConfig.DEBUG
+            isDebug = BuildConfig.DEBUG,
+            ac = ac
         )
 
         // ===== 模块 2：核心组件（宿主 / 终端 / 代理 / 浏览器） =====
@@ -164,11 +237,12 @@ internal fun AboutSection() {
             terminalReady = terminalReady,
             proxyRunning = proxyState.enabled && proxyState.controllerReachable,
             proxyPort = proxyState.mixedPort,
-            webViewVersion = webViewVersion
+            webViewVersion = webViewVersion,
+            ac = ac
         )
 
         // ===== 模块 3：使用统计（独立卡片） =====
-        UsageStatsSection(stats = stats)
+        UsageStatsSection(stats = stats, ac = ac)
 
         // ===== 模块 4：版本更新（独立卡片） =====
         CyberSectionHeader(text = stringResource(R.string.about_check_update))
@@ -185,13 +259,13 @@ internal fun AboutSection() {
         )
 
         // ===== 模块 5：开源致谢 =====
-        OpenSourceCreditsSection()
+        OpenSourceCreditsSection(ac = ac)
 
         // 版权底栏
         Text(
             text = stringResource(R.string.about_copyright),
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF98A2B3),
+            color = ac.faint,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = Spacing.lg, vertical = Spacing.md)
@@ -235,7 +309,8 @@ internal fun AboutSection() {
             },
             onInstallApk = { path ->
                 installApk(context, path)
-            }
+            },
+            ac = ac
         )
     }
 }
@@ -249,7 +324,8 @@ private fun HeroCard(
     appName: String,
     appIcon: ImageBitmap?,
     appInfo: AppInfo,
-    isDebug: Boolean
+    isDebug: Boolean,
+    ac: AboutColors
 ) {
     Box(
         modifier = Modifier
@@ -273,11 +349,11 @@ private fun HeroCard(
                             .clip(RoundedCornerShape(24.dp))
                             .background(
                                 Brush.linearGradient(
-                                    listOf(Color(0xFFEFF4FF), Color(0xFFE3EDFF))
+                                    listOf(ac.heroBgStart, ac.heroBgEnd)
                                 )
                             )
                             .border(
-                                border = BorderStroke(0.8.dp, Color(0xFFD6E4FF)),
+                                border = BorderStroke(0.8.dp, ac.heroBorder),
                                 shape = RoundedCornerShape(24.dp)
                             )
                             .padding(12.dp),
@@ -303,19 +379,19 @@ private fun HeroCard(
                             text = appName,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFF101828)
+                            color = ac.title
                         )
                         Text(
                             text = stringResource(R.string.about_slogan),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF475467),
+                            color = ac.subtitle,
                             fontWeight = FontWeight.Medium
                         )
                         Spacer(Modifier.height(2.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                            VersionPill(text = "v${appInfo.name}")
-                            VersionPill(text = "#${appInfo.code}", outline = true)
-                            VariantPill(isDebug = isDebug)
+                            VersionPill(text = "v${appInfo.name}", ac = ac)
+                            VersionPill(text = "#${appInfo.code}", outline = true, ac = ac)
+                            VariantPill(isDebug = isDebug, ac = ac)
                         }
                     }
                 }
@@ -324,7 +400,7 @@ private fun HeroCard(
 
                 HorizontalDivider(
                     thickness = 0.8.dp,
-                    color = CyberColors.Divider,
+                    color = ac.border,
                     modifier = Modifier.padding(horizontal = Spacing.md)
                 )
 
@@ -342,18 +418,21 @@ private fun HeroCard(
                     ) {
                         HeroInfoChip(
                             label = stringResource(R.string.about_version),
-                            value = "v${appInfo.name}"
+                            value = "v${appInfo.name}",
+                            ac = ac
                         )
                         HeroInfoChip(
                             label = stringResource(R.string.about_sdk_min),
-                            value = "API ${appInfo.minSdk}"
+                            value = "API ${appInfo.minSdk}",
+                            ac = ac
                         )
                         HeroInfoChip(
                             label = stringResource(R.string.about_variant),
                             value = stringResource(
                                 if (isDebug) R.string.about_variant_debug
                                 else R.string.about_variant_release
-                            )
+                            ),
+                            ac = ac
                         )
                     }
                     Column(
@@ -362,15 +441,18 @@ private fun HeroCard(
                     ) {
                         HeroInfoChip(
                             label = stringResource(R.string.about_build_no),
-                            value = "#${appInfo.code}"
+                            value = "#${appInfo.code}",
+                            ac = ac
                         )
                         HeroInfoChip(
                             label = stringResource(R.string.about_package),
-                            value = appInfo.packageName
+                            value = appInfo.packageName,
+                            ac = ac
                         )
                         HeroInfoChip(
                             label = stringResource(R.string.about_author_title),
-                            value = stringResource(R.string.about_author)
+                            value = stringResource(R.string.about_author),
+                            ac = ac
                         )
                     }
                 }
@@ -381,13 +463,13 @@ private fun HeroCard(
 }
 
 @Composable
-private fun VersionPill(text: String, outline: Boolean = false) {
+private fun VersionPill(text: String, outline: Boolean = false, ac: AboutColors) {
     val shape = RoundedCornerShape(Radius.pill)
     val bgModifier = if (outline) {
-        Modifier.background(Color.White, shape)
+        Modifier.background(ac.card, shape)
     } else {
         Modifier.background(
-            Brush.horizontalGradient(listOf(Color(0xFF2563EB), Color(0xFF38BDF8))),
+            Brush.horizontalGradient(listOf(ac.blueAccent, ac.skyAccent)),
             shape
         )
     }
@@ -398,7 +480,7 @@ private fun VersionPill(text: String, outline: Boolean = false) {
             .border(
                 border = BorderStroke(
                     0.8.dp,
-                    if (outline) CyberColors.CardStroke else Color.Transparent
+                    if (outline) ac.border else Color.Transparent
                 ),
                 shape = shape
             )
@@ -410,7 +492,7 @@ private fun VersionPill(text: String, outline: Boolean = false) {
             text = text,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
-            color = if (outline) Color(0xFF475467) else Color.White
+            color = if (outline) ac.subtitle else Color.White
         )
     }
 }
@@ -420,16 +502,16 @@ private fun VersionPill(text: String, outline: Boolean = false) {
  * 展示在版本号旁，提醒用户勿混装 debug/release 包导致"历史对话消失"。
  */
 @Composable
-private fun VariantPill(isDebug: Boolean) {
+private fun VariantPill(isDebug: Boolean, ac: AboutColors) {
     val shape = RoundedCornerShape(Radius.pill)
     Row(
         modifier = Modifier
             .clip(shape)
-            .background(if (isDebug) Color(0xFFFFF3E0) else Color(0xFFEFF6FF))
+            .background(if (isDebug) ac.amberBg else ac.blueBg)
             .border(
                 border = BorderStroke(
                     0.8.dp,
-                    if (isDebug) Color(0xFFFFD6A5) else Color(0xFFBFDBFE)
+                    if (isDebug) ac.orangeBorder else ac.blueBorder
                 ),
                 shape = shape
             )
@@ -442,7 +524,7 @@ private fun VariantPill(isDebug: Boolean) {
             ),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
-            color = if (isDebug) Color(0xFFB45309) else Color(0xFF1D4ED8)
+            color = if (isDebug) ac.orangeText else ac.blueAccent
         )
     }
 }
@@ -450,15 +532,16 @@ private fun VariantPill(isDebug: Boolean) {
 @Composable
 private fun HeroInfoChip(
     label: String,
-    value: String
+    value: String,
+    ac: AboutColors
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.sm))
-            .background(CyberColors.IconBg)
+            .background(ac.statGrayBg)
             .border(
-                border = BorderStroke(0.8.dp, CyberColors.CardStroke),
+                border = BorderStroke(0.8.dp, ac.border),
                 shape = RoundedCornerShape(Radius.sm)
             )
             .padding(horizontal = Spacing.sm, vertical = 7.dp),
@@ -468,14 +551,14 @@ private fun HeroInfoChip(
         Text(
             text = "$label:",
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF667085),
+            color = ac.desc,
             fontWeight = FontWeight.Medium
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
-            color = Color(0xFF101828)
+            color = ac.title
         )
     }
 }
@@ -500,7 +583,8 @@ private fun CoreComponentsSection(
     terminalReady: Boolean,
     proxyRunning: Boolean,
     proxyPort: Int,
-    webViewVersion: String
+    webViewVersion: String,
+    ac: AboutColors
 ) {
     Column(
         modifier = Modifier.padding(horizontal = Spacing.lg),
@@ -510,15 +594,15 @@ private fun CoreComponentsSection(
         Text(
             text = stringResource(R.string.about_core_components_subtitle),
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF667085),
+            color = ac.desc,
             modifier = Modifier.padding(start = Spacing.lg + 4.dp, bottom = Spacing.xs)
         )
 
         val cores = listOf(
             CoreItem(
                 icon = FeatherIcons.Smartphone,
-                accent = Color(0xFF2563EB),
-                accentBg = Color(0xFFEFF6FF),
+                accent = ac.blueAccent,
+                accentBg = ac.blueBg,
                 name = stringResource(R.string.about_host_core),
                 desc = stringResource(R.string.about_host_core_desc, appVersion),
                 status = stringResource(R.string.about_core_status_running),
@@ -526,8 +610,8 @@ private fun CoreComponentsSection(
             ),
             CoreItem(
                 icon = FeatherIcons.Terminal,
-                accent = Color(0xFF059669),
-                accentBg = Color(0xFFECFDF5),
+                accent = ac.greenAccent,
+                accentBg = ac.greenBg,
                 name = stringResource(R.string.about_terminal_core),
                 desc = stringResource(R.string.about_terminal_core_desc),
                 status = if (terminalReady) {
@@ -539,8 +623,8 @@ private fun CoreComponentsSection(
             ),
             CoreItem(
                 icon = FeatherIcons.Globe,
-                accent = Color(0xFFD97706),
-                accentBg = Color(0xFFFFFBEB),
+                accent = ac.amberAccent,
+                accentBg = ac.amberBg,
                 name = stringResource(R.string.about_proxy_core),
                 desc = stringResource(
                     R.string.about_proxy_core_desc,
@@ -555,8 +639,8 @@ private fun CoreComponentsSection(
             ),
             CoreItem(
                 icon = FeatherIcons.Chrome,
-                accent = Color(0xFF0284C7),
-                accentBg = Color(0xFFF0F9FF),
+                accent = ac.skyAccent,
+                accentBg = ac.skyBg,
                 name = stringResource(R.string.about_browser_core),
                 desc = stringResource(R.string.about_browser_core_desc, webViewVersion),
                 status = stringResource(R.string.about_core_status_ready),
@@ -568,26 +652,26 @@ private fun CoreComponentsSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
-            CoreComponentCard(item = cores[0], modifier = Modifier.weight(1f))
-            CoreComponentCard(item = cores[1], modifier = Modifier.weight(1f))
+            CoreComponentCard(item = cores[0], modifier = Modifier.weight(1f), ac = ac)
+            CoreComponentCard(item = cores[1], modifier = Modifier.weight(1f), ac = ac)
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
-            CoreComponentCard(item = cores[2], modifier = Modifier.weight(1f))
-            CoreComponentCard(item = cores[3], modifier = Modifier.weight(1f))
+            CoreComponentCard(item = cores[2], modifier = Modifier.weight(1f), ac = ac)
+            CoreComponentCard(item = cores[3], modifier = Modifier.weight(1f), ac = ac)
         }
     }
 }
 
 @Composable
-private fun CoreComponentCard(item: CoreItem, modifier: Modifier = Modifier) {
+private fun CoreComponentCard(item: CoreItem, modifier: Modifier = Modifier, ac: AboutColors) {
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(Radius.md),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(0.8.dp, CyberColors.CardStroke),
+        colors = CardDefaults.cardColors(containerColor = ac.card),
+        border = BorderStroke(0.8.dp, ac.border),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
@@ -615,19 +699,19 @@ private fun CoreComponentCard(item: CoreItem, modifier: Modifier = Modifier) {
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                StatusPill(text = item.status, ok = item.statusOk)
+                StatusPill(text = item.status, ok = item.statusOk, ac = ac)
             }
 
             Text(
                 text = item.name,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF101828)
+                color = ac.title
             )
             Text(
                 text = item.desc,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF667085),
+                color = ac.desc,
                 maxLines = 2
             )
         }
@@ -635,11 +719,11 @@ private fun CoreComponentCard(item: CoreItem, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun StatusPill(text: String, ok: Boolean) {
+private fun StatusPill(text: String, ok: Boolean, ac: AboutColors) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(Radius.pill))
-            .background(if (ok) Color(0xFFECFDF5) else CyberColors.IconBg)
+            .background(if (ok) ac.greenBg else ac.statGrayBg)
             .padding(horizontal = 8.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -648,13 +732,13 @@ private fun StatusPill(text: String, ok: Boolean) {
             modifier = Modifier
                 .size(6.dp)
                 .clip(CircleShape)
-                .background(if (ok) Color(0xFF16A34A) else Color(0xFF98A2B3))
+                .background(if (ok) ac.greenAccent else ac.faint)
         )
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
-            color = if (ok) Color(0xFF047857) else Color(0xFF667085)
+            color = if (ok) ac.greenText else ac.desc
         )
     }
 }
@@ -664,7 +748,7 @@ private fun StatusPill(text: String, ok: Boolean) {
 // ============================================================
 
 @Composable
-private fun UsageStatsSection(stats: UsageStats) {
+private fun UsageStatsSection(stats: UsageStats, ac: AboutColors) {
     Column(
         modifier = Modifier.padding(horizontal = Spacing.lg),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
@@ -673,7 +757,7 @@ private fun UsageStatsSection(stats: UsageStats) {
         Text(
             text = stringResource(R.string.about_stats_subtitle),
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF667085),
+            color = ac.desc,
             modifier = Modifier.padding(start = Spacing.lg + 4.dp, bottom = Spacing.xs)
         )
 
@@ -691,14 +775,16 @@ private fun UsageStatsSection(stats: UsageStats) {
                         label = stringResource(R.string.about_sessions),
                         value = stats.totalSessions.toString(),
                         unit = stringResource(R.string.about_stats_unit_sessions),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        ac = ac
                     )
                     UsageStatCell(
                         icon = FeatherIcons.Hash,
                         label = stringResource(R.string.about_messages),
                         value = stats.totalMessages.toString(),
                         unit = stringResource(R.string.about_stats_unit_messages),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        ac = ac
                     )
                     UsageStatCell(
                         icon = FeatherIcons.Calendar,
@@ -706,7 +792,8 @@ private fun UsageStatsSection(stats: UsageStats) {
                         value = stats.activeDays.toString(),
                         unit = stringResource(R.string.about_stats_unit_days),
                         modifier = Modifier.weight(1f),
-                        highlighted = true
+                        highlighted = true,
+                        ac = ac
                     )
                 }
 
@@ -719,14 +806,16 @@ private fun UsageStatsSection(stats: UsageStats) {
                         label = stringResource(R.string.about_input_tokens),
                         value = compactNumber(stats.totalInputTokens),
                         unit = stringResource(R.string.about_stats_unit_tokens),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        ac = ac
                     )
                     UsageStatCell(
                         icon = FeatherIcons.DownloadCloud,
                         label = stringResource(R.string.about_output_tokens),
                         value = compactNumber(stats.totalOutputTokens),
                         unit = stringResource(R.string.about_stats_unit_tokens),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        ac = ac
                     )
                     UsageStatCell(
                         icon = FeatherIcons.Clock,
@@ -735,7 +824,8 @@ private fun UsageStatsSection(stats: UsageStats) {
                         unit = if (stats.firstUsedMs > 0L) stringResource(R.string.about_stats_unit_since) else "",
                         modifier = Modifier.weight(1f),
                         compactValue = true,
-                        gradient = false
+                        gradient = false,
+                        ac = ac
                     )
                 }
             }
@@ -752,17 +842,18 @@ private fun UsageStatCell(
     modifier: Modifier = Modifier,
     compactValue: Boolean = false,
     highlighted: Boolean = false,
-    gradient: Boolean = true
+    gradient: Boolean = true,
+    ac: AboutColors
 ) {
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(Radius.md),
         colors = CardDefaults.cardColors(
-            containerColor = if (highlighted) Color(0xFFF0F6FF) else Color.White
+            containerColor = if (highlighted) ac.selectedBg else ac.card
         ),
         border = BorderStroke(
             0.8.dp,
-            if (highlighted) Color(0xFFBFDBFE) else CyberColors.CardStroke
+            if (highlighted) ac.selectedBorder else ac.border
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
@@ -780,20 +871,20 @@ private fun UsageStatCell(
                     modifier = Modifier
                         .size(18.dp)
                         .clip(CircleShape)
-                        .background(if (highlighted) Color(0xFFDBEAFE) else CyberColors.IconBg),
+                        .background(if (highlighted) ac.chipBg else ac.statGrayBg),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = if (highlighted) Color(0xFF2563EB) else Color(0xFF475467),
+                        tint = if (highlighted) ac.selectedText else ac.iconGray,
                         modifier = Modifier.size(11.dp)
                     )
                 }
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF667085),
+                    color = ac.desc,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1
                 )
@@ -814,9 +905,9 @@ private fun UsageStatCell(
                     text = value,
                     style = baseStyle.copy(
                         brush = if (gradient) {
-                            Brush.horizontalGradient(listOf(Color(0xFF1D4ED8), Color(0xFF0284C7)))
+                            Brush.horizontalGradient(listOf(ac.blueAccent, ac.skyAccent))
                         } else {
-                            Brush.horizontalGradient(listOf(Color(0xFF101828), Color(0xFF101828)))
+                            Brush.horizontalGradient(listOf(ac.title, ac.title))
                         },
                         fontWeight = FontWeight.ExtraBold
                     ),
@@ -827,7 +918,7 @@ private fun UsageStatCell(
                         text = unit,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF667085),
+                        color = ac.desc,
                         modifier = Modifier.padding(bottom = 2.dp)
                     )
                 }
@@ -878,7 +969,7 @@ private fun CheckUpdateOnlyCard(
 // ============================================================
 
 @Composable
-private fun OpenSourceCreditsSection() {
+private fun OpenSourceCreditsSection(ac: AboutColors) {
     CyberSectionHeader(text = stringResource(R.string.about_credits))
 
     Column(
@@ -888,7 +979,7 @@ private fun OpenSourceCreditsSection() {
         Text(
             text = stringResource(R.string.about_credits_subtitle),
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF667085),
+            color = ac.desc,
             modifier = Modifier.padding(start = 4.dp)
         )
 
@@ -914,7 +1005,8 @@ private fun OpenSourceCreditsSection() {
                 credits.forEach { (nameRes, author) ->
                     CreditChip(
                         name = stringResource(nameRes),
-                        author = author
+                        author = author,
+                        ac = ac
                     )
                 }
             }
@@ -923,13 +1015,13 @@ private fun OpenSourceCreditsSection() {
 }
 
 @Composable
-private fun CreditChip(name: String, author: String) {
+private fun CreditChip(name: String, author: String, ac: AboutColors) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(Radius.sm))
-            .background(CyberColors.IconBg)
+            .background(ac.statGrayBg)
             .border(
-                border = BorderStroke(0.8.dp, CyberColors.CardStroke),
+                border = BorderStroke(0.8.dp, ac.border),
                 shape = RoundedCornerShape(Radius.sm)
             )
             .padding(horizontal = Spacing.sm, vertical = 6.dp),
@@ -940,18 +1032,18 @@ private fun CreditChip(name: String, author: String) {
             modifier = Modifier
                 .size(6.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF98A2B3))
+                .background(ac.faint)
         )
         Text(
             text = name,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
-            color = Color(0xFF101828)
+            color = ac.title
         )
         Text(
             text = "· $author",
             style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFF667085)
+            color = ac.desc
         )
     }
 }
@@ -967,7 +1059,8 @@ private fun UpdateResultDialog(
     onDismiss: () -> Unit,
     onDownloadApk: (ReleaseInfo) -> Unit,
     onOpenReleases: () -> Unit,
-    onInstallApk: (String) -> Unit
+    onInstallApk: (String) -> Unit,
+    ac: AboutColors
 ) {
     when (state) {
         UpdateDialogState.Checking -> AlertDialog(
@@ -1001,13 +1094,13 @@ private fun UpdateResultDialog(
                                 state.latestTag
                             ),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF101828)
+                            color = ac.title
                         )
                         Text(
                             text = stringResource(R.string.about_release_notes),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF101828)
+                            color = ac.title
                         )
                         // Release Notes 文本框：浅灰底深灰描边
                         Box(
@@ -1015,9 +1108,9 @@ private fun UpdateResultDialog(
                                 .fillMaxWidth()
                                 .height(180.dp)
                                 .clip(RoundedCornerShape(Radius.md))
-                                .background(CyberColors.IconBg)
+                                .background(ac.statGrayBg)
                                 .border(
-                                    border = BorderStroke(0.8.dp, CyberColors.CardStroke),
+                                    border = BorderStroke(0.8.dp, ac.border),
                                     shape = RoundedCornerShape(Radius.md)
                                 )
                         ) {
@@ -1026,7 +1119,7 @@ private fun UpdateResultDialog(
                             androidx.compose.foundation.text.BasicText(
                                 text = notes,
                                 style = MaterialTheme.typography.bodySmall.copy(
-                                    color = Color(0xFF475467),
+                                    color = ac.subtitle,
                                     fontFamily = FontFamily.Monospace
                                 ),
                                 modifier = Modifier
@@ -1078,7 +1171,8 @@ private fun UpdateResultDialog(
                             progressPct = progressPct,
                             downloadedBytes = state.downloadedBytes,
                             totalBytes = state.totalBytes,
-                            speedBytesPerSec = state.speedBytesPerSec
+                            speedBytesPerSec = state.speedBytesPerSec,
+                            ac = ac
                         )
                     }
                 },
@@ -1099,12 +1193,12 @@ private fun UpdateResultDialog(
                     Text(
                         text = state.filePath.substringAfterLast('/'),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF475467)
+                        color = ac.subtitle
                     )
                     Text(
                         text = formatFileSize(state.fileSizeBytes),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF101828),
+                        color = ac.title,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -1139,7 +1233,8 @@ private fun PaperProgressIndicatorWithDetail(
     progressPct: Int,
     downloadedBytes: Long,
     totalBytes: Long,
-    speedBytesPerSec: Long
+    speedBytesPerSec: Long,
+    ac: AboutColors
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = (progressPct.coerceIn(0, 100) / 100f),
@@ -1163,7 +1258,7 @@ private fun PaperProgressIndicatorWithDetail(
                 ),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF101828)
+                color = ac.title
             )
             if (speedBytesPerSec > 0) {
                 Text(
@@ -1172,7 +1267,7 @@ private fun PaperProgressIndicatorWithDetail(
                         formatFileSize(speedBytesPerSec)
                     ),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF475467),
+                    color = ac.subtitle,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -1184,15 +1279,15 @@ private fun PaperProgressIndicatorWithDetail(
                 .fillMaxWidth()
                 .height(8.dp)
                 .clip(RoundedCornerShape(Radius.pill)),
-            color = Color(0xFF344054),
-            trackColor = CyberColors.IconBg,
+            color = ac.iconGray,
+            trackColor = ac.statGrayBg,
             drawStopIndicator = {}
         )
 
         Text(
             text = stringResource(R.string.about_downloading, progressPct),
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF667085)
+            color = ac.desc
         )
     }
 }

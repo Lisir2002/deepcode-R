@@ -210,8 +210,8 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        containerColor = Color.White,
-        contentColor = Color(0xFF101828),
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             AppTopAppBar(
@@ -263,7 +263,7 @@ fun SettingsScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
+                .background(MaterialTheme.colorScheme.background)
                 .padding(padding)
         ) {
             when (section) {
@@ -711,7 +711,7 @@ internal fun SettingsMenu(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         // 搜索栏固定在顶部（不随滚动消失）
         CyberSearchBar(
@@ -753,7 +753,7 @@ internal fun SettingsMenu(
                                         Icon(
                                             imageVector = FeatherIcons.ChevronRight,
                                             contentDescription = null,
-                                            tint = CyberColors.CyanDim
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 )
@@ -779,20 +779,20 @@ private fun EmptySearchResult(query: String) {
         Icon(
             imageVector = FeatherIcons.Search,
             contentDescription = null,
-            tint = Color(0xFFD0D5DD),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(48.dp)
         )
         Spacer(Modifier.height(16.dp))
         Text(
             text = stringResource(R.string.settings_search_empty_title),
             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = Color(0xFF475467)
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(Modifier.height(6.dp))
         Text(
             text = stringResource(R.string.settings_search_empty_subtitle, query),
             style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF98A2B3)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
