@@ -1,6 +1,5 @@
 package com.R.codecore.feature.backup.data
 
-import android.net.Uri
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,7 +53,8 @@ class AutoBackupRotationTest {
     private fun externalItems(n: Int): List<ExternalBackupStore.Item> =
         (0 until n).map {
             ExternalBackupStore.Item(
-                uri = Uri.parse("content://downloads/$it"),
+                // uri 仅用于真实读写，纯 JVM 单测无需 android Uri，置 null（可空字段）
+                uri = null,
                 name = "backup-${it}.tar.gz",
                 epochMs = 1_000_000_000_000L + it * 1000L,
             )

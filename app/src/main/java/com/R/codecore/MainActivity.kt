@@ -172,8 +172,7 @@ class MainActivity : ComponentActivity() {
                             browserController = browserController,
                             browserLoginPromptManager = browserLoginPromptManager,
                             browserTakeoverManager = browserTakeoverManager,
-                            dataSafetyNotifier = dataSafetyNotifier,
-                            settingsViewModel = settingsViewModel
+                            dataSafetyNotifier = dataSafetyNotifier
                         )
                         // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
                         com.R.codecore.feature.credentials.presentation.component.GlobalCredentialDialogHost(
@@ -235,8 +234,7 @@ fun AppNavigation(
     browserController: com.R.codecore.feature.browser.domain.BrowserController,
     browserLoginPromptManager: com.R.codecore.feature.browser.domain.BrowserLoginPromptManager,
     browserTakeoverManager: com.R.codecore.feature.browser.domain.BrowserTakeoverManager,
-    dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier,
-    settingsViewModel: SettingsViewModel
+    dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier
 ) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -248,6 +246,7 @@ fun AppNavigation(
 
     // Activity 级别的 ViewModel——Drawer 和 AIChatPanel 共享同一个实例。
     val agentViewModel: AIAgentViewModel = hiltViewModel()
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
     val workspaceViewModel: WorkspaceViewModel = hiltViewModel()
 
     // 侧边栏打开时，系统返回键先收起侧边栏。

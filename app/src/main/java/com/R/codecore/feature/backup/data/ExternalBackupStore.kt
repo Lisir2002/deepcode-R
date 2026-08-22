@@ -43,8 +43,8 @@ class ExternalBackupStore @Inject constructor(
         const val SUFFIX = ".tar.gz"
     }
 
-    /** 外部备份条目（低版本为文件 Uri，高版本为 MediaStore Uri）。 */
-    data class Item(val uri: Uri, val name: String, val epochMs: Long)
+    /** 外部备份条目（低版本为文件 Uri，高版本为 MediaStore Uri；可空以便纯 JVM 单测构造）。 */
+    data class Item(val uri: Uri?, val name: String, val epochMs: Long)
 
     /** 当前是否能写公共外部存储。Android 11+ 走 MediaStore 始终可写；低版本需挂载 + WRITE 权限。 */
     fun isAvailable(): Boolean =
@@ -61,6 +61,7 @@ class ExternalBackupStore @Inject constructor(
         } else {
             writeViaLegacyFile(name, writeBlock)
         }
+        true
     }.onFailure {
         FileLogger.w(TAG, "写入外部备份失败", it)
     }.getOrDefault(false)
@@ -72,10 +73,11 @@ class ExternalBackupStore @Inject constructor(
 
     /** 打开备份读取流；失败返回 null。 */
     fun openInput(item: Item): InputStream? = runCatching {
+        val uri = item.uri ?: return@runCatching null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            context.contentResolver.openInputStream(item.uri)
+            context.contentResolver.openInputStream(uri)
         } else {
-            File(item.uri.path ?: return@runCatching null).inputStream()
+            File(uri.path ?: return@runCatching null).inputStream()
         }
     }.onFailure {
         FileLogger.w(TAG, "读取外部备份失败: ${item.name}", it)
@@ -84,10 +86,11 @@ class ExternalBackupStore @Inject constructor(
     /** 删除一个备份（轮转）。失败仅记日志。 */
     fun delete(item: Item) {
         runCatching {
+            val uri = item.uri ?: return@runCatching
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                context.contentResolver.delete(item.uri, null, null)
+                context.contentResolver.delete(uri, null, null)
             } else {
-                File(item.uri.path ?: return@runCatching).delete()
+                File(uri.path ?: return@runCatching).delete()
             }
         }.onFailure { FileLogger.w(TAG, "删除外部备份失败: ${item.name}", it) }
     }
