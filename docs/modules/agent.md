@@ -70,7 +70,9 @@
 | `tool/proxy/NetworkProxyTool.kt` | 网络代理（mihomo mixed-proxy）管理 |
 | `tool/question/` | `AskUserQuestionTool` + `AskUserQuestionManager` + `UserQuestionModels`（向用户提问并等待回答） |
 | `tool/search/` | `WebSearchTool`、`WebFetchTool` |
-| `tool/skill/LoadSkillTool.kt` | 加载并执行技能 |
+| `tool/skill/LoadSkillTool.kt` | 加载 PROMPT 技能指令正文（含依赖注入、作用域校验、工具绑定） |
+| `tool/skill/RunSkillScriptTool.kt` | 执行 SCRIPT 脚本技能（容器沙箱 + 审批 + 审计，专用执行入口） |
+| `tool/skill/SkillInvocationResolver.kt` | loadSkill / runSkillScript 共用的技能定位与校验解析器 |
 | `tool/storage/StorageTool.kt` | 设备（外部共享）存储读写，带安全护栏 |
 | `tool/todo/TodoTool.kt` | 管理 TODO 列表 |
 | `tool/AbstractContextualTool.kt` / `CodeSelection.kt` | 上下文工具基类与代码选区模型 |
@@ -130,9 +132,10 @@
 
 ### 3.6 技能（Skill）
 
-- `Skill` 支持三种执行形态：PROMPT（注入指令，无执行）、SCRIPT（容器内沙箱执行入口脚本，需 ZTH 审批）、MCP（映射到已连接 MCP 工具）。
-- `SkillParser` 解析带 Frontmatter 的技能文件（版本/作者/标签/适用模式/依赖/requiredTools/requiresRuntime 等），`SkillRepository` 管理来源，`SkillStateRepository` 用 Room 持久化启用状态，`LoadSkillTool` 加载执行，`SkillExecutor` 负责运行。
-- `SkillExecutor` 执行链路携带 `SkillExecutionContext`（由 `LoadSkillTool` 从 `AgentContext` 派生，含 sessionId/mode/projectPath/agentType），使脚本技能审批与审计的 sessionId 与当前会话连贯（替代此前传 null 的脱钩问题）。
+- `Skill` 支持三种执行形态：PROMPT（注入指令，无执行）、SCRIPT（容器内沙箱执行入口脚本，需 ZTH 审批）、MCP（**已降级为别名**：不再经技能系统执行，AI 直接调用其绑定的 MCP 工具）。
+- `SkillParser` 解析带 Frontmatter 的技能文件（版本/作者/标签/适用模式/依赖/requiredTools/requiresRuntime 等），`SkillRepository` 管理来源，`SkillStateRepository` 用 Room 持久化启用状态。
+- **技能调用工具职责拆分（重写后的唯一入口约定）**：`LoadSkillTool`（`loadSkill`）只加载 PROMPT 技能指令正文，不执行任何脚本/工具；`RunSkillScriptTool`（`runSkillScript`）是 SCRIPT 脚本技能的专用执行入口（容器沙箱 + 审批 + 审计 + 运行时预检）；两者共用 `SkillInvocationResolver` 完成定位/版本锁/作用域/依赖校验，`SkillExecutor` 负责实际运行。
+- `SkillExecutor` 执行链路携带 `SkillExecutionContext`（由调用方从 `AgentContext` 派生，含 sessionId/mode/projectPath/agentType），使脚本技能审批与审计的 sessionId 与当前会话连贯（替代此前传 null 的脱钩问题）。
 
 #### 3.6.1 技能作用域分级（SkillScope v2，多 Agent 演进 + 对话级控制）
 
@@ -151,7 +154,7 @@
   - CONVERSATION → 需本会话存在 `enabled=true` 绑定；
   - GLOBAL/AGENT → 本会话存在 `enabled=false` 绑定则排除。
 - `SkillToolBindingManager`：技能加载成功时校验并登记 `requiredTools`（缺失给明确错误 `SKILL_MISSING_TOOL`），技能禁用/卸载时回收本管理器动态注册的工具（绝不删除内置全局工具）。
-- `LoadSkillTool.executeWithContext`：GLOBAL 直接放行；AGENT 级按声明 agentType 校验；加载前登记专属工具、构建 `SkillExecutionContext` 贯穿执行。当前为单 Agent 场景（`DEFAULT_AGENT_TYPE="coding"`），多 Agent 演进后改为 `<skill.agentType> == 当前激活 agentType` 才放行。
+- `LoadSkillTool.executeWithContext`：GLOBAL 直接放行；AGENT 级按声明 agentType 校验；加载成功前登记专属工具。当前为单 Agent 场景（`DEFAULT_AGENT_TYPE="coding"`），多 Agent 演进后改为 `<skill.agentType> == 当前激活 agentType` 才放行。作用域/版本/依赖校验统一由 `SkillInvocationResolver` 提供（loadSkill 与 runSkillScript 共用，避免重复实现）。
 
 #### 3.6.2 内置技能（BuiltinSkillSeeder）与脚本项目路径契约
 
@@ -177,7 +180,7 @@
 #### 3.6.4 第二款内置技能 coding-preflight（编程前准备）
 
 - 第二款内置技能：**coding-preflight**（编程前准备，`assets/skills/coding-preflight/`），scope=COMMON、type=SCRIPT、当前版本 v1.0.0；与 pre-commit-health 互补，构成「开工前 → 编程 → 提交前」闭环。
-- **执行契约**：沿用 `SKILL_PROJECT_PATH`；任务描述经 `loadSkill` 的 args 传入，`SkillExecutor` 统一注入为 `SKILL_ARG_TASK` 环境变量（机制已存在，无需新增注入逻辑）。
+- **执行契约**：沿用 `SKILL_PROJECT_PATH`；任务描述经 `runSkillScript` 的 args 传入，`SkillExecutor` 统一注入为 `SKILL_ARG_TASK` 环境变量（机制已存在，无需新增注入逻辑）。
 - **SCRIPT 自动采集现状快照**：`entry/run.sh` 按 `SKILL_PROJECT_PATH` 定位仓库根后输出：
   - `[项目]/[类型]`：仓库根、Android/非 Android 分层（存在 `app/build.gradle.kts` 或 `app/build.gradle` 判定）；
   - `[任务]`：`SKILL_ARG_TASK`（缺省提示先澄清需求）；
@@ -201,7 +204,7 @@
   2. **关键词兜底（降级路径，仅极端保底）**：仅当模型链路完全不可用（异常）时，才回退用 `trigger_keywords` 做关键词匹配触发，避免明确任务极端落空。关键词永远不高于模型判断。
 - **规则快筛（前置过滤，非决策）**：候选 = 「启用 + `autoTrigger` + 通过作用域过滤（`filterVisibleSkillsSync`，即对当前会话可见，含对话级激活/禁用的双向过滤）+ 本会话未触发过」，最多 `MAX_AUTO_TRIGGER_SKILLS`（2）个。
 - **触发调度（D12）**：命中技能按作用域优先级 `GLOBAL > AGENT > CONVERSATION` 排序后取前 ≤2 个，避免同轮多审批卡与上下文膨胀；`scopePriority` 实现于 `StatefulAgentWorkflow`。
-- **执行注入**：命中则走 `SkillExecutor.execute`（PROMPT 注入正文、SCRIPT 走既有 ZTH 审批、MCP 走既有映射），输出以「【系统·自动触发技能…】」UserMessage 注入首轮模型上下文；同时向 UI 推送 `AutoTriggered` 事件落库工具卡片，用户可直观看到「某技能被自动触发并加载」的结果。SCRIPT 自动触发执行前仍弹确认卡（审批卡标题带【自动触发】标记，安全审批链路不变），用户拒绝/超时降级为文本注入不阻塞主流程；**仅成功执行后才标记会话级去重**，失败/被拒可重试。
+- **执行注入**：命中则走 `SkillExecutor.execute`（PROMPT 注入正文、SCRIPT 走既有 ZTH 审批；**MCP 包装技能不参与自动触发**——已降级为别名，由模型按需直接调用绑定 MCP 工具），输出以「【系统·自动触发技能…】」UserMessage 注入首轮模型上下文；同时向 UI 推送 `AutoTriggered` 事件落库工具卡片，用户可直观看到「某技能被自动触发并加载」的结果。SCRIPT 自动触发执行前仍弹确认卡（审批卡标题带【自动触发】标记，安全审批链路不变），用户拒绝/超时降级为文本注入不阻塞主流程；**仅成功执行后才标记会话级去重**，失败/被拒可重试。
 - **会话级去重**：`ToolSessionState` 新增 `autoTriggeredSkills` 集合，同一技能在同一会话内最多自动触发一次。
 - **已启用声明**：`coding-preflight`（编程前）与 `pre-commit-health`（提交前）两个内置 SCRIPT 技能已在 frontmatter 声明 `auto_trigger: true` + `trigger_conditions` + `trigger_keywords`。
 - **内容升级机制（根治：保证改动到达老设备）**：`BuiltinSkillSeeder` 的内置技能升级判定为「**version 或内容 hash 任一不一致即覆盖**」双保险——(a) frontmatter `version` 显式 bump 时覆盖；(b) 即便忘记 bump version，只要技能内容（SKILL.md / entry / 其它资产）与 assets 侧不一致（如新增 `auto_trigger` 字段），也会按「相对技能目录路径 + 内容」的 SHA-256 组合 hash 比对触发覆盖。从根上避免「只改 frontmatter 却因 version 未变导致改动永不生效」的问题。

@@ -21,6 +21,7 @@ import com.R.codecore.feature.agent.domain.skill.SkillExecutionResult
 import com.R.codecore.feature.agent.domain.skill.SkillExecutor
 import com.R.codecore.feature.agent.domain.skill.SkillScope
 import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
+import com.R.codecore.feature.agent.domain.skill.SkillType
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.StreamingAgentTool
 import com.R.codecore.feature.agent.domain.tool.ToolCall
@@ -1009,7 +1010,8 @@ class StatefulAgentWorkflow @Inject constructor(
     // （判断当前任务的意图/场景是否与该技能的触发条件高度匹配），命中则自动加载/执行该技能，
     // 并把输出作为上下文注入首轮模型请求，全程无需关键词触发或依赖模型自觉调用 loadSkill。
     // 安全与稳定性：
-    //  - PROMPT 技能仅注入指令正文（无副作用）；SCRIPT/MCP 技能走 [SkillExecutor] 既有审批与审计。
+    //  - PROMPT 技能仅注入指令正文（无副作用）；SCRIPT 技能走 [SkillExecutor] 既有审批与审计；
+    //    MCP 包装技能已降级为别名，不参与自动触发。
     //  - 会话级去重（[ToolSessionState]），同一技能在同一个会话内最多自动触发一次。
     //  - 任何异常静默降级，自动触发绝不阻断主流程。
     // ════════════════════════════════════════════════════════════════
@@ -1047,7 +1049,8 @@ class StatefulAgentWorkflow @Inject constructor(
         //    避免「截断优先」导致内置技能在排序变化时被提前过滤掉、永远进不了模型判断。
         val candidates = try {
             skillStateRepository.listSkillsSync()
-                .filter { it.enabled && it.autoTrigger }
+                // MCP 包装技能已降级为别名（直接调用绑定 MCP 工具），不参与自动触发执行。
+                .filter { it.enabled && it.autoTrigger && it.type != SkillType.MCP }
                 .let { list -> skillStateRepository.filterVisibleSkillsSync(list, context.sessionId) }
                 .filter { sessionState == null || !sessionState.hasAutoTriggeredSkill(it.id) }
         } catch (e: Exception) {

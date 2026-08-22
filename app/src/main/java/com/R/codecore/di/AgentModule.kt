@@ -674,6 +674,7 @@ object AgentModule {
         listFilesTool: ListFilesTool,
         searchCodeTool: SearchCodeTool,
         loadSkillTool: LoadSkillTool,
+        runSkillScriptTool: com.R.codecore.feature.agent.domain.tool.skill.RunSkillScriptTool,
         askUserQuestionTool: AskUserQuestionTool,
         manageMcpTool: com.R.codecore.feature.agent.domain.tool.mcp.ManageMcpTool,
         webSearchTool: com.R.codecore.feature.agent.domain.tool.search.WebSearchTool,
@@ -716,6 +717,7 @@ object AgentModule {
             registerTool("list", listFilesTool)
             registerTool("search", searchCodeTool)
             registerTool("loadSkill", loadSkillTool)
+            registerTool("runSkillScript", runSkillScriptTool)
             registerTool("askUserQuestion", askUserQuestionTool)
             registerTool("manageMcp", manageMcpTool)
             registerTool("websearch", webSearchTool)

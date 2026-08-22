@@ -8,6 +8,7 @@ import com.R.codecore.feature.agent.domain.memory.MemoryScope
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
+import com.R.codecore.feature.agent.domain.skill.SkillType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -94,8 +95,17 @@ class SystemPromptProvider @Inject constructor(
             } catch (e: Exception) { return null }
             if (skills.isEmpty()) return null
             
-            val list = skills.joinToString("\n") { "- ${it.name}: ${it.description.ifBlank { "（无描述）" }}" }
-            val newContent = "可用技能 (skills)（格式为 名称: 何时使用；相关时用 loadSkill 传入名称取完整正文，详见上文「技能」说明）：\n当清单里有与当前任务对口的技能时，在合适的时机主动 `loadSkill` 加载并按其正文行事，让技能辅助你更规范、更高效地完成工作，而不是仅凭默认流程硬做。\n$list"
+            val list = skills.joinToString("\n") { skill ->
+                val hint = when (skill.type) {
+                    SkillType.PROMPT -> "（PROMPT 指令技能：用 loadSkill 取正文）"
+                    SkillType.SCRIPT -> "（SCRIPT 脚本技能：用 runSkillScript 执行）"
+                    SkillType.MCP -> "（MCP 包装技能：直接调用工具 ${skill.mcpTool ?: "（未绑定）"}）"
+                }
+                "- ${skill.name}: ${skill.description.ifBlank { "（无描述）" }}$hint"
+            }
+            val newContent = "可用技能 (skills)（格式为 名称: 何时使用 + 调用方式；详见上文「技能」说明）：\n" +
+                "指令类（PROMPT）技能用 `loadSkill` 加载完整正文；脚本类（SCRIPT）技能用 `runSkillScript` 执行其入口脚本（执行前会征求用户确认）；" +
+                "MCP 包装技能不执行、直接调用其绑定的 MCP 工具。让技能辅助你更规范、更高效地完成工作，而不是仅凭默认流程硬做。\n$list"
             
             // 同一会话内内容未变化时复用缓存快照；会话切换（或内容变化）时重建，避免跨会话串味。
             if (cachedSession != ctx.sessionId || cached != newContent) {

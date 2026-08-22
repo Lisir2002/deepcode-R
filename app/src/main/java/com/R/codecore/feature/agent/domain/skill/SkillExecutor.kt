@@ -6,16 +6,10 @@ import com.R.codecore.feature.agent.domain.container.ContainerInstaller
 import com.R.codecore.feature.agent.domain.permission.PermissionChoice
 import com.R.codecore.feature.agent.domain.tool.PendingToolPermission
 import com.R.codecore.feature.agent.domain.tool.ToolPermissionManager
-import com.R.codecore.feature.agent.domain.tool.ToolRegistry
 import com.R.codecore.feature.workspace.domain.RemoteAuditAction
 import com.R.codecore.feature.workspace.domain.RemoteAuditCategory
 import com.R.codecore.feature.workspace.domain.repository.RemoteAuditLogRepository
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import javax.inject.Inject
-import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
@@ -27,14 +21,16 @@ sealed class SkillExecutionResult {
 }
 
 /**
- * 技能执行器（RC74 新增）：按 [Skill.type] 分派执行。
+ * 技能执行器（RC74 新增；重写「技能调用工具」后仅保留 PROMPT/SCRIPT 两条执行路径）。
  *
  * - [SkillType.PROMPT]：返回指令正文（注入上下文），无执行、无安全风险。
  * - [SkillType.SCRIPT]：在 PRoot 容器内沙箱执行入口脚本，执行前经 [ToolPermissionManager] 审批，
  *   执行后记审计日志（复用 [RemoteAuditLogRepository]）。
- * - [SkillType.MCP]：把技能调用映射到 [ToolRegistry] 中已注册的 MCP 工具（命名空间化名）。
+ * - [SkillType.MCP]：已降级为别名——不在此执行，返回指引让 AI 直接调用绑定 MCP 工具
+ *   （由 [com.R.codecore.feature.agent.domain.tool.skill.LoadSkillTool] / [com.R.codecore.feature.agent.domain.tool.skill.RunSkillScriptTool]
+ *   在类型分流时给出）。
  *
- * 执行需携带 [SkillExecutionContext]（由 LoadSkillTool 从 [AgentContext] 派生），使脚本技能
+ * 执行需携带 [SkillExecutionContext]（由调用方从 [AgentContext] 派生），使脚本技能
  * 审批与审计的 [sessionId] 与当前会话连贯（替代此前传 null 的脱钩问题）。
  *
  * 线程安全：所有方法为 suspend，调用方需保证在协程内调用。
@@ -43,7 +39,6 @@ sealed class SkillExecutionResult {
 class SkillExecutor @Inject constructor(
     private val commandEngine: CommandEngine,
     private val toolPermissionManager: ToolPermissionManager,
-    private val toolRegistryProvider: Provider<ToolRegistry>,
     private val containerInstaller: ContainerInstaller,
     private val auditLogRepo: RemoteAuditLogRepository
 ) {
@@ -61,19 +56,17 @@ class SkillExecutor @Inject constructor(
         return when (skill.type) {
             SkillType.PROMPT -> executePrompt(skill, ctx)
             SkillType.SCRIPT -> executeScript(skill, args, ctx)
-            SkillType.MCP -> executeMcp(skill, args)
+            SkillType.MCP -> SkillExecutionResult.Error(
+                "MCP 包装技能「${skill.name}」已降级为别名，不再经技能系统执行，请直接调用 MCP 工具" +
+                    "「${skill.mcpTool ?: "（未绑定）"}」。",
+                "SKILL_MCP_USE_DIRECT_TOOL"
+            )
         }
     }
 
     private fun executePrompt(skill: Skill, ctx: SkillExecutionContext): SkillExecutionResult {
-        val output = if (ctx.sessionId != null) {
-            // PROMPT 技能按依赖序注入依赖的指令正文（见 LoadSkillTool），此处单技能返回自身正文；
-            // 组合技能的依赖拼接由 LoadSkillTool 负责。
-            skill.instructions
-        } else {
-            skill.instructions
-        }
-        return SkillExecutionResult.Success(output)
+        // PROMPT 技能返回自身指令正文；组合技能的依赖指令拼接由调用方（LoadSkillTool / RunSkillScriptTool）负责。
+        return SkillExecutionResult.Success(skill.instructions)
     }
 
     private suspend fun executeScript(
@@ -98,7 +91,7 @@ class SkillExecutor @Inject constructor(
             ctx.sessionId,
             PendingToolPermission(
                 id = "skill-${skill.id}-${System.currentTimeMillis()}",
-                toolName = "loadSkill",
+                toolName = "runSkillScript",
                 title = "${triggerTag}确认执行脚本技能「${skill.name}」",
                 summary = "AI 请求执行脚本技能 ${skill.name}（v${skill.version}）",
                 details = "入口脚本: $entry\n目录: $containerSkillDir\n参数: ${args.entries.joinToString { "${it.key}=${it.value}" }.ifEmpty { "（无）" }}",
@@ -153,35 +146,6 @@ class SkillExecutor @Inject constructor(
                 "脚本技能「${skill.name}」执行失败（退出码=${result.exitCode}）:\n${result.output.take(2000)}",
                 "SKILL_EXEC_NONZERO"
             )
-        }
-    }
-
-    private suspend fun executeMcp(skill: Skill, args: Map<String, String>): SkillExecutionResult {
-        val toolName = skill.mcpTool?.takeIf { it.isNotBlank() }
-            ?: return SkillExecutionResult.Error("MCP 技能缺少 mcp_tool 绑定", "SKILL_MISSING_MCP_TOOL")
-
-        val tool = toolRegistryProvider.get().getTool(toolName)
-            ?: return SkillExecutionResult.Error(
-                "MCP 工具「$toolName」未连接或未注册，请先在 MCP 设置中连接对应服务",
-                "SKILL_MCP_NOT_CONNECTED"
-            )
-
-        val jsonArgs: JsonObject = buildJsonObject {
-            args.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
-        }
-        return try {
-            val result = tool.execute(jsonArgs)
-            when (result) {
-                is com.R.codecore.feature.agent.domain.tool.ToolResult.Success ->
-                    SkillExecutionResult.Success(result.data.toString())
-                is com.R.codecore.feature.agent.domain.tool.ToolResult.Partial ->
-                    SkillExecutionResult.Success(result.message)
-                is com.R.codecore.feature.agent.domain.tool.ToolResult.Error ->
-                    SkillExecutionResult.Error(result.message, result.code)
-            }
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "MCP 技能执行异常: ${skill.id}", e)
-            SkillExecutionResult.Error("MCP 技能执行异常: ${e.message}", "SKILL_MCP_EXEC_EXCEPTION")
         }
     }
 

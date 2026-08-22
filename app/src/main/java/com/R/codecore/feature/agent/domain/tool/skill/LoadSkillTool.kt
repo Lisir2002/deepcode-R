@@ -1,13 +1,7 @@
 package com.R.codecore.feature.agent.domain.tool.skill
 
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.agent.domain.container.CommandEngine
 import com.R.codecore.feature.agent.domain.model.AgentContext
-import com.R.codecore.feature.agent.domain.skill.SkillExecutionContext
-import com.R.codecore.feature.agent.domain.skill.SkillExecutor
-import com.R.codecore.feature.agent.domain.skill.SkillExecutionResult
-import com.R.codecore.feature.agent.domain.skill.SkillScope
-import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
 import com.R.codecore.feature.agent.domain.skill.SkillToolBindingManager
 import com.R.codecore.feature.agent.domain.skill.SkillType
 import com.R.codecore.feature.agent.domain.tool.AgentTool
@@ -18,43 +12,37 @@ import com.R.codecore.feature.agent.domain.tool.ToolEvent
 import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolResult
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
 /**
- * 让 AI 按需加载/执行一个技能（RC74 升级为执行分层；本次升级作用域分级 + 上下文贯穿 + 工具绑定）。
+ * 让 AI 按需加载一个 PROMPT 技能（重写：职责拆分后仅处理 PROMPT 类型，不再执行任何脚本/工具）。
  *
- * 系统提示里只注入了各 skill 的 name+description 清单；AI 判断某个 skill 适用时，调用本工具：
- * - PROMPT 技能：返回 SKILL.md 正文（注入上下文）。
- * - SCRIPT 技能：在 PRoot 容器内沙箱执行入口脚本（执行前需审批）。
- * - MCP 技能：映射到已连接的 MCP 工具执行。
+ * 系统提示里只注入了各 skill 的 name+description 清单；AI 判断某个 PROMPT 技能适用时，
+ * 调用本工具把 SKILL.md 正文（含依赖指令）注入上下文，供 AI 严格按正文行事。
  *
- * 本工具依赖 [AgentContext] 贯穿执行上下文（sessionId 等），故重写 [executeWithContext]。
- * 1. 作用域分级：GLOBAL/COMMON 直接可加载；AGENT 级技能需 agentType 匹配当前 agent。
- * 2. 依赖真正注入：按依赖序先加载依赖——PROMPT 依赖的 instructions 拼接到返回结果供 AI 参考；
- *    SCRIPT/MCP 依赖按其类型在技能主体前按需预执行/校验。
- * 3. 专属工具绑定：加载成功后调 [SkillToolBindingManager.registerForSkill] 登记 requiredTools。
- * 仅允许加载已启用的技能；依赖自动递归解析（含环/缺失/禁用检测）。
+ * **职责边界（适配当前 agent 与 skill 行为逻辑的关键拆分）**：
+ * - 仅加载 PROMPT 技能：返回指令正文，无执行、无安全风险。
+ * - SCRIPT 脚本技能：指引改用 `runSkillScript` 工具执行（如需阅读其 SKILL.md 可自行 readFile）。
+ * - MCP 包装技能：已降级为别名——直接调用其绑定的 MCP 工具，不再经技能系统包装执行。
+ *
+ * 共用 [SkillInvocationResolver] 完成定位/版本锁/作用域/依赖校验；加载成功后登记专属工具
+ * （[SkillToolBindingManager]，技能即工具组）并广播 [ToolEvent.StateSkillLoaded]。
  */
 class LoadSkillTool @Inject constructor(
-    private val skillStateRepository: SkillStateRepository,
-    private val skillExecutor: SkillExecutor,
-    private val commandEngine: CommandEngine,
+    private val skillInvocationResolver: SkillInvocationResolver,
     private val skillToolBindingManager: SkillToolBindingManager
 ) : AgentTool() {
     private companion object {
         const val TAG = "LoadSkillTool"
-        /** S-3：运行时预检查超时（毫秒）。 */
-        const val RUNTIME_PROBE_TIMEOUT_MS = 15_000L
     }
 
     override val name = "loadSkill"
-    override val capabilities = setOf(ToolCapability.READ_AGENT_CONFIG, ToolCapability.EXECUTE_COMMANDS)
+    override val capabilities = setOf(ToolCapability.READ_AGENT_CONFIG)
     override val description =
-        "加载或执行指定技能（Skill）。PROMPT 技能返回完整指令内容；SCRIPT/MCP 技能按类型执行。当系统提示清单中的技能适用于当前任务时调用。"
+        "加载指定 PROMPT 技能：返回该技能的完整指令正文（含依赖指令）供 AI 按步骤行事，不执行任何脚本。当系统提示「可用技能」清单中的技能为指令类（PROMPT）且适用于当前任务时调用；脚本类（SCRIPT）技能请用 runSkillScript 执行。"
 
     /** L3 结构化结果协议：产出 state.skill.loaded 类型（技能加载后广播，触发工具定义与上下文刷新）。 */
     override val provides = setOf("state.skill.loaded")
@@ -63,19 +51,13 @@ class LoadSkillTool @Inject constructor(
         "skill_name" to ToolParameter(
             name = "skill_name",
             type = ParameterType.STRING,
-            description = "要加载的技能名称（与系统提示「可用技能」清单中的名称一致）。",
+            description = "要加载的 PROMPT 技能名称（与系统提示「可用技能」清单中的名称一致）。",
             required = true
         ),
         "version" to ToolParameter(
             name = "version",
             type = ParameterType.STRING,
             description = "S-1：技能版本锁定（semver，如 \"1.2.0\"）。省略时使用当前安装的最新版本；指定后若安装版本不一致会返回明确错误，避免在不同版本上执行同一技能。",
-            required = false
-        ),
-        "args" to ToolParameter(
-            name = "args",
-            type = ParameterType.OBJECT,
-            description = "传给脚本/MCP 技能的参数（键值对，可选）。PROMPT 技能忽略。",
             required = false
         )
     )
@@ -97,104 +79,49 @@ class LoadSkillTool @Inject constructor(
             return ToolResult.Error("缺少必需参数: skill_name", "MISSING_SKILL_NAME")
         }
 
-        val skills = skillStateRepository.listSkills()
-        val skill = skills.firstOrNull { it.name.equals(skillName, ignoreCase = true) }
-            ?: run {
-                val available = skills.joinToString(", ") { it.name }
-                FileLogger.w(TAG, "load_skill 未找到: $skillName，可用: $available")
-                return ToolResult.Error(
-                    "未找到技能「$skillName」。可用技能: ${available.ifEmpty { "（无）" }}",
-                    "SKILL_NOT_FOUND"
-                )
-            }
+        val version = args["version"]?.jsonPrimitive?.contentOrNull?.trim()
+        return when (val r = skillInvocationResolver.resolve(skillName, version, null, context)) {
+            is SkillInvokeResult.Failed -> ToolResult.Error(r.message, r.code)
+            is SkillInvokeResult.Ready -> {
+                val skill = r.skill
 
-        // S-1：版本锁——AI 指定版本时校验安装版本是否一致（忽略大小写），不一致给出明确报错
-        val requestedVersion = args["version"]?.jsonPrimitive?.contentOrNull?.trim()
-        if (!requestedVersion.isNullOrEmpty() && !skill.version.equals(requestedVersion, ignoreCase = true)) {
-            return ToolResult.Error(
-                "技能「${skill.name}」当前安装版本为 v${skill.version}，与请求锁定的 v$requestedVersion 不一致。" +
-                    "请省略 version 使用当前版本，或先更新/安装目标版本后再执行。",
-                "SKILL_VERSION_MISMATCH"
-            )
-        }
-
-        if (!skill.enabled) {
-            return ToolResult.Error("技能「${skill.name}」已被禁用，请在设置-技能中心启用后再使用", "SKILL_DISABLED")
-        }
-
-        // 作用域严格隐藏 + 对话级控制（D7/D8）：仅「当前 agent + 当前会话」可见的技能才可加载。
-        // - AGENT 级：agentType 需匹配当前 agent（当前单 Agent 场景默认 "coding"）；
-        // - CONVERSATION 级：需在当前会话被显式添加（enabled=true），否则休眠不可调用；
-        // - GLOBAL/AGENT：若当前会话存在 enabled=false 绑定（对话内临时禁用），则严格隐藏。
-        val scopeCheck = checkScopeAndConversation(skill, context.sessionId)
-        if (scopeCheck != null) {
-            return ToolResult.Error(scopeCheck.first, scopeCheck.second)
-        }
-
-        // 依赖解析：自动递归加载依赖，环/缺失/禁用时给出明确错误
-        val resolution = skillStateRepository.resolveSkillWithDependencies(skill.id)
-        if (resolution == null) {
-            return ToolResult.Error("技能「${skill.name}」解析失败", "SKILL_RESOLVE_FAILED")
-        }
-        if (resolution.missingDependencies.isNotEmpty()) {
-            return ToolResult.Error(
-                "技能「${skill.name}」缺少依赖: ${resolution.missingDependencies.joinToString(", ")}",
-                "SKILL_MISSING_DEP"
-            )
-        }
-        if (resolution.disabledDependencies.isNotEmpty()) {
-            return ToolResult.Error(
-                "技能「${skill.name}」的依赖已被禁用: ${resolution.disabledDependencies.joinToString(", ")}",
-                "SKILL_DISABLED_DEP"
-            )
-        }
-
-        // 依赖真正注入（设计 §4.1）：按依赖序先加载依赖——PROMPT 依赖的 instructions 拼接；
-        // SCRIPT/MCP 依赖的执行由各依赖技能自身按类型执行，此处仅做解析注入准备。
-        val dependencyInstructions = resolution.dependencies
-            .filter { it.type == SkillType.PROMPT }
-            .map { it.instructions }
-
-        // S-3：运行时依赖预检查——SCRIPT 技能声明的 requires_runtime 在容器内逐一探测，
-        // 缺失时在执行前给出明确报错（而非执行到一半才失败）
-        if (skill.type == SkillType.SCRIPT && skill.requiresRuntime.isNotEmpty()) {
-            val missing = skill.requiresRuntime.filter { !runtimeAvailable(it) }
-            if (missing.isNotEmpty()) {
-                return ToolResult.Error(
-                    "技能「${skill.name}」需要运行时依赖: ${missing.joinToString(", ")}，但容器内未找到。" +
-                        "请先安装对应运行时（如通过命令工具安装 node/python）后再执行。",
-                    "SKILL_MISSING_RUNTIME"
-                )
-            }
-        }
-
-        // 提取参数（args 为 JSON 对象 → Map<String,String>）
-        val execArgs = mutableMapOf<String, String>()
-        (args["args"] as? JsonObject)?.forEach { (k, v) ->
-            (v as? JsonPrimitive)?.contentOrNull?.let { execArgs[k] = it }
-        }
-
-        // 构建执行上下文并贯穿执行器（审批/审计的 sessionId 与当前会话连贯）。
-        val skillCtx = SkillExecutionContext.from(context, agentType = skillScopeAgentType(skill))
-
-        // 专属工具绑定：加载成功前登记 requiredTools（缺失给出明确错误）。
-        skillToolBindingManager.registerForSkill(skill)?.let { return ToolResult.Error(it, "SKILL_MISSING_TOOL") }
-
-        val result = skillExecutor.execute(skill, execArgs, skillCtx)
-        return when (result) {
-            is SkillExecutionResult.Success -> {
-                // 依赖注入：PROMPT 技能把依赖指令正文拼接到返回结果，供 AI 一并参考。
-                val finalOutput = if (dependencyInstructions.isNotEmpty()) {
-                    dependencyInstructions.joinToString("\n\n--- 依赖指令 ---\n\n") + "\n\n--- 主技能指令 ---\n\n" + result.output
-                } else {
-                    result.output
+                // 类型分流：仅加载 PROMPT；SCRIPT/MCP 给出明确指引（职责拆分后的唯一入口约定）。
+                if (skill.type != SkillType.PROMPT) {
+                    return when (skill.type) {
+                        SkillType.SCRIPT -> {
+                            FileLogger.d(TAG, "load_skill 命中 SCRIPT 技能，指引改用 runSkillScript: ${skill.name}")
+                            ToolResult.Error(
+                                "技能「${skill.name}」为脚本类（SCRIPT）技能，loadSkill 仅加载指令正文。" +
+                                    "请改用 runSkillScript 执行其入口脚本（执行前需用户确认）。",
+                                "SKILL_NOT_PROMPT"
+                            )
+                        }
+                        SkillType.MCP -> {
+                            // MCP 包装技能降级为别名：返回绑定工具指引，不执行。
+                            FileLogger.d(TAG, "load_skill MCP 别名解析: ${skill.name} -> ${skill.mcpTool}")
+                            ToolResult.Success(
+                                JsonPrimitive(
+                                    "技能「${skill.name}」为 MCP 包装技能（已降级为别名，不再经技能系统执行）。" +
+                                        "请直接调用 MCP 工具「${skill.mcpTool ?: "（未绑定）"}」，该工具的说明即本技能的用途描述。" +
+                                        "若工具未连接，请先用 manageMcp 连接对应服务。"
+                                )
+                            )
+                        }
+                        SkillType.PROMPT -> throw IllegalStateException("unreachable")
+                    }
                 }
-                FileLogger.d(TAG, "load_skill 执行成功: ${skill.name} (${finalOutput.length} 字符)")
+
+                // 专属工具绑定：加载成功前登记 requiredTools（缺失给出明确错误）。
+                skillToolBindingManager.registerForSkill(skill)?.let { return ToolResult.Error(it, "SKILL_MISSING_TOOL") }
+
+                // 依赖注入：把 PROMPT 依赖的指令正文拼接到返回结果，供 AI 一并参考。
+                val finalOutput = if (r.dependencyInstructions.isNotEmpty()) {
+                    r.dependencyInstructions.joinToString("\n\n--- 依赖指令 ---\n\n") + "\n\n--- 主技能指令 ---\n\n" + skill.instructions
+                } else {
+                    skill.instructions
+                }
+                FileLogger.d(TAG, "load_skill 加载成功: ${skill.name} (${finalOutput.length} 字符)")
                 ToolResult.Success(JsonPrimitive(finalOutput))
-            }
-            is SkillExecutionResult.Error -> {
-                FileLogger.w(TAG, "load_skill 执行失败: ${skill.name} - ${result.message}")
-                ToolResult.Error(result.message, result.code)
             }
         }
     }
@@ -207,57 +134,5 @@ class LoadSkillTool @Inject constructor(
     ): ToolEvent? {
         val skillName = (toolCall.arguments["skill_name"] as? JsonPrimitive)?.contentOrNull ?: ""
         return ToolEvent.StateSkillLoaded(skillName = skillName, toolCount = 0, sessionId = context.sessionId)
-    }
-
-    /** AGENT 级技能的 agentType（仅 AGENT 级需要）；GLOBAL/COMMON 返回 null。 */
-    private fun skillScopeAgentType(skill: com.R.codecore.feature.agent.domain.skill.Skill): String? {
-        if (skill.scope != SkillScope.AGENT) return null
-        return skill.agentType
-    }
-
-    /**
-     * 作用域严格隐藏 + 对话级控制校验：返回 (错误信息, 错误码) 或 null（放行）。
-     *
-     * 复用 [SkillStateRepository.filterVisibleSkills] 的可见性判定：技能在「当前 agent + 当前会话」
-     * 下不可见时，给出明确的原因（AGENT 不匹配 / CONVERSATION 未添加 / 对话内临时禁用），
-     * 而不是笼统地报「不可用」，便于用户快速定位。
-     */
-    private suspend fun checkScopeAndConversation(
-        skill: com.R.codecore.feature.agent.domain.skill.Skill,
-        sessionId: String?
-    ): Pair<String, String>? {
-        val visible = skillStateRepository.filterVisibleSkills(listOf(skill), sessionId)
-        if (visible.isNotEmpty()) return null
-
-        // 对话级禁用优先给出明确提示（用户可见、可即时恢复）。
-        if (sessionId != null) {
-            val conv = runCatching { skillStateRepository.getConversationState(skill.id, sessionId) }.getOrNull()
-            if (conv?.enabled == false) {
-                return "技能「${skill.name}」在当前对话中已被禁用，请到对话技能面板重新启用后再使用" to "SKILL_CONVERSATION_DISABLED"
-            }
-        }
-        return when (skill.scope) {
-            SkillScope.AGENT -> {
-                FileLogger.d(TAG, "load_skill agent 级技能作用域不匹配: ${skill.name} (agentType=${skill.agentType})")
-                "技能「${skill.name}」仅适用于 ${skill.agentType ?: "指定"} Agent，当前 Agent 不可用" to "SKILL_AGENT_SCOPE_MISMATCH"
-            }
-            SkillScope.CONVERSATION -> "技能「${skill.name}」为对话级技能，需先在对话技能面板添加启用后才能使用" to "SKILL_CONVERSATION_INACTIVE"
-            SkillScope.GLOBAL -> "技能「${skill.name}」当前不可用" to "SKILL_NOT_VISIBLE"
-        }
-    }
-
-    /** S-3：在容器内探测指定命令是否可用（command -v），失败/超时视为缺失。 */
-    private suspend fun runtimeAvailable(command: String): Boolean {
-        return try {
-            val result = commandEngine.runCommandSyncWithExit(
-                command = "command -v $command >/dev/null 2>&1",
-                projectPath = null,
-                timeoutMs = RUNTIME_PROBE_TIMEOUT_MS
-            )
-            result.exitCode == 0
-        } catch (e: Exception) {
-            FileLogger.w(TAG, "运行时探测失败: $command - ${e.message}")
-            false
-        }
     }
 }
