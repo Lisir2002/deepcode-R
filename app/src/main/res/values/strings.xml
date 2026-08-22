@@ -207,6 +207,7 @@
     <string name="chat_new_session_btn">新会话</string>
     <string name="chat_open_sidebar">打开侧边栏</string>
     <string name="chat_add_attachment">添加附件</string>
+    <string name="chat_toolbar_more">更多选项</string>
     <string name="chat_take_photo">拍照</string>
     <string name="chat_reasoning_effort">思考强度（深度思考 Reasoning）</string>
     <string name="chat_reasoning_effort_low">低</string>

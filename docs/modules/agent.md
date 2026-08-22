@@ -85,7 +85,7 @@
 | `presentation/ZthConfirmationCardViewModel.kt` | ZTH 确认卡片 UI 状态 |
 | `presentation/AgentUiModels.kt` | UI 层模型（`AgentAttachment`、`AgentImage` 等） |
 | `presentation/EnvironmentSnapshotStore.kt` | 环境快照存储 |
-| `presentation/component/` | Compose 组件：`AIChatPanel`、`ChatInputBar`、`MessageBubbles`、`ToolMessageComponents`、`AskUserQuestionPanel`、`ZthConfirmationCardSheet`、`TaskAccordion`、`TodoCardComponents`、`WebSearchResultComponents`、`FileDiffSheet`、`ChatModelSheet`、`ChatSessionPicker`、`ChatDrawer`、`MarkdownContent`、`RichSegmenter`（`component/richsegment/` 富文本分段）等 |
+| `presentation/component/` | Compose 组件：`AIChatPanel`、`ChatInputBar`（编排入口，胶囊浮动条）、`ChatInputField`（输入框+附件预览）、`ChatInputToolbar`（工具栏+收纳菜单）、`ChatPanels`（权限审批/状态横幅/变更预览/计划审批面板）、`MessageBubbles`、`ToolMessageComponents`、`AskUserQuestionPanel`、`ZthConfirmationCardSheet`、`TaskAccordion`、`TodoCardComponents`、`WebSearchResultComponents`、`FileDiffSheet`、`ChatModelSheet`、`ChatSessionPicker`、`ChatDrawer`、`MarkdownContent`、`RichSegmenter`（`component/richsegment/` 富文本分段）等 |
 
 ## 3. 核心架构与主流程
 
