@@ -578,14 +578,19 @@ class StatefulAgentWorkflow @Inject constructor(
         autoTriggerResults.forEach { result ->
             send(AgentEvent.AutoTriggered(skillName = result.skillName, output = result.output, isError = result.isError))
         }
-        // 权威性加固：自动触发技能的结果仅以「独立 UserMessage」注入时，轻量/事实问答模型会把它当作
-        // 「无关历史」忽略，只按最后一条用户消息作答（用户实测：永远只按用户消息给结果，技能里的规则文档不生效）。
-        // 因此这里把技能输出【合并进最后一条用户消息】——技能内容在前、用户请求在后，模型必然以该消息为当前任务、
-        // 必然读取其中规则/约束/检查项/参考资料；同时系统提示词末尾追加权威指令，双重保障模型落实技能输出。
+        // 权威性加固（根因修复的指令侧）：自动触发技能的结果即使已合并进用户消息，轻量/事实问答模型仍可能把
+        // 它当作「无关背景」，只按最后的用户请求作答。因此在系统提示词末尾追加【系统】硬性指令，把技能输出从
+        // 「建议/参考」升格为「本任务必须逐条落实的前置条件」，并把「技能指出的缺失文档/环境/纪律项必须补全」
+        // 明确写入，堵住「模型读了但只当建议」与「想补全却没有内容来源」两个漏洞。
         if (autoTriggerResults.isNotEmpty()) {
             val names = autoTriggerResults.joinToString("、") { it.skillName }
-            val authorityHint = "【系统】本轮任务开始前已自动触发技能「$names」，其输出已合并进下方「本次用户请求」之前的【系统·自动触发技能…】内容。" +
-                "这些技能输出包含需要你遵循的规则、约束、检查项与参考资料，处理用户请求时必须先阅读并落实其中要求，不得忽略或视为无关历史。"
+            val authorityHint = "【系统】本轮任务开始前已自动触发技能「$names」，其【技能规则】与【执行报告】已作为" +
+                "本任务上下文的最高优先级前置条件，合并进下方「本次用户请求」之前的内容。\n" +
+                "你必须做到：\n" +
+                "1. 逐条阅读并落实技能规则——检查项、修复口径、计划引导、纪律为硬性要求，不是可选建议；\n" +
+                "2. 技能报告指出的缺失项（如环境组件缺失、纪律文档 AGENTS.md 缺失、说明文档 README.md 缺失、" +
+                "模块文档缺失、记忆未加载）必须在执行过程中补全，不确定内容时先用只读工具核实或向用户澄清，不得跳过；\n" +
+                "3. 输出最终回答前，必须完成技能规则要求的所有前置动作，并按规则给出计划与验收标准。"
             systemPrompt = (systemPrompt?.takeIf { it.isNotBlank() }?.plus("\n\n$authorityHint")) ?: authorityHint
         }
         val userRequestContent = if (autoTriggerResults.isEmpty()) {
@@ -1039,6 +1044,12 @@ class StatefulAgentWorkflow @Inject constructor(
     /** 一次请求最多自动触发的技能数，避免连环触发拖慢首轮。 */
     private val MAX_AUTO_TRIGGER_SKILLS = 2
 
+    /** 自动触发注入的【技能规则】段最大字符数（skill.instructions，即 SKILL.md 正文）。 */
+    private val AUTO_TRIGGER_RULE_MAX = 4_000
+
+    /** 自动触发注入的【执行报告】段最大字符数（SCRIPT 脚本 stdout / PROMPT 正文）。 */
+    private val AUTO_TRIGGER_OUTPUT_MAX = 6_000
+
     /** 自动触发技能的一次执行结果：既用于注入模型上下文，也用于向 UI 推送展示（Autotriggered 事件落库工具卡片）。 */
     private data class AutoTriggerResult(
         val skillId: String,
@@ -1135,12 +1146,33 @@ class StatefulAgentWorkflow @Inject constructor(
             if (!isError) {
                 sessionState?.markSkillAutoTriggered(skill.id)
             }
+            // 注入内容 = 【技能规则】+【执行报告】双段。
+            // 根因修复：SCRIPT 技能自动触发此前只注入脚本 stdout（检查报告 + 简短建议），SKILL.md 的完整规则正文
+            // （skill.instructions：检查项/修复口径/计划引导/纪律）根本没进上下文——模型看不到规则细节，只有一句
+            // "建议创建 AGENTS.md（含边界规则…）"的摘要，既无强制力也无内容来源，自然"不会补全规则文档"。
+            // 因此这里把 SCRIPT 技能的规则正文也纳入注入（PROMPT 技能 instructions 即正文本身，不重复拼接）。
+            val ruleBody = if (skill.type == SkillType.SCRIPT) skill.instructions.take(AUTO_TRIGGER_RULE_MAX) else ""
+            val reportBody = output.take(AUTO_TRIGGER_OUTPUT_MAX)
+            val injected = buildString {
+                if (ruleBody.isNotBlank()) {
+                    append("【系统·自动触发技能「${skill.name}」·技能规则】\n")
+                    append(ruleBody)
+                    append("\n\n")
+                }
+                append("【系统·自动触发技能「${skill.name}」·执行报告】\n")
+                append(reportBody)
+            }
+            val noteContent = "【系统·自动触发技能「${skill.name}」】\n" +
+                "本任务开始前已自动触发该技能。以下为【技能规则】与【执行报告】：技能规则定义了本任务必须遵守的检查项、" +
+                "修复口径与纪律，属于硬性前置要求；执行报告为本次检查结果。请先逐条阅读并落实——技能指出的缺失项" +
+                "（如环境组件、纪律文档 AGENTS.md、说明文档 README.md、模块文档、记忆加载）必须在执行过程中补全，" +
+                "无法确定内容时先用只读工具核实或向用户澄清，然后才处理用户请求：\n\n$injected"
             results.add(
                 AutoTriggerResult(
                     skillId = skill.id,
                     skillName = skill.name,
-                    noteContent = "【系统·自动触发技能「${skill.name}」】\n这是本轮任务开始前由系统自动加载并执行该技能得到的输出，属于你必须遵循的权威上下文（规则/约束/检查项/参考资料）。请先阅读并落实以下输出，再处理用户请求：\n\n${output.take(6000)}",
-                    output = output.take(6000),
+                    noteContent = noteContent,
+                    output = reportBody,
                     isError = isError
                 )
             )
