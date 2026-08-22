@@ -578,11 +578,28 @@ class StatefulAgentWorkflow @Inject constructor(
         autoTriggerResults.forEach { result ->
             send(AgentEvent.AutoTriggered(skillName = result.skillName, output = result.output, isError = result.isError))
         }
-        val autoTriggerNotes = autoTriggerResults.map { AgentMessage.UserMessage(content = it.noteContent) }
+        // 权威性加固：自动触发技能的结果仅以「独立 UserMessage」注入时，轻量/事实问答模型会把它当作
+        // 「无关历史」忽略，只按最后一条用户消息作答（用户实测：永远只按用户消息给结果，技能里的规则文档不生效）。
+        // 因此这里把技能输出【合并进最后一条用户消息】——技能内容在前、用户请求在后，模型必然以该消息为当前任务、
+        // 必然读取其中规则/约束/检查项/参考资料；同时系统提示词末尾追加权威指令，双重保障模型落实技能输出。
+        if (autoTriggerResults.isNotEmpty()) {
+            val names = autoTriggerResults.joinToString("、") { it.skillName }
+            val authorityHint = "【系统】本轮任务开始前已自动触发技能「$names」，其输出已合并进下方「本次用户请求」之前的【系统·自动触发技能…】内容。" +
+                "这些技能输出包含需要你遵循的规则、约束、检查项与参考资料，处理用户请求时必须先阅读并落实其中要求，不得忽略或视为无关历史。"
+            systemPrompt = (systemPrompt?.takeIf { it.isNotBlank() }?.plus("\n\n$authorityHint")) ?: authorityHint
+        }
+        val userRequestContent = if (autoTriggerResults.isEmpty()) {
+            userRequest
+        } else {
+            // 技能输出 + 用户请求合并在同一条 User 消息内（技能在前、请求在后），保证模型必然读到规则；
+            // 同时避免「连续多条 User 消息」触发 Anthropic 等要求 user/assistant 交替的 API 报错。
+            autoTriggerResults.joinToString("\n\n---\n\n") { it.noteContent } +
+                "\n\n【本次用户请求】\n" + userRequest
+        }
         actionQueue.addLast(
             AgentAction.InitRequest(
-                currentContext.history + autoTriggerNotes + AgentMessage.UserMessage(
-                    content = userRequest,
+                currentContext.history + AgentMessage.UserMessage(
+                    content = userRequestContent,
                     images = currentContext.inputImages
                 )
             )
@@ -1122,7 +1139,7 @@ class StatefulAgentWorkflow @Inject constructor(
                 AutoTriggerResult(
                     skillId = skill.id,
                     skillName = skill.name,
-                    noteContent = "【系统·自动触发技能「${skill.name}」】\n已自动加载并执行该技能，输出如下（供本次任务参考）：\n\n${output.take(6000)}",
+                    noteContent = "【系统·自动触发技能「${skill.name}」】\n这是本轮任务开始前由系统自动加载并执行该技能得到的输出，属于你必须遵循的权威上下文（规则/约束/检查项/参考资料）。请先阅读并落实以下输出，再处理用户请求：\n\n${output.take(6000)}",
                     output = output.take(6000),
                     isError = isError
                 )
