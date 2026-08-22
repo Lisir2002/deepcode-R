@@ -1,5 +1,6 @@
 package com.R.codecore.feature.backup.data
 
+import android.net.Uri
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,5 +47,33 @@ class AutoBackupRotationTest {
         assertEquals(keepMax, kept.size)
         // 最新的第一份必然被保留
         assertEquals(list.first(), kept.first())
+    }
+
+    // ── 外部安全备份轮转（包名无关安全网，D6b） ──────────────────────
+
+    private fun externalItems(n: Int): List<ExternalBackupStore.Item> =
+        (0 until n).map {
+            ExternalBackupStore.Item(
+                uri = Uri.parse("content://downloads/$it"),
+                name = "backup-${it}.tar.gz",
+                epochMs = 1_000_000_000_000L + it * 1000L,
+            )
+        }
+
+    @Test
+    fun `外部备份_不超过保留上限_全部保留不删除`() {
+        val list = externalItems(keepMax)
+        assertTrue(excessExternalBackups(list, keepMax).isEmpty())
+    }
+
+    @Test
+    fun `外部备份_超出上限_仅删除最旧的超出部分`() {
+        val list = externalItems(keepMax + 3)
+        val excess = excessExternalBackups(list, keepMax)
+        assertEquals(3, excess.size)
+        assertEquals(
+            listOf("backup-7.tar.gz", "backup-8.tar.gz", "backup-9.tar.gz"),
+            excess.map { it.name }
+        )
     }
 }

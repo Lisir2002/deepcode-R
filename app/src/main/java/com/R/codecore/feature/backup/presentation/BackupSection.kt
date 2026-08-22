@@ -76,6 +76,7 @@ internal fun BackupSection(viewModel: BackupViewModel) {
     }
 
     var showRestoreConfirm by remember { mutableStateOf(false) }
+    var showExternalRestoreConfirm by remember { mutableStateOf(false) }
 
     var password by remember { mutableStateOf("") }
     var pendingAction by remember { mutableStateOf<PendingAction?>(null) }
@@ -132,6 +133,13 @@ internal fun BackupSection(viewModel: BackupViewModel) {
             backupCount = dataSafety.backupCount,
             working = dataSafety.working,
             onBackupNow = { viewModel.backupNow() }
+        )
+        ExternalBackupCard(
+            lastBackupTime = dataSafety.lastExternalBackupTime,
+            backupCount = dataSafety.externalBackupCount,
+            working = dataSafety.working,
+            onBackupNow = { viewModel.backupToExternal() },
+            onRestore = { showExternalRestoreConfirm = true }
         )
         BackupInfoCard()
         ActionCard(
@@ -253,6 +261,31 @@ internal fun BackupSection(viewModel: BackupViewModel) {
         )
     }
 
+    // 从外部安全区恢复前确认
+    if (showExternalRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExternalRestoreConfirm = false },
+            title = { Text(stringResource(R.string.backup_external_restore_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.backup_external_restore_confirm_desc,
+                        formatBackupTime(dataSafety.lastExternalBackupTime)
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExternalRestoreConfirm = false
+                    viewModel.restoreFromLatestExternal()
+                }) { Text(stringResource(R.string.backup_external_restore)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExternalRestoreConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
+            }
+        )
+    }
+
     if (state is BackupState.Working) {
         ProgressDialog()
     }
@@ -368,6 +401,70 @@ private fun AutoBackupCard(
                 enabled = !working
             ) {
                 Text(stringResource(R.string.backup_auto_backup_now))
+            }
+        }
+    }
+}
+
+/**
+ * 外部安全备份卡片（数据保全防线 D6b）：展示外部安全区备份时间/份数，支持立即备份与恢复。
+ *
+ * 外部安全区 = 公共存储「下载/RCodeCore/backups」的加密备份（包名无关，卸载/包名变更后仍保留），
+ * 是「applicationId 变更导致历史数据隔离」后仍能找回数据的底层保证（见 AutoBackupManager）。
+ */
+@Composable
+private fun ExternalBackupCard(
+    lastBackupTime: Long?,
+    backupCount: Int,
+    working: Boolean,
+    onBackupNow: () -> Unit,
+    onRestore: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radius.md),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFEFCE8)),
+        border = BorderStroke(1.dp, Color(0xFFFDE68A))
+    ) {
+        Column(
+            modifier = Modifier.padding(Spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+        ) {
+            Text(
+                text = stringResource(R.string.backup_external_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(R.string.backup_external_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = if (lastBackupTime != null) {
+                    stringResource(R.string.backup_external_last, formatBackupTime(lastBackupTime))
+                } else {
+                    stringResource(R.string.backup_external_none_label)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                TextButton(
+                    onClick = onBackupNow,
+                    enabled = !working
+                ) {
+                    Text(stringResource(R.string.backup_external_backup_now))
+                }
+                if (backupCount > 0) {
+                    TextButton(
+                        onClick = onRestore,
+                        enabled = !working
+                    ) {
+                        Text(stringResource(R.string.backup_external_restore))
+                    }
+                }
             }
         }
     }

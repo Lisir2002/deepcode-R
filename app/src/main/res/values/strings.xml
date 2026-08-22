@@ -323,6 +323,22 @@
     <string name="backup_auto_failed">本机自动备份失败</string>
     <string name="backup_auto_restore_failed">从自动备份恢复失败</string>
 
+    <!-- 数据保全：外部安全备份（公共目录加密，包名无关） + 启动级全局告警 -->
+    <string name="backup_external_title">外部安全备份</string>
+    <string name="backup_external_desc">把聊天历史等数据用应用签名密钥加密，备份到公共存储「下载/RCodeCore/backups」。仅同一签名应用可解密，卸载或包名变更后仍保留，是找回历史数据的安全网。</string>
+    <string name="backup_external_last">上次外部安全备份：%1$s</string>
+    <string name="backup_external_none_label">尚未生成外部安全备份</string>
+    <string name="backup_external_backup_now">立即备份到外部安全区</string>
+    <string name="backup_external_restore">从外部安全区恢复</string>
+    <string name="backup_external_restore_confirm_title">从外部安全区恢复？</string>
+    <string name="backup_external_restore_confirm_desc">将使用最近一份外部加密备份（%1$s）解密并导入数据。当前数据将被合并，确定继续？</string>
+    <string name="backup_external_failed">外部安全备份失败</string>
+    <string name="backup_external_none">外部暂无安全备份</string>
+    <string name="backup_external_key_failed">无法派生签名密钥，外部安全备份解密失败</string>
+    <string name="backup_external_read_failed">读取外部安全备份失败</string>
+    <string name="backup_data_safety_alert_go">去备份与还原</string>
+    <string name="backup_data_safety_alert_dismiss">我知道了</string>
+
     <!-- Backup ViewModel -->
     <string name="backup_export_failed">导出失败</string>
     <string name="backup_wrong_password">备份口令错误，或加密备份文件已损坏</string>

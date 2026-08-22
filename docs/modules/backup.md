@@ -22,9 +22,13 @@
 | `domain/BackupCrypto.kt` | 对称加解密工具（PBKDF2WithHmacSHA256 + AES/GCM/NoPadding 流式），含 `BackupDecryptionException` |
 | `domain/BackupEncryptScope.kt` | 加密范围枚举（`CREDENTIALS_ONLY` / `FULL`）——当前实现采用全量加密语义，枚举保留 |
 | `domain/BackupSnapshot.kt` | 备份数据模型：`BackupSnapshot`（旧格式）、`BackupMetadata`（流式格式的 metadata.json）及全套 DTO（ProviderDto、GitCredentialDto、RemoteConnectionDto、RemoteMountDto、ChatSessionDto、AgentMessageDto、TodoItemDto） |
-| `presentation/BackupViewModel.kt` | 备份/还原的 UI 状态机（`BackupState`）与流式导入导出编排；数据保全 UI 状态（`DataSafetyUiState`，哨兵 + 本机自动备份） |
-| `presentation/BackupSection.kt` | 备份设置页 Compose UI：SAF 文件选择、数据范围勾选、口令输入、进度/结果弹窗、历史数据恢复横幅、数据丢失告警横幅、自动备份卡片 |
-| `data/AutoBackupManager.kt` | 本机自动备份：全量无口令导出到私有目录 `filesDir/auto-backups/`，轮转保留最近 7 份（纯判定 `excessBackupFiles` 可单测） |
+| `presentation/BackupViewModel.kt` | 备份/还原的 UI 状态机（`BackupState`）与流式导入导出编排；数据保全 UI 状态（`DataSafetyUiState`，哨兵 + 本机/外部自动备份） |
+| `presentation/BackupSection.kt` | 备份设置页 Compose UI：SAF 文件选择、数据范围勾选、口令输入、进度/结果弹窗、历史数据恢复横幅、数据丢失告警横幅、本机自动备份卡片、外部安全备份卡片 |
+| `data/AutoBackupManager.kt` | 双保险自动备份：本机私有目录明文备份（`filesDir/auto-backups/`）+ 外部公共目录签名密钥加密备份，各自轮转保留最近 7 份（纯判定 `excessBackupFiles` / `excessExternalBackups` 可单测） |
+| `data/SignatureKeyStore.kt` | 从应用签名证书 SHA-256 派生「跨包名稳定」加密密钥：同一 keystore 签名的包（无论包名）得到相同口令，是外部加密备份可跨包解密找回的密钥基础 |
+| `data/ExternalBackupStore.kt` | 外部公共存储备份落点（包名无关安全网）：API 29+ 走 MediaStore.Downloads（`Download/RCodeCore/backups`，免权限），API <29 走 `getExternalStoragePublicDirectory`（需 WRITE_EXTERNAL_STORAGE）；只写调用方加密后的内容 |
+| `data/LegacyPackageDetector.kt` | 同签名旧包检测：判断 `com.aicodeeditor` / `com.aicode` / `com.deep.rcode` 旧包是否仍安装且签名一致，供哨兵区分「真全新安装」与「rebrand 升级」 |
+| `data/DataSafetyNotifier.kt` | 数据保全通知器：启动检查唯一出口（跑哨兵 + 升级前双保险备份 + 发布判定结果），MainActivity 据此弹启动级全局告警 |
 | `data/guard/AppRunMeta.kt` | 应用运行元数据持久化（DataStore `app_run_meta`）：`dataInitialized` / `lastVersionCode` / `lastApplicationId`，哨兵判定依据 |
 | `data/guard/DataSentinel.kt` | 数据完整性哨兵：启动检测「全新安装 / 正常升级 / 数据丢失 / 包名被改」并维护运行元数据 |
 | `data/guard/SentinelLogic.kt` | 哨兵**纯判定逻辑**（`SentinelVerdict` 枚举 + `SentinelLogic.evaluate`，无 Android 依赖，可单测） |
@@ -88,15 +92,17 @@
   - D2 CI 发版门禁 `.github/workflows/android-release.yml` 的 `Verify applicationId stability`：比对当前 tag 与上一 tag 的 `applicationId`，不一致则 `::error::` 阻断发版。
   - D3 构建期白名单 `app/build.gradle.kts` 的 `androidComponents.onVariants`：`applicationId` 不在 `ALLOWED_APPLICATION_IDS`（`com.R.codecore` / `com.R.codecore.debug`）内 → 构建直接失败。
 - **防丢失（运行时数据安全网）**：
-  - D4 数据完整性哨兵（`DataSentinel` + `AppRunMeta` + `SentinelLogic`）：启动时读运行元数据与 `ChatSessionDao.count()`，判定 `FIRST_RUN / UPGRADED / NORMAL / DATA_LOST / PACKAGE_CHANGED`。判定优先级：未初始化→`FIRST_RUN`；包名不一致→`PACKAGE_CHANGED`（优先于 DATA_LOST）；已初始化但会话数=0→`DATA_LOST`；versionCode 增大→`UPGRADED`；其余→`NORMAL`。`DATA_LOST`/`PACKAGE_CHANGED` 不更新 `lastRun`，保留告警态供 UI 持续提示。
-  - D5 升级前自动备份（`AutoBackupManager`）：哨兵判定 `UPGRADED` 时后台执行 `BackupManager.export(null, BackupOptions(), FileOutputStream)` 全量备份到 `filesDir/auto-backups/backup-<epochMs>.tar.gz`（无口令明文，仅本应用私有目录可读），`pruneLocked` 轮转保留最近 7 份（纯判定逻辑 `excessBackupFiles` 可单测）。全程 `runCatching`，失败仅记日志不阻断启动。
-  - D6 自动备份状态可视化：`BackupSection` 顶部 `AutoBackupCard`（上次备份时间、份数、「立即备份到本机」）。
+  - D4 数据完整性哨兵（`DataSentinel` + `AppRunMeta` + `SentinelLogic` + `LegacyPackageDetector`）：启动时读运行元数据与 `ChatSessionDao.count()`，判定 `FIRST_RUN / UPGRADED / NORMAL / DATA_LOST / PACKAGE_CHANGED`。判定优先级：未初始化且无同签名旧包→`FIRST_RUN`；未初始化但有同签名旧包→`PACKAGE_CHANGED`（哨兵记忆随包名隔离丢失时，靠 `LegacyPackageDetector` 识别 rebrand 升级，不再静默当全新安装）；包名不一致→`PACKAGE_CHANGED`（优先于 DATA_LOST）；已初始化但会话数=0→`DATA_LOST`；versionCode 增大→`UPGRADED`；其余→`NORMAL`。`DATA_LOST`/`PACKAGE_CHANGED` 不更新 `lastRun`，保留告警态供 UI 持续提示。
+  - D5 升级前自动备份（`AutoBackupManager`）：哨兵判定 `UPGRADED` 时后台执行 `backupAll()` 双保险备份——本机私有目录明文（`filesDir/auto-backups/backup-<epochMs>.tar.gz`，仅本应用可读）+ 外部公共目录签名密钥加密（`Download/RCodeCore/backups/`，包名无关）。各自 `pruneLocked` / `pruneExternalLocked` 轮转保留最近 7 份（纯判定 `excessBackupFiles` / `excessExternalBackups` 可单测）。全程 `runCatching`，失败仅记日志不阻断启动。
+  - D6 自动备份状态可视化：`BackupSection` 顶部 `AutoBackupCard`（本机：上次备份时间、份数、「立即备份到本机」）。
+  - D6b 外部安全备份卡片：`BackupSection` 的 `ExternalBackupCard`（外部安全区：上次备份时间、份数、「立即备份到外部安全区」、有备份时「从外部安全区恢复」）。
 - **可找回（迁移与恢复入口）**：
   - D7 同签名旧包检测横幅 `LegacyDataRecoveryBanner`（见 3.6）。
   - D8 数据丢失告警 `DataLossAlertBanner`：哨兵返回 `DATA_LOST`/`PACKAGE_CHANGED` 时展示红色横幅，本机有自动备份则提供「从最近备份恢复」（`AutoBackupManager.latestBackup()` + `BackupManager.import(file, null)` 无口令导入）。
+  - D8b 启动级全局告警 `DataSafetyStartupAlert`（MainActivity 顶层）：`DataSafetyNotifier` 发布哨兵判定结果，`DATA_LOST`/`PACKAGE_CHANGED` 时**冷启动即弹全局弹窗**（不再只藏在备份设置页里），一键跳转「设置 → 备份与还原」；「我知道了」仅本次会话去重，恢复后下次启动自然回落不弹。
   - D9 About 页变体/包名展示（`VariantPill`，见 settings 模块）。
 
-**挂载点**：`AIEditorApp.onCreate` 中 `appScope.launch { delay(500L); when (dataSentinel.check()) { UPGRADED -> autoBackupManager.backupNow() ... } }`，延后首帧且 `runCatching` 兜底，任何失败不影响启动。`DataSentinel` / `AutoBackupManager` 由 Hilt 单例注入。
+**挂载点**：`AIEditorApp.onCreate` 中 `appScope.launch { delay(500L); dataSafetyNotifier.run() }`（内部：哨兵 → `UPGRADED` 时 `autoBackupManager.backupAll()` → 发布判定结果），延后首帧且 `runCatching` 兜底，任何失败不影响启动。`MainActivity` 注入 `DataSafetyNotifier` 观察 `verdict` 弹全局告警。`DataSentinel` / `AutoBackupManager` / `DataSafetyNotifier` 等由 Hilt 单例注入。
 
 ## 4. 对外接口与集成点
 
@@ -106,11 +112,12 @@
 | `BackupManager.exportSession(sessionId, output)` | 单会话导出（无密码） |
 | `BackupManager.import(input, password): Result<RestoreStats>` | 流式还原，返回各段条目统计 |
 | `BackupOptions` | 导出数据范围开关（providers / gitCredentials / remoteConnections / chatHistory / mcpServers / permissionRules / appSettings） |
-| `BackupViewModel` | Hilt ViewModel，`BackupState`：`Idle / Working / ExportDone / ImportSuccess(stats) / Error(message)`；数据保全 `dataSafety: StateFlow<DataSafetyUiState>`，方法 `refreshDataSafety()` / `backupNow()` / `restoreFromLatest()` |
-| `BackupSection` | Compose 页面，通过 SAF `CreateDocument` / `OpenDocument` 与系统文件选择器交互；顶部聚合数据保全 UI（`LegacyDataRecoveryBanner` + `DataLossAlertBanner` + `AutoBackupCard`） |
-| `DataSentinel.check()` | 启动哨兵检测，返回 `SentinelVerdict`；由 `AIEditorApp` 在启动延后 500ms 调用，`UPGRADED` 时联动 `AutoBackupManager.backupNow()` |
-| `AutoBackupManager.backupNow()/backups()/latestBackup()/lastBackupTime()` | 立即备份 / 列出全部（最新在前）/ 取最新一份 / 取上次备份时间；`KEEP_MAX=7` |
-| `SentinelLogic.evaluate(...)` | 哨兵纯判定（无 Android 依赖），`AppRunMeta`/`ChatSessionDao.count()` 之外的逻辑均可直接单测 |
+| `BackupViewModel` | Hilt ViewModel，`BackupState`：`Idle / Working / ExportDone / ImportSuccess(stats) / Error(message)`；数据保全 `dataSafety: StateFlow<DataSafetyUiState>`，方法 `refreshDataSafety()` / `backupNow()` / `backupToExternal()` / `restoreFromLatest()` / `restoreFromLatestExternal()` |
+| `BackupSection` | Compose 页面，通过 SAF `CreateDocument` / `OpenDocument` 与系统文件选择器交互；顶部聚合数据保全 UI（`LegacyDataRecoveryBanner` + `DataLossAlertBanner` + `AutoBackupCard` + `ExternalBackupCard`） |
+| `DataSafetyNotifier.run()` | 启动检查唯一出口：哨兵 → `UPGRADED` 时双保险备份 → 发布 `verdict: StateFlow<SentinelVerdict?>`；`shouldShowStartupAlert` / `dismissStartupAlert()` 供 MainActivity 全局告警去重 |
+| `AutoBackupManager` | `backupNow()`（本机）/ `backupToExternal()`（外部加密）/ `backupAll()`（双保险）/ `backups()` / `latestBackup()` / `lastBackupTime()` / `externalBackups()` / `latestExternalBackup()` / `lastExternalBackupTime()` / `restoreFromLatestExternal()`（签名密钥解密导入）；`KEEP_MAX=7` |
+| `DataSentinel.check()` | 哨兵检测，返回 `SentinelVerdict`；由 `DataSafetyNotifier.run()` 在启动延后 500ms 调用，`UPGRADED` 时联动 `AutoBackupManager.backupAll()` |
+| `SentinelLogic.evaluate(...)` | 哨兵纯判定（无 Android 依赖），`AppRunMeta`/`ChatSessionDao.count()`/`LegacyPackageDetector` 之外的逻辑均可直接单测 |
 
 依赖的外部模块：agent（`AgentMessageDao`/`ChatSessionDao`/`TodoItemDao`/`AgentDatabase`/`McpConfigRepository`/`McpManager`/`PermissionRulesRepository`）、credentials（`GitCredentialDao`）、settings（`AIProviderDao` 及 Theme/Keepalive/Log/Vision/Compaction/Sync 设置仓库）、workspace（`RemoteConnectionDao`/`WorkspaceRepository`）、core.security（`CredentialEncryptor`）、core.util（`FileLogger`）。
 
@@ -140,4 +147,6 @@
   - 哨兵新增判定维度（如按消息数而非会话数）时，先扩展 `RunMeta` 与 `SentinelLogic.evaluate`，同步更新 `SentinelLogicTest`；`DATA_LOST`/`PACKAGE_CHANGED` 的「不更新 lastRun」语义勿破坏（否则告警态会消失）。
   - 自动备份调整保留份数时，改 `AutoBackupManager.KEEP_MAX`，并同步 `BackupSection.AutoBackupKeepMax`（当前与 UI 文案硬编码一致）与用户文档 `backup-and-restore.md`。
   - 新增数据段接入自动备份：`AutoBackupManager` 走 `BackupManager.export(null, BackupOptions())` 全量语义，无需单独改动。
+  - **外部安全备份（包名无关安全网）约束**：外部公共目录仅允许写入**签名密钥加密**内容（`SignatureKeyStore.signaturePassword()` 派生口令 + `BackupCrypto.encryptStream`），绝不允许明文落公共目录；外部落点统一走 `ExternalBackupStore`（API 29+ MediaStore / 更早版本公共目录文件），勿在别处直接写公共目录。若调整外部保留份数，同步改 `AutoBackupManager.KEEP_MAX` 并补 `excessExternalBackups` 单测。
+  - **启动级全局告警**：哨兵判定由 `DataSafetyNotifier` 统一发布，MainActivity 的 `DataSafetyStartupAlert` 消费。新增「需要启动提醒」的判定时，改 `shouldShowStartupAlert` 并同步 `SentinelVerdict` 分支。
   - **禁止改 applicationId**：改动即被 D1/D3/CI 门禁拦截，如遇 rebrand 需求只允许改应用名/图标/namespace。

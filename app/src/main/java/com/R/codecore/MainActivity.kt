@@ -106,6 +106,10 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var browserTakeoverManager: com.R.codecore.feature.browser.domain.BrowserTakeoverManager
 
+    /** 数据保全通知器：观察哨兵判定结果，数据疑似丢失/包名变更时弹启动级全局告警（D8b）。 */
+    @Inject
+    lateinit var dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier
+
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -167,7 +171,9 @@ class MainActivity : ComponentActivity() {
                         AppNavigation(
                             browserController = browserController,
                             browserLoginPromptManager = browserLoginPromptManager,
-                            browserTakeoverManager = browserTakeoverManager
+                            browserTakeoverManager = browserTakeoverManager,
+                            dataSafetyNotifier = dataSafetyNotifier,
+                            settingsViewModel = settingsViewModel
                         )
                         // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
                         com.R.codecore.feature.credentials.presentation.component.GlobalCredentialDialogHost(
@@ -228,7 +234,9 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation(
     browserController: com.R.codecore.feature.browser.domain.BrowserController,
     browserLoginPromptManager: com.R.codecore.feature.browser.domain.BrowserLoginPromptManager,
-    browserTakeoverManager: com.R.codecore.feature.browser.domain.BrowserTakeoverManager
+    browserTakeoverManager: com.R.codecore.feature.browser.domain.BrowserTakeoverManager,
+    dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier,
+    settingsViewModel: SettingsViewModel
 ) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -240,7 +248,6 @@ fun AppNavigation(
 
     // Activity 级别的 ViewModel——Drawer 和 AIChatPanel 共享同一个实例。
     val agentViewModel: AIAgentViewModel = hiltViewModel()
-    val settingsViewModel: SettingsViewModel = hiltViewModel()
     val workspaceViewModel: WorkspaceViewModel = hiltViewModel()
 
     // 侧边栏打开时，系统返回键先收起侧边栏。
@@ -509,5 +516,68 @@ fun AppNavigation(
                 )
             }
         }
+
+        // 数据疑似丢失 / 包名变更 → 启动级全局告警（D8b）：
+        // 冷启动后用户打开 App 第一眼就能看到「历史数据异常」提示，可一键跳转备份与还原页恢复。
+        DataSafetyStartupAlert(
+            notifier = dataSafetyNotifier,
+            onGoToBackup = {
+                settingsViewModel.openSection(
+                    com.R.codecore.feature.settings.presentation.component.SettingsSection.Backup
+                )
+                navController.navigate("settings")
+            }
+        )
     }
+}
+
+/**
+ * 数据保全启动级全局告警弹窗（数据保全防线 D8b，解决「数据消失却不报错」）。
+ *
+ * 哨兵（DataSentinel）判定本包名下数据疑似为空（DATA_LOST）或包名被改动（PACKAGE_CHANGED）时，
+ * 覆盖所有页面弹出，提示用户历史数据可能丢失，并提供「去备份与还原」入口。用户选择「我知道了」
+ * 仅本次会话不再弹；数据恢复后下次启动判定自然回落为 UPGRADED/NORMAL，不再告警。
+ */
+@Composable
+private fun DataSafetyStartupAlert(
+    notifier: com.R.codecore.feature.backup.data.DataSafetyNotifier,
+    onGoToBackup: () -> Unit
+) {
+    val verdict by notifier.verdict.collectAsStateWithLifecycle()
+    if (!notifier.shouldShowStartupAlert) return
+    val isPackageChanged = verdict == com.R.codecore.feature.backup.data.guard.SentinelVerdict.PACKAGE_CHANGED
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { notifier.dismissStartupAlert() },
+        title = {
+            androidx.compose.material3.Text(
+                stringResource(
+                    if (isPackageChanged) R.string.backup_package_changed_title
+                    else R.string.backup_data_lost_title
+                )
+            )
+        },
+        text = {
+            androidx.compose.material3.Text(
+                stringResource(
+                    if (isPackageChanged) R.string.backup_package_changed_desc
+                    else R.string.backup_data_lost_desc
+                )
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    notifier.dismissStartupAlert()
+                    onGoToBackup()
+                }
+            ) {
+                androidx.compose.material3.Text(stringResource(R.string.backup_data_safety_alert_go))
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = { notifier.dismissStartupAlert() }) {
+                androidx.compose.material3.Text(stringResource(R.string.backup_data_safety_alert_dismiss))
+            }
+        }
+    )
 }

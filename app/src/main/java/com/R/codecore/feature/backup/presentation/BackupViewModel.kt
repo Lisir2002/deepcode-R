@@ -33,14 +33,18 @@ sealed class BackupState {
     data class Error(val message: String) : BackupState()
 }
 
-/** 数据保全（哨兵 + 本机自动备份）的 UI 状态。 */
+/** 数据保全（哨兵 + 本机/外部自动备份）的 UI 状态。 */
 data class DataSafetyUiState(
     /** 最近一次哨兵判定结果；null 表示尚未检查。 */
     val verdict: SentinelVerdict? = null,
-    /** 最近一次自动备份时间（epoch ms）；null 表示从未自动备份。 */
+    /** 最近一次本机自动备份时间（epoch ms）；null 表示从未自动备份。 */
     val lastBackupTime: Long? = null,
     /** 本机自动备份份数。 */
     val backupCount: Int = 0,
+    /** 最近一次外部安全备份时间（epoch ms）；null 表示从未写入外部安全区。 */
+    val lastExternalBackupTime: Long? = null,
+    /** 外部安全备份份数。 */
+    val externalBackupCount: Int = 0,
     /** 正在执行备份/恢复。 */
     val working: Boolean = false,
     /** 最近一次「立即备份」是否成功。 */
@@ -105,33 +109,52 @@ class BackupViewModel @Inject constructor(
         _state.value = BackupState.Idle
     }
 
-    // ── 数据保全：哨兵 + 本机自动备份 ──────────────────────────────
+    // ── 数据保全：哨兵 + 本机/外部自动备份 ──────────────────────────
 
-    /** 刷新数据安全状态：跑一次哨兵 + 读取本机自动备份信息。 */
+    /** 刷新数据安全状态：跑一次哨兵 + 读取本机与外部安全备份信息。 */
     fun refreshDataSafety() {
         viewModelScope.launch {
             val verdict = dataSentinel.check()
-            _dataSafety.value = DataSafetyUiState(
-                verdict = verdict,
-                lastBackupTime = autoBackupManager.lastBackupTime(),
-                backupCount = autoBackupManager.backups().size,
-            )
+            _dataSafety.value = snapshotUiState(verdict)
         }
     }
+
+    /** 用最近一次哨兵判定 + 最新的本机/外部备份信息重建 UI 状态。 */
+    private fun snapshotUiState(verdict: SentinelVerdict?): DataSafetyUiState = DataSafetyUiState(
+        verdict = verdict,
+        lastBackupTime = autoBackupManager.lastBackupTime(),
+        backupCount = autoBackupManager.backups().size,
+        lastExternalBackupTime = autoBackupManager.lastExternalBackupTime(),
+        externalBackupCount = autoBackupManager.externalBackups().size,
+        justBackedUp = _dataSafety.value.justBackedUp,
+    )
 
     /** 立即全量备份到本机私有目录。 */
     fun backupNow() {
         _dataSafety.update { it.copy(working = true) }
         viewModelScope.launch {
             val ok = autoBackupManager.backupNow()
-            _dataSafety.value = DataSafetyUiState(
-                verdict = _dataSafety.value.verdict,
-                lastBackupTime = autoBackupManager.lastBackupTime(),
-                backupCount = autoBackupManager.backups().size,
+            _dataSafety.value = snapshotUiState(_dataSafety.value.verdict).copy(
                 justBackedUp = ok,
+                working = false,
             )
             if (!ok) {
                 _state.value = BackupState.Error(context.getString(R.string.backup_auto_failed))
+            }
+        }
+    }
+
+    /** 立即加密备份到外部公共目录（包名无关安全网，见 AutoBackupManager.backupToExternal）。 */
+    fun backupToExternal() {
+        _dataSafety.update { it.copy(working = true) }
+        viewModelScope.launch {
+            val ok = autoBackupManager.backupToExternal()
+            _dataSafety.value = snapshotUiState(_dataSafety.value.verdict).copy(
+                justBackedUp = ok,
+                working = false,
+            )
+            if (!ok) {
+                _state.value = BackupState.Error(context.getString(R.string.backup_external_failed))
             }
         }
     }
@@ -148,15 +171,28 @@ class BackupViewModel @Inject constructor(
             val result = withContext(Dispatchers.IO) {
                 FileInputStream(file).use { backupManager.import(it, null) }
             }
-            result.onSuccess { stats ->
-                _dataSafety.update { it.copy(working = false) }
-                _state.value = BackupState.ImportSuccess(stats)
-            }.onFailure { e ->
-                _dataSafety.update { it.copy(working = false) }
-                _state.value = BackupState.Error(
-                    e.message ?: context.getString(R.string.backup_auto_restore_failed)
-                )
-            }
+            onRestoreResult(result)
+        }
+    }
+
+    /** 从最近一份外部加密备份恢复（签名密钥解密导入，见 AutoBackupManager.restoreFromLatestExternal）。 */
+    fun restoreFromLatestExternal() {
+        _dataSafety.update { it.copy(working = true) }
+        viewModelScope.launch {
+            val result = autoBackupManager.restoreFromLatestExternal()
+            onRestoreResult(result)
+        }
+    }
+
+    /** 统一处理一次恢复结果：成功 → ImportSuccess，失败 → Error，并复位 working。 */
+    private fun onRestoreResult(result: Result<RestoreStats>) {
+        _dataSafety.update { it.copy(working = false) }
+        result.onSuccess { stats ->
+            _state.value = BackupState.ImportSuccess(stats)
+        }.onFailure { e ->
+            _state.value = BackupState.Error(
+                e.message ?: context.getString(R.string.backup_auto_restore_failed)
+            )
         }
     }
 }

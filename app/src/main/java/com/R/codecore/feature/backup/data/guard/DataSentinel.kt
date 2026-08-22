@@ -3,6 +3,7 @@ package com.R.codecore.feature.backup.data.guard
 import android.content.Context
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
+import com.R.codecore.feature.backup.data.LegacyPackageDetector
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -16,6 +17,11 @@ import javax.inject.Singleton
  * 背景：包名（applicationId）变更 = 全新安装，历史对话"消失"；数据被异常清空同样表现为会话数为 0。
  * 哨兵把这两种情况与「正常升级」「全新安装」区分开，供上层提示用户 / 触发自动备份。
  *
+ * 关键修正（包名变更可感知）：哨兵自身的记忆（AppRunMeta）存在包名私有目录，包名一变它也跟着丢，
+ * 此前会把「rebrand 升级导致的数据隔离」误判为「全新安装」静默通过（用户看到的就是"不报错"）。
+ * 现引入 [LegacyPackageDetector]：本包名下无记忆但检测到同签名旧包仍安装 → 判 [SentinelVerdict.PACKAGE_CHANGED]，
+ * 从而让"历史数据消失"变成"可感知、可恢复的异常"，不再静默。
+ *
  * 失败兜底：任何一步失败都只记日志并按 [SentinelVerdict.NORMAL] 处理，绝不阻断启动。
  */
 @Singleton
@@ -23,6 +29,7 @@ class DataSentinel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val appRunMeta: AppRunMeta,
     private val chatSessionDao: ChatSessionDao,
+    private val legacyPackageDetector: LegacyPackageDetector,
 ) {
     private companion object {
         const val TAG = "DataSentinel"
@@ -38,7 +45,13 @@ class DataSentinel @Inject constructor(
             val vc = currentVersionCode()
             val pkg = context.packageName
             val count = chatSessionDao.count()
-            val verdict = SentinelLogic.evaluate(meta, vc, pkg, count)
+            val verdict = SentinelLogic.evaluate(
+                meta = meta,
+                currentVersionCode = vc,
+                currentApplicationId = pkg,
+                sessionCount = count,
+                legacyPackageInstalled = legacyPackageDetector.hasSameSignatureLegacyPackage(),
+            )
             when (verdict) {
                 SentinelVerdict.FIRST_RUN -> appRunMeta.markInitialized(vc, pkg)
                 SentinelVerdict.UPGRADED, SentinelVerdict.NORMAL -> appRunMeta.updateLastRun(vc, pkg)

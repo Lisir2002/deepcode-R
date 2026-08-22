@@ -29,15 +29,43 @@ class SentinelLogicTest {
     }
 
     @Test
-    fun `全新安装_即便有历史_也返回FIRST_RUN`() {
-        // 新包名首次运行：即便之前旧包有很多会话，本包名下仍是全新安装 → FIRST_RUN（静默）
+    fun `全新安装_无同签名旧包_即便有历史_也返回FIRST_RUN`() {
+        // 新包名首次运行、且未检测到同签名旧包仍安装：本包名下仍是全新安装 → FIRST_RUN（静默）
         val verdict = SentinelLogic.evaluate(
             meta = RunMeta(dataInitialized = false),
             currentVersionCode = 100,
             currentApplicationId = "com.deep.rcode",
             sessionCount = 0,
+            legacyPackageInstalled = false,
         )
         assertEquals(SentinelVerdict.FIRST_RUN, verdict)
+    }
+
+    @Test
+    fun `未初始化但检测到同签名旧包_返回PACKAGE_CHANGED`() {
+        // rebrand 升级：本包名下无记忆（哨兵记忆随包名隔离而丢）、旧包仍同签名安装。
+        // 必须判为 PACKAGE_CHANGED（提示迁移/恢复），而非静默的 FIRST_RUN —— 否则历史数据"消失且不报错"。
+        val verdict = SentinelLogic.evaluate(
+            meta = RunMeta(dataInitialized = false),
+            currentVersionCode = 100,
+            currentApplicationId = "com.R.codecore",
+            sessionCount = 0,
+            legacyPackageInstalled = true,
+        )
+        assertEquals(SentinelVerdict.PACKAGE_CHANGED, verdict)
+    }
+
+    @Test
+    fun `已初始化且有同签名旧包_不影响正常判定`() {
+        // 已正常初始化的本包名下，检测到旧包存在不改变 UPGRADED 判定（升级自动备份正常走）
+        val verdict = SentinelLogic.evaluate(
+            meta = meta,
+            currentVersionCode = 101,
+            currentApplicationId = "com.R.codecore",
+            sessionCount = 5,
+            legacyPackageInstalled = true,
+        )
+        assertEquals(SentinelVerdict.UPGRADED, verdict)
     }
 
     @Test

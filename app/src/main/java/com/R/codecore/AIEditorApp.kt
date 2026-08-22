@@ -8,9 +8,6 @@ import com.R.codecore.core.util.AILogger
 import com.R.codecore.core.util.FileLogger
 import net.schmizz.sshj.common.SecurityUtils
 import com.R.codecore.feature.agent.domain.container.ContainerInstaller
-import com.R.codecore.feature.backup.data.AutoBackupManager
-import com.R.codecore.feature.backup.data.guard.DataSentinel
-import com.R.codecore.feature.backup.data.guard.SentinelVerdict
 import com.R.codecore.feature.credentials.data.GitCredentialsFileSync
 import com.R.codecore.feature.agent.domain.mcp.McpManager
 import com.R.codecore.feature.settings.data.repository.KeepaliveSettingsRepository
@@ -108,13 +105,12 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var credentialEncryptor: CredentialEncryptor
 
-    /** 数据完整性哨兵：启动即检测"数据是否异常变空 / 是否正常升级"（数据保全防线 D4）。 */
+    /**
+     * 数据保全通知器：启动即跑哨兵（D4）+ 升级前双保险自动备份（D5），并把判定结果发布给
+     * MainActivity 的启动级全局告警弹窗（解决「数据消失却不报错」，数据保全防线 D8b）。
+     */
     @Inject
-    lateinit var dataSentinel: DataSentinel
-
-    /** 本机自动备份：升级前自动全量备份 + 设置页手动触发（数据保全防线 D5）。 */
-    @Inject
-    lateinit var autoBackupManager: AutoBackupManager
+    lateinit var dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier
 
     /** 长驻作用域：持续把持久化的日志等级同步到 FileLogger。
      * RC61b：附加 [CoroutineExceptionHandler]，任何子协程未捕获的异常都兜底记日志，
@@ -223,17 +219,14 @@ class AIEditorApp : Application() {
         // 连接已配置的 MCP server，把其工具注册进 ToolRegistry（内部自有 scope，失败不影响启动）。
         mcpManager.start()
 
-        // 数据保全（D4/D5）：启动即跑数据完整性哨兵（区分全新安装/正常升级/数据丢失/包名被改）；
-        // 判定为「正常升级」时自动全量备份到私有目录（升级前数据安全网）。
+        // 数据保全（D4/D5/D8b）：启动即跑数据完整性哨兵（区分全新安装/正常升级/数据丢失/包名被改），
+        // 判定为「正常升级」时自动双保险备份（本机私有 + 外部公共目录）；判定结果发布给
+        // MainActivity，数据疑似丢失/包名变更时弹启动级全局告警（用户第一眼就能看到，不再静默）。
         // 设计要点：延后 500ms 不抢首帧；runCatching 隔离，任何失败只记日志不阻断启动。
         appScope.launch {
             delay(500L)
-            runCatching {
-                when (dataSentinel.check()) {
-                    SentinelVerdict.UPGRADED -> autoBackupManager.backupNow()
-                    else -> Unit
-                }
-            }.onFailure { FileLogger.w(TAG, "数据保全（哨兵/自动备份）失败，不影响启动", it) }
+            runCatching { dataSafetyNotifier.run() }
+                .onFailure { FileLogger.w(TAG, "数据保全（哨兵/自动备份/通知）失败，不影响启动", it) }
         }
     }
 
