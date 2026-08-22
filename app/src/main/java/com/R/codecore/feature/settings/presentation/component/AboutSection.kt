@@ -73,6 +73,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.R.codecore.BuildConfig
 import com.R.codecore.R
 import com.R.codecore.core.theme.CyberColors
 import com.R.codecore.core.theme.Radius
@@ -152,7 +153,8 @@ internal fun AboutSection() {
         HeroCard(
             appName = stringResource(R.string.app_name),
             appIcon = appIcon,
-            appInfo = appInfo
+            appInfo = appInfo,
+            isDebug = BuildConfig.DEBUG
         )
 
         // ===== 模块 2：核心组件（宿主 / 终端 / 代理 / 浏览器） =====
@@ -245,7 +247,8 @@ internal fun AboutSection() {
 private fun HeroCard(
     appName: String,
     appIcon: ImageBitmap?,
-    appInfo: AppInfo
+    appInfo: AppInfo,
+    isDebug: Boolean
 ) {
     Box(
         modifier = Modifier
@@ -311,6 +314,7 @@ private fun HeroCard(
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                             VersionPill(text = "v${appInfo.name}")
                             VersionPill(text = "#${appInfo.code}", outline = true)
+                            VariantPill(isDebug = isDebug)
                         }
                     }
                 }
@@ -343,6 +347,13 @@ private fun HeroCard(
                             label = stringResource(R.string.about_sdk_min),
                             value = "API ${appInfo.minSdk}"
                         )
+                        HeroInfoChip(
+                            label = stringResource(R.string.about_variant),
+                            value = stringResource(
+                                if (isDebug) R.string.about_variant_debug
+                                else R.string.about_variant_release
+                            )
+                        )
                     }
                     Column(
                         modifier = Modifier.weight(1f),
@@ -351,6 +362,10 @@ private fun HeroCard(
                         HeroInfoChip(
                             label = stringResource(R.string.about_build_no),
                             value = "#${appInfo.code}"
+                        )
+                        HeroInfoChip(
+                            label = stringResource(R.string.about_package),
+                            value = appInfo.packageName
                         )
                         HeroInfoChip(
                             label = stringResource(R.string.about_author_title),
@@ -395,6 +410,38 @@ private fun VersionPill(text: String, outline: Boolean = false) {
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = if (outline) Color(0xFF475467) else Color.White
+        )
+    }
+}
+
+/**
+ * 构建变体胶囊：Debug 版（com.R.codecore.debug）与 Release 版（com.R.codecore）数据目录相互隔离。
+ * 展示在版本号旁，提醒用户勿混装 debug/release 包导致"历史对话消失"。
+ */
+@Composable
+private fun VariantPill(isDebug: Boolean) {
+    val shape = RoundedCornerShape(Radius.pill)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(if (isDebug) Color(0xFFFFF3E0) else Color(0xFFEFF6FF))
+            .border(
+                border = BorderStroke(
+                    0.8.dp,
+                    if (isDebug) Color(0xFFFFD6A5) else Color(0xFFBFDBFE)
+                ),
+                shape = shape
+            )
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = stringResource(
+                if (isDebug) R.string.about_variant_debug else R.string.about_variant_release
+            ),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (isDebug) Color(0xFFB45309) else Color(0xFF1D4ED8)
         )
     }
 }

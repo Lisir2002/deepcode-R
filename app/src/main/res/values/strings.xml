@@ -302,6 +302,8 @@
     <string name="backup_stat_mcp_servers">· MCP 服务器 %1$s 个</string>
     <string name="backup_stat_permission_rules">· 全局授权规则 %1$s 条</string>
     <string name="backup_settings_covered">主题、保活、日志、识图、同步偏好已覆盖</string>
+    <string name="backup_legacy_found_title">检测到旧版本数据</string>
+    <string name="backup_legacy_found_desc">检测到旧版本应用「%1$s」仍安装在本机（与本应用同签名但包名不同）。因包名变更，旧版本的历史对话不会自动迁移。如需找回，请在旧版本中「备份与还原 → 导出备份（勾选聊天历史）」，再在本版本「导入备份」恢复。</string>
 
     <!-- Backup ViewModel -->
     <string name="backup_export_failed">导出失败</string>
@@ -925,6 +927,9 @@
     <string name="about_package">包名</string>
     <string name="about_build_no">构建号</string>
     <string name="about_sdk_min">最低 SDK</string>
+    <string name="about_variant">构建变体</string>
+    <string name="about_variant_release">Release 版</string>
+    <string name="about_variant_debug">Debug 版</string>
 
     <!-- About - Update & Release Notes -->
     <string name="about_release_notes">更新说明</string>

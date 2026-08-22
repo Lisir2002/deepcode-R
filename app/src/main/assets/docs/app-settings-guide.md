@@ -109,6 +109,7 @@ AI 工作时输入框仍然可用，输入后回车（或点击发送键前的�
     *   相等 → 弹窗提示「已经是最新版本」。
     *   不同 → 弹窗「发现新版本 vX」，点击「前往下载」用浏览器打开 GitHub Releases 页面获取最新 APK。
     *   网络失败或解析失败 → 弹窗提示「检查失败」并给出错误信息。
+*   **构建变体 / 包名**：应用信息卡片内展示「构建变体」（Release 版 / Debug 版）与「包名」（如 `com.R.codecore` 或 Debug 版 `com.R.codecore.debug`）。App 数据按包名隔离，混装 Debug/Release 包或包名变更都会导致历史对话不可见（详见 backup-and-restore.md 第 3 节）。
 *   **GitHub 仓库**：点击用系统浏览器打开本项目源码仓库 `https://github.com/Lisir2002/deepcode-R`。
 *   **开源许可证**：本项目使用 **GPL-3.0**，点击用浏览器打开完整 LICENSE 文件。
 

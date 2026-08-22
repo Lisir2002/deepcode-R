@@ -23,7 +23,7 @@
 | `domain/BackupEncryptScope.kt` | 加密范围枚举（`CREDENTIALS_ONLY` / `FULL`）——当前实现采用全量加密语义，枚举保留 |
 | `domain/BackupSnapshot.kt` | 备份数据模型：`BackupSnapshot`（旧格式）、`BackupMetadata`（流式格式的 metadata.json）及全套 DTO（ProviderDto、GitCredentialDto、RemoteConnectionDto、RemoteMountDto、ChatSessionDto、AgentMessageDto、TodoItemDto） |
 | `presentation/BackupViewModel.kt` | 备份/还原的 UI 状态机（`BackupState`）与流式导入导出编排 |
-| `presentation/BackupSection.kt` | 备份设置页 Compose UI：SAF 文件选择、数据范围勾选、口令输入、进度/结果弹窗 |
+| `presentation/BackupSection.kt` | 备份设置页 Compose UI：SAF 文件选择、数据范围勾选、口令输入、进度/结果弹窗、历史数据恢复横幅 |
 
 ## 3. 核心架构与主流程
 
@@ -68,6 +68,12 @@
 ### 3.5 DAO 安全访问壳（`safeDao` / `safeDaoSuspend`）
 
 所有 DAO 调用统一经过安全壳：Room 首次 query 触发 onOpen schema 校验，失败会抛 `IllegalStateException` 直接崩进程。安全壳捕获后记 `FileLogger` 并按 `failValue` 兜底返回，保证备份/导入流程失败不外溢到 UI 启动链。
+
+### 3.6 历史数据恢复横幅（包名变更检测）
+
+`BackupSection` 顶部有 `LegacyDataRecoveryBanner`：通过 `PackageManager` 检测历史遗留包名（`com.aicodeeditor`、`com.deep.rcode`）是否仍安装且**签名与当前包一致**（`GET_SIGNING_CERTIFICATES`/`GET_SIGNATURES` 取首个签名比对）。若命中则展示提示卡，引导用户「旧版本导出备份 → 本版本导入备份」找回因包名变更而隔离的历史对话。
+
+> 背景：applicationId 三次变更（`com.aicodeeditor` → `com.deep.rcode` → `com.R.codecore`），每次变更是完全不同的 App，新包名全新安装导致旧包数据不可见。该横幅与 `ApplicationIdStabilityTest`（锁死 release applicationId）共同防止用户数据再次因改包名而丢失。
 
 ## 4. 对外接口与集成点
 
