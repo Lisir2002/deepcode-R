@@ -174,11 +174,21 @@ else
 fi
 
 # ---- P-4 关键文件探测 ----
+# AGENTS.md（AI 纪律源）/ README.md（项目说明）缺失时升级为建议项（W-6/W-7），
+# 引导先补齐纪律与说明文档再开工；.gitignore/.gitattributes 仅作快照展示。
 for f in AGENTS.md .gitignore .gitattributes README.md; do
   if [ -f "$ROOT/$f" ]; then
     echo "[文件] $f 存在"
   else
     echo "[文件] $f 缺失"
+    case "$f" in
+      AGENTS.md)
+        echo "⚠️  [W-6] 纪律文档 AGENTS.md 缺失——建议先创建（含边界规则 Always/Ask First/Never、提交规范、资产同步纪律）再开始写码，AI 才能依纪律行事"
+        echo w >> "$TMPW" ;;
+      README.md)
+        echo "⚠️  [W-7] 说明文档 README.md 缺失——建议补一份项目说明（技术栈/运行方式/接口约定），便于理解与交接"
+        echo w >> "$TMPW" ;;
+    esac
   fi
 done
 

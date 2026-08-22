@@ -110,6 +110,10 @@
   `assets/prompts/`、`assets/docs/`、`docs/modules/` 的同步（对应 AGENTS.md 资产同步纪律）。
 - **W-4 危险/敏感操作前置询问**：任务若含删除/重构/改 schema/发版等 Ask First 项，提示先与用户确认。
 - **W-5 无任务描述**：`SKILL_ARG_TASK` 为空时，提示 AI 先向用户澄清需求再拆解（用 `askUserQuestion`）。
+- **W-6 纪律文档缺失**：`AGENTS.md` 不存在。→ 先创建（含边界规则/提交规范/资产同步纪律）再开工，
+  让 AI 有纪律可依（v1.2.0 新增，修复「文档缺失只快照不判定」的口径脱节）。
+- **W-7 说明文档缺失**：`README.md` 不存在。→ 补一份项目说明（技术栈/运行方式/接口约定）。
+  `.gitignore`/`.gitattributes` 缺失仍仅作快照展示，不计入判定。
 
 ### 4.3 PROMPT 引导（SKILL.md 正文，指导 AI 完成计划拆解）
 
@@ -183,3 +187,7 @@ SKILL_PROJECT_PATH=<容器侧项目路径，默认 /root/workspace>
 > 落地记录：coding-preflight v1.0.0 已完成，与 pre-commit-health 构成「开工前 → 提交前」闭环。
 > 实现要点：`SKILL_ARG_TASK` 由 loadSkill args 经 SkillExecutor 注入（机制已存在）；busybox/dash 兼容
 > （命令替换内不嵌套带引号参数，先转存局部变量）；B1 分层（Android / 非 Android）自动切换环境栈推断。
+>
+> 落地记录 v1.2.0：修复「关键文档缺失只快照不判定」的口径脱节——`AGENTS.md` 缺失升级为建议项
+> W-6（引导先建纪律文档再开工）、`README.md` 缺失升级为建议项 W-7；`.gitignore`/`.gitattributes`
+> 缺失仍仅作快照。已验证：非 git+无文档场景建议项=2（W-6/W-7），/workspace 文档齐全无误报。
