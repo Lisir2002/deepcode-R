@@ -68,7 +68,7 @@ class OpenAIAdapter @Inject constructor(
         if (useResponseApi) {
             val request = mutableMapOf<String, Any?>(
                 "model" to model,
-                "input" to openAIMessages,
+                "input" to convertToResponseApiInput(openAIMessages),
                 "tools" to toolDefs
             )
             reasoningEffort?.let { request["reasoning"] = mapOf("effort" to it) }
@@ -178,7 +178,7 @@ class OpenAIAdapter @Inject constructor(
         if (useResponseApi) {
             val request = mutableMapOf<String, Any?>(
                 "model" to model,
-                "input" to openAIMessages,
+                "input" to convertToResponseApiInput(openAIMessages),
                 "tools" to toolDefs,
                 "stream" to true
             )
@@ -520,6 +520,54 @@ class OpenAIAdapter @Inject constructor(
         }
         return cleaned
     }
+
+    /**
+     * 把 Chat Completions 消息结构（[OpenAIChatMessage]，role=tool / tool_calls 字段）转换为
+     * Responses API 的 input item 结构。
+     *
+     * Responses API 不认 Chat Completions 的 `role=tool` 与 assistant 上的 `tool_calls` 字段，
+     * 必须转换为：
+     * - 工具结果：顶层 `{"type": "function_call_output", "call_id", "output"}` 条目；
+     * - 带工具调用的 assistant：content 内嵌 `{"type": "function_call", "id", "name", "arguments"}` 片段。
+     *
+     * 入参 [messages] 已由 [convertToOpenAIMessages] 完成「assistant(tool_calls) ↔ tool 结果」的配对与裁剪，
+     * 此处只做逐条格式映射，顺序保持不变，保证 function_call_output 紧跟其对应的 function_call。
+     */
+    private fun convertToResponseApiInput(messages: List<OpenAIChatMessage>): List<Map<String, Any?>> =
+        messages.map { msg ->
+            when (msg.role) {
+                "assistant" -> {
+                    val toolCalls = msg.tool_calls.orEmpty()
+                    if (toolCalls.isEmpty()) {
+                        mapOf("role" to "assistant", "content" to (msg.content ?: ""))
+                    } else {
+                        val parts = mutableListOf<Map<String, Any?>>()
+                        (msg.content as? String)?.takeIf { it.isNotBlank() }?.let {
+                            parts.add(mapOf("type" to "output_text", "text" to it))
+                        }
+                        toolCalls.forEach { tc ->
+                            parts.add(
+                                mapOf(
+                                    "type" to "function_call",
+                                    "id" to tc.id,
+                                    "name" to tc.function.name,
+                                    "arguments" to tc.function.arguments
+                                )
+                            )
+                        }
+                        mapOf("role" to "assistant", "content" to parts)
+                    }
+                }
+                "tool" -> mapOf(
+                    "type" to "function_call_output",
+                    "call_id" to (msg.tool_call_id ?: ""),
+                    "output" to (msg.content?.toString() ?: "")
+                )
+                // user / system / developer 消息结构在两种 API 下一致（user 的多模态 content 已是
+                // input_text / input_image 片段），原样透传即可。
+                else -> mapOf("role" to msg.role, "content" to (msg.content ?: ""))
+            }
+        }
 
     private fun AgentMessage.UserMessage.toOpenAIUserContent(useResponsesContentParts: Boolean): Any {
         if (images.isEmpty()) return content
