@@ -88,13 +88,13 @@ import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Pulse
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Terminal
@@ -697,7 +697,7 @@ internal fun SettingsMenu(
             group = groupSystem,
             title = stringResource(R.string.settings_keepalive_title),
             subtitle = stringResource(R.string.settings_keepalive_subtitle),
-            icon = Icons.Rounded.Pulse,
+            icon = Icons.Rounded.Favorite,
             iconBgLight = Color(0xFF2DD4BF),
             iconBgDark = Color(0xFF115E59),
             keywords = listOf("keepalive", stringResource(R.string.ui____bc28072c), stringResource(R.string.ui____066ae8d7), "foreground", stringResource(R.string.ui____5660bcd2), stringResource(R.string.ui____f0d6210d), stringResource(R.string.ui____f88522cf)),

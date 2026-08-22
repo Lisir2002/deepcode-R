@@ -43,7 +43,7 @@
 | `presentation/SkillDetailViewModel.kt` | 技能查看页：加载技能、构建目录树、文件内容读取/语法高亮分派 |
 | `presentation/SkillEditViewModel.kt` | 技能编辑器：frontmatter 表单解析/回填、正文编辑、新增/删除文件、另存为新技能 |
 | `presentation/AboutStatsViewModel.kt` | 关于页使用统计 |
-| `presentation/component/SettingsScreen.kt` | 设置主屏：`SettingsSection` 二级分区路由、顶栏、各 section 分发、跨屏 openSection 信号 |
+| `presentation/component/SettingsScreen.kt` | 设置主屏：`SettingsSection` 二级分区路由、顶栏、各 section 分发、跨屏 openSection 信号；首页 16 个菜单项用 Material Rounded 图标 + 每项专属日夜间彩色图标块（`iconBgLight`/`iconBgDark`，随 `LocalAppDarkMode` 切换，见 §5） |
 | `presentation/component/ProvidersAndLogSection.kt` | 供应商列表 `ProvidersSection` + `ProviderItem`、空态 |
 | `presentation/component/ProviderEditorScreen.kt` | 供应商编辑页（Tab0 兼容端点策略 / Tab1 模型列表与三能力覆盖） |
 | `presentation/component/ProviderModelComponents.kt` | `ProviderModelRow`/`FetchModelRow`/`CapabilityOverrideSheet`/能力徽章 |
@@ -164,6 +164,7 @@ catalog 刷新：App 启动调 `refreshFromNetworkIfStale()`；`init` 中监听 
 
 ## 6. 维护与扩展指引
 
+- **设置首页图标主题化**：`MenuItem` 扩展 `iconBgLight`/`iconBgDark` 两个语义色字段（`Color.Unspecified` 表示沿用灰色默认），渲染时按 `LocalAppDarkMode` 取亮/暗色传给 `CyberMenuRow.iconBg`；`iconBg` 非空时 `CyberMenuRow` 走「彩色圆角图标块 + 固定白色图标」（Material You 风格），为空则保持原灰色图标块 + 灰色图标（About 等复用方不受影响）。图标统一用 `material-icons-extended` 的 Rounded 系列替换旧 Feather 单色图标，每个分区配独立色相（如供应商蓝、模型紫、MCP 青、安全红、备份琥珀），保证日夜间两套模式下图标块背景均有足够对比度。
 - **新增一个 DataStore 设置项**：仿 `VisionModelSettingsRepository`/`ThemeSettingsRepository` 模式——私有 `preferencesDataStore` 扩展 + `@Singleton` 构造注入 + `Flow` 暴露 + suspend 写方法（无 DI module），并同步在 `SettingsViewModel` 加 StateFlow 订阅与 `setXxx` 方法。
 - **新增供应商类型**：改 `ProviderType` 枚举、`ModelApiService.applyAuth`/路径分支、`defaultProviderApiPath`、`ModelMetadataService.findMetadata` 的 preferredProviders 列表，并考虑备份/还原兼容。
 - **新增 Provider 字段**：同步 `AIProviderEntity`（注意 `@ColumnInfo(defaultValue)` 与迁移脚本一致，避免 Room TableInfo 校验失败）、`AIProviderConfig`、`toEntity`/`toDomain`、备份 DTO。
