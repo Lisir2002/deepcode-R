@@ -33,17 +33,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Psychology
 import com.R.codecore.R
 import com.R.codecore.core.theme.Brand
+import com.R.codecore.core.theme.ChatAccent
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
+import com.R.codecore.core.theme.resolve
 import com.R.codecore.feature.agent.domain.model.ReasoningEffort
 import com.R.codecore.feature.settings.domain.model.AIProviderConfig
 import com.R.codecore.feature.settings.presentation.component.ModelLogoIcon
 import com.R.codecore.feature.settings.presentation.component.ProviderLogoIcon
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Check
-import compose.icons.feathericons.Zap
 
 /**
  * 输入区下行的模型切换图标按钮
@@ -97,9 +99,9 @@ internal fun ReasoningEffortSelector(
             modifier = Modifier.size(36.dp)
         ) {
             Icon(
-                FeatherIcons.Zap,
+                Icons.Rounded.Psychology,
                 contentDescription = stringResource(effort.labelRes()),
-                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                tint = if (enabled) ChatAccent.Reasoning.resolve() else ChatAccent.Reasoning.resolve().copy(alpha = 0.38f),
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -139,9 +141,9 @@ internal fun ReasoningEffortSelector(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            FeatherIcons.Zap,
+                            Icons.Rounded.Psychology,
                             contentDescription = null,
-                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (selected) ChatAccent.Reasoning.resolve() else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(Modifier.width(Spacing.md))
@@ -155,7 +157,7 @@ internal fun ReasoningEffortSelector(
                         )
                         if (selected) {
                             Icon(
-                                FeatherIcons.Check,
+                                Icons.Rounded.Check,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp)
@@ -278,7 +280,7 @@ internal fun ModelRow(
         )
         if (selected) {
             Icon(
-                FeatherIcons.Check,
+                Icons.Rounded.Check,
                 contentDescription = stringResource(R.string.common_current),
                 tint = Brand.IconGray,
                 modifier = Modifier.size(20.dp)

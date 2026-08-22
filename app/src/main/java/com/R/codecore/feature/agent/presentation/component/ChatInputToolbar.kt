@@ -38,21 +38,25 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Construction
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Rocket
+import androidx.compose.material.icons.rounded.Send
+import androidx.compose.material.icons.rounded.Stop
 import com.R.codecore.R
+import com.R.codecore.core.theme.ChatAccent
 import com.R.codecore.core.theme.Spacing
+import com.R.codecore.core.theme.resolve
+import com.R.codecore.core.theme.resolveOn
 import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.model.ReasoningEffort
 import com.R.codecore.feature.settings.domain.model.AIProviderConfig
 import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
 import com.R.codecore.feature.workspace.presentation.component.WorkspaceIconButton
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowUp
-import compose.icons.feathericons.Clipboard
-import compose.icons.feathericons.MoreHorizontal
-import compose.icons.feathericons.Play
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Square
-import compose.icons.feathericons.Zap
 
 /**
  * 输入条工具栏：模式 pill / 模型 / 工作区 常驻，思考强度与技能收纳进「更多」展开行。
@@ -107,8 +111,9 @@ internal fun ChatInputToolbar(
                 )
                 UploadIconButton(
                     enabled = !isBusy,
-                    icon = FeatherIcons.Zap,
+                    icon = Icons.Rounded.AutoAwesome,
                     contentDescription = stringResource(R.string.skill_conversation_entry),
+                    tint = ChatAccent.Skill.resolve(),
                     onClick = onOpenSkills
                 )
             }
@@ -151,7 +156,7 @@ internal fun ChatInputToolbar(
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    FeatherIcons.MoreHorizontal,
+                    Icons.Rounded.MoreHoriz,
                     contentDescription = stringResource(R.string.chat_toolbar_more),
                     tint = if (showMore) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -161,7 +166,7 @@ internal fun ChatInputToolbar(
 
             UploadIconButton(
                 enabled = !isBusy,
-                icon = FeatherIcons.Plus,
+                icon = Icons.Rounded.Add,
                 contentDescription = stringResource(R.string.chat_add_attachment),
                 onClick = onOpenAttachmentSheet
             )
@@ -176,16 +181,17 @@ private fun ModePill(
     currentMode: AgentMode,
     onToggleMode: (AgentMode) -> Unit
 ) {
-    val modeColor = when (currentMode) {
-        AgentMode.PLAN -> MaterialTheme.colorScheme.primaryContainer
-        AgentMode.AUTO -> MaterialTheme.colorScheme.error
-        AgentMode.BUILD -> MaterialTheme.colorScheme.tertiary
+    val accent = when (currentMode) {
+        AgentMode.BUILD -> ChatAccent.Build
+        AgentMode.PLAN -> ChatAccent.Plan
+        AgentMode.AUTO -> ChatAccent.Auto
     }
-    val modeTextColor = if (currentMode == AgentMode.PLAN) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
+    val modeColor = accent.resolve()
+    val modeTextColor = accent.resolveOn()
     val modeIcon = when (currentMode) {
-        AgentMode.BUILD -> FeatherIcons.Zap
-        AgentMode.PLAN -> FeatherIcons.Clipboard
-        AgentMode.AUTO -> FeatherIcons.Play
+        AgentMode.BUILD -> Icons.Rounded.Construction
+        AgentMode.PLAN -> Icons.Rounded.Map
+        AgentMode.AUTO -> Icons.Rounded.Rocket
     }
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -235,7 +241,8 @@ internal fun UploadIconButton(
     enabled: Boolean,
     icon: ImageVector,
     contentDescription: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    tint: Color? = null
 ) {
     IconButton(
         onClick = onClick,
@@ -245,7 +252,7 @@ internal fun UploadIconButton(
         Icon(
             icon,
             contentDescription = contentDescription,
-            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            tint = tint ?: if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
             modifier = Modifier.size(20.dp)
         )
     }
@@ -294,14 +301,14 @@ internal fun SendButton(canSend: Boolean, isBusy: Boolean, tokenProgress: Float,
         ) {
             if (isBusy) {
                 Icon(
-                    FeatherIcons.Square,
+                    Icons.Rounded.Stop,
                     contentDescription = stringResource(R.string.chat_stop),
                     tint = iconTint,
                     modifier = Modifier.size(18.dp)
                 )
             } else {
                 Icon(
-                    FeatherIcons.ArrowUp,
+                    Icons.Rounded.Send,
                     contentDescription = stringResource(R.string.chat_send),
                     tint = iconTint,
                     modifier = Modifier.size(18.dp)

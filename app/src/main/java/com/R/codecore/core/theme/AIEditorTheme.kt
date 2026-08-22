@@ -50,6 +50,34 @@ object Brand {
     }
 }
 
+/**
+ * 聊天输入区功能语义色板：每个功能一个专属色相，避免图标重复与撞色。
+ * 每个色都有 Light / Dark 双取值，配合 [LocalAppDarkMode] 实现日夜间切换。
+ * 背景色（light/dark）与前景色（onLight/onDark）成对出现，保证对比度 ≥ 4.5:1。
+ */
+object ChatAccent {
+    data class Tone(val light: Color, val dark: Color, val onLight: Color, val onDark: Color)
+
+    /** 构建模式 · 琥珀（建造/锤子） */
+    val Build = Tone(Color(0xFFB45309), Color(0xFFFBBF24), Color.White, Color(0xFF451A03))
+    /** 规划模式 · 蓝（计划/地图） */
+    val Plan = Tone(Color(0xFF2563EB), Color(0xFF60A5FA), Color.White, Color(0xFF0B3B76))
+    /** 自动模式 · 青绿（自动/火箭） */
+    val Auto = Tone(Color(0xFF0D9488), Color(0xFF2DD4BF), Color.White, Color(0xFF0B3B2E))
+    /** 思考强度 · 紫罗兰（深度思考/大脑） */
+    val Reasoning = Tone(Color(0xFF7C3AED), Color(0xFFA78BFA), Color.White, Color(0xFF2E1065))
+    /** 技能 · 粉（技能/魔法星） */
+    val Skill = Tone(Color(0xFFDB2777), Color(0xFFF472B6), Color.White, Color(0xFF500724))
+}
+
+/** 当前日夜模式下的语义背景色（跟随应用主题设置 LocalAppDarkMode）。 */
+@Composable
+fun ChatAccent.Tone.resolve(): Color = if (LocalAppDarkMode.current) dark else light
+
+/** 当前日夜模式下语义色上的前景色（文字 / 图标）。 */
+@Composable
+fun ChatAccent.Tone.resolveOn(): Color = if (LocalAppDarkMode.current) onDark else onLight
+
 val LocalSpacing = staticCompositionLocalOf { Spacing }
 
 /**

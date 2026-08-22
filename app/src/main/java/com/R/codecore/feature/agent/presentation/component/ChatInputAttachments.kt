@@ -41,15 +41,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.PhotoCamera
 import com.R.codecore.R
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.presentation.QueuedRequest
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Camera
-import compose.icons.feathericons.FileText
-import compose.icons.feathericons.Image
-import compose.icons.feathericons.X
 import java.util.Base64
 
 /**
@@ -120,7 +120,7 @@ internal fun QueuedRequestPanel(
                             modifier = Modifier.size(28.dp)
                         ) {
                             Icon(
-                                FeatherIcons.X,
+                                Icons.Rounded.Close,
                                 contentDescription = stringResource(R.string.chat_queue_remove),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(14.dp)
@@ -187,7 +187,7 @@ private fun PendingAttachmentPreviewItem(
                     modifier = Modifier.size(24.dp)
                 ) {
                     Icon(
-                        FeatherIcons.X,
+                        Icons.Rounded.Close,
                         contentDescription = stringResource(R.string.chat_remove_attachment),
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(14.dp)
@@ -232,7 +232,7 @@ private fun ImageThumbnail(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    FeatherIcons.Image,
+                    Icons.Rounded.Image,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
@@ -252,7 +252,7 @@ private fun FileAttachmentPreview(attachment: PendingUploadAttachment) {
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            FeatherIcons.FileText,
+            Icons.Rounded.Description,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(22.dp)
@@ -320,19 +320,19 @@ internal fun AttachmentSheet(
                 modifier = Modifier.padding(bottom = Spacing.sm)
             )
             AttachmentSheetItem(
-                icon = FeatherIcons.FileText,
+                icon = Icons.Rounded.Description,
                 title = stringResource(com.R.codecore.R.string.chat_upload_file),
                 enabled = canUploadFiles,
                 onClick = onUploadFile
             )
             AttachmentSheetItem(
-                icon = FeatherIcons.Image,
+                icon = Icons.Rounded.Image,
                 title = stringResource(com.R.codecore.R.string.chat_upload_image),
                 enabled = canUploadImages,
                 onClick = onUploadImage
             )
             AttachmentSheetItem(
-                icon = FeatherIcons.Camera,
+                icon = Icons.Rounded.PhotoCamera,
                 title = stringResource(com.R.codecore.R.string.chat_take_photo),
                 enabled = canUploadImages,
                 onClick = onTakePhoto
