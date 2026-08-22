@@ -586,11 +586,13 @@ class StatefulAgentWorkflow @Inject constructor(
             val names = autoTriggerResults.joinToString("、") { it.skillName }
             val authorityHint = "【系统】本轮任务开始前已自动触发技能「$names」，其【技能规则】与【执行报告】已作为" +
                 "本任务上下文的最高优先级前置条件，合并进下方「本次用户请求」之前的内容。\n" +
-                "你必须做到：\n" +
-                "1. 逐条阅读并落实技能规则——检查项、修复口径、计划引导、纪律为硬性要求，不是可选建议；\n" +
-                "2. 技能报告指出的缺失项（如环境组件缺失、纪律文档 AGENTS.md 缺失、说明文档 README.md 缺失、" +
-                "模块文档缺失、记忆未加载）必须在执行过程中补全，不确定内容时先用只读工具核实或向用户澄清，不得跳过；\n" +
-                "3. 输出最终回答前，必须完成技能规则要求的所有前置动作，并按规则给出计划与验收标准。"
+                "你必须严格按以下顺序执行，不得跳过任何一步：\n" +
+                "1. 先完整阅读【技能规则】（检查项/修复口径/计划引导/纪律）+【执行报告】（W-*/R-* 条目 + 末尾的【文档模板】段）；这是硬性要求，不是可选建议。\n" +
+                "2. 按报告的 W-*/R-* 条目先补全所有缺失项：" +
+                "AGENTS.md/README.md/.gitignore/.gitattributes 一律直接 writeFile 写入报告末尾【文档模板】段提供的最小可用模板（无需凭空编造，模板已在正文中给出）；" +
+                "W-1 未初始化仓库先执行 git init；环境组件缺失的先按 R-1 告知。这一步必须做，不做就不得进入下一步。\n" +
+                "3. 缺失项全部补完后，再加载记忆、读模块文档、拆解步骤（用 Todo 登记）、写验收标准、纪律自检。\n" +
+                "4. 只有在以上全部完成后，才开始处理【本次用户请求】的代码改动/页面编写等业务开发。"
             systemPrompt = (systemPrompt?.takeIf { it.isNotBlank() }?.plus("\n\n$authorityHint")) ?: authorityHint
         }
         val userRequestContent = if (autoTriggerResults.isEmpty()) {
@@ -1045,10 +1047,13 @@ class StatefulAgentWorkflow @Inject constructor(
     private val MAX_AUTO_TRIGGER_SKILLS = 2
 
     /** 自动触发注入的【技能规则】段最大字符数（skill.instructions，即 SKILL.md 正文）。 */
-    private val AUTO_TRIGGER_RULE_MAX = 4_000
+    private val AUTO_TRIGGER_RULE_MAX = 8_000
 
-    /** 自动触发注入的【执行报告】段最大字符数（SCRIPT 脚本 stdout / PROMPT 正文）。 */
-    private val AUTO_TRIGGER_OUTPUT_MAX = 6_000
+    /** 自动触发注入的【执行报告】段最大字符数（SCRIPT 脚本 stdout / PROMPT 正文）。
+     * coding-preflight SCRIPT 输出含 4 份文档的完整最小可用模板（末尾【文档模板】段），
+     * 长度约 10~18KB，因此截断阈值拉高到 24KB，确保模板段不被截断——模型拿不到模板正文就无法
+     * "补全规则文档"（此前模型只看到"创建 AGENTS.md（含章节名…）"，没有实际内容可写）。 */
+    private val AUTO_TRIGGER_OUTPUT_MAX = 24_000
 
     /** 自动触发技能的一次执行结果：既用于注入模型上下文，也用于向 UI 推送展示（Autotriggered 事件落库工具卡片）。 */
     private data class AutoTriggerResult(
