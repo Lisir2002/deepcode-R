@@ -35,7 +35,7 @@ import com.R.codecore.feature.agent.domain.container.progress.InstallPhaseType
 import com.R.codecore.feature.agent.domain.container.progress.InstallProgress
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.CheckCircle
-import compose.icons.feathericons.Cpu
+import compose.icons.feathericons.Loader
 import compose.icons.feathericons.XCircle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -207,7 +207,7 @@ internal fun EnvironmentComponentRow(component: EnvironmentComponentState) {
             Color(0xFFEF4444).copy(alpha = if (isDark) 0.16f else 0.1f)
         )
         EnvironmentStatus.INSTALLING -> ComponentBadge(
-            FeatherIcons.Cpu,
+            FeatherIcons.Loader,
             Brand.Blue,
             stringResource(R.string.env_status_installing),
             Brand.Blue,

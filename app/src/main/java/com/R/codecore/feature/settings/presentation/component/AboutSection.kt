@@ -87,14 +87,15 @@ import com.R.codecore.feature.settings.presentation.UsageStats
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Calendar
 import compose.icons.feathericons.Chrome
+import compose.icons.feathericons.Clock
 import compose.icons.feathericons.DownloadCloud
 import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Hash
 import compose.icons.feathericons.MessageSquare
-import compose.icons.feathericons.Send
+import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Smartphone
-import compose.icons.feathericons.Tag
 import compose.icons.feathericons.Terminal
+import compose.icons.feathericons.UploadCloud
 
 // ============================================================
 // Entry point
@@ -714,7 +715,7 @@ private fun UsageStatsSection(stats: UsageStats) {
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     UsageStatCell(
-                        icon = FeatherIcons.Send,
+                        icon = FeatherIcons.UploadCloud,
                         label = stringResource(R.string.about_input_tokens),
                         value = compactNumber(stats.totalInputTokens),
                         unit = stringResource(R.string.about_stats_unit_tokens),
@@ -728,7 +729,7 @@ private fun UsageStatsSection(stats: UsageStats) {
                         modifier = Modifier.weight(1f)
                     )
                     UsageStatCell(
-                        icon = FeatherIcons.Tag,
+                        icon = FeatherIcons.Clock,
                         label = stringResource(R.string.about_first_used),
                         value = if (stats.firstUsedMs > 0L) formatShortDate(stats.firstUsedMs) else "--",
                         unit = if (stats.firstUsedMs > 0L) stringResource(R.string.about_stats_unit_since) else "",
@@ -862,7 +863,7 @@ private fun CheckUpdateOnlyCard(
     ) {
         CyberCard {
             CyberMenuRow(
-                icon = FeatherIcons.Tag,
+                icon = FeatherIcons.RefreshCw,
                 title = stringResource(R.string.about_check_update),
                 subtitle = stringResource(R.string.about_check_update_subtitle, appInfo.name),
                 onClick = onCheckUpdate,

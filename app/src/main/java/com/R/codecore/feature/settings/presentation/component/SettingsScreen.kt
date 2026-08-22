@@ -83,11 +83,12 @@ import compose.icons.feathericons.FileText
 import compose.icons.feathericons.Globe
 import compose.icons.feathericons.HardDrive
 import compose.icons.feathericons.Info
+import compose.icons.feathericons.Activity
+import compose.icons.feathericons.Archive
 import compose.icons.feathericons.Lock
 import compose.icons.feathericons.Moon
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Save
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Server
 import compose.icons.feathericons.Terminal
@@ -614,7 +615,7 @@ internal fun SettingsMenu(
             group = groupData,
             title = stringResource(SettingsSection.Backup.titleRes),
             subtitle = stringResource(R.string.settings_backup_subtitle),
-            icon = FeatherIcons.Save,
+            icon = FeatherIcons.Archive,
             keywords = listOf("backup", stringResource(R.string.ui____664b37da), stringResource(R.string.ui____69de8d7f), "export", stringResource(R.string.ui____55405ea6), stringResource(R.string.ui____8d9a071e), stringResource(R.string.ui____56563edf)),
             action = { onOpen(SettingsSection.Backup) }
         ),
@@ -659,7 +660,7 @@ internal fun SettingsMenu(
             group = groupSystem,
             title = stringResource(R.string.settings_keepalive_title),
             subtitle = stringResource(R.string.settings_keepalive_subtitle),
-            icon = FeatherIcons.RefreshCw,
+            icon = FeatherIcons.Activity,
             keywords = listOf("keepalive", stringResource(R.string.ui____bc28072c), stringResource(R.string.ui____066ae8d7), "foreground", stringResource(R.string.ui____5660bcd2), stringResource(R.string.ui____f0d6210d), stringResource(R.string.ui____f88522cf)),
             action = { onToggleKeepalive(!keepaliveEnabled) },
             trailing = {
