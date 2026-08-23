@@ -919,6 +919,19 @@
     <string name="workspace_name_hint">例如 my-project</string>
     <string name="workspace_name_exists">已存在同名工作区</string>
 
+    <!-- Workspace Dir Sub-tabs & File Browser -->
+    <string name="workspace_tab_current">当前工作台</string>
+    <string name="workspace_tab_all">所有工作台</string>
+    <string name="workspace_file_root">工作区根目录</string>
+    <string name="workspace_file_empty">当前目录为空</string>
+    <string name="workspace_file_up">返回上一级</string>
+
+    <!-- File Reader -->
+    <string name="file_reader_title">文件阅读</string>
+    <string name="file_reader_back">返回</string>
+    <string name="file_reader_error">读取文件失败</string>
+    <string name="file_reader_empty">文件内容为空</string>
+
     <!-- Helper Strings -->
     <string name="container_channel_deleted">通道已删除</string>
     <string name="chat_action_edit">编辑消息</string>

@@ -55,12 +55,10 @@ import com.R.codecore.core.theme.resolveOn
 import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.model.ReasoningEffort
 import com.R.codecore.feature.settings.domain.model.AIProviderConfig
-import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
-import com.R.codecore.feature.workspace.presentation.component.WorkspaceIconButton
 
 /**
- * 输入条工具栏：模式 pill / 模型 / 工作区 常驻，思考强度与技能收纳进「更多」展开行。
- * 附件＋与发送按钮保留在右侧。
+ * 输入条工具栏：模式 pill / 模型 常驻，思考强度与技能收纳进「更多」展开行。
+ * 附件＋与发送按钮保留在右侧。工作区入口已移至侧边栏「工作目录」tab。
  */
 @Composable
 internal fun ChatInputToolbar(
@@ -70,9 +68,6 @@ internal fun ChatInputToolbar(
     providers: List<AIProviderConfig>,
     onSelectModel: (String, String) -> Unit,
     onNavigateToSettings: () -> Unit,
-    workspaceViewModel: WorkspaceViewModel?,
-    hasRunningSessions: () -> Boolean,
-    onSwitchWorkspaceConfirmed: () -> Unit,
     reasoningEffort: ReasoningEffort,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
     isBusy: Boolean,
@@ -138,16 +133,6 @@ internal fun ChatInputToolbar(
                     onSelectModel = onSelectModel,
                     onManage = onNavigateToSettings
                 )
-
-                if (workspaceViewModel != null) {
-                    WorkspaceIconButton(
-                        viewModel = workspaceViewModel,
-                        hasRunningSessions = hasRunningSessions,
-                        onSwitchConfirmed = onSwitchWorkspaceConfirmed,
-                        modifier = Modifier.size(36.dp),
-                        iconSize = 20.dp
-                    )
-                }
             }
 
             // 收纳开关：展开/收起思考强度与技能

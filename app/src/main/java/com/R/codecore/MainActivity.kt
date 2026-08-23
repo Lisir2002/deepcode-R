@@ -1,6 +1,7 @@
 package com.R.codecore
 
 import android.Manifest
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.content.pm.PackageManager
@@ -64,7 +65,10 @@ import com.R.codecore.feature.terminal.presentation.TerminalViewModel
 import com.R.codecore.feature.terminal.presentation.component.TerminalBundleManagerScreen
 import com.R.codecore.feature.terminal.presentation.component.TerminalScreen
 import com.R.codecore.feature.terminal.presentation.component.TerminalSettingsScreen
+import com.R.codecore.feature.workspace.presentation.FileReaderViewModel
+import com.R.codecore.feature.workspace.presentation.WorkspaceFileViewModel
 import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
+import com.R.codecore.feature.workspace.presentation.component.FileReaderScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -262,6 +266,8 @@ fun AppNavigation(
     val agentViewModel: AIAgentViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val workspaceViewModel: WorkspaceViewModel = hiltViewModel()
+    // 侧边栏「工作目录 → 当前工作台」文件浏览数据源（Activity 级，切换工作区时自动复位到根目录）。
+    val workspaceFileViewModel: WorkspaceFileViewModel = hiltViewModel()
 
     // 侧边栏打开时，系统返回键先收起侧边栏。
     BackHandler(enabled = drawerState.isOpen) {
@@ -346,8 +352,15 @@ fun AppNavigation(
                     onCycleTheme = onCycleTheme,
                     // 侧边栏「工作目录」tab：复用工作区 ViewModel，切换时若有运行会话则确认
                     workspaceViewModel = workspaceViewModel,
+                    // 侧边栏「工作目录 → 当前工作台」：文件浏览器数据源
+                    workspaceFileViewModel = workspaceFileViewModel,
                     hasRunningSessions = { agentViewModel.hasRunningSessionsInCurrentWorkspace() },
-                    onSwitchWorkspaceConfirmed = { agentViewModel.stopAllAndCloseTerminal() }
+                    onSwitchWorkspaceConfirmed = { agentViewModel.stopAllAndCloseTerminal() },
+                    // 点击文件 → 关闭侧边栏并跳转独立文件阅读页（路径 URI 编码传入）
+                    onOpenFile = { path ->
+                        scope.launch { drawerState.close() }
+                        navController.navigate("file_reader/" + Uri.encode(path))
+                    }
                 )
             }
         }
@@ -525,6 +538,16 @@ fun AppNavigation(
                     browserController = browserController,
                     loginPromptManager = browserLoginPromptManager,
                     takeoverManager = browserTakeoverManager,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            // 独立文件阅读页：路径经 Uri.encode 编码后作为参数传入，Navigation 匹配时自动解码还原。
+            composable("file_reader/{filePath}") { entry ->
+                val filePath = entry.arguments?.getString("filePath") ?: ""
+                val readerViewModel: FileReaderViewModel = hiltViewModel()
+                FileReaderScreen(
+                    viewModel = readerViewModel,
+                    filePath = filePath,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

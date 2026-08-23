@@ -6,7 +6,7 @@
 
 工作区模块管理 App 的「工作区/项目」概念及其配套能力，覆盖四块功能：
 
-1. **工作区管理**：本地模式下所有项目位于内部私有 ext4 目录 `filesDir/projects/<name>`；远程模式下工作区为 SSH 服务器 `remoteWorkspacePath` 下的子文件夹。支持列列表/新建/删除/切换，当前选中工作区持久化于 DataStore。工作区是 AI 文件工具与命令执行的根范围，切换即切换 AI 操作范围。
+1. **工作区管理**：本地模式下所有项目位于内部私有 ext4 目录 `filesDir/projects/<name>`；远程模式下工作区为 SSH 服务器 `remoteWorkspacePath` 下的子文件夹。支持列列表/新建/删除/切换，当前选中工作区持久化于 DataStore。工作区是 AI 文件工具与命令执行的根范围，切换即切换 AI 操作范围。侧边栏「工作目录」页内嵌「当前工作台 / 所有工作台」两个子 tab：前者浏览当前工作区文件树（点击文件跳转独立阅读页），后者做工作区列表管理。
 2. **文件访问抽象**：`FileAccessProvider` 把「在哪读写文件」从硬编码的 `java.io.File` 解耦，本地（`LocalFileAccess` + `WorkspacePathMapper`）与远程（`RemoteSftpFileAccess`）两套实现由 `DelegatingFileAccess` 按执行模式转发，AI 的文件类工具统一走容器路径（`~/workspace/...`）。
 3. **路径映射**：`WorkspacePathMapper` 在「容器内路径」与「宿主真实路径」之间互转（`~/workspace` ↔ 工作区、`/root/.rcodecore` ↔ AI 配置目录、其它容器绝对路径 ↔ rootfs），对 AI 只暴露容器路径。
 4. **远程连接/挂载与文件同步**：Room 持久化远程连接（SFTP/FTP/LOCAL）与挂载点；`RemoteRepository` 编排 `SyncEngine` + 三种 `RemoteSyncClient`，对挂载目录做增量监听同步/全量上传下载；内置 `FtpServerManager`（Apache FtpServer）把工作区共享为 FTP 服务；`RemoteAuditLogRepository` 记录连接/凭据/同步等审计事件。另通过 SAF `WorkspaceDocumentsProvider` 把私有目录暴露给系统文件管理器。
@@ -43,7 +43,9 @@
 | `domain/repository/RemoteAuditLogRepository.kt` | 审计日志写入/查询/导出 JSON/保留策略（10000 条 / 90 天） |
 | `domain/RemoteAuditCategory.kt` | 审计分类与动作常量（CONNECT/CREDENTIAL/BACKUP/SYNC/SECURITY 等） |
 | `presentation/WorkspaceViewModel.kt` | 工作区选择页 VM：列表/当前状态，初始化与模式切换重载 |
-| `presentation/component/WorkspacePicker.kt` | 工作区选择器 UI |
+| `presentation/WorkspaceFileViewModel.kt` | 侧边栏「工作目录 → 当前工作台」文件浏览器 VM：目录导航栈（相对容器路径）+ 经 `DelegatingFileAccess` 列文件（本地/远程一致），切换工作区自动复位到根目录 |
+| `presentation/FileReaderViewModel.kt` | 独立文件阅读页 VM：经 `DelegatingFileAccess` 读取容器路径文件文本，携带加载/错误状态 |
+| `presentation/component/FileReaderScreen.kt` | 独立文件阅读页 UI：`AppTopAppBar` 返回栏 + 等宽字体内容，加载/错误/空态处理 |
 | `presentation/remote/RemoteServerViewModel.kt` | 远程服务器页 VM：连接/挂载列表、自动连接、同步配置、FTP 服务 |
 | `presentation/remote/RemoteServerScreen.kt` / `RemoteDialogs.kt` / `RemoteFtpSection.kt` / `RemoteSyncAndCards.kt` | 远程服务器页 UI、连接/挂载弹窗、FTP 配置区、同步设置与挂载卡片 |
 
@@ -111,6 +113,8 @@ AI 的文件工具（`FileTools`/`EditFileTool`/`ListFilesTool`/`ImageTools`/`Se
 | `WorkspaceDocumentsProvider` | Android 系统文件管理器 / SAF 选择器（Manifest 注册的 ContentProvider） | 私有目录对外可见 |
 | `ExecutionModeHolder` | 委托层 | 本地 vs 远程路由 |
 | `WorkspacePathMapper` | `LocalFileAccess`、工具层 | 容器路径 ↔ 宿主路径 |
+| `WorkspaceViewModel` / `WorkspaceFileViewModel` | `agent/presentation/component/ChatDrawer.kt`（侧边栏「工作目录」子 tab） | 工作区列表管理（所有工作台）+ 当前工作区文件树浏览（当前工作台） |
+| `FileReaderScreen` + `FileReaderViewModel` | `MainActivity` 路由 `file_reader/{filePath}`（路径 `Uri.encode` 传入） | 侧边栏点击文件跳转独立阅读页 |
 
 ## 5. 关键设计点与约束
 

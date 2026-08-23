@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -29,11 +30,13 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -73,7 +76,9 @@ import com.R.codecore.feature.settings.data.repository.AppThemeMode
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.R.codecore.R
+import com.R.codecore.feature.workspace.domain.FileEntry
 import com.R.codecore.feature.workspace.domain.model.Workspace
+import com.R.codecore.feature.workspace.presentation.WorkspaceFileViewModel
 import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
 
 /**
@@ -98,8 +103,10 @@ fun ChatDrawerContent(
     currentThemeMode: AppThemeMode,
     onCycleTheme: () -> Unit,
     workspaceViewModel: WorkspaceViewModel? = null,
+    workspaceFileViewModel: WorkspaceFileViewModel? = null,
     hasRunningSessions: () -> Boolean = { false },
     onSwitchWorkspaceConfirmed: () -> Unit = {},
+    onOpenFile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var pendingDelete by remember { mutableStateOf<ChatSession?>(null) }
@@ -145,11 +152,13 @@ fun ChatDrawerContent(
                 onLongPress = { menuSession = it },
                 modifier = Modifier.weight(1f)
             )
-            1 -> if (workspaceViewModel != null) {
+            1 -> if (workspaceViewModel != null && workspaceFileViewModel != null) {
                 WorkspaceDirPanel(
                     viewModel = workspaceViewModel,
+                    fileViewModel = workspaceFileViewModel,
                     hasRunningSessions = hasRunningSessions,
                     onSwitchConfirmed = onSwitchWorkspaceConfirmed,
+                    onOpenFile = onOpenFile,
                     modifier = Modifier.weight(1f)
                 )
             } else {
@@ -532,19 +541,24 @@ private fun ChatSessionListPanel(
 }
 
 /**
- * 侧边栏「工作目录」tab：当前工作区 + 工作区列表，支持切换 / 新建 / 删除。
- * 数据源复用 WorkspaceViewModel，与输入框底部工作区弹窗一致。
+ * 侧边栏「工作目录」tab：内嵌子 tab（当前工作台 / 所有工作台）。
+ * - 当前工作台：以 [WorkspaceFileViewModel] 浏览当前工作区文件树，点击文件跳转独立阅读页；
+ * - 所有工作台：工作区列表管理（切换 / 新建 / 删除）。
+ * 工作区数据源复用 WorkspaceViewModel，与输入框底部工作区弹窗一致。
  */
 @Composable
 private fun WorkspaceDirPanel(
     viewModel: WorkspaceViewModel,
+    fileViewModel: WorkspaceFileViewModel,
     hasRunningSessions: () -> Boolean,
     onSwitchConfirmed: () -> Unit,
+    onOpenFile: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val workspaces by viewModel.workspaces.collectAsStateWithLifecycle()
     val current by viewModel.current.collectAsStateWithLifecycle()
 
+    var subTab by rememberSaveable { mutableStateOf(0) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Workspace?>(null) }
     var pendingSwitch by remember { mutableStateOf<Workspace?>(null) }
@@ -592,36 +606,53 @@ private fun WorkspaceDirPanel(
             modifier = Modifier.padding(vertical = Spacing.sm)
         )
 
+        // 内嵌子 tab：当前工作台（文件浏览） / 所有工作台（列表管理）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radius.sm))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                .padding(Spacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+        ) {
+            WorkspaceSubTab(
+                text = stringResource(R.string.workspace_tab_current),
+                selected = subTab == 0,
+                modifier = Modifier.weight(1f),
+                onClick = { subTab = 0 }
+            )
+            WorkspaceSubTab(
+                text = stringResource(R.string.workspace_tab_all),
+                selected = subTab == 1,
+                modifier = Modifier.weight(1f),
+                onClick = { subTab = 1 }
+            )
+        }
+
+        Spacer(Modifier.height(Spacing.sm))
+
         Box(modifier = Modifier.weight(1f)) {
-            if (workspaces.isEmpty()) {
-                Text(
-                    stringResource(R.string.workspace_empty_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.md)
+            when (subTab) {
+                0 -> CurrentWorkspacePanel(
+                    viewModel = fileViewModel,
+                    onOpenFile = onOpenFile,
+                    modifier = Modifier.fillMaxSize()
                 )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                ) {
-                    items(workspaces, key = { it.name }) { ws ->
-                        WorkspaceDirRow(
-                            workspace = ws,
-                            selected = ws.name == current?.name,
-                            canDelete = workspaces.size > 1,
-                            onClick = {
-                                if (hasRunningSessions()) {
-                                    pendingSwitch = ws
-                                } else {
-                                    onSwitchConfirmed()
-                                    viewModel.selectWorkspace(ws.name)
-                                }
-                            },
-                            onDelete = { pendingDelete = ws }
-                        )
-                    }
-                }
+                else -> AllWorkspacesPanel(
+                    workspaces = workspaces,
+                    currentName = current?.name,
+                    hasRunningSessions = hasRunningSessions,
+                    onSwitchRequest = { ws ->
+                        if (hasRunningSessions()) {
+                            pendingSwitch = ws
+                        } else {
+                            onSwitchConfirmed()
+                            viewModel.selectWorkspace(ws.name)
+                        }
+                    },
+                    onDeleteRequest = { pendingDelete = it },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
@@ -692,6 +723,203 @@ private fun WorkspaceDirPanel(
             }
         )
     }
+}
+
+/** 「当前工作台」子 tab 的 tab 项：圆角选中高亮的文字按钮。 */
+@Composable
+private fun WorkspaceSubTab(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(Radius.sm))
+            .background(if (selected) MaterialTheme.colorScheme.surface else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = Spacing.sm),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/**
+ * 「当前工作台」子 tab：当前工作区文件树浏览器。
+ * 数据源 [WorkspaceFileViewModel] 维护目录导航栈，目录可逐级进入，点击文件回调 [onOpenFile] 跳转独立阅读页。
+ */
+@Composable
+private fun CurrentWorkspacePanel(
+    viewModel: WorkspaceFileViewModel,
+    onOpenFile: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val loading by viewModel.loading.collectAsStateWithLifecycle()
+    val dirStack by viewModel.dirStack.collectAsStateWithLifecycle()
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // 路径栏：返回上级按钮 + 当前相对路径
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = viewModel::goUp,
+                enabled = dirStack.isNotEmpty(),
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = stringResource(R.string.workspace_file_up),
+                    tint = if (dirStack.isNotEmpty()) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    },
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Text(
+                text = if (dirStack.isEmpty()) {
+                    stringResource(R.string.workspace_file_root)
+                } else {
+                    dirStack.joinToString("/")
+                },
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        when {
+            loading -> Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+            }
+            entries.isEmpty() -> Text(
+                text = stringResource(R.string.workspace_file_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.md)
+            )
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+            ) {
+                items(entries, key = { it.name }) { entry ->
+                    WorkspaceFileRow(
+                        entry = entry,
+                        onClick = {
+                            if (entry.isDirectory) {
+                                viewModel.enterDirectory(entry.name)
+                            } else {
+                                onOpenFile(viewModel.containerPathFor(entry))
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 文件树行：文件夹用文件夹图标，文件用文件图标 + 大小，点击整行触发。 */
+@Composable
+private fun WorkspaceFileRow(
+    entry: FileEntry,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.sm))
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.md, vertical = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.InsertDriveFile,
+            contentDescription = null,
+            tint = if (entry.isDirectory) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(Spacing.md))
+        Text(
+            text = entry.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (!entry.isDirectory && entry.size > 0) {
+            Spacer(Modifier.width(Spacing.sm))
+            Text(
+                text = formatFileSize(entry.size),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** 「所有工作台」子 tab：工作区列表，支持切换（有运行会话时走确认）、删除。 */
+@Composable
+private fun AllWorkspacesPanel(
+    workspaces: List<Workspace>,
+    currentName: String?,
+    hasRunningSessions: () -> Boolean,
+    onSwitchRequest: (Workspace) -> Unit,
+    onDeleteRequest: (Workspace) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier.fillMaxWidth()) {
+        if (workspaces.isEmpty()) {
+            Text(
+                stringResource(R.string.workspace_empty_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.md)
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+            ) {
+                items(workspaces, key = { it.name }) { ws ->
+                    WorkspaceDirRow(
+                        workspace = ws,
+                        selected = ws.name == currentName,
+                        canDelete = workspaces.size > 1,
+                        onClick = { onSwitchRequest(ws) },
+                        onDelete = { onDeleteRequest(ws) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 文件大小人类可读格式化（B / KB / MB）。 */
+private fun formatFileSize(bytes: Long): String = when {
+    bytes < 1024L -> "$bytes B"
+    bytes < 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0)
+    else -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0)
 }
 
 /** 工作区列表行：文件夹图标 + 名称，选中高亮，可删除（非空列表时）。 */

@@ -34,13 +34,13 @@ import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.model.ReasoningEffort
 import com.R.codecore.feature.agent.presentation.QueuedRequest
 import com.R.codecore.feature.settings.domain.model.AIProviderConfig
-import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
 
 /**
  * 聊天输入条编排入口：胶囊浮动条容器 + 输入框（ChatInputField）+ 工具栏（ChatInputToolbar）。
  *
  * 斜杠命令菜单与队列面板浮于胶囊上方，不拉高输入条；附件弹层仍由本组件管理。
  * 面板类组件（权限审批 / 状态横幅 / 变更预览 / 计划审批）见 ChatPanels.kt。
+ * 工作区管理入口已移至侧边栏「工作目录」tab，输入条不再持有工作区选择按钮。
  */
 @Composable
 internal fun ChatInputBar(
@@ -49,9 +49,6 @@ internal fun ChatInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     isBusy: Boolean,
-    workspaceViewModel: WorkspaceViewModel?,
-    hasRunningSessions: () -> Boolean,
-    onSwitchWorkspaceConfirmed: () -> Unit = {},
     activeProvider: AIProviderConfig?,
     providers: List<AIProviderConfig>,
     onSelectModel: (String, String) -> Unit,
@@ -173,9 +170,6 @@ internal fun ChatInputBar(
                         providers = providers,
                         onSelectModel = onSelectModel,
                         onNavigateToSettings = onNavigateToSettings,
-                        workspaceViewModel = workspaceViewModel,
-                        hasRunningSessions = hasRunningSessions,
-                        onSwitchWorkspaceConfirmed = onSwitchWorkspaceConfirmed,
                         reasoningEffort = reasoningEffort,
                         onReasoningEffortChange = onReasoningEffortChange,
                         isBusy = isBusy,
