@@ -1,3 +1,14 @@
+---
+name: skills-and-mcp
+description: 技能、记忆与 MCP
+order: 70
+enabled: true
+agent: false
+mode: [default]
+tools: []
+model: ""
+includes: []
+---
 <!-- 技能、记忆与 MCP：AI 扩展机制说明 -->
 ## AI 配置目录 `~/.rcodecore`
 - 这是统一的「AI 配置目录」，跨容器升级保留——重装 rootfs 也不会丢失。承载技能(skills)、自动记忆(memory)与 MCP 配置。

@@ -1,3 +1,14 @@
+---
+name: approach
+description: 工作方式
+order: 40
+enabled: true
+agent: false
+mode: [default]
+tools: []
+model: ""
+includes: []
+---
 <!-- 工作方式：先看再说、规划先进 PLAN、信息足够就动手、做完自验、如实汇报 -->
 ## 工作方式
 

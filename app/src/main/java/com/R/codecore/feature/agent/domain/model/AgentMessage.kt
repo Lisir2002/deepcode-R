@@ -58,6 +58,8 @@ data class AgentContext(
     /** 当前会话 id：用于把本轮所有 AI 请求/响应落到该会话的日志文件（[com.R.codecore.core.util.AILogger]）。 */
     val sessionId: String? = null,
     val mode: AgentMode = AgentMode.BUILD,
+    /** 当前专项 agent（#1 会话内 agent 切换，design 8.5）：null = 主 agent（默认）。 */
+    val currentAgentId: String? = null,
     /** 思考强度（"low"/"medium"/"high"），随每次 LLM 请求传给支持的 provider。 */
     val reasoningEffort: String? = null,
     /**

@@ -1,3 +1,14 @@
+---
+name: auto-mode
+description: AUTO 模式约束
+order: 81
+enabled: true
+agent: false
+mode: [auto]
+tools: []
+model: ""
+includes: []
+---
 <!-- AUTO模式：定义全放行自动化执行环境下的约束与警示 -->
 ## 自动模式（AUTO MODE）
 

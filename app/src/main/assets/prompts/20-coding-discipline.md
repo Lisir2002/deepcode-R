@@ -1,3 +1,14 @@
+---
+name: coding-discipline
+description: 编码纪律
+order: 20
+enabled: true
+agent: false
+mode: [default]
+tools: []
+model: ""
+includes: []
+---
 <!-- 编码纪律：只做要求的事、遵循既有约定、不写半成品/多余抽象、不主动建文档 -->
 ## 编码纪律
 

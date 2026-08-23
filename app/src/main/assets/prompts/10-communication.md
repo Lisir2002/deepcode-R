@@ -1,3 +1,14 @@
+---
+name: communication
+description: 沟通风格与输出规范
+order: 10
+enabled: true
+agent: false
+mode: [default]
+tools: []
+model: ""
+includes: []
+---
 <!-- 沟通风格：简洁输出、进度更新、收尾总结、代码引用格式、emoji / URL 约束 -->
 ## 输出文本
 - 假设用户看不到你的工具调用与思考过程，只能看到你输出的文字。

@@ -49,6 +49,7 @@ import com.R.codecore.feature.backup.domain.BackupManager
 import com.R.codecore.feature.agent.domain.command.SlashCommandContext
 import com.R.codecore.feature.agent.domain.command.SlashCommandRegistry
 import com.R.codecore.feature.agent.domain.command.SlashCommandHandler
+import com.R.codecore.feature.agent.domain.prompt.AgentAssetRegistry
 import com.R.codecore.feature.agent.presentation.AgentAttachment
 import com.R.codecore.feature.agent.presentation.component.formatTokenCount
 import com.R.codecore.feature.agent.presentation.component.parseEnvironmentComponents
@@ -100,10 +101,17 @@ class AIAgentViewModel @Inject constructor(
     private val checkpointManager: CheckpointManager,
     private val backupManager: BackupManager,
     private val checkEnvironmentTool: CheckEnvironmentTool,
+    private val agentAssetRegistry: AgentAssetRegistry,
     @param:ApplicationContext private val context: Context
 ) : ViewModel(), SlashCommandContext {
 
     private val sessionJobs = mutableMapOf<String, Job>()
+
+    /**
+     * 会话级「当前专项 agent」（#1 会话内切换，design 8.5）。
+     * null = 主 agent（默认）。内存态即可：重启后回退主 agent，不引入数据库迁移。
+     */
+    private val currentAgentIds = mutableMapOf<String, String?>()
 
     /**
      * AI 忙碌期间到达的后台任务完成事件缓冲区（按会话累积）。
@@ -726,7 +734,7 @@ class AIAgentViewModel @Inject constructor(
             try {
                 messagePersistenceUseCase.persist(sessionId, MessageRole.USER, input)
                 sessionUseCase.touch(sessionId, messagePersistenceUseCase.nextTimestamp())
-                command.execute(this@AIAgentViewModel)
+                command.executeWithInput(this@AIAgentViewModel, input)
             } finally {
                 _runningCommandSessions.value = _runningCommandSessions.value - sessionId
                 processNextInQueue(sessionId)
@@ -794,6 +802,7 @@ class AIAgentViewModel @Inject constructor(
                 inputImages = inputImages,
                 sessionId = sessionId,
                 mode = mode,
+                currentAgentId = currentAgentIds[sessionId],
                 reasoningEffort = sessionDomain?.reasoningEffort?.apiValue
             )
 
@@ -1283,6 +1292,55 @@ class AIAgentViewModel @Inject constructor(
             }
         }
         sessionJobs[sid] = job
+    }
+
+    /** /agent（无参）—— 列出可切换的专项 Agent（结果以 AI 气泡输出）。 */
+    override fun listAgents() {
+        val sid = _currentSessionId.value ?: return
+        val agents = agentAssetRegistry.agents()
+        val headerAgent = context.getString(R.string.agent_list_header_col_agent)
+        val headerDesc = context.getString(R.string.agent_list_header_col_desc)
+        val table = buildString {
+            appendLine("| $headerAgent | $headerDesc |")
+            appendLine("|---|---|")
+            if (agents.isEmpty()) {
+                appendLine(context.getString(R.string.agent_list_empty))
+            } else {
+                agents.forEach { a ->
+                    appendLine("| ${escapeMd(a.name)} | ${escapeMd(a.description.ifBlank { context.getString(R.string.agent_list_none_desc) })} |")
+                }
+            }
+            appendLine("")
+            appendLine(context.getString(
+                R.string.agent_list_current,
+                currentAgentIds[sid] ?: context.getString(R.string.agent_list_current_main)
+            ))
+            appendLine(context.getString(R.string.agent_list_usage))
+        }
+        viewModelScope.launch {
+            messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, table.trimEnd(), isCompacted = true)
+        }
+    }
+
+    /** /agent <name> —— 切换专项 Agent；tools/model 仅建议（不切换 provider、不拦截工具）。 */
+    override fun switchAgent(name: String) {
+        val sid = _currentSessionId.value ?: return
+        val asset = agentAssetRegistry.findByName(name)
+        viewModelScope.launch {
+            val msg = when {
+                asset == null || !asset.agent || !asset.enabled ->
+                    context.getString(R.string.agent_switch_not_found, name)
+                currentAgentIds[sid] == name -> {
+                    currentAgentIds.remove(sid)
+                    context.getString(R.string.agent_switch_reset)
+                }
+                else -> {
+                    currentAgentIds[sid] = name
+                    context.getString(R.string.agent_switch_ok, asset.name, asset.description)
+                }
+            }
+            messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, msg, isCompacted = true)
+        }
     }
 
     private fun sessionProviderModelDisplay(sid: String): String {

@@ -1,3 +1,14 @@
+---
+name: project-rules
+description: 项目规则（AGENTS.md）与自动记忆
+order: 15
+enabled: true
+agent: false
+mode: [default]
+tools: []
+model: ""
+includes: []
+---
 <!-- 项目规则：AGENTS.md 约定与自动记忆 -->
 ## AGENTS.md（硬规则）
 - 项目根目录（`~/workspace`）或全局配置目录（`~/.rcodecore`）下可能存在 `AGENTS.md`，记录当前项目的专属规则、架构约束、构建指南。

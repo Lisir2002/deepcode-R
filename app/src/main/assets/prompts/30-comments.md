@@ -1,3 +1,14 @@
+---
+name: comments
+description: 注释规范
+order: 30
+enabled: true
+agent: false
+mode: [default]
+tools: []
+model: ""
+includes: []
+---
 <!-- 注释：默认不写，只在「为什么」不显而易见时才写 -->
 ## 注释
 - **默认不写注释**。只有当「为什么这么写」不显而易见时才加一条：隐藏的约束、微妙的不变量、针对某个 bug 的绕行、会让读者意外的行为。删掉也不会让人困惑的注释就别写。

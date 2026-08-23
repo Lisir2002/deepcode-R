@@ -239,6 +239,16 @@
     <string name="agent_compaction_failed">压缩失败: %1$s</string>
     <string name="agent_model_not_selected">未选择</string>
     <string name="agent_apply_changes_failed">应用更改失败: %1$s</string>
+    <string name="agent_switch_not_found">未找到可切换的专项 Agent：%1$s</string>
+    <string name="agent_switch_reset">已恢复主 agent（默认）</string>
+    <string name="agent_switch_ok">已切换到专项 Agent「%1$s」：%2$s</string>
+    <string name="agent_list_header_col_agent">Agent</string>
+    <string name="agent_list_header_col_desc">描述</string>
+    <string name="agent_list_empty">| （无） | 暂无专项 Agent 资产（agent:true），请在 prompts/ 添加 |</string>
+    <string name="agent_list_none_desc">（无描述）</string>
+    <string name="agent_list_current">当前：%1$s</string>
+    <string name="agent_list_current_main">主 agent（默认）</string>
+    <string name="agent_list_usage">用法：发送 /agent &lt;name&gt; 切换；再次发送同一 name 恢复主 agent</string>
 
     <!-- About -->
     <string name="about_version">版本</string>

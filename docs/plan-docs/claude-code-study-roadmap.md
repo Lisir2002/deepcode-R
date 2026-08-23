@@ -202,8 +202,8 @@
 |---|---|---|---|
 | R01 Hook 分发骨架 | ✅ | 2026-08-23 | assembleDebug 通过；HookDispatcher 11 个单测全绿；已挂 CommitDisciplineHook 示例；agent.md 3.8 节同步 |
 | R02 WakeQueue 骨架 | ✅ | 2026-08-23 | assembleDebug 通过；WakeQueueManager 9 个单测 + HookDispatcher 11 个单测 + DbSCHIELD 10 个单测全绿；迁移 v48（48_add_wake_queue.sql）；workflow 下轮注入 + 消费确认；agent.md 3.9 节同步 |
-| R03 AgentAssetRegistry | ⬜ | — | — |
-| R04 prompt 资产迁移 | ⬜ | — | — |
+| R03 AgentAssetRegistry | ✅ | 2026-08-23 | assembleDebug 通过；AgentAssetCore 14 个单测全绿（frontmatter 解析/排序/custom 覆盖/includes 组合与循环防护/热加载失效/组件 vs 专项 agent/assets 兜底）；FileObserver 双机制；agent.md 3.10 节同步 |
+| R04 prompt 资产迁移 | ✅ | 2026-08-23 | assembleDebug 通过；testReleaseUnitTest 全绿；11 个 prompt 文件加 frontmatter（default 组件 + plan/auto 按 mode 注入）；StaticRuleSource 改读 registry（删硬编码列表与 Plan/Auto Source/resolvePrompt）；AgentContext 加 currentAgentId；/agent 命令（AgentCommandHandler + executeWithInput + listAgents/switchAgent）；strings.xml 文案走资源；agent.md 3.11 节 + custom-prompts.md（frontmatter/专项 agent/热加载）同步；真机会话冒烟待验证 |
 | R05 DangerousCommandGuard | ⬜ | — | — |
 | R06 #6 双层接入 | ⬜ | — | — |
 | R07 #6 资产同步 | ⬜ | — | — |
@@ -226,3 +226,4 @@
 ## 5. 变更记录
 
 - （2026-08-23）规划文档创建：P0–P4 五阶段、R01–R22 任务清单，依据 design 12 节定稿。
+- （2026-08-23）R04 落地：11 个 prompt 资产迁移完成，SystemPromptProvider 接入 AgentAssetRegistry（mode 统一），新增 /agent 切换命令与 AgentContext.currentAgentId。

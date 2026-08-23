@@ -38,7 +38,7 @@
 | `domain/memory/` | 记忆系统：`Memory` 模型（GLOBAL/PROJECT 作用域）、`MemoryParser`、`MemorySource` + `GlobalMemorySource`/`ProjectMemorySource`、`MemoryRepository` |
 | `domain/model/` | 领域模型：`AgentMessage`（含 `AgentContext`：currentFile/selectedCode/projectRoot 等）、`ChatSession`（含 `AgentMode`：BUILD/PLAN/AUTO）、`CodeChange`、`ReasoningEffort`、`TodoItem` |
 | `domain/permission/` | 权限引擎：`ToolPermissionPolicyEngine`（ALLOW/DENY/ASK 判定）、`PermissionRulesRepository`、`ShellCommandParser`、`BuiltInSafeCommands`、`BuildCommandClassifier`、`PermissionModels`、`ZthFailureModels` |
-| `domain/prompt/SystemPromptProvider.kt` | 增量式系统提示词：按 `PromptSource` 组装静态规则/计划模式/工作区上下文等片段，维护缓存与快照 |
+| `domain/prompt/SystemPromptProvider.kt` | 增量式系统提示词：按 `PromptSource` 组装静态规则（R04 起由 `AgentAssetRegistry` 按 mode 注入）、工作区上下文等片段，维护缓存与快照 |
 | `domain/provider/` | AI Provider 抽象：`AIProvider`（complete / completeStream，含 reasoning、signature、token 统计）、`OpenAIAdapter`、`AnthropicAdapter`、`GeminiAdapter`、`RetryPolicy`、`HttpErrorEnricher`（把 HTTP 错误体拼进 message） |
 | `domain/session/` | 会话用例：`SessionUseCase`、`MessagePersistenceUseCase` |
 | `domain/skill/` | 技能系统：`Skill` 模型（PROMPT/SCRIPT/MCP 三形态、BUILTIN/LOCAL 来源）、`SkillParser`、`SkillRepository`、`SkillExecutor`、`SkillSource` + `LocalDirectorySkillSource`、`BuiltinSkillSeeder`（首启引导内置技能）、`SkillStateRepository`（Room 持久化启用状态） |
@@ -243,6 +243,30 @@
   - `markConsumed(ids)`：注入成功后原子化标记 `CONSUMED`（防重复注入；失败保留待下轮重扫）；
   - `allPending()`：启动重扫用。
 - **工作流注入挂点**（`StatefulAgentWorkflow`）：用户消息处理前读取 `pendingForSession(sessionId)`，非空则把 `buildWakeReminder` 生成的「【系统·补充审查发现】」文本拼到 `userRequestContent` 最前，随后 `markConsumed` 消费确认；读取/消费失败仅记日志跳过本轮（不阻断主流程）。
+
+### 3.10 Agent 资产注册表（AgentAssetRegistry / AgentAssetCore）
+
+- **定位**：方向 #1 Agent 声明式定义（R03，对齐 Claude Code agent 声明式范式，见 `docs/plan-docs/claude-code-study-design.md` 第 8 节）。把 `prompts/` 硬编码提示词升级为「frontmatter 元数据 + 正文」的 agent 资产，可热加载、可组合复用。
+- **资产模型**（`AgentAsset`）：`fileName`/`name`/`description`/`order`/`enabled`/`agent`/`modes`/`tools`/`model`/`includes`/`body`。无 frontmatter 的存量文件自动回退：name 取文件名去后缀、order 取文件名数字前缀（`00-identity.md` → 0）、enabled=true、agent=false、modes=default——保证迁移前装配结果与硬编码顺序一致。
+- **注册表**（`domain/prompt/AgentAssetRegistry`，Hilt 单例）：
+  - 扫描 `~/.rcodecore/prompts/`（内置默认副本，启动由 `ContainerInstaller.extractPrompts` 全量释放）+ `prompts.custom/`（用户覆盖，同名即覆盖元数据与正文）；
+  - `components()`：主 agent 组件（enabled 且 `agent:false`）按 order 排序；`agents()`：专项 agent（`agent:true`）；`all()`：全部（含 disabled）；`findByName(name)`：按 name 精确查找；
+  - **includes 组合引用**：按 name 递归展开正文（被引用方正文先序拼接），循环引用跳过防无限递归；
+  - **热加载双机制**：mtime 懒刷新（主，读取时比对目录指纹（mtime,size），对齐 `ProjectRuleSource`）+ FileObserver（辅，监听两目录增删改 → `invalidate()` 失效缓存）；FileObserver 被回收/inotify 超限时 mtime 仍兜底。
+- **纯解析核心**（`AgentAssetCore`，同文件，无 Android 依赖可 JVM 单测）：目录指纹 = 两目录 `.md` 文件的 (mtime,size) 映射（custom 同名覆盖），指纹未变复用缓存；三级优先级读正文 `prompts.custom/ > prompts/ > assets`；本地目录为空时兜底 assets 清单。
+- **接入**：R04 已落地——`StaticRuleSource` 改为从 registry 读取（删硬编码片段列表），`PlanModeSource`/`AutoModeSource` 删除并由 `mode` 字段统一（见 3.11）。
+
+### 3.11 Prompt 资产装配与 `/agent` 切换（R04 落地）
+
+- **装配改造**（`SystemPromptProvider`）：注入 `AgentAssetRegistry`，`StaticRuleSource.build(ctx)` 每次从 `registry.all()` 取全量资产：
+  - 主 agent（`ctx.currentAgentId == null`）：过滤 `enabled && !agent`，按 `modes` 注入——`modes` 含 `"default"` 恒注入；含当前模式关键字（`plan`/`auto`，由 `ctx.mode` 映射）时在对应模式注入；按 `order` 排序、includes 已展开。旧 `PlanModeSource`/`AutoModeSource` 及其字段删除，`resolvePrompt`/`containerInstaller`/`context` 依赖一并清理。
+  - 专项 agent（`ctx.currentAgentId` 命中 `enabled && agent` 资产）：正文整体替换为主 agent 装配结果。
+- **会话级切换**（`AgentContext.currentAgentId`，默认 null = 主 agent；`AIAgentViewModel` 以会话级内存 map `currentAgentIds` 承载，重启回退主 agent，不引入 DB 迁移）。
+- **`/agent` 命令**：新增 `domain/command/AgentCommandHandler`（trigger=`/agent`，`matches` 支持带参前缀），经 `SlashCommandModule` multibinding 注册；`SlashCommandHandler` 增加 `executeWithInput(context, input)` 默认方法（转发到无参 `execute`），`runSlashCommand` 改调带输入入口，现有 `/status`/`/compress` 不受影响。`SlashCommandContext` 新增 `listAgents()`/`switchAgent(name)`：
+  - `/agent` 无参 → 列出 `registry.agents()`（表格气泡，含当前 agent 与用法提示）；
+  - `/agent <name>` → `switchAgent`：非法/不存在回「未找到」；与当前相同 → 恢复主 agent；否则切换并回「已切换」。结果经 `MessagePersistenceUseCase` 以 AI 气泡落库。
+  - `tools`/`model` 仅建议语义（不切换 provider、不拦截工具），对齐 design 8.5。
+- **资产迁移**：11 个内置 `assets/prompts/*.md` 均添加 frontmatter（`00-identity`~`70-skills-and-mcp` 为 `mode:[default]` 组件；`80-plan-mode` 为 `mode:[plan]`；`81-auto-mode` 为 `mode:[auto]`），装配结果与原硬编码顺序一致。
 
 ## 4. 对外接口与集成点
 

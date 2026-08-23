@@ -255,8 +255,9 @@ internal class AgentAssetCore(
     ): String {
         val asset = all[name] ?: return ""
         if (!chain.add(name)) {
+            // 循环引用：跳过该 include（不重复展开），防无限递归
             FileLogger.w(TAG, "includes 循环引用，跳过展开: $name")
-            return asset.body
+            return ""
         }
         val included = asset.includes.mapNotNull { includedName ->
             resolveBody(includedName, all, chain).takeIf { it.isNotBlank() }

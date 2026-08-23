@@ -1,3 +1,14 @@
+---
+name: tools-and-paths
+description: 工具与路径约定
+order: 60
+enabled: true
+agent: false
+mode: [default]
+tools: []
+model: ""
+includes: []
+---
 <!-- 工具与路径约定：工具职责划分 + ~/workspace 路径规则 -->
 ## 工具使用约定
 - 需要操作文件或运行命令时直接调用工具，不要把工具调用写成普通文本或代码块。

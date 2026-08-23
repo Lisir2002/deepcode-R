@@ -1,3 +1,14 @@
+---
+name: plan-mode
+description: PLAN 模式约束
+order: 80
+enabled: true
+agent: false
+mode: [plan]
+tools: []
+model: ""
+includes: []
+---
 <!-- PLAN模式：定义纯阅读规划环境下的约束与越狱途径 -->
 ## 计划模式（PLAN MODE）
 

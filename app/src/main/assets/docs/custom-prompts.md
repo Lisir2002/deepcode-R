@@ -41,7 +41,7 @@ R-CodeCore 的系统提示词支持用户自定义覆盖。默认提示词随 Ap
 ### 只想改某几个片段（推荐）
 1. 在 `~/.rcodecore/prompts.custom/` 目录下（不存在则手动创建）放入你想覆盖的片段文件，文件名必须与默认片段**完全一致**（如 `50-safety.md`）。
 2. 编辑文件内容为你想要的提示词。
-3. **重启 App 后生效**。提示词在 App 进程启动时加载并缓存，新开会话不会重新读取——必须重启 App 才会加载修改后的自定义提示词。
+3. **自动热加载生效**：提示词资产采用 mtime 指纹 + 文件监听（FileObserver）双机制热加载，修改保存后**下一轮对话自动生效，无需重启 App**。
 
 不需要把所有片段都复制过去——只放你想改的，其余自动用默认版本。
 
@@ -71,18 +71,57 @@ R-CodeCore 的系统提示词支持用户自定义覆盖。默认提示词随 Ap
 | `80-plan-mode.md` | PLAN 计划模式专属约束 |
 | `81-auto-mode.md` | AUTO 自动模式专属约束 |
 
-## 6. 编辑方式
+## 6. frontmatter 元数据（可选）
+
+每个提示词文件顶部可带 YAML frontmatter（`---` 包裹），用于声明资产的元数据。未带 frontmatter 的旧文件自动回退（按文件名数字前缀排序），不影响使用。可用字段：
+
+| 字段 | 说明 |
+|---|---|
+| `name` | 资产唯一标识（默认取文件名去后缀） |
+| `description` | 用途/触发场景描述 |
+| `order` | 加载顺序（数字，替代硬编码列表） |
+| `enabled` | `true`/`false`，可禁用某片段 |
+| `agent` | `false` = 主 agent 组件（默认）；`true` = 可触发的专项 agent |
+| `mode` | `[default]` / `[plan]` / `[auto]`，声明片段在哪种模式注入（默认 `[default]` 恒注入） |
+| `tools` / `model` | 仅建议语义（不强制切换 provider、不拦截工具） |
+| `includes` | 按 name 引用其它资产组合复用（循环引用自动跳过） |
+
+示例：
+
+```yaml
+---
+name: my-agent
+description: 我的专项 Agent
+order: 100
+enabled: true
+agent: true
+mode: [default]
+includes: [identity, safety]
+---
+这里是该 Agent 的正文指令。
+```
+
+## 7. 专项 Agent 与 `/agent` 命令
+
+在 `prompts.custom/`（或 `prompts/`）放入 `agent: true` 的资产即成为可切换的**专项 Agent**。在会话中输入：
+
+- `/agent`：列出全部可切换的专项 Agent 及当前状态。
+- `/agent <name>`：切换到指定专项 Agent；切换后系统提示词正文整体替换为该 Agent 的指令。再次发送同一 name 恢复主 agent（默认）。
+
+> tools/model 字段仅作建议提示，切换 Agent 不会改变你选定的 provider/model，也不会放宽权限拦截。
+
+## 8. 编辑方式
 
 * **终端内编辑**：在 R-CodeCore 终端中直接用 `vi` / `nano` 等编辑器修改 `~/.rcodecore/prompts.custom/` 下的文件。
 * **AI 协助**：在会话中让 AI 帮你创建或修改自定义提示词文件（AI 的文件工具可直接读写该目录）。
 * **外部文件管理器**：通过 Android 系统文件管理器访问 App 私有目录（需拥有 root 权限，路径见第 1 节）。
 
-## 7. 重置
+## 9. 重置
 
 删除 `~/.rcodecore/prompts.custom/<对应文件>` 即可恢复该片段为默认版本。删除整个 `prompts.custom/` 目录则全部恢复默认。
 
-## 8. 注意事项
+## 10. 注意事项
 
 * 自定义片段的文件名必须与默认片段**完全一致**（区分大小写），否则不会被识别为覆盖。
-* 提示词在整个 App 进程生命周期内只加载一次并缓存，修改文件后需**重启 App**（不是新开会话）才会生效。
+* 提示词资产自动热加载（mtime 指纹 + 文件监听），修改保存后下一轮对话生效，**无需重启 App**。
 * `60-tools-and-paths.md` 等片段会随工具变更而更新，如果你覆盖了它，升级后不会自动获得新版工具描述——如需更新，请手动同步或删除你的自定义版本让默认版本重新生效。

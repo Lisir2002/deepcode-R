@@ -1,15 +1,11 @@
 package com.R.codecore.feature.agent.domain.prompt
 
-import android.content.Context
-import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.agent.domain.container.ContainerInstaller
 import com.R.codecore.feature.agent.domain.memory.MemoryRepository
 import com.R.codecore.feature.agent.domain.memory.MemoryScope
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
 import com.R.codecore.feature.agent.domain.skill.SkillType
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -22,60 +18,43 @@ import javax.inject.Singleton
  */
 @Singleton
 class SystemPromptProvider @Inject constructor(
-    @param:ApplicationContext private val context: Context,
     private val skillStateRepository: SkillStateRepository,
     private val memoryRepository: MemoryRepository,
-    private val containerInstaller: ContainerInstaller
+    private val agentAssetRegistry: AgentAssetRegistry
 ) {
     // 抽象独立的 Source
     interface PromptSource {
         fun build(ctx: AgentContext): String?
     }
 
+    /**
+     * 静态规则 Source（R04 起由 [AgentAssetRegistry] 驱动）：
+     * - 主 agent（currentAgentId == null）：注入 enabled 且 agent:false 的组件资产，按 mode 过滤
+     *   （mode 含 "default" 恒注入；含当前模式关键字时在对应模式注入，替代旧 PlanModeSource/AutoModeSource），
+     *   按 order 排序、includes 已展开。
+     * - 专项 agent（currentAgentId 存在且命中）：正文整体替换为主 agent 装配结果（design 8.5）。
+     * 装配结果由 registry 内部缓存（mtime + FileObserver），此处不再单独缓存。
+     */
     private inner class StaticRuleSource : PromptSource {
-        private val fragments = listOf(
-            "00-identity.md",
-            "10-communication.md",
-            "15-project-rules.md",
-            "20-coding-discipline.md",
-            "30-comments.md",
-            "40-approach.md",
-            "50-safety.md",
-            "60-tools-and-paths.md",
-            "70-skills-and-mcp.md"
-        )
-        @Volatile private var cached: String? = null
-
         override fun build(ctx: AgentContext): String {
-            return cached ?: fragments.joinToString("\n\n") { name ->
-                resolvePrompt(name)
-                    .replace(LEADING_COMMENT, "")
-                    .trim()
-            }.also { cached = it }
-        }
-    }
-
-    private inner class PlanModeSource : PromptSource {
-        @Volatile private var cached: String? = null
-
-        override fun build(ctx: AgentContext): String? {
-            if (ctx.mode != AgentMode.PLAN) return null
-            return cached ?: resolvePrompt("80-plan-mode.md")
-                .replace(LEADING_COMMENT, "")
-                .trim()
-                .also { cached = it }
-        }
-    }
-
-    private inner class AutoModeSource : PromptSource {
-        @Volatile private var cached: String? = null
-
-        override fun build(ctx: AgentContext): String? {
-            if (ctx.mode != AgentMode.AUTO) return null
-            return cached ?: resolvePrompt("81-auto-mode.md")
-                .replace(LEADING_COMMENT, "")
-                .trim()
-                .also { cached = it }
+            val all = agentAssetRegistry.all()
+            val currentAgent = ctx.currentAgentId?.let { id ->
+                all.firstOrNull { it.enabled && it.agent && it.name == id }
+            }
+            if (currentAgent != null) {
+                return currentAgent.body
+            }
+            val modeKey = when (ctx.mode) {
+                AgentMode.PLAN -> "plan"
+                AgentMode.AUTO -> "auto"
+                else -> "default"
+            }
+            return all.filter {
+                it.enabled && !it.agent &&
+                    (it.modes.contains("default") || it.modes.contains(modeKey))
+            }
+                .sortedBy { it.order }
+                .joinToString("\n\n") { it.body }
         }
     }
 
@@ -214,15 +193,11 @@ class SystemPromptProvider @Inject constructor(
     private val activeSkillsSource = ActiveSkillsSource()
     private val projectRuleSource = ProjectRuleSource()
     private val workspaceSource = WorkspaceSource()
-    private val planModeSource = PlanModeSource()
-    private val autoModeSource = AutoModeSource()
     private val currentTimeSource = CurrentTimeSource()
 
     fun build(agentContext: AgentContext): String {
         // 1. 获取各个 Source 的基线快照。
-        // PLAN/AUTO 模式提示词放在最前面（紧随静态规则之后），确保模型优先注意到模式约束
-        val planModeContent = planModeSource.build(agentContext)
-        val autoModeContent = autoModeSource.build(agentContext)
+        // PLAN/AUTO 模式提示词由 StaticRuleSource 按 mode 字段注入（R04 起），紧随静态规则之后，确保模型优先注意到模式约束
         val staticContent = staticRuleSource.build(agentContext)
         val skillsContent = activeSkillsSource.build(agentContext)
         val memoriesContent = memoryListSource.build(agentContext)
@@ -244,19 +219,9 @@ class SystemPromptProvider @Inject constructor(
         }
 
         // 3. 组装最终提示词：把稳定不变的重头基线放最前面（享受 KV Cache），变化部分放末尾
-        // PLAN 模式约束紧随静态规则之后，确保模型优先感知模式限制
+        // PLAN/AUTO 模式约束已并入静态规则（R04 起按 mode 字段注入），无需单独追加
         return buildString {
             append(staticContent)
-
-            planModeContent?.let {
-                append("\n\n")
-                append(it)
-            }
-
-            autoModeContent?.let {
-                append("\n\n")
-                append(it)
-            }
 
             skillsContent?.let {
                 append("\n\n")
@@ -280,37 +245,9 @@ class SystemPromptProvider @Inject constructor(
         }
     }
 
-    /**
-     * 按优先级解析单个提示词片段：prompts.custom/（用户覆盖） > prompts/（本地默认副本） > assets（内置兑底）。
-     * 本地副本由 [ContainerInstaller.extractPrompts] 在启动时全量释放，
-     * App 升级后随之更新；用户只需在 prompts.custom/ 放同名文件即可覆盖，无需改内置。
-     */
-    private fun resolvePrompt(name: String): String {
-        val customDir = File(containerInstaller.rcodecoreDir, "prompts.custom")
-        val customFile = File(customDir, name)
-        if (customFile.isFile) {
-            try {
-                return customFile.bufferedReader().use { it.readText() }
-            } catch (e: Exception) {
-                FileLogger.w(TAG, "读取自定义提示词失败 $name: ${e.message}", e)
-            }
-        }
-        val defaultFile = File(File(containerInstaller.rcodecoreDir, "prompts"), name)
-        if (defaultFile.isFile) {
-            try {
-                return defaultFile.bufferedReader().use { it.readText() }
-            } catch (e: Exception) {
-                FileLogger.w(TAG, "读取本地提示词失败 $name: ${e.message}", e)
-            }
-        }
-        return context.assets.open("prompts/$name").bufferedReader().use { it.readText() }
-    }
-
     private companion object {
-        const val TAG = "SystemPromptProvider"
         const val AGENTS_FILE = "AGENTS.md"
         const val CLAUDE_FILE = "CLAUDE.md"
         const val MAX_AGENTS_CHARS = 32_000
-        val LEADING_COMMENT = Regex("(?s)^\\s*<!--.*?-->\\s*")
     }
 }

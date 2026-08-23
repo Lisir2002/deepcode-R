@@ -25,6 +25,14 @@ interface SlashCommandHandler {
 
     /** 命中后执行的操作。 */
     fun execute(context: SlashCommandContext)
+
+    /**
+     * 带原始输入的执行入口（供 `/agent <name>` 这类带参命令使用）。
+     * 默认转发到无参 [execute]；需要解析参数的命令重写本方法。
+     */
+    fun executeWithInput(context: SlashCommandContext, input: String) {
+        execute(context)
+    }
 }
 
 /**
@@ -34,4 +42,10 @@ interface SlashCommandHandler {
 interface SlashCommandContext {
     fun showSessionStatus()
     fun compactCurrentSession()
+
+    /** 列出可切换的专项 Agent（结果以 AI 气泡输出）。 */
+    fun listAgents()
+
+    /** 切换到指定专项 Agent（`/agent <name>`）；空/非法名回退说明。 */
+    fun switchAgent(name: String)
 }
