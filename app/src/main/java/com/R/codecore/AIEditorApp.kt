@@ -284,6 +284,26 @@ class AIEditorApp : Application() {
             }.onFailure {
                 android.util.Log.e("CRASH", "⚠️ 连同步落盘都失败了，此时只能靠上面 logcat 追溯", it)
             }
+            // Step 2.5: 崩溃日志同步导出到公共外部存储 Download/RCodeCore/logs/。
+            //   私有目录（Android/data/...）在 Android 11+ 文件管理器不可见，用户拿不到日志；
+            //   这里把全部日志 + 一份带时间戳的崩溃快照写进公共 Downloads（API 29+ MediaStore 免权限），
+            //   保证闪退后用户/开发者能在文件管理器直接定位崩溃栈。
+            runCatching {
+                val stamp = java.time.Instant.now().toString().replace(":", "-")
+                val snapshot = buildString {
+                    append("RCodeCore 崩溃快照  ").append(stamp).append('\n')
+                    append("=".repeat(60)).append('\n')
+                    append(summary).append('\n')
+                    val sw = java.io.StringWriter()
+                    throwable.printStackTrace(java.io.PrintWriter(sw))
+                    append(sw.toString()).append('\n')
+                    append("=".repeat(60)).append('\n')
+                    append("日志已同步落盘到私有目录，本快照用于快速定位。完整日志见同目录 log-*.txt。\n")
+                }
+                FileLogger.exportLogsToDownloads(this@AIEditorApp, "crash-$stamp.log" to snapshot)
+            }.onFailure {
+                android.util.Log.e("CRASH", "⚠️ 崩溃日志导出到公共目录失败，仍保留私有日志", it)
+            }
             // Step 3: 交给系统原处理器（弹出"应用已停止运行"弹窗 + 收集 dropbox，最终杀进程）
             runCatching {
                 previous?.uncaughtException(thread, throwable)

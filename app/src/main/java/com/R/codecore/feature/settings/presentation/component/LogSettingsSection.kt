@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Badge
@@ -40,15 +41,18 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -57,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.R.codecore.R
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.core.util.LogLevel
@@ -68,7 +73,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import com.R.codecore.R
 import com.R.codecore.core.util.LogLineParser
 import com.R.codecore.core.util.ParsedLogLine
 import androidx.compose.material3.HorizontalDivider
@@ -100,6 +104,8 @@ internal fun LogsSection(
     logViewerState: LogViewerUiState,
     onSelectFile: (String) -> Unit,
     onRefresh: () -> Unit,
+    // 导出日志到公共 Downloads（文件管理器可见）
+    onExportLogs: () -> Unit = {},
     // 筛选回调
     onToggleFilterPanel: () -> Unit = {},
     onCloseFilterPanel: () -> Unit = {},
@@ -150,6 +156,7 @@ internal fun LogsSection(
                 1 -> LogViewerContent(
                     state = logViewerState,
                     onSelectFile = onSelectFile,
+                    onExportLogs = onExportLogs,
                     onToggleFilterPanel = onToggleFilterPanel,
                     onCloseFilterPanel = onCloseFilterPanel,
                     onSetSelectedDates = onSetSelectedDates,
@@ -217,6 +224,7 @@ internal fun LogLevelCard(
 private fun ColumnScope.LogViewerContent(
     state: LogViewerUiState,
     onSelectFile: (String) -> Unit,
+    onExportLogs: () -> Unit,
     onToggleFilterPanel: () -> Unit,
     onCloseFilterPanel: () -> Unit,
     onSetSelectedDates: (Set<String>) -> Unit,
@@ -230,6 +238,8 @@ private fun ColumnScope.LogViewerContent(
     onDismissNewLogs: () -> Unit
 ) {
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     // ── 文件选择 + 操作按钮行 ──
     Card(

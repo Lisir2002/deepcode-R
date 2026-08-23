@@ -1,12 +1,17 @@
 package com.R.codecore.core.util
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.ContextCompat
 import java.io.File
+import java.io.FileOutputStream
 import java.io.PrintWriter
 import java.io.StringWriter
 
@@ -151,6 +156,79 @@ object FileLogger {
 
     /** 返回当前日志目录，供日志查看器使用。 */
     fun getLogDir(): File? = logDir
+
+    // ── 导出到公共外部存储（解决 Android/data 私有目录在文件管理器不可见的问题） ──
+
+    // 公共导出目录：Download/RCodeCore/logs/（卸载后仍保留）
+    private const val EXPORT_ROOT_DIR = "RCodeCore"
+    private const val EXPORT_LOG_SUBDIR = "logs"
+    private const val EXPORT_RELATIVE_PATH = "Download/RCodeCore/logs"
+
+    /**
+     * 把所有日志文件导出到公共外部存储 `Download/RCodeCore/logs/`：
+     *   - API 29+：MediaStore.Downloads 集合（免权限，文件管理器可见）；
+     *   - API <29：legacy 公共 Download 目录（需 WRITE_EXTERNAL_STORAGE）。
+     * [extraFile] 可附带一个额外文件（如崩溃快照 summary），名称形如 `crash-xxx.log`。
+     * 返回导出成功的文件名列表；无日志且无额外文件时返回空列表。调用方负责捕获异常。
+     */
+    fun exportLogsToDownloads(
+        context: Context,
+        extraFile: Pair<String, String>? = null
+    ): List<String> {
+        val exported = mutableListOf<String>()
+        val files = listLogFiles()
+        for (file in files) {
+            val content = runCatching { file.readText() }.getOrNull() ?: continue
+            if (writeToPublic(context, file.name, content)) exported.add(file.name)
+        }
+        if (extraFile != null) {
+            if (writeToPublic(context, extraFile.first, extraFile.second)) {
+                exported.add(extraFile.first)
+            }
+        }
+        return exported
+    }
+
+    /** 写一个文件到公共 Download/RCodeCore/logs/。API 29+ 走 MediaStore；API <29 走 legacy 目录。 */
+    private fun writeToPublic(context: Context, name: String, content: String): Boolean = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            writeViaMediaStore(context, name, content)
+        } else {
+            writeViaLegacyFile(context, name, content)
+        }
+        true
+    }.onFailure {
+        android.util.Log.e(TAG, "导出日志到公共目录失败: $name", it)
+    }.getOrDefault(false)
+
+    private fun writeViaMediaStore(context: Context, name: String, content: String) {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, name)
+            put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+            put(MediaStore.Downloads.RELATIVE_PATH, "$EXPORT_RELATIVE_PATH/")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri: Uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("MediaStore 插入失败")
+        try {
+            resolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+                ?: throw IllegalStateException("MediaStore 打开输出流失败")
+        } finally {
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        }
+    }
+
+    @Suppress("DEPRECATION") // targetSdk=28 下 getExternalStoragePublicDirectory 仍可用
+    private fun writeViaLegacyFile(context: Context, name: String, content: String) {
+        if (!hasExternalStorageWrite(context)) throw IllegalStateException("未授予存储权限")
+        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val dir = File(File(base, EXPORT_ROOT_DIR), EXPORT_LOG_SUBDIR)
+        if (!dir.exists() && !dir.mkdirs()) throw IllegalStateException("无法创建导出目录")
+        FileOutputStream(File(dir, name)).use { it.write(content.toByteArray(Charsets.UTF_8)) }
+    }
 
     /**
      * 紧急同步落盘：不进 ioExecutor 队列，阻塞当前线程直接把一行写到今天的日志文件。
