@@ -22,21 +22,36 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Article
 import androidx.compose.material.icons.rounded.BrightnessAuto
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderZip
+import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -44,9 +59,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -95,7 +108,6 @@ fun ChatDrawerContent(
     currentSessionId: String?,
     agentStates: Map<String, AgentUIState>,
     onSelect: (ChatSession) -> Unit,
-    onCreate: () -> Unit,
     onDelete: (ChatSession) -> Unit,
     onRename: (ChatSession, String) -> Unit,
     onExport: (ChatSession) -> Unit,
@@ -107,6 +119,8 @@ fun ChatDrawerContent(
     hasRunningSessions: () -> Boolean = { false },
     onSwitchWorkspaceConfirmed: () -> Unit = {},
     onOpenFile: (String) -> Unit = {},
+    /** 查询某工作区绑定的会话（供「所有工作台 → 查看对话绑定」展示）。 */
+    boundSessionsForWorkspace: suspend (String) -> List<ChatSession> = { emptyList() },
     modifier: Modifier = Modifier
 ) {
     var pendingDelete by remember { mutableStateOf<ChatSession?>(null) }
@@ -121,21 +135,30 @@ fun ChatDrawerContent(
             .windowInsetsPadding(WindowInsets.systemBars)
             .padding(horizontal = Spacing.md, vertical = Spacing.lg)
     ) {
-        // 顶部 tab 菜单：对话列表 / 工作目录 / 更多配置
-        PrimaryTabRow(selectedTabIndex = selectedTab) {
-            DrawerTab(
+        // 顶部 tab 菜单：对话列表 / 工作目录 / 更多配置。
+        // 高度固定 44dp，与全局 AppTopAppBar 标题栏高度完全一致，保持视觉对齐。
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+        ) {
+            DrawerTopTab(
                 text = stringResource(R.string.chat_drawer_tab_chats),
                 selected = selectedTab == 0,
+                modifier = Modifier.weight(1f),
                 onClick = { selectedTab = 0 }
             )
-            DrawerTab(
+            DrawerTopTab(
                 text = stringResource(R.string.chat_drawer_tab_workspace),
                 selected = selectedTab == 1,
+                modifier = Modifier.weight(1f),
                 onClick = { selectedTab = 1 }
             )
-            DrawerTab(
+            DrawerTopTab(
                 text = stringResource(R.string.chat_drawer_tab_more),
                 selected = selectedTab == 2,
+                modifier = Modifier.weight(1f),
                 onClick = { selectedTab = 2 }
             )
         }
@@ -148,7 +171,6 @@ fun ChatDrawerContent(
                 currentSessionId = currentSessionId,
                 agentStates = agentStates,
                 onSelect = onSelect,
-                onCreate = onCreate,
                 onLongPress = { menuSession = it },
                 modifier = Modifier.weight(1f)
             )
@@ -159,6 +181,7 @@ fun ChatDrawerContent(
                     hasRunningSessions = hasRunningSessions,
                     onSwitchConfirmed = onSwitchWorkspaceConfirmed,
                     onOpenFile = onOpenFile,
+                    boundSessionsForWorkspace = boundSessionsForWorkspace,
                     modifier = Modifier.weight(1f)
                 )
             } else {
@@ -171,14 +194,19 @@ fun ChatDrawerContent(
             color = MaterialTheme.colorScheme.outlineVariant,
             modifier = Modifier.padding(vertical = Spacing.sm)
         )
-        // 底部导航：主题切换 / 设置 两个图标按钮贴右排列（能力中心已移入设置页，浏览器入口保留在聊天顶栏右侧）。
+        // 底部导航：左侧「设置」（图标 + 文字），右侧「主题切换」纯图标按钮。
+        // 两侧各留 Spacing.md 边距，与侧边栏内容左右对齐，视觉更舒适。
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(end = Spacing.md),
-            horizontalArrangement = Arrangement.End,
+                .padding(horizontal = Spacing.md),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            DrawerSettingsButton(
+                contentDescription = stringResource(R.string.chat_settings),
+                onClick = onNavigateToSettings
+            )
             DrawerBottomIconButton(
                 icon = when (currentThemeMode) {
                     AppThemeMode.DARK -> Icons.Rounded.DarkMode
@@ -195,14 +223,6 @@ fun ChatDrawerContent(
                 iconBgLight = Color(0xFFF59E0B),
                 iconBgDark = Color(0xFF92400E),
                 onClick = onCycleTheme
-            )
-            Spacer(Modifier.width(Spacing.sm))
-            DrawerBottomIconButton(
-                icon = Icons.Rounded.Settings,
-                contentDescription = stringResource(R.string.chat_settings),
-                iconBgLight = Color(0xFF0EA5E9),
-                iconBgDark = Color(0xFF0369A1),
-                onClick = onNavigateToSettings
             )
         }
     }
@@ -327,6 +347,37 @@ private fun DrawerBottomIconButton(
 }
 
 /**
+ * 侧边栏底部「设置」按钮：图标 + 文字 的整块可点击区域（位于底部左侧）。
+ */
+@Composable
+private fun DrawerSettingsButton(
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(Radius.sm))
+            .clickable(onClick = onClick)
+            .semantics { this.contentDescription = contentDescription }
+            .padding(vertical = Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        DrawerNavIcon(
+            icon = Icons.Rounded.Settings,
+            iconBgLight = Color(0xFF0EA5E9),
+            iconBgDark = Color(0xFF0369A1)
+        )
+        Spacer(Modifier.width(Spacing.md))
+        Text(
+            text = stringResource(R.string.chat_settings),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+/**
  * 会话行长按弹出的功能菜单：重命名 / 删除。底部 sheet 样式参照 git 分支的 RefActionSheet。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -436,28 +487,50 @@ private fun SheetActionRow(
     }
 }
 
-/** 侧边栏顶部 tab 项：文字标签，随 PrimaryTabRow 主题样式。 */
+/**
+ * 侧边栏顶部 tab 项：文字标签 + 底部选中指示条，高 44dp 与全局标题栏一致。
+ * 选中态以主色文字 + 圆角指示条表达（替代 Material3 TabRow 的 48dp 默认高度）。
+ */
 @Composable
-private fun DrawerTab(
+private fun DrawerTopTab(
     text: String,
     selected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Tab(
-        selected = selected,
-        onClick = onClick,
-        text = {
+    Box(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(Radius.sm))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
             Text(
                 text = text,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            Box(
+                modifier = Modifier
+                    .padding(top = Spacing.xs)
+                    .width(20.dp)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+            )
         }
-    )
+    }
 }
 
 /**
- * 侧边栏「对话列表」tab：顶部「新建会话」，中部历史记录列表。
+ * 侧边栏「对话列表」tab：中部历史记录列表（新建会话入口在聊天页顶栏）。
  * 每次进入该 tab 会自动滚动到当前会话。
  */
 @Composable
@@ -466,7 +539,6 @@ private fun ChatSessionListPanel(
     currentSessionId: String?,
     agentStates: Map<String, AgentUIState>,
     onSelect: (ChatSession) -> Unit,
-    onCreate: () -> Unit,
     onLongPress: (ChatSession) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -479,29 +551,6 @@ private fun ChatSessionListPanel(
     }
 
     Column(modifier = modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(Radius.sm))
-                .clickable { onCreate() }
-                .padding(horizontal = Spacing.md, vertical = Spacing.md),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            DrawerNavIcon(
-                icon = Icons.Rounded.Add,
-                iconBgLight = Color(0xFF4C8DFF),
-                iconBgDark = Color(0xFF2B4E9E)
-            )
-            Spacer(Modifier.width(Spacing.md))
-            Text(
-                text = stringResource(R.string.chat_new_session),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        Spacer(Modifier.height(Spacing.sm))
         Text(
             text = stringResource(R.string.chat_history),
             style = MaterialTheme.typography.labelLarge,
@@ -553,6 +602,7 @@ private fun WorkspaceDirPanel(
     hasRunningSessions: () -> Boolean,
     onSwitchConfirmed: () -> Unit,
     onOpenFile: (String) -> Unit,
+    boundSessionsForWorkspace: suspend (String) -> List<ChatSession>,
     modifier: Modifier = Modifier
 ) {
     val workspaces by viewModel.workspaces.collectAsStateWithLifecycle()
@@ -562,6 +612,7 @@ private fun WorkspaceDirPanel(
     var showCreateDialog by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Workspace?>(null) }
     var pendingSwitch by remember { mutableStateOf<Workspace?>(null) }
+    var pendingRename by remember { mutableStateOf<Workspace?>(null) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -641,7 +692,6 @@ private fun WorkspaceDirPanel(
                 else -> AllWorkspacesPanel(
                     workspaces = workspaces,
                     currentName = current?.name,
-                    hasRunningSessions = hasRunningSessions,
                     onSwitchRequest = { ws ->
                         if (hasRunningSessions()) {
                             pendingSwitch = ws
@@ -651,6 +701,8 @@ private fun WorkspaceDirPanel(
                         }
                     },
                     onDeleteRequest = { pendingDelete = it },
+                    onRenameRequest = { pendingRename = it },
+                    boundSessionsForWorkspace = boundSessionsForWorkspace,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -690,6 +742,49 @@ private fun WorkspaceDirPanel(
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.common_cancel)) }
+            }
+        )
+    }
+
+    // 重命名工作区
+    pendingRename?.let { ws ->
+        var renameText by remember(ws.name) { mutableStateOf(ws.name) }
+        val existingNames = workspaces.map { it.name } - ws.name
+        AlertDialog(
+            onDismissRequest = { pendingRename = null },
+            title = { Text(stringResource(R.string.workspace_rename)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = renameText,
+                        onValueChange = { renameText = it },
+                        label = { Text(stringResource(R.string.workspace_rename_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (renameText.isNotBlank() && renameText.trim() in existingNames) {
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text(
+                            text = stringResource(R.string.workspace_name_exists),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = renameText.isNotBlank() &&
+                        renameText.trim() != ws.name &&
+                        renameText.trim() !in existingNames,
+                    onClick = {
+                        viewModel.renameWorkspace(ws.name, renameText.trim())
+                        pendingRename = null
+                    }
+                ) { Text(stringResource(R.string.workspace_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRename = null }) { Text(stringResource(R.string.common_cancel)) }
             }
         )
     }
@@ -853,9 +948,9 @@ private fun WorkspaceFileRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.InsertDriveFile,
+            imageVector = if (entry.isDirectory) Icons.Rounded.Folder else fileTypeIcon(entry.name),
             contentDescription = null,
-            tint = if (entry.isDirectory) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (entry.isDirectory) Color(0xFFF59E0B) else fileTypeIconTint(entry.name),
             modifier = Modifier.size(20.dp)
         )
         Spacer(Modifier.width(Spacing.md))
@@ -878,14 +973,18 @@ private fun WorkspaceFileRow(
     }
 }
 
-/** 「所有工作台」子 tab：工作区列表，支持切换（有运行会话时走确认）、删除。 */
+/**
+ * 「所有工作台」子 tab：工作区列表。点击行弹出下拉菜单（切换 / 重命名 / 删除 / 查看对话绑定），
+ * 不再直接切换；「查看对话绑定」以手风琴形式展开该工作区绑定的会话列表。
+ */
 @Composable
 private fun AllWorkspacesPanel(
     workspaces: List<Workspace>,
     currentName: String?,
-    hasRunningSessions: () -> Boolean,
     onSwitchRequest: (Workspace) -> Unit,
     onDeleteRequest: (Workspace) -> Unit,
+    onRenameRequest: (Workspace) -> Unit,
+    boundSessionsForWorkspace: suspend (String) -> List<ChatSession>,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
@@ -906,8 +1005,10 @@ private fun AllWorkspacesPanel(
                         workspace = ws,
                         selected = ws.name == currentName,
                         canDelete = workspaces.size > 1,
-                        onClick = { onSwitchRequest(ws) },
-                        onDelete = { onDeleteRequest(ws) }
+                        onSwitch = { onSwitchRequest(ws) },
+                        onRename = { onRenameRequest(ws) },
+                        onDelete = { onDeleteRequest(ws) },
+                        boundSessions = { boundSessionsForWorkspace(ws.path) }
                     )
                 }
             }
@@ -922,46 +1023,195 @@ private fun formatFileSize(bytes: Long): String = when {
     else -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0)
 }
 
-/** 工作区列表行：文件夹图标 + 名称，选中高亮，可删除（非空列表时）。 */
+/** 提取文件小写扩展名（无扩展名返回空串）。 */
+private fun fileExtension(name: String): String {
+    val idx = name.lastIndexOf('.')
+    return if (idx > 0 && idx < name.length - 1) name.substring(idx + 1).lowercase() else ""
+}
+
+/**
+ * 按文件后缀返回对应图标，覆盖代码 / 文档 / 图片 / 压缩包 / 表格 / 数据库 / 配置 / 脚本等常见类型，
+ * 无法识别时回退通用文件图标。目录走文件夹图标，不进入本函数。
+ */
+private fun fileTypeIcon(name: String): ImageVector {
+    return when (fileExtension(name)) {
+        // 图片
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "heic", "avif" -> Icons.Rounded.Image
+        // PDF / 文档
+        "pdf" -> Icons.Rounded.PictureAsPdf
+        "doc", "docx", "odt", "rtf", "pages" -> Icons.Rounded.Description
+        "md", "markdown", "txt", "rst", "adoc", "log", "text" -> Icons.Rounded.Article
+        // 表格 / 数据
+        "xls", "xlsx", "ods", "csv", "tsv" -> Icons.Rounded.TableChart
+        // 数据库
+        "db", "sqlite", "sqlite3", "sql" -> Icons.Rounded.Storage
+        // 压缩包
+        "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "zst", "jar", "apk", "aab" -> Icons.Rounded.FolderZip
+        // Web / 标记 / 配置
+        "html", "htm", "css", "scss", "sass", "less", "xml", "json", "yml", "yaml", "toml",
+        "ini", "conf", "env", "properties", "gradle", "gradle.kts", "editorconfig" -> Icons.Rounded.Language
+        // 脚本 / 终端
+        "sh", "bash", "zsh", "fish", "bat", "cmd", "ps1" -> Icons.Rounded.Terminal
+        // 代码
+        "kt", "kts", "java", "py", "js", "mjs", "cjs", "ts", "jsx", "tsx", "go", "rs", "c", "h",
+        "cpp", "cc", "cxx", "hpp", "hxx", "swift", "rb", "php", "lua", "scala", "groovy", "dart",
+        "ex", "exs", "erl", "hs", "clj", "cljs", "cljc", "vue", "svelte", "proto" -> Icons.Rounded.Code
+        // 通用
+        else -> Icons.Rounded.InsertDriveFile
+    }
+}
+
+/** 文件图标配色：按类型给浅色着色，便于识别；未知类型回退中性灰。 */
+private fun fileTypeIconTint(name: String): Color {
+    return when (fileExtension(name)) {
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "heic", "avif" -> Color(0xFF8B5CF6)
+        "pdf" -> Color(0xFFEF4444)
+        "md", "markdown", "txt", "rst", "adoc", "log", "text" -> Color(0xFF64748B)
+        "doc", "docx", "odt", "rtf", "pages" -> Color(0xFF2563EB)
+        "xls", "xlsx", "ods", "csv", "tsv" -> Color(0xFF16A34A)
+        "db", "sqlite", "sqlite3", "sql" -> Color(0xFF0EA5E9)
+        "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "zst", "jar", "apk", "aab" -> Color(0xFFF59E0B)
+        "html", "htm", "css", "scss", "sass", "less", "xml", "json", "yml", "yaml", "toml",
+        "ini", "conf", "env", "properties", "gradle", "gradle.kts", "editorconfig" -> Color(0xFF0EA5E9)
+        "sh", "bash", "zsh", "fish", "bat", "cmd", "ps1" -> Color(0xFF22C55E)
+        "kt", "kts", "java", "py", "js", "mjs", "cjs", "ts", "jsx", "tsx", "go", "rs", "c", "h",
+        "cpp", "cc", "cxx", "hpp", "hxx", "swift", "rb", "php", "lua", "scala", "groovy", "dart",
+        "ex", "exs", "erl", "hs", "clj", "cljs", "cljc", "vue", "svelte", "proto" -> Color(0xFF6366F1)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+}
+
+/**
+ * 工作区列表行：点击整行弹出下拉菜单（切换 / 重命名 / 删除 / 查看对话绑定）。
+ * 「查看对话绑定」手风琴式展开：点击后加载并展示该工作区绑定的会话列表。
+ */
 @Composable
 private fun WorkspaceDirRow(
     workspace: Workspace,
     selected: Boolean,
     canDelete: Boolean,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
+    onSwitch: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    boundSessions: suspend () -> List<ChatSession>,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.sm))
-            .clickable(onClick = onClick)
-            .padding(horizontal = Spacing.md, vertical = Spacing.md),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            Icons.Rounded.Folder,
-            contentDescription = null,
-            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(Modifier.width(Spacing.md))
-        Text(
-            text = workspace.name,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        if (canDelete) {
-            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    Icons.Rounded.Delete,
-                    contentDescription = stringResource(R.string.common_delete),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
+    var menuExpanded by remember { mutableStateOf(false) }
+    var bindingsExpanded by remember { mutableStateOf(false) }
+    var boundSessionsState by remember { mutableStateOf<List<ChatSession>?>(null) }
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radius.sm))
+                .clickable { menuExpanded = true }
+                .padding(horizontal = Spacing.md, vertical = Spacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Rounded.Folder,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(Spacing.md))
+            Text(
+                text = workspace.name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (selected) {
+                Text(
+                    text = stringResource(R.string.workspace_current),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(end = Spacing.xs)
                 )
+            }
+            Icon(
+                Icons.Rounded.ExpandMore,
+                contentDescription = stringResource(R.string.workspace_menu),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+            modifier = Modifier.width(260.dp)
+        ) {
+            if (!selected) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.workspace_switch_to)) },
+                    leadingIcon = { Icon(Icons.Rounded.SwapHoriz, null) },
+                    onClick = {
+                        menuExpanded = false
+                        onSwitch()
+                    }
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.common_rename)) },
+                leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                onClick = {
+                    menuExpanded = false
+                    onRename()
+                }
+            )
+            if (canDelete) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.common_delete)) },
+                    leadingIcon = { Icon(Icons.Rounded.Delete, null) },
+                    onClick = {
+                        menuExpanded = false
+                        onDelete()
+                    }
+                )
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = Spacing.xs))
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.workspace_view_bindings)) },
+                leadingIcon = { Icon(Icons.Rounded.Forum, null) },
+                trailingIcon = {
+                    Icon(
+                        if (bindingsExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = null
+                    )
+                },
+                onClick = { bindingsExpanded = !bindingsExpanded }
+            )
+            if (bindingsExpanded) {
+                LaunchedEffect(workspace.path) {
+                    boundSessionsState = boundSessions()
+                }
+                val sessions = boundSessionsState
+                when {
+                    sessions == null -> DropdownMenuItem(
+                        text = { Text(stringResource(R.string.common_loading)) },
+                        enabled = false
+                    )
+                    sessions.isEmpty() -> DropdownMenuItem(
+                        text = { Text(stringResource(R.string.workspace_no_bound_sessions)) },
+                        enabled = false
+                    )
+                    else -> sessions.forEach { s ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = s.title,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            enabled = false
+                        )
+                    }
+                }
             }
         }
     }

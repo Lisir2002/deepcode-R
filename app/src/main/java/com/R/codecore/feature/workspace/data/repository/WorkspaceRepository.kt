@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.domain.container.ConnectionState
 import com.R.codecore.feature.agent.domain.container.RemoteSshConnection
 import com.R.codecore.feature.settings.data.repository.ExecutionMode
@@ -38,7 +39,8 @@ private val Context.workspaceDataStore by preferencesDataStore(name = "workspace
 class WorkspaceRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val executionModeHolder: ExecutionModeHolder,
-    private val remoteSshConnection: RemoteSshConnection
+    private val remoteSshConnection: RemoteSshConnection,
+    private val chatSessionDao: ChatSessionDao
 ) {
     private companion object {
         const val TAG = "WorkspaceRepository"
@@ -240,6 +242,55 @@ class WorkspaceRepository @Inject constructor(
             }
         }
         FileLogger.i(TAG, "删除工作区: $name")
+    }
+
+    /**
+     * 重命名工作区目录。名称经 [sanitize] 清洗；新名称非法或与其它工作区重名时返回 false。
+     * 本地模式 File.renameTo，远程模式 `mv`。重命名成功后，会把绑定到该工作区的所有会话的
+     * workspacePath 一并迁移到新路径（会话与工作区一对一绑定），避免会话随目录改名而丢失。
+     * 若重命名的是当前工作区，同步更新持久化的选中名。
+     */
+    suspend fun renameWorkspace(oldName: String, newName: String): Boolean = withContext(Dispatchers.IO) {
+        val name = sanitize(newName)
+        if (name.isEmpty() || name == oldName) {
+            FileLogger.w(TAG, "重命名工作区失败：名称非法 '$newName'")
+            return@withContext false
+        }
+        if (_workspaces.value.any { it.name == name }) {
+            FileLogger.w(TAG, "重命名工作区失败：已存在 '$name'")
+            return@withContext false
+        }
+        // 重命名前先取旧路径（refresh 后旧名已消失，无法再反查）
+        val oldPath = workspacePathOf(oldName)
+        val ok = if (isLocal()) {
+            File(projectsRoot, oldName).renameTo(File(projectsRoot, name))
+        } else {
+            val cfg = remoteSshConnection.config ?: return@withContext false
+            val wsRoot = cfg.remoteWorkspacePath.trimEnd('/')
+            execRemoteExit("mv ${shellQuote("$wsRoot/$oldName")} ${shellQuote("$wsRoot/$name")}") == 0
+        }
+        if (!ok) {
+            FileLogger.w(TAG, "重命名工作区失败: $oldName -> $name")
+            return@withContext false
+        }
+        refreshWorkspaces()
+        // 会话绑定路径迁移：旧路径 → 新路径
+        val newPath = workspacePathOf(name)
+        if (oldPath != null && newPath != null && oldPath != newPath) {
+            chatSessionDao.updateWorkspacePath(oldPath, newPath)
+        }
+        if (_current.value?.name == oldName) {
+            _current.value = _workspaces.value.firstOrNull { it.name == name }
+            context.workspaceDataStore.edit { it[currentNameKey] = name }
+        }
+        FileLogger.i(TAG, "重命名工作区: $oldName -> $name")
+        true
+    }
+
+    /** 按工作区名推导其目录路径（本地宿主路径 / 远程绝对路径）。 */
+    private fun workspacePathOf(name: String): String? {
+        val ws = _workspaces.value.firstOrNull { it.name == name } ?: return null
+        return ws.path
     }
 
     /** 单引号转义，保证 shell 命令安全。 */

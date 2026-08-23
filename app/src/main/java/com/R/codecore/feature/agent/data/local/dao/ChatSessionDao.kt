@@ -38,6 +38,10 @@ interface ChatSessionDao {
     @Query("UPDATE chat_sessions SET title = :title WHERE id = :id")
     suspend fun updateTitle(id: String, title: String)
 
+    /** 工作区重命名后批量更新其下所有会话的绑定路径（会话与工作区一对一绑定，路径随之迁移）。 */
+    @Query("UPDATE chat_sessions SET workspacePath = :newPath WHERE workspacePath = :oldPath")
+    suspend fun updateWorkspacePath(oldPath: String, newPath: String)
+
     @Query("UPDATE chat_sessions SET updatedAtMs = :updatedAtMs WHERE id = :id")
     suspend fun touch(id: String, updatedAtMs: Long)
 

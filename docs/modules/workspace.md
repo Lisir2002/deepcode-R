@@ -6,7 +6,7 @@
 
 工作区模块管理 App 的「工作区/项目」概念及其配套能力，覆盖四块功能：
 
-1. **工作区管理**：本地模式下所有项目位于内部私有 ext4 目录 `filesDir/projects/<name>`；远程模式下工作区为 SSH 服务器 `remoteWorkspacePath` 下的子文件夹。支持列列表/新建/删除/切换，当前选中工作区持久化于 DataStore。工作区是 AI 文件工具与命令执行的根范围，切换即切换 AI 操作范围。侧边栏「工作目录」页内嵌「当前工作台 / 所有工作台」两个子 tab：前者浏览当前工作区文件树（点击文件跳转独立阅读页），后者做工作区列表管理。
+1. **工作区管理**：本地模式下所有项目位于内部私有 ext4 目录 `filesDir/projects/<name>`；远程模式下工作区为 SSH 服务器 `remoteWorkspacePath` 下的子文件夹。支持列列表/新建/删除/**重命名**/切换，当前选中工作区持久化于 DataStore。工作区是 AI 文件工具与命令执行的根范围，切换即切换 AI 操作范围。侧边栏「工作目录」页内嵌「当前工作台 / 所有工作台」两个子 tab：前者浏览当前工作区文件树（点击文件跳转独立阅读页，退出阅读页自动重开侧边栏），后者做工作区列表管理——**点击工作区弹出下拉菜单**（切换 / 重命名 / 删除 / 查看对话绑定，其中「查看对话绑定」以手风琴展开该工作区绑定的会话）。
 2. **文件访问抽象**：`FileAccessProvider` 把「在哪读写文件」从硬编码的 `java.io.File` 解耦，本地（`LocalFileAccess` + `WorkspacePathMapper`）与远程（`RemoteSftpFileAccess`）两套实现由 `DelegatingFileAccess` 按执行模式转发，AI 的文件类工具统一走容器路径（`~/workspace/...`）。
 3. **路径映射**：`WorkspacePathMapper` 在「容器内路径」与「宿主真实路径」之间互转（`~/workspace` ↔ 工作区、`/root/.rcodecore` ↔ AI 配置目录、其它容器绝对路径 ↔ rootfs），对 AI 只暴露容器路径。
 4. **远程连接/挂载与文件同步**：Room 持久化远程连接（SFTP/FTP/LOCAL）与挂载点；`RemoteRepository` 编排 `SyncEngine` + 三种 `RemoteSyncClient`，对挂载目录做增量监听同步/全量上传下载；内置 `FtpServerManager`（Apache FtpServer）把工作区共享为 FTP 服务；`RemoteAuditLogRepository` 记录连接/凭据/同步等审计事件。另通过 SAF `WorkspaceDocumentsProvider` 把私有目录暴露给系统文件管理器。
@@ -17,7 +17,7 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `data/repository/WorkspaceRepository.kt` | 工作区核心仓库（@Singleton）：扫描/新建/删除/切换，DataStore 持久化当前选中；本地扫 `filesDir/projects`，远程走 SSH exec（`ls -d */` / `mkdir -p` / `rm -rf`） |
+| `data/repository/WorkspaceRepository.kt` | 工作区核心仓库（@Singleton）：扫描/新建/删除/**重命名**/切换，DataStore 持久化当前选中；本地扫 `filesDir/projects`，远程走 SSH exec（`ls -d */` / `mkdir -p` / `rm -rf` / `mv`）；**重命名成功后经 `ChatSessionDao.updateWorkspacePath` 把绑定该工作区的会话路径批量迁移到新路径** |
 | `data/local/dao/RemoteConnectionDao.kt` | Room DAO：远程连接 + 挂载两张表（含凭据更新、按连接查挂载、批量插入） |
 | `data/local/dao/RemoteMountDao.kt` | 独立挂载表 DAO（从 ConnectionDao 拆分，职责单一） |
 | `data/local/dao/RemoteAuditLogDao.kt` | 审计日志 DAO：分页/按连接/多维筛选/清理/计数/distinct 分类 |
@@ -55,7 +55,7 @@
 
 - `initialize()`：远程模式先等 SSH 连接就绪（CONNECTED/FAILED，最多 5s）；刷新列表；本地模式首次启动自动建 `default` 工作区；从 DataStore 恢复当前选中；远程模式切换后 `updateWorkspaceSymlink` 让 Bash 的 `~/workspace` 指向当前工作区。
 - 本地：`filesDir/projects/<name>`（**必须是 ext4**——emulated/FUSE 存储拒绝 `symlink()`，npm/pnpm/git 建软链会 `EACCES`），对外可见性交给 SAF Provider 补回。
-- 远程：列表用 SSH exec `ls -d .../*/ | xargs basename`（刻意不用 SFTP，规避 sshj Buffer bug）；新建/删除走 exec `mkdir -p` / `rm -rf`（`shellQuote` 单引号转义防注入）。
+- 远程：列表用 SSH exec `ls -d .../*/ | xargs basename`（刻意不用 SFTP，规避 sshj Buffer bug）；新建/删除走 exec `mkdir -p` / `rm -rf`（`shellQuote` 单引号转义防注入）；**重命名走 exec `mv`，成功后把绑定该工作区的会话路径批量迁移（`ChatSessionDao.updateWorkspacePath`），并同步更新持久化的当前选中名**。
 - `currentPath()` 是本地/远程统一的「当前工作区绝对路径」出口，供终端会话与文件工具取根。
 
 ### 3.2 文件访问委托（`DelegatingFileAccess`）
@@ -113,8 +113,8 @@ AI 的文件工具（`FileTools`/`EditFileTool`/`ListFilesTool`/`ImageTools`/`Se
 | `WorkspaceDocumentsProvider` | Android 系统文件管理器 / SAF 选择器（Manifest 注册的 ContentProvider） | 私有目录对外可见 |
 | `ExecutionModeHolder` | 委托层 | 本地 vs 远程路由 |
 | `WorkspacePathMapper` | `LocalFileAccess`、工具层 | 容器路径 ↔ 宿主路径 |
-| `WorkspaceViewModel` / `WorkspaceFileViewModel` | `agent/presentation/component/ChatDrawer.kt`（侧边栏「工作目录」子 tab） | 工作区列表管理（所有工作台）+ 当前工作区文件树浏览（当前工作台） |
-| `FileReaderScreen` + `FileReaderViewModel` | `MainActivity` 路由 `file_reader/{filePath}`（路径 `Uri.encode` 传入） | 侧边栏点击文件跳转独立阅读页 |
+| `WorkspaceViewModel` / `WorkspaceFileViewModel` | `agent/presentation/component/ChatDrawer.kt`（侧边栏「工作目录」子 tab） | 工作区列表管理（所有工作台：下拉菜单切换/重命名/删除/查看对话绑定）+ 当前工作区文件树浏览（当前工作台）；「查看对话绑定」经 `AIAgentViewModel.sessionsBoundToWorkspace(path)` 查询 |
+| `FileReaderScreen` + `FileReaderViewModel` | `MainActivity` 路由 `file_reader/{filePath}`（路径 `Uri.encode` 传入） | 侧边栏点击文件跳转独立阅读页；退出后自动重开侧边栏并保留所在 tab |
 
 ## 5. 关键设计点与约束
 

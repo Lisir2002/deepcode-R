@@ -162,6 +162,7 @@
     <string name="common_disabled">已禁用</string>
     <string name="credential_token">访问令牌 Token / PAT</string>
     <string name="common_rename">重命名</string>
+    <string name="common_loading">加载中</string>
     <string name="common_hide">隐藏</string>
 
     <!-- Log -->
@@ -352,7 +353,7 @@
     <string name="chat_drawer_tab_more">更多配置</string>
     <string name="chat_drawer_tab_more_placeholder">更多配置功能即将上线</string>
     <string name="chat_history">历史记录</string>
-    <string name="chat_no_sessions_hint">暂无会话，点击「新建会话」开始</string>
+    <string name="chat_no_sessions_hint">暂无会话，在聊天页点击「新会话」开始</string>
     <string name="chat_settings">设置</string>
     <string name="chat_open_browser">内置浏览器</string>
     <string name="chat_delete_session">删除会话</string>
@@ -918,6 +919,13 @@
     <string name="workspace_new_workspace">新建工作区</string>
     <string name="workspace_name_hint">例如 my-project</string>
     <string name="workspace_name_exists">已存在同名工作区</string>
+    <string name="workspace_rename">重命名工作区</string>
+    <string name="workspace_rename_hint">请输入新的工作区名称</string>
+    <string name="workspace_view_bindings">查看对话绑定</string>
+    <string name="workspace_no_bound_sessions">该工作区暂无绑定的对话</string>
+    <string name="workspace_switch_to">切换到该工作区</string>
+    <string name="workspace_current">当前</string>
+    <string name="workspace_menu">工作区操作</string>
 
     <!-- Workspace Dir Sub-tabs & File Browser -->
     <string name="workspace_tab_current">当前工作台</string>

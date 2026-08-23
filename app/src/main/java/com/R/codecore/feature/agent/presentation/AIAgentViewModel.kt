@@ -1347,6 +1347,13 @@ class AIAgentViewModel @Inject constructor(
         sessionUseCase.updateTitle(id, trimmed)
     }
 
+    /**
+     * 查询某个工作区绑定的所有会话（按更新时间倒序），供侧边栏「所有工作台 → 查看对话绑定」展示。
+     * 会话与工作区一对一绑定、不可中途切换；一个工作区可绑定多个会话。
+     */
+    suspend fun sessionsBoundToWorkspace(workspacePath: String): List<ChatSession> =
+        chatSessionDao.getAllSessionsByWorkspaceOnce(workspacePath).map { it.toDomain() }
+
     /** 导出单个会话为无密码备份格式（tar.gz），流式写入 [output]（调用方打开，本方法负责关闭）。成功回调 true，失败回调 false。 */
     fun exportSession(sessionId: String, output: OutputStream, onResult: (Boolean) -> Unit) = viewModelScope.launch {
         try {

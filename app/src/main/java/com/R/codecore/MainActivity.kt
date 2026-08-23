@@ -257,6 +257,8 @@ fun AppNavigation(
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    // 从侧边栏「工作目录」打开文件阅读页时置位；退出阅读页后自动重开侧边栏（保留所在 tab）。
+    var reopenDrawerAfterFileReader by remember { mutableStateOf(false) }
 
     // 用于判断当前路由：仅在聊天页允许 Drawer 手势。
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -333,10 +335,6 @@ fun AppNavigation(
                         agentViewModel.selectSession(it.id)
                         scope.launch { drawerState.close() }
                     },
-                    onCreate = {
-                        agentViewModel.newSession()
-                        scope.launch { drawerState.close() }
-                    },
                     onDelete = { agentViewModel.deleteSession(it.id) },
                     onRename = { session, title -> agentViewModel.renameSession(session.id, title) },
                     onExport = { session ->
@@ -356,8 +354,11 @@ fun AppNavigation(
                     workspaceFileViewModel = workspaceFileViewModel,
                     hasRunningSessions = { agentViewModel.hasRunningSessionsInCurrentWorkspace() },
                     onSwitchWorkspaceConfirmed = { agentViewModel.stopAllAndCloseTerminal() },
-                    // 点击文件 → 关闭侧边栏并跳转独立文件阅读页（路径 URI 编码传入）
+                    // 点击文件 → 关闭侧边栏并跳转独立文件阅读页（路径 URI 编码传入）。
+                    // 记录「从侧边栏打开」，退出阅读页时自动重开侧边栏并保留所在 tab（工作目录），
+                    // 满足「阅读文件退出后要有记忆、不直接关闭侧边栏」。
                     onOpenFile = { path ->
+                        reopenDrawerAfterFileReader = true
                         scope.launch { drawerState.close() }
                         navController.navigate("file_reader/" + Uri.encode(path))
                     }
@@ -548,7 +549,14 @@ fun AppNavigation(
                 FileReaderScreen(
                     viewModel = readerViewModel,
                     filePath = filePath,
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = {
+                        navController.popBackStack()
+                        // 从侧边栏「工作目录」进入的阅读页：退出后重开侧边栏，保留之前所在 tab。
+                        if (reopenDrawerAfterFileReader) {
+                            reopenDrawerAfterFileReader = false
+                            scope.launch { drawerState.open() }
+                        }
+                    }
                 )
             }
         }

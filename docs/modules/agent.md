@@ -240,6 +240,8 @@
 - **持久化**：消息、会话、Todo、技能启用状态、模式切换、模型能力覆盖、检查点快照与全套 ZTH 审计均落 Room；检查点文件快照存 `<filesDir>/checkpoints/<sessionId>/<checkpointId>/`，同一 checkpoint 内对同一文件只保留最原始一份，支持回滚。
 - **上下文压缩**：`ContextCompactor` 在历史超过阈值时自动压缩，也可经 `/compress` 手动触发；压缩结果内部持久化。
 - **安全**：RcbBridge 绑定 127.0.0.1 随机端口（外网不可达）+ 首行令牌鉴权；`share` 能力默认不支持（防数据渗出）；`open_url` 默认不真正打开。`PLAN` 模式只读、工具权限最小化、MCP/Skill 加载能力受 ZTH 能力守卫管控。
+- **会话与工作区一对一绑定**：会话创建时把当时的当前工作区路径写入 `ChatSession.workspacePath`，之后**不可中途切换**（会话列表按工作区路径过滤，UI 无改绑入口）；一个工作区可被多个会话绑定。工作区重命名时由 `WorkspaceRepository.renameWorkspace` 经 `ChatSessionDao.updateWorkspacePath` 批量迁移绑定路径。侧边栏「所有工作台 → 查看对话绑定」经 `AIAgentViewModel.sessionsBoundToWorkspace(path)` 查询某工作区绑定的会话。
+- **侧边栏（ChatDrawer）**：顶部 tab 导航高 44dp 与全局标题栏一致；「对话列表」tab 不含新建按钮（新建入口在聊天页顶栏）；「工作目录」tab 文件树点击文件跳转独立阅读页（`MainActivity` 记录 `reopenDrawerAfterFileReader`，退出阅读页自动重开侧边栏并保留所在 tab）；工作区列表行点击弹出下拉菜单（切换/重命名/删除/查看对话绑定-手风琴）；底部按钮栏左侧为设置（图标+文字）、右侧为主题切换纯图标，两侧留边距。
 - **终端输出**：`BoundedOutput` 限制命令输出长度，避免超长回填污染上下文；进度类输出由 `progress/` 解析器聚合。
 
 ## 6. 维护与扩展指引

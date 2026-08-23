@@ -45,4 +45,10 @@ class WorkspaceViewModel @Inject constructor(
     fun deleteWorkspace(name: String) = viewModelScope.launch {
         runCatching { repository.deleteWorkspace(name) }
     }
+
+    /** 重命名工作区（成功返回 true，名称非法/重名返回 false）。 */
+    fun renameWorkspace(oldName: String, newName: String, onResult: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        val ok = runCatching { repository.renameWorkspace(oldName, newName) }.getOrDefault(false)
+        onResult(ok)
+    }
 }
