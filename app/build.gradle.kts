@@ -19,12 +19,12 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
-// 当前版本基线：0.1.1；后续版本号升级必须由用户明确指令
-val BASE_VERSION = "0.1.1"
+// 当前版本基线：0.1.2；后续版本号升级必须由用户明确指令
+val BASE_VERSION = "0.1.2"
 
 // 版本号策略：
-//   1. 仅当 git tag 以 v0.1.1 开头时（如 v0.1.1 / v0.1.1-rc20），沿用 tag 中的后缀；
-//   2. 其他情况（tag 为其他版本号 / 无 tag / 无 git 环境），一律 fallback 到 "0.1.1-dev"；
+//   1. 仅当 git tag 以 v0.1.2 开头时（如 v0.1.2 / v0.1.2-rc20），沿用 tag 中的后缀；
+//   2. 其他情况（tag 为其他版本号 / 无 tag / 无 git 环境），一律 fallback 到 "0.1.2-dev"；
 //   3. 严禁从旧 1.x tag 推导版本号，避免版本号回跳到 1.x 系列。
 fun gitVersionName(): String = try {
     val process = Runtime.getRuntime().exec(
