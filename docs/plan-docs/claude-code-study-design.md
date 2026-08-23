@@ -102,7 +102,7 @@ plugin/
 全部 10 个方向均进入深入讨论范围（用户 2026-08-23 确认「都值得深入讨论」）。
 以下「批次」仅表示**讨论/实施顺序**，不表示取舍——每个方向都会深入讨论并产出设计。
 
-- **批次 1**：#6 Bash 命令静态预校验（设计定稿，见第 7 节）
+- **批次 1**：#6 Bash 命令静态预校验（设计定稿 + 深化，见第 7 节；Block 守恒 4 条 + Warn 扩容 11 条）
 - **批次 2**：#3 Confidence Scoring 分级上报（设计定稿，见第 10 节；随 #1/#2 实施）
 - **批次 3**：#4 Hook 事件模型（设计定稿，见第 11 节；代码后声明）→ #5 声明式规则引擎（设计定稿，见第 12 节；MD+JSON 共存、引入 warn、权限+Hook 双消费点）
 - **批次 4**：#1 Agent 声明式定义（设计定稿，见第 8 节；用户 2026-08-23 提前拍板）→ #2 多 Agent 编排（设计定稿，见第 9 节；依赖 #1 落地）
@@ -167,6 +167,15 @@ plugin/
 - **作用域**：**权限 + Hook 全上**——统一规则引擎双消费点（ToolPermissionPolicyEngine + #4 HookDispatcher），实施可分层（先权限后 Hook）。
 - **优先级**：内置安全底线（灾难 rm / #6 Block）> 用户 deny/block > 已记忆 ALLOW > 内置白名单 > warn 提示 > ASK；用户规则只增不减（沿用 #6 原则）。
 
+### 5.8 方向 #6 深化决策（2026-08-23 已确认）
+
+- **清单范围**：**Block 守恒 + Warn 扩容**——Block 保持 4 条核心（误报可控优先），Warn 扩容吸收 ZthContentReviewer 规则池。
+- **分级边界**：**严格分级**——Block 只收「必然灾难 + 误报可控」；其余一律 Warn（提示不拦截，误报成本低）。
+- **协同**：**分层 + 联动**——内置表固定（安全底线）+ 用户规则只能加严；危险命令审查可作 PostToolUse hook（如 git commit 提交前检查）。
+- **反向 shell**：归 **Warn + 提示**（提示语注明「若为合法网络调试可忽略」），不入 Block。
+- **收编范围**：**高优先六条**（W5 sudo 敏感 / W6 敏感文件读取 / W7 SSH 密钥覆盖 / W8 base64 解码执行 / W9 明文密码入脚本 / W10 git force push）+ 反向 shell（W11）。
+- **去重**：**统一合并**——Warn 提示块统一合并（#6 + BusyBox + 多条 Warn 一条命令一次展示），避免重复弹窗/重复提示。
+
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
 1. ~~**范围确认**~~（已定：A→B→C，见 5.1）
@@ -218,6 +227,13 @@ plugin/
 | W2 | `: > file` 截断、`> file` 覆盖工作区文件 | 该命令会清空/覆盖目标文件 |
 | W3 | curl/wget 下载到工作区外绝对路径（`-o /...`） | 正在下载到工作区外路径，请确认目标位置 |
 | W4 | curl 不带 `-o`/`-O` 直接输出到终端（防刷屏） | 建议加 `-o <文件>` 或 `-s` 避免大段输出刷屏 |
+| W5 | sudo 高危操作：`sudo (chmod\|chown\|rm\|shutdown\|mkfs\|dd\|iptables\|useradd\|usermod)` | 正在以 sudo 执行高危操作，确认无提权风险 |
+| W6 | 敏感文件读取：`cat/head/tail/base64 + /etc/(shadow\|passwd\|gshadow\|sudoers)` | 读取凭据类文件，注意泄露风险 |
+| W7 | SSH 密钥覆盖：`> /~/.ssh/(authorized_keys\|id_rsa\|id_ed25519)` | 覆盖 SSH 授权/密钥文件 |
+| W8 | base64 解码执行：`base64 -d \| sh`、`python -c '...base64...'` | 解码后执行，确认来源可信 |
+| W9 | 明文密码入脚本：`passwd\|password\|pwd : "..."` | 避免明文凭据写入脚本/提交 |
+| W10 | git force push：`git push --force(-with-lease)` | 强制推送可能覆盖远端历史 |
+| W11 | 反向 shell 模式：`nc/socat/bash -i + /dev/tcp 或远程 IP` | 若为合法网络调试可忽略；否则疑似反向连接 |
 
 ### 7.4 待办
 
@@ -232,8 +248,9 @@ plugin/
 2. **B2 用 `parseChmodInfo`**：仿照 `ShellCommandParser.parseRmInfo` 解析 chmod/chown 的递归（-R/-r）、权限位（777/666）、目标路径，再与 sysDirs 比对；工作区路径不在 sysDirs，自动放行。
 3. **Block 优先级 = 安全底线最前**：`evaluateShell` 顺序 = Block → 灾难 rm → DENY 规则 → 内置白名单 → 已记忆 ALLOW → ASK。用户规则只能加严、不能放宽（即使配了 `allow: ["Bash(curl|sh)"]` 仍拦截）。
 4. **AUTO 模式**：Block 在 AUTO 分支返回 `Verdict.DENY` + `denyReason`（与现有灾难 rm 路径一致，无需新机制）。
-5. **Warn 展示整合**：`DangerousCommandGuard.warnMessage(command)` 与 `BusyBoxCompatibilityGuard.warningMessage` 合并成同一提示块，在 `buildPermissionRequest`（权限卡 details）与 `appendHint`（输出末尾）两处合并调用。
+5. **Warn 统一合并提示通道（含 W5-W11 扩容）**：`DangerousCommandGuard.warnMessage(command)` 返回所有命中 Warn 的合并提示块，与 `BusyBoxCompatibilityGuard.warningMessage` 合并成同一提示块；在 `buildPermissionRequest`（权限卡 details）与 `appendHint`（输出末尾）两处统一调用，**一条命令一次展示**，避免重复提示。
 6. **terminal(start) 双层覆盖**：权限引擎层覆盖全部 shell 工具（含 `terminal action=start` 常驻会话）；工具入口硬拦截（`ExecuteCommandTool`）只兜 Bash。
+7. **与 Zth 内容审查去重**：命令执行路径走 #6（execute 静态判定），内容审查走 Zth（Skill/MCP/输入文本）——作用域不同、重叠低；但 Warn 提示块设计为可合并通道，避免同一条命令弹多条提示。
 
 ### 7.6 设计状态
 
