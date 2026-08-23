@@ -97,24 +97,23 @@ import com.R.codecore.feature.agent.domain.container.progress.LogLineKind
 import com.R.codecore.feature.agent.domain.container.progress.ProgressSource
 import com.R.codecore.feature.agent.domain.container.progress.SlotStatus
 import com.R.codecore.feature.terminal.data.bundle.BundleInstallState
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.AlertTriangle
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronUp
-import compose.icons.feathericons.Check
-import compose.icons.feathericons.Clock
-import compose.icons.feathericons.Copy
-import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.Download
-import compose.icons.feathericons.FileText
-import compose.icons.feathericons.Package
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Tool
-import compose.icons.feathericons.Trash2
-import compose.icons.feathericons.X
-import compose.icons.feathericons.XCircle
-import compose.icons.feathericons.Zap
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Warning
 import kotlinx.coroutines.launch
 import kotlin.math.max
 
@@ -311,7 +310,7 @@ private fun InstallingProgressLayout(
                 label = "chev_bounce_${bundle.id.stableKey}",
             )
             Icon(
-                imageVector = FeatherIcons.ChevronDown,
+                imageVector = Icons.Rounded.KeyboardArrowDown,
                 contentDescription = stringResource(R.string.ui______34c1ac67),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -349,7 +348,7 @@ private fun DoneSummaryBoard(
                 color = SemanticColors.Success,
             )
             Spacer(Modifier.weight(1f))
-            Icon(FeatherIcons.Check, contentDescription = "done", tint = SemanticColors.Success, modifier = Modifier.size(18.dp))
+            Icon(Icons.Rounded.Check, contentDescription = "done", tint = SemanticColors.Success, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.height(Spacing.md))
         // ── 4 格数据块 ──
@@ -359,7 +358,7 @@ private fun DoneSummaryBoard(
         ) {
             // 蓝块：下载量
             StatMiniTile(
-                icon = FeatherIcons.Download,
+                icon = Icons.Rounded.Download,
                 label = stringResource(R.string.ui____f26ef914),
                 value = stats?.bytesDownloaded?.let { formatBytesShort(it) } ?: "—",
                 bg = Color(0xFFE3F2FD), fg = Color(0xFF1565C0),
@@ -367,7 +366,7 @@ private fun DoneSummaryBoard(
             )
             // 绿块：耗时
             StatMiniTile(
-                icon = FeatherIcons.Clock,
+                icon = Icons.Rounded.Schedule,
                 label = stringResource(R.string.ui____39f1374d),
                 value = stats?.let { String.format("%.1fs", it.elapsedMs / 1000f) } ?: "—",
                 bg = Color(0xFFE8F5E9), fg = Color(0xFF2E7D32),
@@ -375,7 +374,7 @@ private fun DoneSummaryBoard(
             )
             // 青块：包数
             StatMiniTile(
-                icon = FeatherIcons.Package,
+                icon = Icons.Rounded.Inventory2,
                 label = stringResource(R.string.ui____a95f0fbe),
                 value = stats?.let { "${it.packagesInstalled}" } ?: "—",
                 bg = Color(0xFFE0F7FA), fg = Color(0xFF00838F),
@@ -384,7 +383,7 @@ private fun DoneSummaryBoard(
             // 紫块：均速
             val avg = stats?.averageSpeedBps()
             StatMiniTile(
-                icon = FeatherIcons.Zap,
+                icon = Icons.Rounded.Bolt,
                 label = stringResource(R.string.ui____adbe74f8),
                 value = avg?.let { formatBps(it) } ?: "—",
                 bg = Color(0xFFF3E5F5), fg = Color(0xFF6A1B9A),
@@ -401,7 +400,7 @@ private fun DoneSummaryBoard(
             if (installedChip) {
                 ElevatedAssistChip(
                     onClick = onUninstallClick,
-                    leadingIcon = { Icon(FeatherIcons.Trash2, null, modifier = Modifier.size(14.dp)) },
+                    leadingIcon = { Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(14.dp)) },
                     label = { Text(stringResource(R.string.ui____81824cff_2), style = MaterialTheme.typography.labelMedium) },
                     colors = AssistChipDefaults.elevatedAssistChipColors(
                         containerColor = Color(0xFFFFEBEE),
@@ -412,7 +411,7 @@ private fun DoneSummaryBoard(
             }
             ElevatedAssistChip(
                 onClick = onOpenLogDialog,
-                leadingIcon = { Icon(FeatherIcons.ChevronUp, null, modifier = Modifier.size(14.dp).rotate(180f)) },
+                leadingIcon = { Icon(Icons.Rounded.KeyboardArrowUp, null, modifier = Modifier.size(14.dp).rotate(180f)) },
                 label = { Text(stringResource(R.string.ui________cdb7838f), style = MaterialTheme.typography.labelMedium) },
             )
         }
@@ -443,7 +442,7 @@ private fun FailedSummaryBoard(
                 color = SemanticColors.Error,
             )
             Spacer(Modifier.weight(1f))
-            Icon(FeatherIcons.XCircle, contentDescription = "failed", tint = SemanticColors.Error, modifier = Modifier.size(18.dp))
+            Icon(Icons.Rounded.Cancel, contentDescription = "failed", tint = SemanticColors.Error, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.height(Spacing.md))
         // ── 错误卡片（可折叠） ──
@@ -456,7 +455,7 @@ private fun FailedSummaryBoard(
         ) {
             Column(modifier = Modifier.padding(Spacing.md)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(FeatherIcons.AlertTriangle, null, tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
+                    Icon(Icons.Rounded.Warning, null, tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(Spacing.xs))
                     Text(
                         text = if (expanded) reason else reason.take(80) + if (reason.length > 80) "…" else "",
@@ -465,7 +464,7 @@ private fun FailedSummaryBoard(
                     )
                     Spacer(Modifier.weight(1f))
                     Icon(
-                        imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                        imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                         contentDescription = if (expanded) stringResource(R.string.ui____def9e98b_3) else stringResource(R.string.ui____e2edde5a_2),
                         tint = Color(0xFFC62828),
                         modifier = Modifier.size(14.dp),
@@ -481,7 +480,7 @@ private fun FailedSummaryBoard(
         ) {
             ElevatedAssistChip(
                 onClick = onRetry,
-                leadingIcon = { Icon(FeatherIcons.RefreshCw, null, modifier = Modifier.size(14.dp)) },
+                leadingIcon = { Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(14.dp)) },
                 label = { Text(stringResource(R.string.ui______82a5909b), style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 colors = AssistChipDefaults.elevatedAssistChipColors(
                     containerColor = Color(0xFFFFF3E0),
@@ -492,12 +491,12 @@ private fun FailedSummaryBoard(
             ElevatedAssistChip(
                 onClick = { onCopyError?.invoke(reason) },
                 enabled = onCopyError != null,
-                leadingIcon = { Icon(FeatherIcons.Copy, null, modifier = Modifier.size(14.dp)) },
+                leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(14.dp)) },
                 label = { Text(stringResource(R.string.ui________49838cc2), style = MaterialTheme.typography.labelMedium) },
             )
             ElevatedAssistChip(
                 onClick = onOpenLogDialog,
-                leadingIcon = { Icon(FeatherIcons.FileText, null, modifier = Modifier.size(14.dp)) },
+                leadingIcon = { Icon(Icons.Rounded.Description, null, modifier = Modifier.size(14.dp)) },
                 label = { Text(stringResource(R.string.ui______0ea78e42), style = MaterialTheme.typography.labelMedium) },
             )
         }
@@ -558,19 +557,19 @@ private fun InstallActionsChip(
     when (state) {
         is BundleInstallState.Installed -> DangerOutlinedButton(
             onClick = onUninstall,
-            icon = FeatherIcons.Trash2,
+            icon = Icons.Rounded.Delete,
             text = stringResource(R.string.ui____81824cff_3),
         )
         is BundleInstallState.Installing, BundleInstallState.Uninstalling ->
             ProgressPlaceholderButton(text = stringResource(R.string.ui_____cf978c02))
         is BundleInstallState.Failed -> PrimaryButton(
             onClick = onInstall,
-            icon = FeatherIcons.Plus,
+            icon = Icons.Rounded.Add,
             text = stringResource(R.string.ui____132c5cdc),
         )
         BundleInstallState.NotInstalled -> PrimaryButton(
             onClick = onInstall,
-            icon = FeatherIcons.Plus,
+            icon = Icons.Rounded.Add,
             text = stringResource(R.string.ui____e655a410),
         )
     }
@@ -630,7 +629,7 @@ private fun SegmentedProgressBar(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = FeatherIcons.Check,
+                    imageVector = Icons.Rounded.Check,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(14.dp),
@@ -655,7 +654,7 @@ private fun SegmentedProgressBar(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = FeatherIcons.X,
+                    imageVector = Icons.Rounded.Close,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(14.dp),
@@ -1123,22 +1122,22 @@ private fun TokenizedStatusLine(
                     // 旧通路 fallback：最小化 Chip 呈现
                     val (color, icon, text) = when (state) {
                         is BundleInstallState.Installing -> Triple(
-                            Color(0xFF1976D2), FeatherIcons.Download,
+                            Color(0xFF1976D2), Icons.Rounded.Download,
                             state.line?.take(40) ?: "准备安装 ${bundle.title}…",
                         )
                         BundleInstallState.Uninstalling -> Triple(
-                            Color(0xFFC62828), FeatherIcons.Trash2, stringResource(R.string.ui______3988af2e),
+                            Color(0xFFC62828), Icons.Rounded.Delete, stringResource(R.string.ui______3988af2e),
                         )
                         is BundleInstallState.Installed -> Triple(
-                            Color(0xFF2E7D32), FeatherIcons.Check,
+                            Color(0xFF2E7D32), Icons.Rounded.Check,
                             "${bundle.title} 已就绪 (v${state.installedVersion})",
                         )
                         is BundleInstallState.Failed -> Triple(
-                            Color(0xFFC62828), FeatherIcons.AlertTriangle,
+                            Color(0xFFC62828), Icons.Rounded.Warning,
                             state.reason.take(40),
                         )
                         BundleInstallState.NotInstalled -> Triple(
-                            MaterialTheme.colorScheme.onSurfaceVariant, FeatherIcons.Package,
+                            MaterialTheme.colorScheme.onSurfaceVariant, Icons.Rounded.Inventory2,
                             stringResource(R.string.ui____f2f411c4),
                         )
                     }
@@ -1147,7 +1146,7 @@ private fun TokenizedStatusLine(
                 agg.phase == InstallPhase.DOWNLOAD -> {
                     // Icon
                     Icon(
-                        imageVector = FeatherIcons.Download,
+                        imageVector = Icons.Rounded.Download,
                         contentDescription = null,
                         tint = Color(0xFF1976D2),
                         modifier = Modifier.size(14.dp),
@@ -1198,7 +1197,7 @@ private fun TokenizedStatusLine(
                 }
                 agg.phase == InstallPhase.INSTALL -> {
                     Icon(
-                        imageVector = FeatherIcons.Package,
+                        imageVector = Icons.Rounded.Inventory2,
                         contentDescription = null,
                         tint = Color(0xFF388E3C),
                         modifier = Modifier.size(14.dp),
@@ -1221,7 +1220,7 @@ private fun TokenizedStatusLine(
                 }
                 agg.phase == InstallPhase.POST_HOOK -> {
                     Icon(
-                        imageVector = FeatherIcons.Tool,
+                        imageVector = Icons.Rounded.Build,
                         contentDescription = null,
                         tint = Color(0xFFF57C00),
                         modifier = Modifier.size(14.dp),
@@ -1244,7 +1243,7 @@ private fun TokenizedStatusLine(
                 }
                 agg.phase == InstallPhase.DONE -> {
                     Icon(
-                        imageVector = FeatherIcons.Check,
+                        imageVector = Icons.Rounded.Check,
                         contentDescription = null,
                         tint = Color(0xFF2E7D32),
                         modifier = Modifier.size(14.dp),
@@ -1267,7 +1266,7 @@ private fun TokenizedStatusLine(
                 }
                 agg.phase == InstallPhase.FAILED -> {
                     Icon(
-                        imageVector = FeatherIcons.AlertTriangle,
+                        imageVector = Icons.Rounded.Warning,
                         contentDescription = null,
                         tint = Color(0xFFC62828),
                         modifier = Modifier.size(14.dp),

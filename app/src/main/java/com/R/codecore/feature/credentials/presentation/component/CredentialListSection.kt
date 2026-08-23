@@ -39,8 +39,8 @@ import com.R.codecore.R
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.credentials.domain.model.GitCredential
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Edit2
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Edit
 
 /**
  * 凭据与署名页：包含「署名」与「凭据」两个标签页。默认展示「署名」页，右侧为「凭据」页。
@@ -158,7 +158,7 @@ private fun CredentialItem(
             }
             IconButton(onClick = onEdit) {
                 Icon(
-                    FeatherIcons.Edit2,
+                    Icons.Rounded.Edit,
                     contentDescription = stringResource(R.string.common_edit),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )

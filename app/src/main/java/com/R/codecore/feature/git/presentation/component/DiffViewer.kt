@@ -41,9 +41,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.core.util.LineDiff
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.File
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Description
 import dev.snipme.highlights.Highlights
 import dev.snipme.highlights.model.BoldHighlight
 import dev.snipme.highlights.model.ColorHighlight
@@ -113,7 +113,7 @@ fun DiffViewerScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(FeatherIcons.ArrowLeft, contentDescription = stringResource(R.string.common_back))
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 }
             )
@@ -283,7 +283,7 @@ private fun BinaryHint(padding: androidx.compose.foundation.layout.PaddingValues
     Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                FeatherIcons.File,
+                Icons.Rounded.Description,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(32.dp)

@@ -63,13 +63,13 @@ import com.R.codecore.feature.proxy.domain.ProxyTraffic
 import com.R.codecore.feature.proxy.presentation.ProfileNodesView
 import com.R.codecore.feature.proxy.presentation.ProxyGroupsView
 import com.R.codecore.feature.proxy.presentation.ProxyViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Search
-import compose.icons.feathericons.Zap
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 
 /** 页面强调色：青 → 蓝 渐变（对齐 App 级 Cyber 视觉）。 */
 private val AccentGradient = Brush.horizontalGradient(
@@ -132,7 +132,7 @@ fun ProxyNodesScreen(
             AppTopAppBar(
                 title = stringResource(R.string.ui______b26d228a_2),
                 onNavigateBack = onNavigateBack,
-                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                 navigationContentDescription = stringResource(R.string.ui____5f411223_2),
                 actions = {
                     IconButton(onClick = {
@@ -141,7 +141,7 @@ fun ProxyNodesScreen(
                         if (enabled) viewModel.openGroups(id)
                     }) {
                         Icon(
-                            imageVector = FeatherIcons.RefreshCw,
+                            imageVector = Icons.Rounded.Refresh,
                             contentDescription = stringResource(R.string.ui____694fc5ef),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -152,12 +152,12 @@ fun ProxyNodesScreen(
     ) { padding ->
         when {
             profiles.isEmpty() -> AppEmptyState(
-                icon = FeatherIcons.Zap,
+                icon = Icons.Rounded.Bolt,
                 title = stringResource(R.string.ui_________cf00a0da),
                 subtitle = stringResource(R.string.ui_____94418224)
             )
             activeProfileId == null -> AppEmptyState(
-                icon = FeatherIcons.Zap,
+                icon = Icons.Rounded.Bolt,
                 title = stringResource(R.string.ui__________8e8c2508),
                 subtitle = stringResource(R.string.ui_____bab1bef4)
             )
@@ -330,7 +330,7 @@ private fun StatusHero(
             Spacer(Modifier.height(Spacing.md))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = FeatherIcons.Zap,
+                    imageVector = Icons.Rounded.Bolt,
                     contentDescription = null,
                     tint = Color.White.copy(alpha = 0.9f),
                     modifier = Modifier.size(14.dp)
@@ -490,7 +490,7 @@ private fun NodeSearchBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = FeatherIcons.Search,
+                imageVector = Icons.Rounded.Search,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
@@ -654,7 +654,7 @@ private fun GroupCard(
                 }
                 Spacer(Modifier.width(Spacing.sm))
                 Icon(
-                    imageVector = if (expanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+                    imageVector = if (expanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)

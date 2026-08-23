@@ -23,6 +23,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,8 +42,6 @@ import com.R.codecore.core.theme.Spacing
 import com.R.codecore.core.util.LogLevel
 import com.R.codecore.feature.settings.presentation.LogViewerUiState
 import com.R.codecore.feature.settings.domain.model.AIProviderConfig
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Edit2
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -147,7 +147,7 @@ fun ProviderItem(
             Spacer(Modifier.width(Spacing.sm))
             IconButton(onClick = onEdit) {
                 Icon(
-                    FeatherIcons.Edit2,
+                    Icons.Rounded.Edit,
                     contentDescription = stringResource(R.string.common_edit),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }

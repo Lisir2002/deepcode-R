@@ -75,13 +75,9 @@ import com.R.codecore.feature.settings.presentation.SecuritySettingsViewModel
 import com.R.codecore.feature.settings.presentation.SettingsViewModel
 import com.R.codecore.feature.settings.presentation.components.RemoteAuditLogsScreen
 import com.R.codecore.feature.settings.presentation.components.SecuritySettingsScreen
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Search
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DarkMode
@@ -90,11 +86,14 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Terminal
@@ -230,7 +229,7 @@ fun SettingsScreen(
                         section = SettingsSection.Menu
                     }
                 },
-                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                 navigationContentDescription = stringResource(R.string.common_back)
             ) {
                 when (section) {
@@ -238,26 +237,26 @@ fun SettingsScreen(
                         onClick = { showAddProviderSheet = true },
                         modifier = Modifier.size(40.dp)
                     ) {
-                        Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.settings_add_provider), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.settings_add_provider), modifier = Modifier.size(20.dp))
                     }
                     SettingsSection.Mcp -> {
                         IconButton(onClick = { viewModel.reloadMcp() }, modifier = Modifier.size(40.dp)) {
                             if (mcpReloading) {
                                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                             } else {
-                                Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_reconnect), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.settings_reconnect), modifier = Modifier.size(20.dp))
                             }
                         }
                         IconButton(onClick = { editingMcp = null; showMcpDialog = true }, modifier = Modifier.size(40.dp)) {
-                            Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.settings_add_mcp_server), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.settings_add_mcp_server), modifier = Modifier.size(20.dp))
                         }
                     }
                     SettingsSection.Container -> IconButton(onClick = { showContainerAddSheet = true }, modifier = Modifier.size(40.dp)) {
-                        Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.container_add_image), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.container_add_image), modifier = Modifier.size(20.dp))
                     }
                     SettingsSection.Logs -> {
                         IconButton(onClick = { viewModel.refreshLogs() }, modifier = Modifier.size(40.dp)) {
-                            Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.settings_refresh_logs), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.settings_refresh_logs), modifier = Modifier.size(20.dp))
                         }
                     }
                     else -> {}
@@ -794,7 +793,7 @@ internal fun SettingsMenu(
                                     } else null,
                                     trailing = item.trailing ?: {
                                         Icon(
-                                            imageVector = FeatherIcons.ChevronRight,
+                                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -820,7 +819,7 @@ private fun EmptySearchResult(query: String) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
-            imageVector = FeatherIcons.Search,
+            imageVector = Icons.Rounded.Search,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(48.dp)
@@ -926,7 +925,7 @@ internal fun GroupMenuRow(
                 )
             }
             Icon(
-                imageVector = FeatherIcons.ChevronRight,
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp)
@@ -1031,7 +1030,7 @@ internal fun MenuRow(
                 )
             }
             Icon(
-                imageVector = FeatherIcons.ChevronRight,
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }

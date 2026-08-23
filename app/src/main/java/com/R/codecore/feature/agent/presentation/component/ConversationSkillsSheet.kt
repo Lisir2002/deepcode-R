@@ -38,10 +38,10 @@ import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.domain.skill.Skill
 import com.R.codecore.feature.agent.domain.skill.SkillScope
 import com.R.codecore.feature.agent.presentation.ConversationSkillsViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Check
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.X
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 
 /**
  * 对话技能面板（D5/D10）：对话页输入框上方「技能」按钮唤出。
@@ -95,7 +95,7 @@ fun ConversationSkillsSheet(
                         ConversationSkillRow(
                             skill = skill,
                             actionLabel = stringResource(R.string.skill_conversation_disable),
-                            actionIcon = FeatherIcons.X,
+                            actionIcon = Icons.Rounded.Close,
                             onAction = { viewModel.disableInConversation(skill.id) }
                         )
                     }
@@ -110,7 +110,7 @@ fun ConversationSkillsSheet(
                         ConversationSkillRow(
                             skill = skill,
                             actionLabel = stringResource(R.string.skill_conversation_enable),
-                            actionIcon = FeatherIcons.Check,
+                            actionIcon = Icons.Rounded.Check,
                             onAction = { viewModel.restoreInConversation(skill.id) }
                         )
                     }
@@ -134,7 +134,7 @@ fun ConversationSkillsSheet(
                         ConversationSkillRow(
                             skill = skill,
                             actionLabel = stringResource(R.string.skill_conversation_add),
-                            actionIcon = FeatherIcons.Plus,
+                            actionIcon = Icons.Rounded.Add,
                             onAction = { viewModel.addToConversation(skill.id) }
                         )
                     }

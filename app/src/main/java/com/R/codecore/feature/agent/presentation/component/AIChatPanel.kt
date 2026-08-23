@@ -60,9 +60,9 @@ import com.R.codecore.feature.agent.presentation.MessageRole
 import com.R.codecore.feature.agent.presentation.hasVisibleContent
 import com.R.codecore.feature.settings.presentation.SettingsViewModel
 import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Edit2
-import compose.icons.feathericons.X
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import java.io.File
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -678,7 +678,7 @@ private fun EditingMessageBanner(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = FeatherIcons.Edit2,
+                imageVector = Icons.Rounded.Edit,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(14.dp)
@@ -698,7 +698,7 @@ private fun EditingMessageBanner(
                 modifier = Modifier.size(24.dp)
             ) {
                 Icon(
-                    imageVector = FeatherIcons.X,
+                    imageVector = Icons.Rounded.Close,
                     contentDescription = stringResource(R.string.chat_edit_cancel),
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(14.dp)

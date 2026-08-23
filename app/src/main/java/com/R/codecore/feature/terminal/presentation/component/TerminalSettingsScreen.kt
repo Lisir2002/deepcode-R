@@ -21,6 +21,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.MonitorHeart
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.ViewColumn
+import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -77,24 +94,6 @@ import com.R.codecore.feature.terminal.data.repository.SshHeartbeatSeconds
 import com.R.codecore.feature.terminal.data.repository.TerminalFontSizes
 import com.R.codecore.feature.terminal.data.repository.TerminalTheme
 import com.R.codecore.feature.terminal.presentation.TerminalSettingsViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Activity
-import compose.icons.feathericons.Archive
-import compose.icons.feathericons.Bell
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Clipboard
-import compose.icons.feathericons.Columns
-import compose.icons.feathericons.Info
-import compose.icons.feathericons.Layout
-import compose.icons.feathericons.Moon
-import compose.icons.feathericons.Package
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Server
-import compose.icons.feathericons.Terminal
-import compose.icons.feathericons.Type
-import compose.icons.feathericons.ZoomIn
 import kotlinx.coroutines.launch
 
 /**
@@ -158,7 +157,7 @@ fun TerminalSettingsScreen(
             AppTopAppBar(
                 title = stringResource(R.string.settings_terminal),
                 onNavigateBack = onNavigateBack,
-                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                 navigationContentDescription = stringResource(R.string.common_back)
             )
         },
@@ -187,7 +186,7 @@ fun TerminalSettingsScreen(
             AppSectionGroup {
                 val installedBundleCount = bundleStates.count { it.value is BundleInstallState.Installed }
                 _MenuRow(
-                    icon = FeatherIcons.Package,
+                    icon = Icons.Rounded.Inventory2,
                     title = stringResource(R.string.ui_______dbda4e51_2),
                     subtitle = "官方 Bundle · 共 ${viewModel.bundles().size} 个，已安装 $installedBundleCount${if (aiAllInstalled) " · AI 组合已就绪" else ""}",
                     onClick = onNavigateToBundleManager,
@@ -199,7 +198,7 @@ fun TerminalSettingsScreen(
             AppSectionHeader(text = stringResource(R.string.settings_category_appearance))
             AppSectionGroup {
                 _StepperRow(
-                    icon = FeatherIcons.Type,
+                    icon = Icons.Rounded.TextFields,
                     title = stringResource(R.string.ui______58a3ff82),
                     subtitle = "${fontSizeSp} sp（推荐 11-14 sp）",
                     showDivider = true,
@@ -215,7 +214,7 @@ fun TerminalSettingsScreen(
                     }
                 )
                 _MenuRow(
-                    icon = FeatherIcons.Moon,
+                    icon = Icons.Rounded.DarkMode,
                     title = stringResource(R.string.ui________48cee970),
                     subtitle = when (theme) {
                         TerminalTheme.FOLLOW_APP -> stringResource(R.string.ui______40b081ab)
@@ -226,7 +225,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.Columns,
+                    icon = Icons.Rounded.ViewColumn,
                     title = stringResource(R.string.ui____caa23c17),
                     subtitle = stringResource(R.string.ui______________aeee5eb0),
                     checked = showTabBar,
@@ -239,7 +238,7 @@ fun TerminalSettingsScreen(
             AppSectionHeader(text = stringResource(R.string.ui____e1dd53a4))
             AppSectionGroup {
                 _SwitchRow(
-                    icon = FeatherIcons.Layout,
+                    icon = Icons.Rounded.Dashboard,
                     title = stringResource(R.string.ui________bd4b33a0),
                     subtitle = "关闭为精简布局（仅 Ctrl/Alt/Fn/方向）",
                     checked = fullExtraKeys,
@@ -247,7 +246,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.ZoomIn,
+                    icon = Icons.Rounded.ZoomIn,
                     title = stringResource(R.string.ui___________19a36c2d),
                     subtitle = stringResource(R.string.ui______________82f9dac5),
                     checked = scalePersists,
@@ -255,7 +254,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.Terminal,
+                    icon = Icons.Rounded.Terminal,
                     title = stringResource(R.string.ui__________a6cbf757),
                     subtitle = stringResource(R.string.ui______________05546ade),
                     checked = autoPopIme,
@@ -263,7 +262,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _MenuRow(
-                    icon = FeatherIcons.Info,
+                    icon = Icons.Rounded.Info,
                     title = stringResource(R.string.ui____2959acd6),
                     subtitle = stringResource(R.string.ui_____18a3cbe4),
                     onClick = viewModel::resetCtrlHint,
@@ -275,7 +274,7 @@ fun TerminalSettingsScreen(
             AppSectionHeader(text = stringResource(R.string.ui____a0496123))
             AppSectionGroup {
                 _SwitchRow(
-                    icon = FeatherIcons.Bell,
+                    icon = Icons.Rounded.Notifications,
                     title = stringResource(R.string.ui_____________996140c5),
                     subtitle = stringResource(R.string.ui_____46f74d41),
                     checked = newOutputIndicator,
@@ -283,7 +282,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.Plus,
+                    icon = Icons.Rounded.Add,
                     title = stringResource(R.string.ui_____________0184da1b),
                     subtitle = stringResource(R.string.ui_____________73b957c1),
                     checked = autoNewTabOnCloseLast,
@@ -291,7 +290,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.Archive,
+                    icon = Icons.Rounded.Archive,
                     title = stringResource(R.string.ui___________37172e85),
                     subtitle = stringResource(R.string.ui______________427e9b33),
                     checked = keepSession,
@@ -299,7 +298,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.Clipboard,
+                    icon = Icons.Rounded.ContentPaste,
                     title = stringResource(R.string.ui________52007b14),
                     subtitle = stringResource(R.string.ui______________eb6dcb95),
                     checked = pasteAsPlain,
@@ -312,7 +311,7 @@ fun TerminalSettingsScreen(
             AppSectionHeader(text = stringResource(R.string.ui_ssh_ac7515bd))
             AppSectionGroup {
                 _SwitchRow(
-                    icon = FeatherIcons.RefreshCw,
+                    icon = Icons.Rounded.Refresh,
                     title = stringResource(R.string.ui________66d1f9aa),
                     subtitle = stringResource(R.string.ui______f096b834),
                     checked = sshAutoReconnect,
@@ -320,7 +319,7 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _SwitchRow(
-                    icon = FeatherIcons.Server,
+                    icon = Icons.Rounded.Dns,
                     title = "TCP KeepAlive",
                     subtitle = stringResource(R.string.ui______________8a0ba94d),
                     checked = sshKeepalive,
@@ -328,14 +327,14 @@ fun TerminalSettingsScreen(
                     showDivider = true
                 )
                 _MenuRow(
-                    icon = FeatherIcons.Activity,
+                    icon = Icons.Rounded.MonitorHeart,
                     title = stringResource(R.string.ui______9901e9b6),
                     subtitle = SshHeartbeatSeconds.fromSeconds(sshHeartbeat).display,
                     onClick = { showHeartbeatPicker = true },
                     showDivider = true
                 )
                 _MenuRow(
-                    icon = FeatherIcons.Server,
+                    icon = Icons.Rounded.Dns,
                     title = stringResource(R.string.ui____9c828e97),
                     subtitle = "新增/编辑/删除 SSH 主机和密钥",
                     onClick = onNavigateToSshHosts,
@@ -444,7 +443,7 @@ private fun _MenuRow(
                 )
             }
             Icon(
-                imageVector = FeatherIcons.ChevronRight,
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp)

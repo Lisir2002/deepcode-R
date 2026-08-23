@@ -31,6 +31,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,12 +54,6 @@ import androidx.compose.ui.unit.sp
 import com.R.codecore.R
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Copy
-import compose.icons.feathericons.Play
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Server
-import compose.icons.feathericons.Square
 
 /**
  * 内置 MCP 服务器（服务端）二级页：把本机编码后端开放给外部 MCP 客户端。
@@ -108,7 +108,7 @@ internal fun McpServerSection(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = FeatherIcons.Server,
+                            imageVector = Icons.Rounded.Dns,
                             contentDescription = null,
                             tint = if (isRunning) MaterialTheme.colorScheme.tertiary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -143,7 +143,7 @@ internal fun McpServerSection(
                             onClick = onToggleServer,
                             contentPadding = PaddingValues(horizontal = Spacing.md, vertical = 8.dp)
                         ) {
-                            Icon(FeatherIcons.Square, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(stringResource(R.string.settings_mcp_server_stop))
                         }
@@ -156,7 +156,7 @@ internal fun McpServerSection(
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             )
                         ) {
-                            Icon(FeatherIcons.Play, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(stringResource(R.string.settings_mcp_server_start))
                         }
@@ -301,7 +301,7 @@ internal fun McpServerSection(
                         )
                         IconButton(onClick = { onRegenerateToken() }) {
                             Icon(
-                                FeatherIcons.RefreshCw,
+                                Icons.Rounded.Refresh,
                                 contentDescription = stringResource(R.string.settings_mcp_server_regenerate),
                                 modifier = Modifier.size(18.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -309,7 +309,7 @@ internal fun McpServerSection(
                         }
                         IconButton(onClick = { copyText(context, token) }) {
                             Icon(
-                                FeatherIcons.Copy,
+                                Icons.Rounded.ContentCopy,
                                 contentDescription = stringResource(R.string.settings_mcp_server_copy),
                                 modifier = Modifier.size(18.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant

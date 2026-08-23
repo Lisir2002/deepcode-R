@@ -45,7 +45,7 @@ import androidx.compose.material.icons.rounded.Construction
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Rocket
-import androidx.compose.material.icons.rounded.Send
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Stop
 import com.R.codecore.R
 import com.R.codecore.core.theme.ChatAccent
@@ -308,7 +308,7 @@ internal fun SendButton(canSend: Boolean, isBusy: Boolean, tokenProgress: Float,
                 )
             } else {
                 Icon(
-                    Icons.Rounded.Send,
+                    Icons.AutoMirrored.Rounded.Send,
                     contentDescription = stringResource(R.string.chat_send),
                     tint = iconTint,
                     modifier = Modifier.size(18.dp)

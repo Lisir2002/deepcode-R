@@ -39,9 +39,9 @@ import com.R.codecore.R
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.presentation.AgentAttachment
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.FileText
-import compose.icons.feathericons.Image
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Image
 import java.io.File
 
 @Composable
@@ -156,7 +156,7 @@ private fun MessageImagePreview(attachment: AgentAttachment) {
     } else {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Icon(
-                FeatherIcons.Image,
+                Icons.Rounded.Image,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(22.dp)
@@ -175,7 +175,7 @@ private fun MessageFilePreview(attachment: AgentAttachment) {
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            FeatherIcons.FileText,
+            Icons.Rounded.Description,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(22.dp)

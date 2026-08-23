@@ -42,6 +42,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Smartphone
+import androidx.compose.material.icons.rounded.Tag
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -85,18 +97,6 @@ import com.R.codecore.core.theme.CyberMenuRow
 import com.R.codecore.feature.proxy.domain.ClashProxyManager
 import com.R.codecore.feature.settings.presentation.AboutStatsViewModel
 import com.R.codecore.feature.settings.presentation.UsageStats
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Calendar
-import compose.icons.feathericons.Chrome
-import compose.icons.feathericons.Clock
-import compose.icons.feathericons.DownloadCloud
-import compose.icons.feathericons.Globe
-import compose.icons.feathericons.Hash
-import compose.icons.feathericons.MessageSquare
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Smartphone
-import compose.icons.feathericons.Terminal
-import compose.icons.feathericons.UploadCloud
 
 // ============================================================
 // Entry point
@@ -600,7 +600,7 @@ private fun CoreComponentsSection(
 
         val cores = listOf(
             CoreItem(
-                icon = FeatherIcons.Smartphone,
+                icon = Icons.Rounded.Smartphone,
                 accent = ac.blueAccent,
                 accentBg = ac.blueBg,
                 name = stringResource(R.string.about_host_core),
@@ -609,7 +609,7 @@ private fun CoreComponentsSection(
                 statusOk = true
             ),
             CoreItem(
-                icon = FeatherIcons.Terminal,
+                icon = Icons.Rounded.Terminal,
                 accent = ac.greenAccent,
                 accentBg = ac.greenBg,
                 name = stringResource(R.string.about_terminal_core),
@@ -622,7 +622,7 @@ private fun CoreComponentsSection(
                 statusOk = terminalReady
             ),
             CoreItem(
-                icon = FeatherIcons.Globe,
+                icon = Icons.Rounded.Public,
                 accent = ac.amberAccent,
                 accentBg = ac.amberBg,
                 name = stringResource(R.string.about_proxy_core),
@@ -638,7 +638,7 @@ private fun CoreComponentsSection(
                 statusOk = proxyRunning
             ),
             CoreItem(
-                icon = FeatherIcons.Chrome,
+                icon = Icons.Rounded.Language,
                 accent = ac.skyAccent,
                 accentBg = ac.skyBg,
                 name = stringResource(R.string.about_browser_core),
@@ -771,7 +771,7 @@ private fun UsageStatsSection(stats: UsageStats, ac: AboutColors) {
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     UsageStatCell(
-                        icon = FeatherIcons.MessageSquare,
+                        icon = Icons.Rounded.ChatBubble,
                         label = stringResource(R.string.about_sessions),
                         value = stats.totalSessions.toString(),
                         unit = stringResource(R.string.about_stats_unit_sessions),
@@ -779,7 +779,7 @@ private fun UsageStatsSection(stats: UsageStats, ac: AboutColors) {
                         ac = ac
                     )
                     UsageStatCell(
-                        icon = FeatherIcons.Hash,
+                        icon = Icons.Rounded.Tag,
                         label = stringResource(R.string.about_messages),
                         value = stats.totalMessages.toString(),
                         unit = stringResource(R.string.about_stats_unit_messages),
@@ -787,7 +787,7 @@ private fun UsageStatsSection(stats: UsageStats, ac: AboutColors) {
                         ac = ac
                     )
                     UsageStatCell(
-                        icon = FeatherIcons.Calendar,
+                        icon = Icons.Rounded.CalendarMonth,
                         label = stringResource(R.string.about_active_days),
                         value = stats.activeDays.toString(),
                         unit = stringResource(R.string.about_stats_unit_days),
@@ -802,7 +802,7 @@ private fun UsageStatsSection(stats: UsageStats, ac: AboutColors) {
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     UsageStatCell(
-                        icon = FeatherIcons.UploadCloud,
+                        icon = Icons.Rounded.CloudUpload,
                         label = stringResource(R.string.about_input_tokens),
                         value = compactNumber(stats.totalInputTokens),
                         unit = stringResource(R.string.about_stats_unit_tokens),
@@ -810,7 +810,7 @@ private fun UsageStatsSection(stats: UsageStats, ac: AboutColors) {
                         ac = ac
                     )
                     UsageStatCell(
-                        icon = FeatherIcons.DownloadCloud,
+                        icon = Icons.Rounded.CloudDownload,
                         label = stringResource(R.string.about_output_tokens),
                         value = compactNumber(stats.totalOutputTokens),
                         unit = stringResource(R.string.about_stats_unit_tokens),
@@ -818,7 +818,7 @@ private fun UsageStatsSection(stats: UsageStats, ac: AboutColors) {
                         ac = ac
                     )
                     UsageStatCell(
-                        icon = FeatherIcons.Clock,
+                        icon = Icons.Rounded.Schedule,
                         label = stringResource(R.string.about_first_used),
                         value = if (stats.firstUsedMs > 0L) formatShortDate(stats.firstUsedMs) else "--",
                         unit = if (stats.firstUsedMs > 0L) stringResource(R.string.about_stats_unit_since) else "",
@@ -954,7 +954,7 @@ private fun CheckUpdateOnlyCard(
     ) {
         CyberCard {
             CyberMenuRow(
-                icon = FeatherIcons.RefreshCw,
+                icon = Icons.Rounded.Refresh,
                 title = stringResource(R.string.about_check_update),
                 subtitle = stringResource(R.string.about_check_update_subtitle, appInfo.name),
                 onClick = onCheckUpdate,

@@ -1,18 +1,18 @@
 package com.R.codecore.feature.terminal.presentation.component
 
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.R.codecore.feature.terminal.data.bundle.TerminalBundle
 import com.R.codecore.feature.terminal.data.bundle.TerminalBundleId
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Code
-import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.Globe
-import compose.icons.feathericons.Search
-import compose.icons.feathericons.Terminal
 
 /**
  * BundleInstallCard / BundleLogDialog 共用的轻量 UI 适配模型（TerminalBundle 的 UI 子集 + 解析 icon）。
@@ -38,21 +38,21 @@ fun TerminalBundle.toUi(): UiBundle = UiBundle(
 /** 对应 TerminalBundle.iconName 字符串 / 或旧 SharedBundleCard 里的 sharedBundleIcon 映射逻辑。 */
 @Composable
 private fun TerminalBundle.iconVector(): ImageVector = when (id) {
-    TerminalBundleId.PYTHON -> FeatherIcons.Cpu
-    TerminalBundleId.NODE -> FeatherIcons.Code
-    TerminalBundleId.RIPGREP -> FeatherIcons.Search
-    TerminalBundleId.GIT -> FeatherIcons.GitBranch
-    TerminalBundleId.BASH -> FeatherIcons.Terminal
-    TerminalBundleId.NET -> FeatherIcons.Globe
-    TerminalBundleId.QEMU_X86_TRANSLATOR -> FeatherIcons.Cpu
+    TerminalBundleId.PYTHON -> Icons.Rounded.Memory
+    TerminalBundleId.NODE -> Icons.Rounded.Code
+    TerminalBundleId.RIPGREP -> Icons.Rounded.Search
+    TerminalBundleId.GIT -> Icons.Rounded.AccountTree
+    TerminalBundleId.BASH -> Icons.Rounded.Terminal
+    TerminalBundleId.NET -> Icons.Rounded.Public
+    TerminalBundleId.QEMU_X86_TRANSLATOR -> Icons.Rounded.Memory
 }
 
 internal fun bundleIconVector(id: TerminalBundleId): ImageVector = when (id) {
-    TerminalBundleId.PYTHON -> FeatherIcons.Cpu
-    TerminalBundleId.NODE -> FeatherIcons.Code
-    TerminalBundleId.RIPGREP -> FeatherIcons.Search
-    TerminalBundleId.GIT -> FeatherIcons.GitBranch
-    TerminalBundleId.BASH -> FeatherIcons.Terminal
-    TerminalBundleId.NET -> FeatherIcons.Globe
-    TerminalBundleId.QEMU_X86_TRANSLATOR -> FeatherIcons.Cpu
+    TerminalBundleId.PYTHON -> Icons.Rounded.Memory
+    TerminalBundleId.NODE -> Icons.Rounded.Code
+    TerminalBundleId.RIPGREP -> Icons.Rounded.Search
+    TerminalBundleId.GIT -> Icons.Rounded.AccountTree
+    TerminalBundleId.BASH -> Icons.Rounded.Terminal
+    TerminalBundleId.NET -> Icons.Rounded.Public
+    TerminalBundleId.QEMU_X86_TRANSLATOR -> Icons.Rounded.Memory
 }

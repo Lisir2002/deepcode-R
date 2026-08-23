@@ -60,18 +60,18 @@ import com.R.codecore.feature.agent.presentation.TaskSubGroupType
 import com.R.codecore.feature.agent.domain.container.progress.InstallProgress
 import com.R.codecore.feature.agent.domain.container.progress.InstallProgressParsers
 import com.R.codecore.feature.agent.domain.permission.ShellCommandParser
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.CheckCircle
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.ChevronUp
-import compose.icons.feathericons.FileText
-import compose.icons.feathericons.Loader
-import compose.icons.feathericons.MessageSquare
-import compose.icons.feathericons.Star
-import compose.icons.feathericons.Tool
-import compose.icons.feathericons.User
-import compose.icons.feathericons.XCircle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Construction
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Sync
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -166,7 +166,7 @@ internal fun TaskAccordion(
                     contentAlignment = Alignment.Center
                 ) {
                     androidx.compose.material3.Icon(
-                        imageVector = FeatherIcons.MessageSquare,
+                        imageVector = Icons.Rounded.ChatBubble,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(16.dp)
@@ -203,7 +203,7 @@ internal fun TaskAccordion(
 
                 // 展开/折叠箭头
                 androidx.compose.material3.Icon(
-                    imageVector = if (group.isExpanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                    imageVector = if (group.isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                     contentDescription = stringResource(
                         if (group.isExpanded) R.string.chat_task_collapse else R.string.chat_task_expand
                     ),
@@ -333,7 +333,7 @@ private fun ToolSummaryRow(
         ) {
             // 工具图标（琥珀强调色）
             androidx.compose.material3.Icon(
-                imageVector = FeatherIcons.Tool,
+                imageVector = Icons.Rounded.Construction,
                 contentDescription = null,
                 tint = visual.accent,
                 modifier = Modifier.size(16.dp)
@@ -374,7 +374,7 @@ private fun ToolSummaryRow(
             // 可展开箭头
             if (onClick != null) {
                 androidx.compose.material3.Icon(
-                    imageVector = FeatherIcons.ChevronDown,
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
                     contentDescription = null,
                     tint = visual.accent.copy(alpha = 0.5f),
                     modifier = Modifier.size(16.dp)
@@ -498,7 +498,7 @@ private fun ToolCallCountRow(
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             androidx.compose.material3.Icon(
-                imageVector = FeatherIcons.Tool,
+                imageVector = Icons.Rounded.Construction,
                 contentDescription = null,
                 tint = visual.accent,
                 modifier = Modifier.size(16.dp)
@@ -525,7 +525,7 @@ private fun ToolCallCountRow(
                 EnvironmentStatusBubble(snapshot = envSnapshot)
             }
             androidx.compose.material3.Icon(
-                imageVector = FeatherIcons.ChevronDown,
+                imageVector = Icons.Rounded.KeyboardArrowDown,
                 contentDescription = null,
                 tint = visual.accent.copy(alpha = 0.5f),
                 modifier = Modifier.size(16.dp)
@@ -551,9 +551,9 @@ private fun EnvironmentStatusBubble(snapshot: EnvironmentSnapshot) {
         else -> Color(0xFFEF4444)
     }
     val statusIcon = when {
-        running -> FeatherIcons.Loader
-        ready -> FeatherIcons.CheckCircle
-        else -> FeatherIcons.XCircle
+        running -> Icons.Rounded.Sync
+        ready -> Icons.Rounded.CheckCircle
+        else -> Icons.Rounded.Cancel
     }
     val label = when {
         running -> stringResource(R.string.env_bubble_checking)
@@ -620,7 +620,7 @@ private fun ViewChangesButton(
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             androidx.compose.material3.Icon(
-                imageVector = FeatherIcons.FileText,
+                imageVector = Icons.Rounded.Description,
                 contentDescription = null,
                 tint = Brand.Blue,
                 modifier = Modifier.size(16.dp)
@@ -642,7 +642,7 @@ private fun ViewChangesButton(
                 )
             }
             androidx.compose.material3.Icon(
-                imageVector = FeatherIcons.ChevronRight,
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = null,
                 tint = Brand.Blue,
                 modifier = Modifier.size(18.dp)
@@ -875,7 +875,7 @@ private fun SubAccordion(
                 )
                 // 展开/折叠箭头
                 androidx.compose.material3.Icon(
-                    imageVector = if (subGroup.isExpanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+                    imageVector = if (subGroup.isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                     contentDescription = null,
                     tint = visual.accent.copy(alpha = 0.5f),
                     modifier = Modifier.size(16.dp)
@@ -990,22 +990,22 @@ private fun subGroupVisual(type: TaskSubGroupType): SubGroupVisual {
     val isDark = LocalAppDarkMode.current
     return when (type) {
         TaskSubGroupType.USER -> SubGroupVisual(
-            icon = FeatherIcons.User,
+            icon = Icons.Rounded.Person,
             accent = if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB),
             bg = if (isDark) Color(0xFF60A5FA).copy(alpha = 0.14f) else Color(0xFF2563EB).copy(alpha = 0.06f)
         )
         TaskSubGroupType.REASONING -> SubGroupVisual(
-            icon = FeatherIcons.Star,
+            icon = Icons.Rounded.Star,
             accent = if (isDark) Color(0xFFA78BFA) else Color(0xFF7C3AED),
             bg = if (isDark) Color(0xFFA78BFA).copy(alpha = 0.14f) else Color(0xFF7C3AED).copy(alpha = 0.06f)
         )
         TaskSubGroupType.REPLY -> SubGroupVisual(
-            icon = FeatherIcons.MessageSquare,
+            icon = Icons.Rounded.ChatBubble,
             accent = if (isDark) Color(0xFF34D399) else Color(0xFF059669),
             bg = if (isDark) Color(0xFF34D399).copy(alpha = 0.14f) else Color(0xFF059669).copy(alpha = 0.06f)
         )
         TaskSubGroupType.TOOL -> SubGroupVisual(
-            icon = FeatherIcons.Tool,
+            icon = Icons.Rounded.Construction,
             accent = if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706),
             bg = if (isDark) Color(0xFFFBBF24).copy(alpha = 0.14f) else Color(0xFFD97706).copy(alpha = 0.06f)
         )

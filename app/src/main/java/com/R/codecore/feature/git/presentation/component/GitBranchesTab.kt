@@ -58,17 +58,17 @@ import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.git.domain.model.GitBranch
 import com.R.codecore.feature.git.domain.model.GitTag
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Cloud
-import compose.icons.feathericons.CornerDownLeft
-import compose.icons.feathericons.Edit2
-import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.GitCommit
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Tag
-import compose.icons.feathericons.Trash2
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Commit
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.SubdirectoryArrowLeft
+import androidx.compose.material.icons.rounded.Tag
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -377,7 +377,7 @@ internal fun BranchesTab(
                 RefRow(
                     name = currentBranch,
                     subtitle = stringResource(R.string.git_checked_out),
-                    icon = FeatherIcons.GitCommit,
+                    icon = Icons.Rounded.Commit,
                     isCurrent = true
                 )
             }
@@ -442,7 +442,7 @@ internal fun BranchesTab(
                         RefRow(
                             name = t.name,
                             subtitle = t.shortHash,
-                            icon = FeatherIcons.Tag,
+                            icon = Icons.Rounded.Tag,
                             isCurrent = false,
                             isLoading = checkoutLoading == t.name,
                             actions = listOf(
@@ -474,7 +474,7 @@ private fun BranchesOverview(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            FeatherIcons.GitBranch,
+                            Icons.Rounded.AccountTree,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(20.dp)
@@ -527,7 +527,7 @@ private fun RefSectionHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = if (isExpanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+            imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
             contentDescription = if (isExpanded) stringResource(R.string.common_collapse) else stringResource(R.string.common_expand),
             modifier = Modifier.size(18.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -543,7 +543,7 @@ private fun RefSectionHeader(
         if (onAdd != null) {
             IconButton(onClick = onAdd, modifier = Modifier.size(28.dp)) {
                 Icon(
-                    FeatherIcons.Plus,
+                    Icons.Rounded.Add,
                     contentDescription = stringResource(R.string.git_new),
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -562,9 +562,9 @@ private sealed class RefAction(
     val isDestructive: Boolean,
     val onClick: () -> Unit
 ) {
-    class Switch(onClick: () -> Unit) : RefAction(R.string.common_switch, FeatherIcons.CornerDownLeft, false, onClick)
-    class Rename(onClick: () -> Unit) : RefAction(R.string.common_rename, FeatherIcons.Edit2, false, onClick)
-    class Delete(onClick: () -> Unit) : RefAction(R.string.common_delete, FeatherIcons.Trash2, true, onClick)
+    class Switch(onClick: () -> Unit) : RefAction(R.string.common_switch, Icons.Rounded.SubdirectoryArrowLeft, false, onClick)
+    class Rename(onClick: () -> Unit) : RefAction(R.string.common_rename, Icons.Rounded.Edit, false, onClick)
+    class Delete(onClick: () -> Unit) : RefAction(R.string.common_delete, Icons.Rounded.Delete, true, onClick)
 }
 
 @Composable
@@ -788,7 +788,7 @@ private fun LazyListScope.renderBranchTree(
                     RefRow(
                         name = node.segment,
                         subtitle = if (b.current) stringResource(R.string.git_checked_out) else null,
-                        icon = if (isRemote) FeatherIcons.Cloud else FeatherIcons.GitBranch,
+                        icon = if (isRemote) Icons.Rounded.Cloud else Icons.Rounded.AccountTree,
                         isCurrent = b.current,
                         isLoading = checkoutLoading == b.name,
                         indent = depth,

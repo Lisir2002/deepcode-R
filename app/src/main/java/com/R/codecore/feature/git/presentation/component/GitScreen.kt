@@ -31,6 +31,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.R.codecore.core.theme.AppTopAppBar
+import com.R.codecore.core.theme.LocalAppDarkMode
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,12 +55,12 @@ import com.R.codecore.feature.credentials.presentation.component.CredentialListS
 import com.R.codecore.feature.git.domain.model.GitStatus
 import com.R.codecore.feature.git.domain.model.GitTab
 import com.R.codecore.feature.git.presentation.GitViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.Key
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.RefreshCw
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.Refresh
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,19 +114,19 @@ fun GitScreen(
                 onNavigateBack = {
                     if (showCredentials) showCredentials = false else onNavigateBack()
                 },
-                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                 navigationContentDescription = stringResource(R.string.common_back)
             ) {
                 if (!showCredentials) {
                     IconButton(onClick = { showCredentials = true }, modifier = Modifier.size(40.dp)) {
-                        Icon(FeatherIcons.Key, contentDescription = stringResource(R.string.git_credentials_and_identity), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Key, contentDescription = stringResource(R.string.git_credentials_and_identity), tint = if (LocalAppDarkMode.current) Color(0xFFFBBF24) else Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
                     }
                     IconButton(onClick = { viewModel.refresh() }, enabled = !state.busy, modifier = Modifier.size(40.dp)) {
-                        Icon(FeatherIcons.RefreshCw, contentDescription = stringResource(R.string.git_refresh), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.git_refresh), tint = if (LocalAppDarkMode.current) Color(0xFF4ADE80) else Color(0xFF22C55E), modifier = Modifier.size(20.dp))
                     }
                 } else {
                     IconButton(onClick = { isAddingCredential = true }, modifier = Modifier.size(40.dp)) {
-                        Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.credential_add), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.credential_add), tint = if (LocalAppDarkMode.current) Color(0xFF7C9FFF) else Color(0xFF4C8DFF), modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -352,7 +353,7 @@ private fun NotARepoState(onInit: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             FilledTonalButton(onClick = onInit) {
-                Icon(FeatherIcons.GitBranch, contentDescription = null)
+                Icon(Icons.Rounded.AccountTree, contentDescription = null)
                 Spacer(Modifier.width(Spacing.sm))
                 Text(stringResource(R.string.git_init_repo))
             }

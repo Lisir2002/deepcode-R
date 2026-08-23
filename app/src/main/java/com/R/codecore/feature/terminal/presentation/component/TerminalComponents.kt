@@ -86,24 +86,24 @@ import com.R.codecore.feature.terminal.domain.TabColorMarker
 import com.R.codecore.feature.terminal.domain.TerminalTab
 import com.R.codecore.feature.terminal.presentation.TerminalViewModel
 import com.termux.view.TerminalView
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowDown
-import compose.icons.feathericons.ArrowUp
-import compose.icons.feathericons.Clipboard
-import compose.icons.feathericons.Copy
-import compose.icons.feathericons.Edit3
-import compose.icons.feathericons.Info
-import compose.icons.feathericons.Layout
-import compose.icons.feathericons.Minus
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Power
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.RotateCcw
-import compose.icons.feathericons.Search
-import compose.icons.feathericons.Send
-import compose.icons.feathericons.Trash2
-import compose.icons.feathericons.Type
-import compose.icons.feathericons.X
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Power
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.TextFields
 import kotlinx.coroutines.delay
 import kotlin.math.max
 import kotlin.math.min
@@ -172,7 +172,7 @@ fun TabBar(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    FeatherIcons.Plus,
+                    Icons.Rounded.Add,
                     contentDescription = stringResource(R.string.common_new_tab),
                     tint = skin.onSurfaceVariant,
                     modifier = Modifier
@@ -299,7 +299,7 @@ private fun TabChip(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        FeatherIcons.X,
+                        Icons.Rounded.Close,
                         contentDescription = stringResource(R.string.terminal_close_tab),
                         tint = if (selected) skin.onPrimaryContainer else skin.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
@@ -627,7 +627,7 @@ private fun CompactFullSwitcher(full: Boolean, onClick: () -> Unit, skin: Termin
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Icon(
-                FeatherIcons.Layout,
+                Icons.Rounded.Dashboard,
                 contentDescription = null,
                 modifier = Modifier.size(ButtonSpec.ChipIndicatorSize),
                 tint = if (full) skin.keyGroupDFg else skin.onSurfaceVariant
@@ -752,14 +752,14 @@ fun ReconnectDropdown(
             text = { Text(stringResource(R.string.terminal_reconnect_tab)) },
             onClick = onReconnectActive,
             leadingIcon = {
-                Icon(FeatherIcons.RefreshCw, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         )
         DropdownMenuItem(
             text = { Text(stringResource(R.string.ui________1614f33f)) },
             onClick = onReconnectAll,
             leadingIcon = {
-                Icon(FeatherIcons.RotateCcw, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         )
         HorizontalDivider(Modifier.padding(horizontal = Spacing.sm))
@@ -767,7 +767,7 @@ fun ReconnectDropdown(
             text = { Text(stringResource(R.string.ui______fbf624a8)) },
             onClick = onRestartContainer,
             leadingIcon = {
-                Icon(FeatherIcons.Power, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.Power, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         )
     }
@@ -797,29 +797,29 @@ fun TerminalOperationsMenu(
     val expanded = anchor != null
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuItem(text = { Text(stringResource(R.string.ui____79d3abe9)) }, onClick = onCopy,
-            leadingIcon = { Icon(FeatherIcons.Copy, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui____eafbece1)) }, onClick = onPaste,
-            leadingIcon = { Icon(FeatherIcons.Clipboard, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(Icons.Rounded.ContentPaste, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui____66eeacd9)) }, onClick = onSelectAll,
-            leadingIcon = { Icon(FeatherIcons.Type, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(Icons.Rounded.TextFields, null, Modifier.size(18.dp)) })
         HorizontalDivider(Modifier.padding(horizontal = Spacing.sm))
         DropdownMenuItem(text = { Text(stringResource(R.string.ui____91382d9c)) }, onClick = onClearScreen,
-            leadingIcon = { Icon(FeatherIcons.Trash2, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(Icons.Rounded.Delete, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui____e5f71fc3)) }, onClick = onSearch,
-            leadingIcon = { Icon(FeatherIcons.Search, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui_______a4986174)) }, onClick = onRenameTab,
-            leadingIcon = { Icon(FeatherIcons.Edit3, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp)) })
         if (allowSendToAI && onSendToAI != null) {
             DropdownMenuItem(text = { Text(stringResource(R.string.ui______38154828)) }, onClick = onSendToAI,
-                leadingIcon = { Icon(FeatherIcons.Send, null, Modifier.size(18.dp)) })
+                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Send, null, Modifier.size(18.dp)) })
         }
         HorizontalDivider(Modifier.padding(horizontal = Spacing.sm))
         DropdownMenuItem(text = { Text(if (fullExtraKeys) stringResource(R.string.ui______6a988d97) else stringResource(R.string.ui______1ae98d49)) }, onClick = onToggleFullKeys,
-            leadingIcon = { Icon(FeatherIcons.Layout, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(Icons.Rounded.Dashboard, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui______3b73382e)) }, onClick = onFontSizeStepUp,
-            leadingIcon = { Icon(FeatherIcons.Plus, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)) })
         DropdownMenuItem(text = { Text(stringResource(R.string.ui______9dd74977)) }, onClick = onFontSizeStepDown,
-            leadingIcon = { Icon(FeatherIcons.Minus, null, Modifier.size(18.dp)) })
+            leadingIcon = { Icon(Icons.Rounded.Remove, null, Modifier.size(18.dp)) })
     }
 }
 
@@ -909,7 +909,7 @@ fun TabLongPressDialog(
         },
         confirmButton = {
             TextButton(onClick = onClose) {
-                Icon(FeatherIcons.X, null, Modifier.size(16.dp))
+                Icon(Icons.Rounded.Close, null, Modifier.size(16.dp))
                 Spacer(Modifier.size(Spacing.xs))
                 Text(stringResource(R.string.ui____b15d9127))
             }
@@ -917,13 +917,13 @@ fun TabLongPressDialog(
         dismissButton = {
             Row {
                 TextButton(onClick = onRename) {
-                    Icon(FeatherIcons.Edit3, null, Modifier.size(16.dp))
+                    Icon(Icons.Rounded.Edit, null, Modifier.size(16.dp))
                     Spacer(Modifier.size(Spacing.xs))
                     Text(stringResource(R.string.ui_____c8ce4b36))
                 }
                 Spacer(Modifier.size(Spacing.sm))
                 TextButton(onClick = onCloseOthers) {
-                    Icon(FeatherIcons.Trash2, null, Modifier.size(16.dp))
+                    Icon(Icons.Rounded.Delete, null, Modifier.size(16.dp))
                     Spacer(Modifier.size(Spacing.xs))
                     Text(stringResource(R.string.ui______6816da19))
                 }
@@ -1089,18 +1089,18 @@ fun BoxScope.TerminalSearchOverlay(
                         placeholder = { Text(stringResource(R.string.ui________a7e95b4c)) },
                         singleLine = true,
                         leadingIcon = {
-                            Icon(FeatherIcons.Search, null, Modifier.size(18.dp))
+                            Icon(Icons.Rounded.Search, null, Modifier.size(18.dp))
                         },
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = { query = ""; matchIndex = 0 }) {
-                                    Icon(FeatherIcons.X, null, Modifier.size(18.dp))
+                                    Icon(Icons.Rounded.Close, null, Modifier.size(18.dp))
                                 }
                             }
                         }
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(FeatherIcons.X, null, Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Close, null, Modifier.size(20.dp))
                     }
                 }
                 Row(
@@ -1119,14 +1119,14 @@ fun BoxScope.TerminalSearchOverlay(
                             enabled = matches.isNotEmpty() && matchIndex > 0,
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(FeatherIcons.ArrowUp, null, Modifier.size(18.dp))
+                            Icon(Icons.Rounded.ArrowUpward, null, Modifier.size(18.dp))
                         }
                         IconButton(
                             onClick = { matchIndex = (matchIndex + 1).coerceAtMost(matches.lastIndex) },
                             enabled = matches.isNotEmpty() && matchIndex < matches.lastIndex,
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(FeatherIcons.ArrowDown, null, Modifier.size(18.dp))
+                            Icon(Icons.Rounded.ArrowDownward, null, Modifier.size(18.dp))
                         }
                     }
                 }
@@ -1158,7 +1158,7 @@ fun CtrlHintBubble(modifier: Modifier, onGotIt: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
-            Icon(FeatherIcons.Info, null, Modifier.size(18.dp))
+            Icon(Icons.Rounded.Info, null, Modifier.size(18.dp))
             Text(
                 text = stringResource(R.string.ui____d59d86f6),
                 style = MaterialTheme.typography.bodySmall,

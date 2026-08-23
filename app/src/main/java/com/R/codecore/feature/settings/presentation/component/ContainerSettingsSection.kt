@@ -40,6 +40,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,11 +61,6 @@ import com.R.codecore.feature.agent.domain.container.RootfsSource
 import com.R.codecore.feature.settings.data.repository.ExecutionMode
 import com.R.codecore.feature.workspace.domain.model.RemoteConnection
 import com.R.codecore.feature.workspace.domain.model.RemoteProtocol
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Edit3
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Trash2
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -187,14 +186,14 @@ internal fun ContainerSection(
                     if (!profile.isBuiltin) {
                         IconButton(onClick = { editingProfile = profile }) {
                             Icon(
-                                imageVector = FeatherIcons.Edit3,
+                                imageVector = Icons.Rounded.Edit,
                                 contentDescription = stringResource(R.string.common_edit),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         IconButton(onClick = { deletingProfile = profile }) {
                             Icon(
-                                imageVector = FeatherIcons.Trash2,
+                                imageVector = Icons.Rounded.Delete,
                                 contentDescription = stringResource(R.string.common_delete),
                                 tint = MaterialTheme.colorScheme.error
                             )
@@ -202,7 +201,7 @@ internal fun ContainerSection(
                     } else {
                         IconButton(onClick = { pendingReset = profile }) {
                             Icon(
-                                imageVector = FeatherIcons.RefreshCw,
+                                imageVector = Icons.Rounded.Refresh,
                                 contentDescription = stringResource(R.string.container_reset),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )

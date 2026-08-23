@@ -65,13 +65,13 @@ import com.R.codecore.feature.agent.domain.session.SessionUseCase
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot
 import com.R.codecore.feature.agent.presentation.RunningToolOutput
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.CheckCircle
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronUp
-import compose.icons.feathericons.Loader
-import compose.icons.feathericons.Tool
-import compose.icons.feathericons.XCircle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Construction
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Sync
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -203,7 +203,7 @@ internal fun ToolMessageBody(
                 TypingDots(color = MaterialTheme.colorScheme.onSurfaceVariant, dotSize = 5.dp)
             } else if (expandable) {
                 Icon(
-                    if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                    if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                     contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
                     tint = Brand.IconGray,
                     modifier = Modifier.size(18.dp)
@@ -314,9 +314,9 @@ internal fun ToolCallGroup(
             ) {
                 // 工具图标（琥珀强调色，与 TOOL 子分类一致）
                 androidx.compose.material3.Icon(
-                    imageVector = FeatherIcons.Tool,
+                    imageVector = Icons.Rounded.Construction,
                     contentDescription = null,
-                    tint = Color(0xFFD97706),
+                    tint = if (LocalAppDarkMode.current) Color(0xFFFBBF24) else Color(0xFFD97706),
                     modifier = Modifier.size(16.dp)
                 )
                 // 工具名（过长横向滚动，不再用省略号截断）
@@ -351,7 +351,7 @@ internal fun ToolCallGroup(
                 }
                 // 展开/折叠箭头
                 androidx.compose.material3.Icon(
-                    imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                    imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                     contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
                     tint = Brand.IconGray,
                     modifier = Modifier.size(18.dp)
@@ -579,7 +579,7 @@ internal fun DiffExpandToggle(expanded: Boolean, hiddenCount: Int, onToggle: () 
         horizontalArrangement = Arrangement.Center
     ) {
         Icon(
-            if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+            if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
             contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
             tint = Brand.IconGray,
             modifier = Modifier.size(16.dp)
@@ -826,9 +826,9 @@ private fun EnvironmentStatusStrip(
         else -> Color(0xFFEF4444)
     }
     val statusIcon = when {
-        running -> FeatherIcons.Loader
-        ready -> FeatherIcons.CheckCircle
-        else -> FeatherIcons.XCircle
+        running -> Icons.Rounded.Sync
+        ready -> Icons.Rounded.CheckCircle
+        else -> Icons.Rounded.Cancel
     }
     val summaryText = when {
         running -> stringResource(R.string.env_strip_checking)
@@ -884,7 +884,7 @@ private fun EnvironmentStatusStrip(
                         maxLines = 1
                     )
                     Icon(
-                        imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                        imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                         contentDescription = null,
                         tint = Brand.IconGray,
                         modifier = Modifier.size(16.dp)

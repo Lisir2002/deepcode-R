@@ -12,10 +12,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Info
-import compose.icons.feathericons.Server
-import compose.icons.feathericons.Settings
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
 
@@ -57,7 +57,7 @@ fun WiFiFtpServerSection(viewModel: RemoteServerViewModel) {
                 verticalAlignment = Alignment.Top
             ) {
                 Icon(
-                    FeatherIcons.Info,
+                    Icons.Rounded.Info,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp).padding(top = 2.dp)
@@ -94,7 +94,7 @@ fun WiFiFtpServerSection(viewModel: RemoteServerViewModel) {
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            FeatherIcons.Server,
+                            Icons.Rounded.Dns,
                             contentDescription = null,
                             tint = if (isRunning) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
@@ -145,7 +145,7 @@ fun WiFiFtpServerSection(viewModel: RemoteServerViewModel) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        FeatherIcons.Settings,
+                        Icons.Rounded.Settings,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)

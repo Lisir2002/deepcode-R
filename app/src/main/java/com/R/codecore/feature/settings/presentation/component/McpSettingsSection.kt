@@ -32,6 +32,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -52,11 +57,6 @@ import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.domain.mcp.McpServerConfig
 import com.R.codecore.feature.agent.domain.mcp.McpServerStatus
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Server
-import compose.icons.feathericons.Terminal
-import compose.icons.feathericons.Trash2
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import androidx.compose.ui.res.stringResource
@@ -99,7 +99,7 @@ internal fun McpSection(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                FeatherIcons.Terminal,
+                                Icons.Rounded.Terminal,
                                 contentDescription = null,
                                 modifier = Modifier.size(28.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -214,7 +214,7 @@ internal fun McpServerRow(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            imageVector = FeatherIcons.Trash2,
+                            imageVector = Icons.Rounded.Delete,
                             contentDescription = stringResource(R.string.common_delete),
                             tint = Color.White,
                             modifier = Modifier.size(20.dp)
@@ -307,7 +307,7 @@ internal fun McpServerRow(
                         )
                 ) {
                     Icon(
-                        imageVector = if (server.isStdio) FeatherIcons.Terminal else FeatherIcons.Server,
+                        imageVector = if (server.isStdio) Icons.Rounded.Terminal else Icons.Rounded.Dns,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
@@ -404,7 +404,7 @@ internal fun McpServerRow(
 
                 // 右侧箭头
                 Icon(
-                    imageVector = FeatherIcons.ChevronRight,
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                     contentDescription = stringResource(R.string.mcp_details),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)

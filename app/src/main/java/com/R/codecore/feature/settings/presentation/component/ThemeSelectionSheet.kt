@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -23,8 +25,6 @@ import androidx.compose.ui.unit.dp
 import com.R.codecore.R
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.settings.data.repository.AppThemeMode
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Check
 
 /**
  * 主题选择 BottomSheet 弹窗：参考会话长按菜单样式。
@@ -86,7 +86,7 @@ internal fun ThemeSelectionSheet(
                         )
                         if (isSelected) {
                             Icon(
-                                imageVector = FeatherIcons.Check,
+                                imageVector = Icons.Rounded.Check,
                                 contentDescription = null,
                                 modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.primary

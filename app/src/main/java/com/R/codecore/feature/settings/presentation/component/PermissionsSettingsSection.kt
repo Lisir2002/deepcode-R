@@ -22,6 +22,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,8 +34,6 @@ import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.domain.permission.PermissionDecision
 import com.R.codecore.feature.agent.domain.permission.PermissionRule
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Trash2
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
 
@@ -159,7 +159,7 @@ internal fun RuleRow(
                 TextButton(onClick = onPromote) { Text(stringResource(R.string.perm_promote_to_global)) }
             }
             IconButton(onClick = onDelete) {
-                Icon(FeatherIcons.Trash2, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

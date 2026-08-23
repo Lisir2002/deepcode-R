@@ -39,6 +39,12 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -92,13 +98,6 @@ import com.R.codecore.feature.settings.domain.model.ModelMetadata
 import com.R.codecore.feature.settings.domain.model.ProviderType
 import com.R.codecore.feature.settings.presentation.FetchState
 import com.R.codecore.feature.settings.presentation.SettingsViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.DownloadCloud
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Sliders
-import compose.icons.feathericons.Trash2
 import java.util.UUID
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
@@ -243,14 +242,14 @@ fun ProviderEditorScreen(
                 ),
                 navigationIcon = {
                     IconButton(onClick = { saveAndNavigateBack() }) {
-                        Icon(FeatherIcons.ArrowLeft, contentDescription = stringResource(R.string.common_back))
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     if (initialProvider != null) {
                         IconButton(onClick = { onDelete(initialProvider.id) }) {
                             Icon(
-                                FeatherIcons.Trash2,
+                                Icons.Rounded.Delete,
                                 contentDescription = stringResource(R.string.provider_delete),
                                 tint = MaterialTheme.colorScheme.error
                             )
@@ -260,7 +259,7 @@ fun ProviderEditorScreen(
                         selectedTab = 1
                         showAddModelSheet = true
                     }) {
-                        Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.provider_add_model))
+                        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.provider_add_model))
                     }
                 }
             )
@@ -271,13 +270,13 @@ fun ProviderEditorScreen(
                 tonalElevation = 0.dp
             ) {
                 NavigationBarItem(
-                    icon = { Icon(FeatherIcons.Sliders, contentDescription = stringResource(R.string.provider_config)) },
+                    icon = { Icon(Icons.Rounded.Tune, contentDescription = stringResource(R.string.provider_config)) },
                     label = { Text(stringResource(R.string.provider_config)) },
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 }
                 )
                 NavigationBarItem(
-                    icon = { Icon(FeatherIcons.Cpu, contentDescription = stringResource(R.string.common_model)) },
+                    icon = { Icon(Icons.Rounded.Memory, contentDescription = stringResource(R.string.common_model)) },
                     label = { Text(stringResource(R.string.common_model)) },
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 }
@@ -448,7 +447,7 @@ fun ProviderEditorScreen(
                                 showFetchDialog = true
                             }
                         ) {
-                            Icon(FeatherIcons.DownloadCloud, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(Spacing.xs))
                             Text(stringResource(R.string.provider_fetch_models))
                         }
@@ -593,7 +592,7 @@ private fun AddModelSheet(
                         onDismiss()
                     }
                 ) {
-                    Icon(FeatherIcons.Plus, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(Spacing.xs))
                     Text(stringResource(R.string.common_add))
                 }

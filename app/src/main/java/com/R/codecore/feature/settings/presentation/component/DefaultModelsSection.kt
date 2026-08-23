@@ -24,6 +24,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,10 +58,6 @@ import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.settings.domain.model.AIProviderConfig
 import com.R.codecore.feature.settings.domain.model.ModelMetadata
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Check
-import compose.icons.feathericons.Image
-import compose.icons.feathericons.Minimize2
 
 /**
  * 默认模型二级页：集中管理应用中的默认/特定用途模型设置（如识图模型、压缩模型）。
@@ -111,7 +110,7 @@ internal fun DefaultModelsSection(
     ) {
         item {
             MenuRow(
-                icon = FeatherIcons.Image,
+                icon = Icons.Rounded.Image,
                 title = stringResource(R.string.settings_vision_model),
                 subtitle = visionSubtitle,
                 onClick = { showVisionSheet = true }
@@ -119,7 +118,7 @@ internal fun DefaultModelsSection(
         }
         item {
             MenuRow(
-                icon = FeatherIcons.Minimize2,
+                icon = Icons.Rounded.FullscreenExit,
                 title = stringResource(R.string.settings_compaction_model),
                 subtitle = compactionSubtitle,
                 onClick = { showCompactionSheet = true }
@@ -283,7 +282,7 @@ private fun ModelSelectionSheet(
                                         if (currentProviderId.isBlank()) {
                                             Spacer(Modifier.width(Spacing.sm))
                                             Icon(
-                                                imageVector = FeatherIcons.Check,
+                                                imageVector = Icons.Rounded.Check,
                                                 contentDescription = null,
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(22.dp)
@@ -386,7 +385,7 @@ private fun ModelSelectionRow(
         if (selected) {
             Spacer(Modifier.width(Spacing.sm))
             Icon(
-                imageVector = FeatherIcons.Check,
+                imageVector = Icons.Rounded.Check,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp)

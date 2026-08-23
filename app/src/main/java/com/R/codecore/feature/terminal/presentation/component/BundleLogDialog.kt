@@ -81,21 +81,21 @@ import com.R.codecore.feature.agent.domain.container.progress.AggregateProgressS
 import com.R.codecore.feature.agent.domain.container.progress.InstallPhase
 import com.R.codecore.feature.agent.domain.container.progress.LogLine
 import com.R.codecore.feature.agent.domain.container.progress.LogLineKind
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.AlertTriangle
-import compose.icons.feathericons.Archive
-import compose.icons.feathericons.Check
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronUp
-import compose.icons.feathericons.Clock
-import compose.icons.feathericons.Copy
-import compose.icons.feathericons.Download
-import compose.icons.feathericons.Flag
-import compose.icons.feathericons.Package
-import compose.icons.feathericons.Radio
-import compose.icons.feathericons.Search
-import compose.icons.feathericons.Tool
-import compose.icons.feathericons.X
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Warning
 import kotlinx.coroutines.launch
 import java.util.EnumMap
 
@@ -173,7 +173,7 @@ fun BundleLogDialog(
                     actions = {
                         val ctx = LocalContext.current
                         IconButton(onClick = { copyAll(ctx, actualState) }) {
-                            Icon(FeatherIcons.Copy, contentDescription = stringResource(R.string.ui______2733a243))
+                            Icon(Icons.Rounded.ContentCopy, contentDescription = stringResource(R.string.ui______2733a243))
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -196,7 +196,7 @@ fun BundleLogDialog(
                 ) {
                     AssistChip(
                         onClick = { modeReal = true },
-                        leadingIcon = { Icon(FeatherIcons.Radio, null, modifier = Modifier.size(12.dp)) },
+                        leadingIcon = { Icon(Icons.Rounded.Radio, null, modifier = Modifier.size(12.dp)) },
                         label = {
                             Text(
                                 text = if (isCurrentSession) stringResource(R.string.ui______00e43644) else stringResource(R.string.ui____12a64640),
@@ -218,7 +218,7 @@ fun BundleLogDialog(
                     AssistChip(
                         onClick = { if (hasArchive) modeReal = false },
                         enabled = hasArchive,
-                        leadingIcon = { Icon(FeatherIcons.Archive, null, modifier = Modifier.size(12.dp)) },
+                        leadingIcon = { Icon(Icons.Rounded.Archive, null, modifier = Modifier.size(12.dp)) },
                         label = {
                             Text(
                                 text = if (hasArchive) stringResource(R.string.ui______ed7db4af) else stringResource(R.string.ui_____3e090c84),
@@ -304,7 +304,7 @@ fun BundleLogDialog(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md),
-                    leadingIcon = { Icon(FeatherIcons.Search, contentDescription = null) },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                     placeholder = { Text(stringResource(R.string.ui______362c323d)) },
                     singleLine = true,
                 )
@@ -414,10 +414,10 @@ private fun TimelineAnchors(
     val p = state.phase
     val labels = listOf("①下载", "②安装", "③后处理", if (p == InstallPhase.FAILED) "④失败" else "④完成")
     val icons = listOf(
-        FeatherIcons.Download,
-        FeatherIcons.Package,
-        FeatherIcons.Tool,
-        if (p == InstallPhase.FAILED) FeatherIcons.AlertTriangle else FeatherIcons.Flag,
+        Icons.Rounded.Download,
+        Icons.Rounded.Inventory2,
+        Icons.Rounded.Build,
+        if (p == InstallPhase.FAILED) Icons.Rounded.Warning else Icons.Rounded.Flag,
     )
     // Phase 定义顺序就是 DOWNLOAD → INSTALL → POST_HOOK → DONE → FAILED，用 ordinal 比大小
     val phaseIdx = p.ordinal
@@ -608,7 +608,7 @@ private fun ProgressSummary(state: AggregateProgressState) {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = FeatherIcons.Clock,
+                    imageVector = Icons.Rounded.Schedule,
                     contentDescription = null,
                     modifier = Modifier.size(12.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -666,7 +666,7 @@ private fun ProgressSummary(state: AggregateProgressState) {
             }
             if (phase == InstallPhase.DONE) {
                 Icon(
-                    imageVector = FeatherIcons.Check,
+                    imageVector = Icons.Rounded.Check,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier
@@ -675,7 +675,7 @@ private fun ProgressSummary(state: AggregateProgressState) {
                 )
             } else if (phase == InstallPhase.FAILED) {
                 Icon(
-                    imageVector = FeatherIcons.X,
+                    imageVector = Icons.Rounded.Close,
                     contentDescription = null,
                     tint = Color(0xFFFFCDD2),
                     modifier = Modifier
@@ -803,7 +803,7 @@ private fun ErrorRowCard(line: LogLine, fg: Color, ctx: Context, modifier: Modif
                     ) { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(FeatherIcons.AlertTriangle, null, tint = fg, modifier = Modifier.size(14.dp))
+                Icon(Icons.Rounded.Warning, null, tint = fg, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = if (expanded) line.text else line.text.take(80) + if (line.text.length > 80) "…" else "",
@@ -817,7 +817,7 @@ private fun ErrorRowCard(line: LogLine, fg: Color, ctx: Context, modifier: Modif
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                        imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                         contentDescription = if (expanded) stringResource(R.string.ui____def9e98b) else stringResource(R.string.ui____e2edde5a),
                         tint = fg,
                         modifier = Modifier.size(16.dp),

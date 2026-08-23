@@ -18,6 +18,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,16 +58,6 @@ import com.R.codecore.feature.agent.domain.container.ContainerInitState
 import com.R.codecore.feature.terminal.data.bundle.BundleInstallState
 import com.R.codecore.feature.terminal.data.bundle.TerminalBundle
 import com.R.codecore.feature.terminal.data.bundle.TerminalBundleId
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Code
-import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.Globe
-import compose.icons.feathericons.HardDrive
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Search
-import compose.icons.feathericons.Terminal
-import compose.icons.feathericons.Trash2
 
 /**
  * 终端设置相关共享组件 + Tokens。
@@ -196,7 +195,7 @@ internal fun SharedContainerEnvCard(
         Column(modifier = Modifier.padding(Spacing.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    FeatherIcons.HardDrive,
+                    Icons.Rounded.Storage,
                     null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(22.dp)
@@ -230,21 +229,21 @@ internal fun SharedContainerEnvCard(
                     Spacer(modifier = Modifier.height(Spacing.sm))
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         if (!containerInstalled) {
-                            PrimaryButton(onClick = onInit, icon = FeatherIcons.Plus, text = stringResource(R.string.ui_______30947f5e))
+                            PrimaryButton(onClick = onInit, icon = Icons.Rounded.Add, text = stringResource(R.string.ui_______30947f5e))
                         }
                         if (containerInstalled) {
                             SecondaryButton(
                                 onClick = onPickMirror,
-                                icon = FeatherIcons.Globe,
+                                icon = Icons.Rounded.Public,
                                 text = stringResource(R.string.ui_______52fffa6f)
                             )
-                            DangerTextButton(onClick = onReset, icon = FeatherIcons.Trash2, text = stringResource(R.string.ui______fce7f40c))
+                            DangerTextButton(onClick = onReset, icon = Icons.Rounded.Delete, text = stringResource(R.string.ui______fce7f40c))
                         }
                     }
                 }
                 ContainerCardMode.INIT_ONLY -> if (!containerInstalled) {
                     Spacer(modifier = Modifier.height(Spacing.sm))
-                    PrimaryButton(onClick = onInit, icon = FeatherIcons.Plus, text = stringResource(R.string.ui_______89a64382))
+                    PrimaryButton(onClick = onInit, icon = Icons.Rounded.Add, text = stringResource(R.string.ui_______89a64382))
                 }
                 ContainerCardMode.READ_ONLY -> Unit // no CTA
             }
@@ -279,7 +278,7 @@ internal fun SharedAiRecommendationStrip(
         Column(modifier = Modifier.padding(Spacing.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    FeatherIcons.Cpu,
+                    Icons.Rounded.Memory,
                     null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
@@ -311,7 +310,7 @@ internal fun SharedAiRecommendationStrip(
                 PrimaryButton(
                     onClick = onInstallAll,
                     enabled = containerReady,
-                    icon = FeatherIcons.Plus,
+                    icon = Icons.Rounded.Add,
                     text = stringResource(R.string.ui______04a0913e)
                 )
             }
@@ -406,14 +405,14 @@ internal fun SharedBundleCard(
             Spacer(modifier = Modifier.height(Spacing.sm))
             when (state) {
                 is BundleInstallState.Installed ->
-                    DangerOutlinedButton(onClick = onUninstall, icon = FeatherIcons.Trash2, text = stringResource(R.string.ui____81824cff))
+                    DangerOutlinedButton(onClick = onUninstall, icon = Icons.Rounded.Delete, text = stringResource(R.string.ui____81824cff))
                 is BundleInstallState.Installing, is BundleInstallState.Uninstalling ->
                     ProgressPlaceholderButton(text = stringResource(R.string.ui_____cf978c02))
                 else ->
                     PrimaryButton(
                         onClick = onInstall,
                         enabled = containerReady,
-                        icon = FeatherIcons.Plus,
+                        icon = Icons.Rounded.Add,
                         text = stringResource(R.string.ui____e655a410_2)
                     )
             }
@@ -423,13 +422,13 @@ internal fun SharedBundleCard(
 
 @Composable
 private fun sharedBundleIcon(b: TerminalBundle): ImageVector = when (b.id) {
-    TerminalBundleId.PYTHON -> FeatherIcons.Cpu
-    TerminalBundleId.NODE -> FeatherIcons.Code
-    TerminalBundleId.RIPGREP -> FeatherIcons.Search
-    TerminalBundleId.GIT -> FeatherIcons.GitBranch
-    TerminalBundleId.BASH -> FeatherIcons.Terminal
-    TerminalBundleId.NET -> FeatherIcons.Globe
-    TerminalBundleId.QEMU_X86_TRANSLATOR -> FeatherIcons.Cpu
+    TerminalBundleId.PYTHON -> Icons.Rounded.Memory
+    TerminalBundleId.NODE -> Icons.Rounded.Code
+    TerminalBundleId.RIPGREP -> Icons.Rounded.Search
+    TerminalBundleId.GIT -> Icons.Rounded.AccountTree
+    TerminalBundleId.BASH -> Icons.Rounded.Terminal
+    TerminalBundleId.NET -> Icons.Rounded.Public
+    TerminalBundleId.QEMU_X86_TRANSLATOR -> Icons.Rounded.Memory
 }
 
 // ================================================================

@@ -35,6 +35,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Upload
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,15 +61,6 @@ import com.R.codecore.feature.agent.domain.skill.SkillScope
 import com.R.codecore.feature.agent.domain.skill.SkillSourceType
 import com.R.codecore.feature.agent.domain.skill.SkillType
 import com.R.codecore.feature.settings.presentation.SkillsViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Download
-import compose.icons.feathericons.Edit2
-import compose.icons.feathericons.Eye
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Share2
-import compose.icons.feathericons.Trash2
-import compose.icons.feathericons.Upload
-import compose.icons.feathericons.X
 
 /**
  * 技能中心（能力中心 → 技能 Tab）：分组 / 搜索 / 筛选 / 卡片增强 / 操作按钮化 / 导入导出。
@@ -121,7 +118,7 @@ fun SkillsScreen(
             Spacer(Modifier.width(Spacing.sm))
             IconButton(onClick = { showImportSheet = true }) {
                 Icon(
-                    imageVector = FeatherIcons.Upload,
+                    imageVector = Icons.Rounded.Upload,
                     contentDescription = stringResource(R.string.skill_import),
                     tint = MaterialTheme.colorScheme.primary
                 )
@@ -433,7 +430,7 @@ private fun SkillCard(
                 Switch(checked = skill.enabled, onCheckedChange = onToggle)
                 Spacer(Modifier.width(Spacing.sm))
                 OutlinedButton(onClick = onOpen, modifier = Modifier.height(32.dp)) {
-                    Icon(imageVector = FeatherIcons.Eye, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Icon(imageVector = Icons.Rounded.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
                     Text(stringResource(R.string.skill_view), style = MaterialTheme.typography.labelMedium)
                 }
@@ -441,7 +438,7 @@ private fun SkillCard(
                     if (onEdit != null) {
                         Spacer(Modifier.width(Spacing.xs))
                         OutlinedButton(onClick = onEdit, modifier = Modifier.height(32.dp)) {
-                            Icon(imageVector = FeatherIcons.Edit2, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(imageVector = Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
                             Text(stringResource(R.string.skill_edit), style = MaterialTheme.typography.labelMedium)
                         }
@@ -450,7 +447,7 @@ private fun SkillCard(
                     if (onDelete != null) {
                         IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                             Icon(
-                                imageVector = FeatherIcons.Trash2,
+                                imageVector = Icons.Rounded.Delete,
                                 contentDescription = stringResource(R.string.skill_uninstall),
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(16.dp)
@@ -588,7 +585,7 @@ private fun ImportOption(label: String, onClick: () -> Unit) {
             modifier = Modifier.padding(Spacing.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(imageVector = FeatherIcons.Plus, contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(imageVector = Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(Spacing.sm))
             Text(label, style = MaterialTheme.typography.bodyMedium)
         }

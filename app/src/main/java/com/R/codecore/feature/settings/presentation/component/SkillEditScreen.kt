@@ -25,6 +25,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.NoteAdd
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,11 +50,6 @@ import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.domain.skill.SkillScope
 import com.R.codecore.feature.agent.domain.skill.SkillType
 import com.R.codecore.feature.settings.presentation.SkillEditViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Copy
-import compose.icons.feathericons.FilePlus
-import compose.icons.feathericons.Trash2
 
 /**
  * 用户技能编辑器（skill_edit 路由，仅 LOCAL 技能）。
@@ -105,12 +105,12 @@ fun SkillEditScreen(
     AppTopAppBar(
         title = stringResource(R.string.skill_edit_title),
         onNavigateBack = onNavigateBack,
-        navigationIcon = FeatherIcons.ArrowLeft,
+        navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
         navigationContentDescription = stringResource(R.string.common_back)
     ) {
         IconButton(onClick = { viewModel.duplicate()?.let { onSaved(it) } }) {
             Icon(
-                imageVector = FeatherIcons.Copy,
+                imageVector = Icons.Rounded.ContentCopy,
                 contentDescription = stringResource(R.string.skill_edit_duplicate),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
@@ -138,7 +138,7 @@ fun SkillEditScreen(
                     trailingIcon = if (path != "SKILL.md" && path != "CLAUDE.md" && !isBuiltin) {
                         {
                             Icon(
-                                imageVector = FeatherIcons.Trash2,
+                                imageVector = Icons.Rounded.Delete,
                                 contentDescription = stringResource(R.string.skill_edit_delete_file),
                                 modifier = Modifier.size(14.dp)
                             )
@@ -152,7 +152,7 @@ fun SkillEditScreen(
                     label = { Text(stringResource(R.string.skill_edit_add_file)) },
                     leadingIcon = {
                         Icon(
-                            imageVector = FeatherIcons.FilePlus,
+                            imageVector = Icons.Rounded.NoteAdd,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp)
                         )

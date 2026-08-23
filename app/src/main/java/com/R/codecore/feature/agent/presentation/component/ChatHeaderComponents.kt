@@ -24,21 +24,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.R.codecore.R
+import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.settings.presentation.component.ModelLogoIcon
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.Globe
-import compose.icons.feathericons.Menu
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Star
-import compose.icons.feathericons.Terminal
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Terminal
 
 /**
  * 紧凑型聊天顶部栏。
@@ -83,9 +85,9 @@ internal fun ChatHeader(
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
-                        FeatherIcons.Menu,
+                        Icons.Rounded.Menu,
                         contentDescription = stringResource(R.string.chat_open_sidebar),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = headerIconTint(light = Color(0xFF64748B), dark = Color(0xFF94A3B8)),
                         modifier = Modifier.size(20.dp))
                 }
                 Column(modifier = Modifier.weight(1f)) {
@@ -117,9 +119,9 @@ internal fun ChatHeader(
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
-                        FeatherIcons.Plus,
+                        Icons.Rounded.Add,
                         contentDescription = stringResource(R.string.chat_new_session),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = headerIconTint(light = Color(0xFF4C8DFF), dark = Color(0xFF7C9FFF)),
                         modifier = Modifier.size(20.dp))
                 }
                 IconButton(
@@ -127,9 +129,9 @@ internal fun ChatHeader(
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
-                        FeatherIcons.GitBranch,
+                        Icons.Rounded.AccountTree,
                         contentDescription = stringResource(R.string.chat_open_git),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = headerIconTint(light = Color(0xFFF59E0B), dark = Color(0xFFFBBF24)),
                         modifier = Modifier.size(20.dp))
                 }
                 IconButton(
@@ -137,9 +139,9 @@ internal fun ChatHeader(
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
-                        FeatherIcons.Terminal,
+                        Icons.Rounded.Terminal,
                         contentDescription = stringResource(R.string.chat_open_terminal),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = headerIconTint(light = Color(0xFF22C55E), dark = Color(0xFF4ADE80)),
                         modifier = Modifier.size(20.dp))
                 }
                 IconButton(
@@ -147,9 +149,9 @@ internal fun ChatHeader(
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
-                        FeatherIcons.Globe,
+                        Icons.Rounded.Public,
                         contentDescription = stringResource(R.string.chat_open_browser),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = headerIconTint(light = Color(0xFF00B4A8), dark = Color(0xFF2DD4BF)),
                         modifier = Modifier.size(20.dp))
                 }
             }
@@ -264,9 +266,9 @@ internal fun BrandMark(size: Dp, iconSize: Dp) {
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            FeatherIcons.Star,
+            Icons.Rounded.AutoAwesome,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onPrimary,
+            tint = Color.White,
             modifier = Modifier.size(iconSize)
         )
     }
@@ -294,3 +296,10 @@ internal fun WelcomeState(modifier: Modifier = Modifier) {
         )
     }
 }
+
+/**
+ * 顶栏图标主题感知着色：日间用深一点的亮色，夜间用更亮的浅色，保证两种模式下都可辨识。
+ */
+@Composable
+private fun headerIconTint(light: Color, dark: Color): Color =
+    if (LocalAppDarkMode.current) dark else light

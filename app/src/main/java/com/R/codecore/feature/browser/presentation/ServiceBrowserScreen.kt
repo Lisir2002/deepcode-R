@@ -57,6 +57,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.R.codecore.R
 import com.R.codecore.core.theme.AppTopAppBar
+import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.browser.domain.BrowserController
@@ -65,14 +66,14 @@ import com.R.codecore.feature.browser.domain.BrowserTabInfo
 import com.R.codecore.feature.browser.domain.BrowserTakeoverManager
 import com.R.codecore.feature.browser.domain.LoginPromptAnswer
 import com.R.codecore.feature.browser.domain.TakeoverAnswer
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.ArrowRight
-import compose.icons.feathericons.ChevronLeft
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.X
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Refresh
 import kotlinx.coroutines.launch
 
 /**
@@ -149,7 +150,7 @@ fun ServiceBrowserScreen(
                 AppTopAppBar(
                     title = stringResource(R.string.browser_title),
                     onNavigateBack = onNavigateBack,
-                    navigationIcon = FeatherIcons.ArrowLeft,
+                    navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                     navigationContentDescription = stringResource(R.string.common_back)
                 )
                 // 地址栏 + 导航按钮
@@ -162,14 +163,14 @@ fun ServiceBrowserScreen(
                 ) {
                     IconButton(onClick = { browserController.goBack() }, enabled = uiState.canGoBack, modifier = Modifier.size(36.dp)) {
                         Icon(
-                            FeatherIcons.ChevronLeft,
+                            Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
                             contentDescription = stringResource(R.string.browser_back),
                             tint = if (uiState.canGoBack) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant
                         )
                     }
                     IconButton(onClick = { browserController.goForward() }, enabled = uiState.canGoForward, modifier = Modifier.size(36.dp)) {
                         Icon(
-                            FeatherIcons.ChevronRight,
+                            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                             contentDescription = stringResource(R.string.browser_forward),
                             tint = if (uiState.canGoForward) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant
                         )
@@ -190,16 +191,16 @@ fun ServiceBrowserScreen(
                     )
                     IconButton(onClick = { browserController.reload() }, modifier = Modifier.size(36.dp)) {
                         Icon(
-                            FeatherIcons.RefreshCw,
+                            Icons.Rounded.Refresh,
                             contentDescription = stringResource(R.string.browser_refresh),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = if (LocalAppDarkMode.current) Color(0xFF4ADE80) else Color(0xFF22C55E)
                         )
                     }
                     IconButton(onClick = { navigate() }, modifier = Modifier.size(36.dp)) {
                         Icon(
-                            FeatherIcons.ArrowRight,
+                            Icons.AutoMirrored.Rounded.ArrowForward,
                             contentDescription = stringResource(R.string.browser_go),
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = if (LocalAppDarkMode.current) Color(0xFF7C9FFF) else Color(0xFF4C8DFF)
                         )
                     }
                 }
@@ -449,7 +450,7 @@ private fun BrowserTabBar(
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
-                            FeatherIcons.X,
+                            Icons.Rounded.Close,
                             contentDescription = stringResource(R.string.browser_close_tab),
                             modifier = Modifier.size(12.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -461,9 +462,9 @@ private fun BrowserTabBar(
         item {
             IconButton(onClick = onNewTab, modifier = Modifier.size(36.dp)) {
                 Icon(
-                    FeatherIcons.Plus,
+                    Icons.Rounded.Add,
                     contentDescription = stringResource(R.string.browser_new_tab),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (LocalAppDarkMode.current) Color(0xFF7C9FFF) else Color(0xFF4C8DFF)
                 )
             }
         }

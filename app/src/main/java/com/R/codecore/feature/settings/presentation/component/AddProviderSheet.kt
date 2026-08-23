@@ -36,6 +36,14 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,14 +65,6 @@ import com.R.codecore.feature.settings.domain.model.AIProviderConfig
 import com.R.codecore.feature.settings.domain.model.ProviderType
 import com.R.codecore.feature.settings.presentation.FetchState
 import com.R.codecore.feature.settings.presentation.SettingsViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Check
-import compose.icons.feathericons.ChevronLeft
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Copy
-import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.X
 import java.util.UUID
 
 /** 阶跃星辰兼容协议。 */
@@ -279,7 +279,7 @@ fun AddProviderSheet(
                 )
                 IconButton(onClick = onDismiss) {
                     Icon(
-                        FeatherIcons.X,
+                        Icons.Rounded.Close,
                         contentDescription = stringResource(R.string.common_close),
                         modifier = Modifier.size(20.dp)
                     )
@@ -366,7 +366,7 @@ fun AddProviderSheet(
                     enabled = canGoBack,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(FeatherIcons.ChevronLeft, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(Spacing.xs))
                     Text(stringResource(R.string.provider_step_previous))
                 }
@@ -380,7 +380,7 @@ fun AddProviderSheet(
                         else stringResource(R.string.provider_step_next)
                     )
                     Spacer(Modifier.width(Spacing.xs))
-                    Icon(FeatherIcons.ChevronRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -484,7 +484,7 @@ private fun BuiltInProviderContent(
                             modifier = Modifier.weight(1f)
                         )
                         Icon(
-                            FeatherIcons.Copy,
+                            Icons.Rounded.ContentCopy,
                             contentDescription = stringResource(R.string.chat_copy),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
@@ -673,7 +673,7 @@ private fun BuiltInProviderCard(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        FeatherIcons.Cpu,
+                        Icons.Rounded.Memory,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
@@ -695,7 +695,7 @@ private fun BuiltInProviderCard(
             }
             if (selected) {
                 Icon(
-                    FeatherIcons.Check,
+                    Icons.Rounded.Check,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
@@ -766,7 +766,7 @@ private fun BuiltInModelFetchList(
                         Spacer(Modifier.width(Spacing.sm))
                         TextButton(onClick = onRetryFetchModels) {
                             Icon(
-                                FeatherIcons.RefreshCw,
+                                Icons.Rounded.Refresh,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -894,7 +894,7 @@ private fun CustomModelFetchList(
                 enabled = apiKey.isNotBlank() && fetchState !is FetchState.Loading
             ) {
                 Icon(
-                    FeatherIcons.RefreshCw,
+                    Icons.Rounded.Refresh,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp)
                 )
@@ -947,7 +947,7 @@ private fun CustomModelFetchList(
                         Spacer(Modifier.width(Spacing.sm))
                         TextButton(onClick = onFetchModels) {
                             Icon(
-                                FeatherIcons.RefreshCw,
+                                Icons.Rounded.Refresh,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )

@@ -21,8 +21,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,24 +54,20 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.domain.model.ChatSession
 import com.R.codecore.feature.agent.presentation.AgentUIState
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Download
-import compose.icons.feathericons.Edit2
-import compose.icons.feathericons.Globe
-import compose.icons.feathericons.Grid
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Settings
-import compose.icons.feathericons.Trash2
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
 
 /**
  * 侧边栏内容：顶部「新建会话」，中部历史记录列表，底部「设置」入口。
  * 由 AIChatPanel 的 ModalNavigationDrawer 承载，支持左上角按钮点击或右滑打开。
+ *
+ * 图标规范：彩色圆角图标块 + 白色图标（Material You 风格），日夜间各一套背景色，
+ * 随 LocalAppDarkMode 自动切换。
  */
 @Composable
 fun ChatDrawerContent(
@@ -113,11 +114,10 @@ fun ChatDrawerContent(
                 .padding(horizontal = Spacing.md, vertical = Spacing.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                FeatherIcons.Plus,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
+            DrawerNavIcon(
+                icon = Icons.Rounded.Add,
+                iconBgLight = Color(0xFF4C8DFF),
+                iconBgDark = Color(0xFF2B4E9E)
             )
             Spacer(Modifier.width(Spacing.md))
             Text(
@@ -177,11 +177,10 @@ fun ChatDrawerContent(
                 .padding(horizontal = Spacing.md, vertical = Spacing.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                FeatherIcons.Grid,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
+            DrawerNavIcon(
+                icon = Icons.Rounded.Dashboard,
+                iconBgLight = Color(0xFF8B5CF6),
+                iconBgDark = Color(0xFF4C1D95)
             )
             Spacer(Modifier.width(Spacing.md))
             Text(
@@ -198,11 +197,10 @@ fun ChatDrawerContent(
                 .padding(horizontal = Spacing.md, vertical = Spacing.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                FeatherIcons.Globe,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
+            DrawerNavIcon(
+                icon = Icons.Rounded.Public,
+                iconBgLight = Color(0xFF00B4A8),
+                iconBgDark = Color(0xFF0E6E68)
             )
             Spacer(Modifier.width(Spacing.md))
             Text(
@@ -219,11 +217,10 @@ fun ChatDrawerContent(
                 .padding(horizontal = Spacing.md, vertical = Spacing.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                FeatherIcons.Settings,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
+            DrawerNavIcon(
+                icon = Icons.Rounded.Settings,
+                iconBgLight = Color(0xFF0EA5E9),
+                iconBgDark = Color(0xFF0369A1)
             )
             Spacer(Modifier.width(Spacing.md))
             Text(
@@ -301,6 +298,31 @@ fun ChatDrawerContent(
 }
 
 /**
+ * 侧边栏导航图标块：彩色圆角背景 + 白色图标，日夜间背景色随主题切换。
+ */
+@Composable
+private fun DrawerNavIcon(
+    icon: ImageVector,
+    iconBgLight: Color,
+    iconBgDark: Color
+) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (LocalAppDarkMode.current) iconBgDark else iconBgLight),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/**
  * 会话行长按弹出的功能菜单：重命名 / 删除。底部 sheet 样式参照 git 分支的 RefActionSheet。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -334,27 +356,33 @@ private fun SessionActionSheet(
                     .padding(bottom = Spacing.md)
             )
             SheetActionRow(
-                icon = FeatherIcons.Edit2,
+                icon = Icons.Rounded.Edit,
                 label = stringResource(R.string.common_rename),
                 tint = MaterialTheme.colorScheme.onSurface,
+                iconBgLight = Color(0xFF4C8DFF),
+                iconBgDark = Color(0xFF2B4E9E),
                 onClick = {
                     onDismiss()
                     onRename()
                 }
             )
             SheetActionRow(
-                icon = FeatherIcons.Download,
+                icon = Icons.Rounded.Download,
                 label = stringResource(R.string.chat_export_session),
                 tint = MaterialTheme.colorScheme.onSurface,
+                iconBgLight = Color(0xFF22C55E),
+                iconBgDark = Color(0xFF14693A),
                 onClick = {
                     onDismiss()
                     onExport()
                 }
             )
             SheetActionRow(
-                icon = FeatherIcons.Trash2,
+                icon = Icons.Rounded.Delete,
                 label = stringResource(R.string.common_delete),
                 tint = MaterialTheme.colorScheme.error,
+                iconBgLight = Color(0xFFEF4444),
+                iconBgDark = Color(0xFFB91C1C),
                 onClick = {
                     onDismiss()
                     onDelete()
@@ -369,6 +397,8 @@ private fun SheetActionRow(
     icon: ImageVector,
     label: String,
     tint: Color,
+    iconBgLight: Color,
+    iconBgDark: Color,
     onClick: () -> Unit
 ) {
     Surface(onClick = onClick, color = Color.Transparent) {
@@ -378,12 +408,20 @@ private fun SheetActionRow(
                 .padding(horizontal = Spacing.lg, vertical = Spacing.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = tint
-            )
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (LocalAppDarkMode.current) iconBgDark else iconBgLight),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = Color.White
+                )
+            }
             Spacer(Modifier.width(Spacing.lg))
             Text(
                 text = label,

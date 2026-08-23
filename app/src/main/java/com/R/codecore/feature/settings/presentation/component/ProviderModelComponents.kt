@@ -22,6 +22,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,14 +74,6 @@ import com.R.codecore.feature.agent.data.local.entity.ModelCapabilityOverrideEnt
 import com.R.codecore.feature.settings.data.remote.ModelTestResult
 import com.R.codecore.feature.settings.domain.model.ModelMetadata
 import com.R.codecore.feature.settings.domain.model.ProviderType
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.AlertCircle
-import compose.icons.feathericons.Check
-import compose.icons.feathericons.Copy
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Settings
-import compose.icons.feathericons.X
 import kotlinx.coroutines.launch
 
 @Composable
@@ -103,7 +103,7 @@ private fun ModelMetadataTags(metadata: ModelMetadata?, hasOverride: Boolean = f
                 OverlayBadgeTag(label = "思考（Reasoning）", enabled = it.supportsReasoning, overridden = hasOverride && it.inferenceReason?.overrideReasoning != null)
             }
             if (hasOverride) {
-                ModelTag(text = "已覆盖（Manual）", icon = FeatherIcons.Settings)
+                ModelTag(text = "已覆盖（Manual）", icon = Icons.Rounded.Settings)
             }
         }
     }
@@ -130,7 +130,7 @@ private fun OverlayBadgeTag(label: String, enabled: Boolean, overridden: Boolean
     }
     // 「关」的场景（被用户手动覆盖成 false）也要露个小徽章，免得小白以为显示丢了
     if (!enabled && overridden) {
-        ModelTag(text = "禁用$label（Manual Off）", icon = FeatherIcons.X)
+        ModelTag(text = "禁用$label（Manual Off）", icon = Icons.Rounded.Close)
     }
 }
 
@@ -219,7 +219,7 @@ internal fun ProviderModelRow(
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
-                        FeatherIcons.Settings,
+                        Icons.Rounded.Settings,
                         contentDescription = "手动覆盖模型能力（识图Vision/工具Tools/思考Reasoning）",
                         tint = if (hasOverride) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
@@ -244,7 +244,7 @@ internal fun ProviderModelRow(
             onRemove?.let { onDel ->
                 IconButton(onClick = onDel, modifier = Modifier.size(32.dp)) {
                     Icon(
-                        FeatherIcons.X,
+                        Icons.Rounded.Close,
                         contentDescription = stringResource(R.string.common_delete),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
@@ -264,7 +264,7 @@ internal fun ProviderModelRow(
                     )
             ) {
                 Icon(
-                    if (r.success) FeatherIcons.Check else FeatherIcons.AlertCircle,
+                    if (r.success) Icons.Rounded.Check else Icons.Rounded.Warning,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(14.dp)
@@ -329,7 +329,7 @@ internal fun ProviderModelRow(
                         }
                     }) {
                         Icon(
-                            if (copied) FeatherIcons.Check else FeatherIcons.Copy,
+                            if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
                             contentDescription = "Copy Error",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -385,7 +385,7 @@ internal fun FetchModelRow(
             ModelMetadataTags(metadata = metadata, hasOverride = false)
         }
         IconButton(onClick = onAdd, modifier = Modifier.size(32.dp)) {
-            Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -447,7 +447,7 @@ private fun TriStateCapabilityRow(
                 )
             },
             leadingIcon = if (overrideValue != null) {
-                { Icon(FeatherIcons.Settings, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                { Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(14.dp)) }
             } else null
         )
         Column(modifier = Modifier.weight(1f)) {
@@ -533,7 +533,7 @@ internal fun CapabilityOverrideSheet(
                         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
                     }
                 ) {
-                    Icon(FeatherIcons.RefreshCw, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(Spacing.xs))
                     Text("恢复自动推荐")
                 }
@@ -634,7 +634,7 @@ internal fun CapabilityOverrideSheet(
                         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
                     }
                 ) {
-                    Icon(FeatherIcons.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(Spacing.xs))
                     Text(
                         if (!dirty) "保存覆盖"

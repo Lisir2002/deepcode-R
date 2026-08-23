@@ -55,13 +55,13 @@ import com.R.codecore.feature.git.domain.model.GitGraph
 import com.R.codecore.feature.git.domain.model.GitGraphRef
 import com.R.codecore.feature.git.domain.model.GraphCommit
 import com.R.codecore.feature.git.domain.model.GraphEdge
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Cloud
-import compose.icons.feathericons.File
-import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.Tag
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Tag
 
 @Composable
 internal fun LogTab(
@@ -186,7 +186,7 @@ private fun LogOverview(commits: List<GitCommit>, expandedCount: Int) {
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            FeatherIcons.File,
+                            Icons.Rounded.Description,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(20.dp)
@@ -303,7 +303,7 @@ private fun GraphCommitRow(
                 }
                 Row(verticalAlignment = Alignment.Top) {
                     Icon(
-                        imageVector = if (isExpanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+                        imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                         contentDescription = if (isExpanded) stringResource(R.string.common_collapse) else stringResource(R.string.common_expand),
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -510,7 +510,7 @@ private fun RefPills(refs: List<GitGraphRef>) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = if (ref.isRemote) FeatherIcons.Cloud else if (ref.isBranch) FeatherIcons.GitBranch else FeatherIcons.Tag,
+                        imageVector = if (ref.isRemote) Icons.Rounded.Cloud else if (ref.isBranch) Icons.Rounded.AccountTree else Icons.Rounded.Tag,
                         contentDescription = null,
                         tint = fg,
                         modifier = Modifier.size(11.dp)

@@ -47,10 +47,10 @@ import com.R.codecore.R
 import com.R.codecore.core.theme.Brand
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronUp
-import compose.icons.feathericons.Star
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Star
 
 @Composable
 internal fun ThinkingBubble() {
@@ -202,7 +202,7 @@ internal fun ReasoningBubble(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        FeatherIcons.Star,
+                        Icons.Rounded.Star,
                         contentDescription = null,
                         tint = Brand.IconGray,
                         modifier = Modifier.size(16.dp)
@@ -215,7 +215,7 @@ internal fun ReasoningBubble(
                         modifier = Modifier.weight(1f)
                     )
                     Icon(
-                        if (effectiveExpanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                        if (effectiveExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                         contentDescription = if (effectiveExpanded) stringResource(R.string.common_collapse) else stringResource(R.string.common_expand),
                         tint = Brand.IconGray,
                         modifier = Modifier.size(18.dp)
@@ -265,7 +265,7 @@ internal fun ReasoningBubble(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            FeatherIcons.ChevronDown,
+                            Icons.Rounded.KeyboardArrowDown,
                             contentDescription = stringResource(R.string.common_expand),
                             tint = Brand.IconGray,
                             modifier = Modifier.size(16.dp)

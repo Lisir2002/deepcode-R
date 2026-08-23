@@ -33,6 +33,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Construction
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -53,14 +61,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.R.codecore.feature.agent.domain.mcp.McpServerConfig
 import com.R.codecore.feature.agent.domain.mcp.McpToolDescriptor
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Check
-import compose.icons.feathericons.FileText
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Shield
-import compose.icons.feathericons.Tool
-import compose.icons.feathericons.Trash2
-import compose.icons.feathericons.X
 import kotlinx.serialization.json.JsonObject
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
@@ -138,7 +138,7 @@ fun McpServerEditDialog(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            FeatherIcons.X,
+                            Icons.Rounded.Close,
                             contentDescription = stringResource(R.string.common_close),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -159,7 +159,7 @@ fun McpServerEditDialog(
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                FeatherIcons.FileText,
+                                Icons.Rounded.Description,
                                 contentDescription = stringResource(R.string.mcp_view_logs),
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
@@ -170,7 +170,7 @@ fun McpServerEditDialog(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            FeatherIcons.RefreshCw,
+                            Icons.Rounded.Refresh,
                             contentDescription = stringResource(R.string.mcp_refresh_tools),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -351,7 +351,7 @@ fun McpServerEditDialog(
                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Icon(
-                                            FeatherIcons.Tool,
+                                            Icons.Rounded.Construction,
                                             contentDescription = null,
                                             modifier = Modifier.size(36.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -446,7 +446,7 @@ fun McpServerEditDialog(
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Icon(
-                                                    FeatherIcons.Shield,
+                                                    Icons.Rounded.Security,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(16.dp),
                                                     tint = MaterialTheme.colorScheme.primary
@@ -517,7 +517,7 @@ fun McpServerEditDialog(
                             .height(48.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(FeatherIcons.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(stringResource(R.string.common_save), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                     }
@@ -528,7 +528,7 @@ fun McpServerEditDialog(
                             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(FeatherIcons.Trash2, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Rounded.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(stringResource(R.string.mcp_delete_server))
                     }

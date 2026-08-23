@@ -50,9 +50,9 @@ import androidx.compose.ui.unit.dp
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.backup.domain.BackupOptions
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Download
-import compose.icons.feathericons.Upload
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Upload
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -143,14 +143,14 @@ internal fun BackupSection(viewModel: BackupViewModel) {
         )
         BackupInfoCard()
         ActionCard(
-            icon = FeatherIcons.Download,
+            icon = Icons.Rounded.Download,
             title = stringResource(R.string.backup_export_title),
             subtitle = stringResource(R.string.backup_export_subtitle),
             enabled = state !is BackupState.Working,
             onClick = { pendingAction = PendingAction.ExportOptions }
         )
         ActionCard(
-            icon = FeatherIcons.Upload,
+            icon = Icons.Rounded.Upload,
             title = stringResource(R.string.backup_import_title),
             subtitle = stringResource(R.string.backup_import_subtitle),
             enabled = state !is BackupState.Working,

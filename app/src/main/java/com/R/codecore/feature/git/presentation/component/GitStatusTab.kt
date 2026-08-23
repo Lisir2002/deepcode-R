@@ -40,13 +40,13 @@ import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.git.domain.model.GitFileChange
 import com.R.codecore.feature.git.domain.model.GitStatus
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.DownloadCloud
-import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.GitCommit
-import compose.icons.feathericons.Minus
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.UploadCloud
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Commit
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Upload
 
 @Composable
 internal fun StatusTab(
@@ -91,13 +91,13 @@ internal fun StatusTab(
                 if (ss.staged.isNotEmpty()) {
                     item { SectionHeader(stringResource(R.string.git_staged_count, ss.staged.size)) }
                     items(ss.staged, key = { "s-${it.path}" }) { f ->
-                        FileRow(f, actionIcon = FeatherIcons.Minus, actionDesc = stringResource(R.string.git_unstage), onAction = { onUnstage(f.path) }, enabled = !busy)
+                        FileRow(f, actionIcon = Icons.Rounded.Remove, actionDesc = stringResource(R.string.git_unstage), onAction = { onUnstage(f.path) }, enabled = !busy)
                     }
                 }
                 if (ss.unstaged.isNotEmpty()) {
                     item { SectionHeader(stringResource(R.string.git_modified_count, ss.unstaged.size)) }
                     items(ss.unstaged, key = { "u-${it.path}" }) { f ->
-                        FileRow(f, actionIcon = FeatherIcons.Plus, actionDesc = stringResource(R.string.git_stage), onAction = { onStage(f.path) }, enabled = !busy, onClick = { onFileDiff(f.path) })
+                        FileRow(f, actionIcon = Icons.Rounded.Add, actionDesc = stringResource(R.string.git_stage), onAction = { onStage(f.path) }, enabled = !busy, onClick = { onFileDiff(f.path) })
                     }
                 }
                 if (ss.untracked.isNotEmpty()) {
@@ -105,7 +105,7 @@ internal fun StatusTab(
                     items(ss.untracked, key = { it }) { path ->
                         FileRow(
                             file = GitFileChange(path, "?", staged = false),
-                            actionIcon = FeatherIcons.Plus,
+                            actionIcon = Icons.Rounded.Add,
                             actionDesc = stringResource(R.string.git_stage),
                             onAction = { onStage(path) },
                             enabled = !busy
@@ -133,7 +133,7 @@ private fun StatusOverview(status: GitStatus?, clean: Boolean) {
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            FeatherIcons.GitBranch,
+                            Icons.Rounded.AccountTree,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(20.dp)
@@ -210,7 +210,7 @@ private fun StatusActionsBar(
     BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm)) {
         if (maxWidth < 420.dp) {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                ActionButton(stringResource(R.string.git_commit_changes), FeatherIcons.GitCommit, prominent = true, enabled = canCommit, onClick = onCommit, modifier = Modifier.fillMaxWidth())
+                ActionButton(stringResource(R.string.git_commit_changes), Icons.Rounded.Commit, prominent = true, enabled = canCommit, onClick = onCommit, modifier = Modifier.fillMaxWidth())
                 if (!hasIdentity) {
                     Text(
                         stringResource(R.string.git_no_identity),
@@ -219,18 +219,18 @@ private fun StatusActionsBar(
                     )
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    ActionButton(stringResource(R.string.git_stage_all), FeatherIcons.Plus, enabled = !busy, onClick = onStageAll, modifier = Modifier.weight(1f))
-                    ActionButton(stringResource(R.string.git_pull), FeatherIcons.DownloadCloud, enabled = !busy && hasRemote, onClick = onPull, modifier = Modifier.weight(1f))
-                    ActionButton(stringResource(R.string.git_push), FeatherIcons.UploadCloud, enabled = !busy && hasRemote, onClick = onPush, modifier = Modifier.weight(1f))
+                    ActionButton(stringResource(R.string.git_stage_all), Icons.Rounded.Add, enabled = !busy, onClick = onStageAll, modifier = Modifier.weight(1f))
+                    ActionButton(stringResource(R.string.git_pull), Icons.Rounded.Download, enabled = !busy && hasRemote, onClick = onPull, modifier = Modifier.weight(1f))
+                    ActionButton(stringResource(R.string.git_push), Icons.Rounded.Upload, enabled = !busy && hasRemote, onClick = onPush, modifier = Modifier.weight(1f))
                 }
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    ActionButton(stringResource(R.string.git_commit_changes), FeatherIcons.GitCommit, prominent = true, enabled = canCommit, onClick = onCommit, modifier = Modifier.weight(1.4f))
-                    ActionButton(stringResource(R.string.git_stage_all), FeatherIcons.Plus, enabled = !busy, onClick = onStageAll, modifier = Modifier.weight(1f))
-                    ActionButton(stringResource(R.string.git_pull), FeatherIcons.DownloadCloud, enabled = !busy && hasRemote, onClick = onPull, modifier = Modifier.weight(1f))
-                    ActionButton(stringResource(R.string.git_push), FeatherIcons.UploadCloud, enabled = !busy && hasRemote, onClick = onPush, modifier = Modifier.weight(1f))
+                    ActionButton(stringResource(R.string.git_commit_changes), Icons.Rounded.Commit, prominent = true, enabled = canCommit, onClick = onCommit, modifier = Modifier.weight(1.4f))
+                    ActionButton(stringResource(R.string.git_stage_all), Icons.Rounded.Add, enabled = !busy, onClick = onStageAll, modifier = Modifier.weight(1f))
+                    ActionButton(stringResource(R.string.git_pull), Icons.Rounded.Download, enabled = !busy && hasRemote, onClick = onPull, modifier = Modifier.weight(1f))
+                    ActionButton(stringResource(R.string.git_push), Icons.Rounded.Upload, enabled = !busy && hasRemote, onClick = onPush, modifier = Modifier.weight(1f))
                 }
                 if (!hasIdentity) {
                     Text(

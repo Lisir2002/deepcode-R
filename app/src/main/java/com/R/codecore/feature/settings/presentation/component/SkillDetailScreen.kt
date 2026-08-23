@@ -36,6 +36,14 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,14 +78,6 @@ import com.R.codecore.feature.agent.presentation.component.MarkdownContent
 import com.R.codecore.feature.git.presentation.component.highlightCode
 import com.R.codecore.feature.git.presentation.component.inferSyntaxLanguage
 import com.R.codecore.feature.settings.presentation.SkillDetailViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Edit2
-import compose.icons.feathericons.File
-import compose.icons.feathericons.Folder
-import compose.icons.feathericons.Share2
 import java.io.File
 
 /**
@@ -153,13 +153,13 @@ fun SkillDetailScreen(
             AppTopAppBar(
                 title = skill?.name ?: stringResource(R.string.skill_edit_title),
                 onNavigateBack = onNavigateBack,
-                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                 navigationContentDescription = stringResource(R.string.common_back)
             ) {
                 if (skill?.source == SkillSourceType.LOCAL) {
                     IconButton(onClick = { viewModel.export() }) {
                         Icon(
-                            imageVector = FeatherIcons.Share2,
+                            imageVector = Icons.Rounded.Share,
                             contentDescription = stringResource(R.string.skill_detail_export),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
@@ -167,7 +167,7 @@ fun SkillDetailScreen(
                     }
                     IconButton(onClick = { onEditSkill(skillId) }) {
                         Icon(
-                            imageVector = FeatherIcons.Edit2,
+                            imageVector = Icons.Rounded.Edit,
                             contentDescription = stringResource(R.string.skill_edit),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
@@ -176,7 +176,7 @@ fun SkillDetailScreen(
                 }
                 IconButton(onClick = { showDirectorySheet = true }) {
                     Icon(
-                        imageVector = FeatherIcons.Folder,
+                        imageVector = Icons.Rounded.Folder,
                         contentDescription = stringResource(R.string.skill_detail_directory),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
@@ -261,11 +261,11 @@ private fun FilesTab(
             when {
                 loading -> AppLoadingState(stringResource(R.string.skill_loading))
                 skill == null -> AppEmptyState(
-                    icon = FeatherIcons.File,
+                    icon = Icons.Rounded.InsertDriveFile,
                     title = stringResource(R.string.skill_not_found)
                 )
                 selectedPath == null -> AppEmptyState(
-                    icon = FeatherIcons.Folder,
+                    icon = Icons.Rounded.Folder,
                     title = stringResource(R.string.skill_detail_no_files)
                 )
                 else -> {
@@ -303,7 +303,7 @@ private fun DetailTab(skill: Skill?) {
     ) {
         if (skill == null) {
             AppEmptyState(
-                icon = FeatherIcons.File,
+                icon = Icons.Rounded.InsertDriveFile,
                 title = stringResource(R.string.skill_not_found)
             )
         } else {
@@ -419,7 +419,7 @@ private fun CurrentFileBar(path: String, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = FeatherIcons.File,
+                imageVector = Icons.Rounded.InsertDriveFile,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(14.dp)
@@ -435,7 +435,7 @@ private fun CurrentFileBar(path: String, onClick: () -> Unit) {
                 modifier = Modifier.weight(1f)
             )
             Icon(
-                imageVector = FeatherIcons.ChevronDown,
+                imageVector = Icons.Rounded.KeyboardArrowDown,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
@@ -467,7 +467,7 @@ private fun DirectorySheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = FeatherIcons.Folder,
+                    imageVector = Icons.Rounded.Folder,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
@@ -533,7 +533,7 @@ private fun DirectoryNodeRow(
         ) {
             if (isDirectory) {
                 Icon(
-                    imageVector = if (isExpanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+                    imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(14.dp)
@@ -542,7 +542,7 @@ private fun DirectoryNodeRow(
                 Spacer(Modifier.width(16.dp))
             }
             Icon(
-                imageVector = if (isDirectory) FeatherIcons.Folder else FeatherIcons.File,
+                imageVector = if (isDirectory) Icons.Rounded.Folder else Icons.Rounded.InsertDriveFile,
                 contentDescription = null,
                 tint = if (isDirectory) MaterialTheme.colorScheme.primary
                 else if (isSelected) MaterialTheme.colorScheme.primary
@@ -598,7 +598,7 @@ private fun CodeContentView(code: String, path: String) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = FeatherIcons.File,
+                    imageVector = Icons.Rounded.InsertDriveFile,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(14.dp)
@@ -675,7 +675,7 @@ private fun ImageContentView(file: File) {
 @Composable
 private fun BinaryPlaceholder(path: String) {
     AppEmptyState(
-        icon = FeatherIcons.File,
+        icon = Icons.Rounded.InsertDriveFile,
         title = stringResource(R.string.skill_detail_binary),
         subtitle = path
     )

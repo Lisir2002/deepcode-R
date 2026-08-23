@@ -71,6 +71,7 @@ import com.R.codecore.core.theme.AppEmptyState
 import com.R.codecore.core.theme.AppLoadingState
 import com.R.codecore.core.theme.AppTopAppBar
 import com.R.codecore.core.theme.Elevation
+import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.domain.container.ContainerInitState
@@ -80,28 +81,13 @@ import com.R.codecore.feature.terminal.domain.TabColorMarker
 import com.R.codecore.feature.terminal.domain.TerminalTab
 import com.R.codecore.feature.terminal.presentation.TerminalViewModel
 import com.termux.view.TerminalView
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.ArrowDown
-import compose.icons.feathericons.ArrowRight
-import compose.icons.feathericons.ArrowUp
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.Copy
-import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.Edit3
-import compose.icons.feathericons.Grid
-import compose.icons.feathericons.Menu
-import compose.icons.feathericons.MoreVertical
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.RotateCcw
-import compose.icons.feathericons.Search
-import compose.icons.feathericons.Settings
-import compose.icons.feathericons.Share2
-import compose.icons.feathericons.Trash2
-import compose.icons.feathericons.Type
-import compose.icons.feathericons.X
-import compose.icons.feathericons.XCircle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -158,16 +144,16 @@ fun TerminalScreen(
             AppTopAppBar(
                 title = stringResource(R.string.terminal_title),
                 onNavigateBack = onNavigateBack,
-                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                 navigationContentDescription = stringResource(R.string.common_back)
             ) {
                 // 重连下拉：当前 / 全部 / 重启容器
                 Box {
                     IconButton(onClick = { showReconnectMenu = true }, modifier = Modifier.size(40.dp)) {
                         Icon(
-                            FeatherIcons.RefreshCw,
+                            Icons.Rounded.Refresh,
                             contentDescription = stringResource(R.string.terminal_reconnect_tab),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (LocalAppDarkMode.current) Color(0xFF4ADE80) else Color(0xFF22C55E),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -182,9 +168,9 @@ fun TerminalScreen(
                 // 终端设置（齿轮 → 跳转终端设置页）
                 IconButton(onClick = onNavigateToSettings, modifier = Modifier.size(40.dp)) {
                     Icon(
-                        FeatherIcons.Settings,
+                        Icons.Rounded.Settings,
                         contentDescription = stringResource(R.string.settings_terminal),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (LocalAppDarkMode.current) Color(0xFF7C9FFF) else Color(0xFF4C8DFF),
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -192,9 +178,9 @@ fun TerminalScreen(
                 Box {
                     IconButton(onClick = { showTerminalMenu = TerminalMenuAnchor.Bar }, modifier = Modifier.size(40.dp)) {
                         Icon(
-                            FeatherIcons.MoreVertical,
+                            Icons.Rounded.MoreVert,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (LocalAppDarkMode.current) Color(0xFF94A3B8) else Color(0xFF64748B),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -557,24 +543,24 @@ private fun TerminalFirstRunBanner(
                     TerminalViewModel.BannerType.ContainerNotInstalled -> {
                         PrimaryButton(
                             onClick = onInitContainer,
-                            icon = FeatherIcons.Plus,
+                            icon = Icons.Rounded.Add,
                             text = stringResource(R.string.ui_______30947f5e)
                         )
                         SecondaryButton(
                             onClick = onGoSettings,
-                            icon = FeatherIcons.Settings,
+                            icon = Icons.Rounded.Settings,
                             text = stringResource(R.string.ui_______dc25a273)
                         )
                     }
                     TerminalViewModel.BannerType.PythonMissing -> {
                         PrimaryButton(
                             onClick = onInstallRecommended,
-                            icon = FeatherIcons.Cpu,
+                            icon = Icons.Rounded.Memory,
                             text = stringResource(R.string.ui_____ebd237c5)
                         )
                         SecondaryButton(
                             onClick = onGoSettings,
-                            icon = FeatherIcons.Settings,
+                            icon = Icons.Rounded.Settings,
                             text = stringResource(R.string.ui_______dc25a273_2)
                         )
                     }

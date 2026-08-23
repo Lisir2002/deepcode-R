@@ -33,10 +33,10 @@ import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.domain.container.progress.InstallPhaseType
 import com.R.codecore.feature.agent.domain.container.progress.InstallProgress
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.CheckCircle
-import compose.icons.feathericons.Loader
-import compose.icons.feathericons.XCircle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Sync
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.Json
@@ -193,21 +193,21 @@ internal fun EnvironmentComponentRow(component: EnvironmentComponentState) {
     val isDark = LocalAppDarkMode.current
     val badge = when (component.status) {
         EnvironmentStatus.INSTALLED -> ComponentBadge(
-            FeatherIcons.CheckCircle,
+            Icons.Rounded.CheckCircle,
             Color(0xFF22C55E),
             stringResource(R.string.env_status_installed),
             Color(0xFF22C55E),
             Color(0xFF22C55E).copy(alpha = if (isDark) 0.16f else 0.1f)
         )
         EnvironmentStatus.MISSING -> ComponentBadge(
-            FeatherIcons.XCircle,
+            Icons.Rounded.Cancel,
             Color(0xFFEF4444),
             stringResource(R.string.env_status_missing),
             Color(0xFFEF4444),
             Color(0xFFEF4444).copy(alpha = if (isDark) 0.16f else 0.1f)
         )
         EnvironmentStatus.INSTALLING -> ComponentBadge(
-            FeatherIcons.Loader,
+            Icons.Rounded.Sync,
             Brand.Blue,
             stringResource(R.string.env_status_installing),
             Brand.Blue,

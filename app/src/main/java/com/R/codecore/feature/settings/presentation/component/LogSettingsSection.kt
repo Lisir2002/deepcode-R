@@ -23,6 +23,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -63,12 +69,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Filter
-import compose.icons.feathericons.Play
-import compose.icons.feathericons.Search
-import compose.icons.feathericons.Square
-import compose.icons.feathericons.X
 import com.R.codecore.core.util.LogLineParser
 import com.R.codecore.core.util.ParsedLogLine
 import androidx.compose.material3.HorizontalDivider
@@ -262,7 +262,7 @@ private fun ColumnScope.LogViewerContent(
                 // 实时尾随按钮
                 IconButton(onClick = onToggleLiveTail) {
                     Icon(
-                        imageVector = if (state.liveTailEnabled) FeatherIcons.Square else FeatherIcons.Play,
+                        imageVector = if (state.liveTailEnabled) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
                         contentDescription = if (state.liveTailEnabled) stringResource(R.string.ui______f5c9f705) else stringResource(R.string.ui______87c117ed),
                         tint = if (state.liveTailEnabled) {
                             MaterialTheme.colorScheme.primary
@@ -284,7 +284,7 @@ private fun ColumnScope.LogViewerContent(
                         hasBadge = hasActiveFilters,
                         icon = {
                             Icon(
-                                imageVector = FeatherIcons.Filter,
+                                imageVector = Icons.Rounded.FilterList,
                                 contentDescription = stringResource(R.string.log_filter_title),
                                 tint = if (state.filterPanelExpanded || hasActiveFilters) {
                                     MaterialTheme.colorScheme.primary
@@ -344,12 +344,12 @@ private fun ColumnScope.LogViewerContent(
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(stringResource(R.string.log_search_hint)) },
             leadingIcon = {
-                Icon(FeatherIcons.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp))
             },
             trailingIcon = {
                 if (state.searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onSearchQuery("") }) {
-                        Icon(FeatherIcons.X, contentDescription = stringResource(R.string.ui____4403fca0), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.ui____4403fca0), modifier = Modifier.size(18.dp))
                     }
                 }
             },
@@ -540,7 +540,7 @@ private fun FilterPanel(
                 }
                 IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
                     Icon(
-                        FeatherIcons.X,
+                        Icons.Rounded.Close,
                         contentDescription = stringResource(R.string.common_close),
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant

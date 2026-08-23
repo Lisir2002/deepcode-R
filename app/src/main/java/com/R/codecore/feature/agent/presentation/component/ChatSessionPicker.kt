@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.dp
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.domain.model.ChatSession
-import compose.icons.FeatherIcons
 
 /**
  * 单条会话行：短按选中，长按弹出功能菜单（重命名/删除）。供侧边栏历史记录列表复用。

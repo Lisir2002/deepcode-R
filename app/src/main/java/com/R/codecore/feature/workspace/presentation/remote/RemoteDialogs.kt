@@ -21,10 +21,10 @@ import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.workspace.domain.model.RemoteConnection
 import com.R.codecore.feature.workspace.domain.model.RemoteMount
 import com.R.codecore.feature.workspace.domain.model.RemoteProtocol
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Eye
-import compose.icons.feathericons.EyeOff
-import compose.icons.feathericons.Folder
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
 
@@ -120,7 +120,7 @@ fun AddRemoteConnectionDialog(
                 trailingIcon = if (isLocal) {
                     {
                         IconButton(onClick = { folderPicker.launch(null) }) {
-                            Icon(FeatherIcons.Folder, contentDescription = stringResource(R.string.remote_select_dir), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Rounded.Folder, contentDescription = stringResource(R.string.remote_select_dir), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 } else null
@@ -136,7 +136,7 @@ fun AddRemoteConnectionDialog(
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (passwordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     trailingIcon = {
-                        val image = if (passwordVisible) FeatherIcons.Eye else FeatherIcons.EyeOff
+                        val image = if (passwordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(image, stringResource(R.string.remote_toggle_password), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -288,7 +288,7 @@ fun AddRemoteMountDialog(
                     onClick = { showBrowser = true },
                     enabled = selectedConnectionId.isNotEmpty()
                 ) {
-                    Icon(FeatherIcons.Folder, contentDescription = stringResource(R.string.remote_browse_dir), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Rounded.Folder, contentDescription = stringResource(R.string.remote_browse_dir), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -432,7 +432,7 @@ fun RemoteDirectoryBrowserDialog(
                                     val parent = currentPath.trimEnd('/').substringBeforeLast('/')
                                     currentPath = if (parent.isEmpty()) "/" else "$parent/"
                                 }) {
-                                    Icon(FeatherIcons.Folder, contentDescription = null)
+                                    Icon(Icons.Rounded.Folder, contentDescription = null)
                                     Spacer(Modifier.width(8.dp))
                                     Text(stringResource(R.string.remote_parent_dir))
                                 }
@@ -442,7 +442,7 @@ fun RemoteDirectoryBrowserDialog(
                             TextButton(onClick = {
                                 currentPath = if (currentPath == "/") "/$dir/" else "$currentPath$dir/"
                             }) {
-                                Icon(FeatherIcons.Folder, contentDescription = null)
+                                Icon(Icons.Rounded.Folder, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
                                 Text(dir)
                             }

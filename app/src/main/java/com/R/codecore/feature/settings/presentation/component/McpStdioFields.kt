@@ -20,6 +20,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
@@ -27,9 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Trash2
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
 
@@ -114,7 +114,7 @@ internal fun McpStdioFields(
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                FeatherIcons.Trash2,
+                                Icons.Rounded.Delete,
                                 contentDescription = stringResource(R.string.common_delete),
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(20.dp)
@@ -138,7 +138,7 @@ internal fun McpStdioFields(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
-                    FeatherIcons.Plus,
+                    Icons.Rounded.Add,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -228,7 +228,7 @@ internal fun McpStdioFields(
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                FeatherIcons.Trash2,
+                                Icons.Rounded.Delete,
                                 contentDescription = stringResource(R.string.common_delete),
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(20.dp)
@@ -252,7 +252,7 @@ internal fun McpStdioFields(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
-                    FeatherIcons.Plus,
+                    Icons.Rounded.Add,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant

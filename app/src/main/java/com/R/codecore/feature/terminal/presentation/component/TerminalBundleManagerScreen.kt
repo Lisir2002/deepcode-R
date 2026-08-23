@@ -24,6 +24,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -66,12 +71,6 @@ import com.R.codecore.feature.terminal.data.bundle.BundleInstallState
 import com.R.codecore.feature.terminal.data.bundle.TerminalBundleId
 import com.R.codecore.feature.terminal.presentation.TerminalSettingsViewModel
 import com.R.codecore.feature.terminal.presentation.component.toUi
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Package
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Trash2
 import kotlinx.coroutines.launch
 
 /**
@@ -126,13 +125,13 @@ fun TerminalBundleManagerScreen(
             AppTopAppBar(
                 title = stringResource(R.string.ui_______dbda4e51),
                 onNavigateBack = onNavigateBack,
-                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                 navigationContentDescription = stringResource(R.string.common_back),
                 actions = {
                     // 手动刷新：从容器真实 apk 世界重新同步 bundle 安装状态（联动检测）
                     IconButton(onClick = viewModel::refreshBundles) {
                         Icon(
-                            imageVector = FeatherIcons.RefreshCw,
+                            imageVector = Icons.Rounded.Refresh,
                             contentDescription = stringResource(R.string.ui________22653573),
                             tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
@@ -282,7 +281,7 @@ fun TerminalBundleManagerScreen(
                             Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        FeatherIcons.Package,
+                                        Icons.Rounded.Inventory2,
                                         null,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(18.dp)
@@ -295,7 +294,7 @@ fun TerminalBundleManagerScreen(
                                     )
                                     NeutralTextButton(
                                         onClick = viewModel::refreshCustom,
-                                        icon = FeatherIcons.RefreshCw,
+                                        icon = Icons.Rounded.Refresh,
                                         text = "刷新"
                                     )
                                 }
@@ -336,7 +335,7 @@ fun TerminalBundleManagerScreen(
                                                     DangerTextButton(
                                                         onClick = { viewModel.uninstallCustom(pkg) },
                                                         enabled = customInstallState == null,
-                                                        icon = FeatherIcons.Trash2,
+                                                        icon = Icons.Rounded.Delete,
                                                         text = "卸载"
                                                     )
                                                 }
@@ -390,7 +389,7 @@ private fun CustomInstallCard(
                 PrimaryButton(
                     onClick = onInstallClick,
                     enabled = containerReady && customInstallInput.isNotBlank() && installIdle,
-                    icon = FeatherIcons.Plus,
+                    icon = Icons.Rounded.Add,
                     text = stringResource(R.string.ui____e655a410)
                 )
             }
@@ -478,7 +477,7 @@ private fun QuickPacksChipRow(
                                     strokeWidth = 2.dp
                                 )
                                 else -> Icon(
-                                    FeatherIcons.Plus,
+                                    Icons.Rounded.Add,
                                     null,
                                     modifier = Modifier.size(ButtonSpec.ChipIndicatorSize)
                                 )

@@ -50,11 +50,11 @@ import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot
 import com.R.codecore.feature.agent.presentation.hasVisibleContent
 import com.R.codecore.feature.agent.presentation.MessageRole
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Check
-import compose.icons.feathericons.Copy
-import compose.icons.feathericons.Edit2
-import compose.icons.feathericons.MessageSquare
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -179,7 +179,7 @@ internal fun AgentMessageItem(
                         val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
                         // 复制
                         MessageActionIconButton(
-                            icon = if (copied) FeatherIcons.Check else FeatherIcons.Copy,
+                            icon = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
                             contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
                             tint = iconTint,
                             onClick = {
@@ -194,7 +194,7 @@ internal fun AgentMessageItem(
                         // 编辑（仅用户消息）：填入输入框，允许修改后重发
                         if (isUser && onEditClick != null) {
                             MessageActionIconButton(
-                                icon = FeatherIcons.Edit2,
+                                icon = Icons.Rounded.Edit,
                                 contentDescription = stringResource(R.string.chat_action_edit),
                                 tint = iconTint,
                                 onClick = { onEditClick(message) }
@@ -203,7 +203,7 @@ internal fun AgentMessageItem(
                         // 创建新聊天（仅用户消息）
                         if (isUser && onNewChatClick != null) {
                             MessageActionIconButton(
-                                icon = FeatherIcons.MessageSquare,
+                                icon = Icons.Rounded.ChatBubble,
                                 contentDescription = stringResource(R.string.chat_action_new_chat),
                                 tint = iconTint,
                                 onClick = { onNewChatClick(message) }

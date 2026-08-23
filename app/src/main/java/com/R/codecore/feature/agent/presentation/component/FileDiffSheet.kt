@@ -45,10 +45,10 @@ import androidx.compose.ui.unit.sp
 import com.R.codecore.R
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.AlertCircle
-import compose.icons.feathericons.CheckCircle
-import compose.icons.feathericons.Tool
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Construction
+import androidx.compose.material.icons.rounded.Warning
 
 /** 文件变更类型对应的强调色：新增=绿、修改=蓝、删除=红。 */
 private val createColor = Color(0xFF22C55E)
@@ -232,7 +232,7 @@ private fun FileChangesTab(
                             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                         ) {
                             Icon(
-                                imageVector = FeatherIcons.AlertCircle,
+                                imageVector = Icons.Rounded.Warning,
                                 contentDescription = null,
                                 tint = deleteColor,
                                 modifier = Modifier.size(16.dp)
@@ -298,7 +298,7 @@ private fun ToolLogRow(log: ToolLogEntry) {
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
                 Icon(
-                    imageVector = if (log.isError) FeatherIcons.AlertCircle else FeatherIcons.CheckCircle,
+                    imageVector = if (log.isError) Icons.Rounded.Warning else Icons.Rounded.CheckCircle,
                     contentDescription = null,
                     tint = accent,
                     modifier = Modifier.size(14.dp)
@@ -350,7 +350,7 @@ private fun EmptyHint(text: String) {
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector = FeatherIcons.Tool,
+            imageVector = Icons.Rounded.Construction,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.size(28.dp)

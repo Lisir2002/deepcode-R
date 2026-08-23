@@ -13,9 +13,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.R.codecore.feature.workspace.domain.model.RemoteConnection
 import com.R.codecore.feature.workspace.domain.model.RemoteMount
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Plus
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
 
@@ -45,7 +45,7 @@ fun RemoteServerScreen(
                     title = { Text(stringResource(R.string.remote_workspace_title)) },
                     navigationIcon = {
                         IconButton(onClick = onNavigateBack) {
-                            Icon(FeatherIcons.ArrowLeft, contentDescription = stringResource(R.string.common_back))
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back))
                         }
                     }
                 )
@@ -84,7 +84,7 @@ fun RemoteServerScreen(
                         showAddMountDialog = true
                     }
                 }) {
-                    Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.common_add))
+                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add))
                 }
             }
         }

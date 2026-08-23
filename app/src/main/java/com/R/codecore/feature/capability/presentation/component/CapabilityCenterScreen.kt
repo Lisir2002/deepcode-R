@@ -54,16 +54,16 @@ import com.R.codecore.feature.capability.presentation.ToolUiModel
 import com.R.codecore.feature.settings.data.repository.ExecutionMode
 import com.R.codecore.feature.settings.presentation.SkillsViewModel
 import com.R.codecore.feature.settings.presentation.component.SkillsScreen
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Box
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.Grid
-import compose.icons.feathericons.Lock
-import compose.icons.feathericons.Terminal
-import compose.icons.feathericons.Zap
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Terminal
 
 /** 能力中心 Tab 枚举。 */
 enum class CapabilityTab(@param:StringRes val titleRes: Int) {
@@ -93,7 +93,7 @@ fun CapabilityCenterScreen(
             AppTopAppBar(
                 title = stringResource(R.string.capability_center_title),
                 onNavigateBack = onNavigateBack,
-                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                 navigationContentDescription = stringResource(R.string.common_back)
             )
         }
@@ -139,7 +139,7 @@ fun CapabilityCenterScreen(
 private fun ToolsTab(tools: List<ToolUiModel>) {
     if (tools.isEmpty()) {
         AppEmptyState(
-            icon = FeatherIcons.Box,
+            icon = Icons.Rounded.Inventory2,
             title = stringResource(R.string.capability_tools_empty),
             subtitle = stringResource(R.string.capability_tools_empty_subtitle)
         )
@@ -179,7 +179,7 @@ private fun ToolCard(tool: ToolUiModel) {
                 PermissionBadge(policy = tool.permissionPolicy)
                 Spacer(Modifier.weight(1f))
                 Icon(
-                    imageVector = if (expanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+                    imageVector = if (expanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
@@ -346,7 +346,7 @@ private fun AgentTab(
             )
             Spacer(Modifier.height(Spacing.sm))
             AgentInfoCard(
-                icon = FeatherIcons.Terminal,
+                icon = Icons.Rounded.Terminal,
                 label = stringResource(R.string.capability_agent_execution_mode),
                 value = when (agentInfo.executionMode) {
                     ExecutionMode.LOCAL_PROOT -> stringResource(R.string.capability_agent_execution_local)
@@ -355,7 +355,7 @@ private fun AgentTab(
             )
             Spacer(Modifier.height(Spacing.sm))
             AgentInfoCard(
-                icon = FeatherIcons.Cpu,
+                icon = Icons.Rounded.Memory,
                 label = stringResource(R.string.capability_agent_active_provider),
                 value = agentInfo.activeProviderName
                     ?: stringResource(R.string.capability_agent_no_provider),
@@ -363,7 +363,7 @@ private fun AgentTab(
             )
             Spacer(Modifier.height(Spacing.sm))
             AgentInfoCard(
-                icon = FeatherIcons.Grid,
+                icon = Icons.Rounded.Dashboard,
                 label = stringResource(R.string.capability_agent_session_mode),
                 value = when (currentSessionMode) {
                     AgentMode.BUILD -> stringResource(R.string.capability_agent_mode_build)
@@ -383,19 +383,19 @@ private fun AgentTab(
             Spacer(Modifier.height(Spacing.sm))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 StatCard(
-                    icon = FeatherIcons.Box,
+                    icon = Icons.Rounded.Inventory2,
                     count = agentInfo.toolCount,
                     label = stringResource(R.string.capability_agent_tool_count),
                     modifier = Modifier.weight(1f)
                 )
                 StatCard(
-                    icon = FeatherIcons.Zap,
+                    icon = Icons.Rounded.Bolt,
                     count = agentInfo.skillCount,
                     label = stringResource(R.string.capability_agent_skill_count),
                     modifier = Modifier.weight(1f)
                 )
                 StatCard(
-                    icon = FeatherIcons.Lock,
+                    icon = Icons.Rounded.Lock,
                     count = agentInfo.permissionRuleCount,
                     label = stringResource(R.string.capability_agent_rule_count),
                     modifier = Modifier.weight(1f)

@@ -44,12 +44,12 @@ import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.workspace.domain.model.Workspace
 import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Folder
-import compose.icons.feathericons.FolderPlus
-import compose.icons.feathericons.MoreHorizontal
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Trash2
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
 
@@ -76,7 +76,7 @@ fun WorkspaceChip(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            FeatherIcons.Folder,
+            Icons.Rounded.Folder,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(16.dp)
@@ -90,7 +90,7 @@ fun WorkspaceChip(
             overflow = TextOverflow.Ellipsis
         )
         Icon(
-            FeatherIcons.MoreHorizontal,
+            Icons.Rounded.MoreHoriz,
             contentDescription = stringResource(R.string.workspace_switch),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(16.dp)
@@ -159,7 +159,7 @@ fun WorkspaceIconButton(
         modifier = modifier
     ) {
         Icon(
-            FeatherIcons.Folder,
+            Icons.Rounded.Folder,
             contentDescription = stringResource(R.string.workspace_open),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(iconSize)
@@ -241,7 +241,7 @@ private fun WorkspaceSheet(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(onClick = { showCreateDialog = true }) {
-                    Icon(FeatherIcons.Plus, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(Spacing.xs))
                     Text(stringResource(R.string.workspace_new))
                 }
@@ -319,7 +319,7 @@ private fun WorkspaceRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            FeatherIcons.Folder,
+            Icons.Rounded.Folder,
             contentDescription = null,
             tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp)
@@ -343,7 +343,7 @@ private fun WorkspaceRow(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    FeatherIcons.Trash2,
+                    Icons.Rounded.Delete,
                     contentDescription = stringResource(R.string.common_delete),
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(18.dp)
@@ -377,7 +377,7 @@ private fun CreateWorkspaceDialog(
                     placeholder = { Text(stringResource(R.string.workspace_name_hint)) },
                     isError = duplicate,
                     leadingIcon = {
-                        Icon(FeatherIcons.FolderPlus, contentDescription = null)
+                        Icon(Icons.Rounded.CreateNewFolder, contentDescription = null)
                     }
                 )
                 if (duplicate) {

@@ -63,11 +63,11 @@ import com.R.codecore.feature.proxy.presentation.ProfileNodesView
 import com.R.codecore.feature.proxy.presentation.ProxyGroupsView
 import com.R.codecore.feature.proxy.presentation.ProxyPreview
 import com.R.codecore.feature.proxy.presentation.ProxyViewModel
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Lock
-import compose.icons.feathericons.Zap
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Lock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -116,7 +116,7 @@ fun ProxyConfigScreen(
             AppTopAppBar(
                 title = stringResource(R.string.ui______d3ec5010),
                 onNavigateBack = onNavigateBack,
-                navigationIcon = FeatherIcons.ArrowLeft,
+                navigationIcon = Icons.AutoMirrored.Rounded.ArrowBack,
                 navigationContentDescription = stringResource(R.string.ui____5f411223)
             )
         }
@@ -295,7 +295,7 @@ private fun NodesEntryCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = FeatherIcons.Zap,
+                    imageVector = Icons.Rounded.Bolt,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
@@ -321,7 +321,7 @@ private fun NodesEntryCard(
             }
             Spacer(Modifier.width(Spacing.sm))
             Icon(
-                imageVector = FeatherIcons.ChevronRight,
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -536,7 +536,7 @@ private fun OverrideCard() {
             verticalAlignment = Alignment.Top
         ) {
             Icon(
-                imageVector = FeatherIcons.Lock,
+                imageVector = Icons.Rounded.Lock,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp)

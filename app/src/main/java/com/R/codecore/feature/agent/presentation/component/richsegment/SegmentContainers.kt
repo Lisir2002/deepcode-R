@@ -56,18 +56,17 @@ import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.git.presentation.component.highlightCode
 import com.R.codecore.feature.git.presentation.component.inferSyntaxLanguage
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.Archive
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronUp
-import compose.icons.feathericons.Clipboard
-import compose.icons.feathericons.File
-import compose.icons.feathericons.Globe
-import compose.icons.feathericons.Terminal
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Terminal
 import dev.snipme.highlights.model.SyntaxLanguage
 
 /** 对外暴露的「跳转行为」参数：渲染某个富文本点击时的联动动作。 */
@@ -387,7 +386,7 @@ private fun CodeBlockCard(seg: RichSegment.CodeBlock, isDark: Boolean) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                FeatherIcons.File,
+                Icons.Rounded.InsertDriveFile,
                 contentDescription = null,
                 tint = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.size(14.dp)
@@ -408,7 +407,7 @@ private fun CodeBlockCard(seg: RichSegment.CodeBlock, isDark: Boolean) {
                 onClick = { clipboard.setText(AnnotatedString(plainText)) }
             ) {
                 Icon(
-                    FeatherIcons.Clipboard,
+                    Icons.Rounded.ContentCopy,
                     contentDescription = stringResource(R.string.ui______224996c0),
                     tint = Color.White.copy(alpha = 0.9f),
                     modifier = Modifier.size(15.dp)
@@ -420,7 +419,7 @@ private fun CodeBlockCard(seg: RichSegment.CodeBlock, isDark: Boolean) {
                     onClick = { expanded = !expanded }
                 ) {
                     Icon(
-                        if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                        if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                         contentDescription = if (expanded) stringResource(R.string.ui____def9e98b) else stringResource(R.string.ui____e2edde5a),
                         tint = Color.White.copy(alpha = 0.9f),
                         modifier = Modifier.size(15.dp)
@@ -527,9 +526,9 @@ private fun CommandCard(command: String, isDark: Boolean) {
         )
         Spacer(Modifier.width(10.dp))
         Icon(
-            FeatherIcons.Terminal,
+            Icons.Rounded.Terminal,
             contentDescription = null,
-            tint = Color(0xFF22C55E),
+            tint = if (LocalAppDarkMode.current) Color(0xFF4ADE80) else Color(0xFF22C55E),
             modifier = Modifier.size(16.dp)
         )
         Spacer(Modifier.width(8.dp))
@@ -560,7 +559,7 @@ private fun CommandCard(command: String, isDark: Boolean) {
         }
         androidx.compose.material3.IconButton(onClick = { clipboard.setText(AnnotatedString(command)) }) {
             Icon(
-                FeatherIcons.Clipboard,
+                Icons.Rounded.ContentCopy,
                 contentDescription = stringResource(R.string.ui______ee92cd5e),
                 tint = Color.White.copy(alpha = 0.8f),
                 modifier = Modifier.size(16.dp)

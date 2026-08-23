@@ -48,9 +48,9 @@ import com.R.codecore.feature.agent.domain.permission.PermissionChoice
 import com.R.codecore.feature.agent.domain.tool.PendingToolPermission
 import com.R.codecore.feature.agent.domain.tool.mode.PlanApprovalRequest
 import com.R.codecore.feature.agent.presentation.AgentUIState
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.AlertCircle
-import compose.icons.feathericons.Check
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Warning
 
 /**
  * 聊天区浮层面板集合：工具权限审批、状态横幅、变更预览、计划审批。
@@ -173,14 +173,14 @@ internal fun StatusBanner(state: AgentUIState) {
                 text = state.message,
                 container = MaterialTheme.colorScheme.errorContainer,
                 content = MaterialTheme.colorScheme.onErrorContainer,
-                icon = FeatherIcons.AlertCircle
+                icon = Icons.Rounded.Warning
             )
 
             is AgentUIState.Applied -> InfoBanner(
                 text = stringResource(R.string.chat_code_changes_applied),
                 container = MaterialTheme.colorScheme.primaryContainer,
                 content = MaterialTheme.colorScheme.onPrimaryContainer,
-                icon = FeatherIcons.Check
+                icon = Icons.Rounded.Check
             )
 
             else -> {}

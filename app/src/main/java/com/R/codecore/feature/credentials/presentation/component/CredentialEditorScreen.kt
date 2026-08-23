@@ -42,11 +42,10 @@ import com.R.codecore.R
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.credentials.domain.model.GitCredential
 import com.R.codecore.feature.credentials.domain.model.newCredentialId
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowLeft
-import compose.icons.feathericons.Eye
-import compose.icons.feathericons.EyeOff
-import compose.icons.feathericons.Trash2
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 
 /**
  * 凭据编辑 BottomSheet 弹窗：从底部弹出编辑/新增 host、用户名、Token。
@@ -114,7 +113,7 @@ internal fun CredentialEditorSheet(
                         onDismiss()
                     }) {
                         Icon(
-                            FeatherIcons.Trash2,
+                            Icons.Rounded.Delete,
                             contentDescription = stringResource(R.string.credential_delete),
                             tint = MaterialTheme.colorScheme.error
                         )
@@ -151,7 +150,7 @@ internal fun CredentialEditorSheet(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 trailingIcon = {
                     IconButton(onClick = { tokenVisible = !tokenVisible }) {
-                        Icon(if (tokenVisible) FeatherIcons.EyeOff else FeatherIcons.Eye, contentDescription = if (tokenVisible) stringResource(R.string.common_hide) else stringResource(R.string.common_show))
+                        Icon(if (tokenVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, contentDescription = if (tokenVisible) stringResource(R.string.common_hide) else stringResource(R.string.common_show))
                     }
                 },
                 modifier = Modifier.fillMaxWidth()

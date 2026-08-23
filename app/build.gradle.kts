@@ -411,9 +411,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Lucide Icons
-    implementation("br.com.devsrsouza.compose.icons:feather:1.1.1")
-
     // Markdown Renderer
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.41.0")
     // Markdown Renderer — Code Syntax Highlighting

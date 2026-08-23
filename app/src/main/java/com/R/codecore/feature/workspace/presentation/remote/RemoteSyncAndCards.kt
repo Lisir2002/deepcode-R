@@ -17,15 +17,15 @@ import androidx.compose.ui.unit.dp
 import com.R.codecore.feature.workspace.domain.model.RemoteConnection
 import com.R.codecore.feature.workspace.domain.model.RemoteMount
 import com.R.codecore.feature.workspace.domain.model.RemoteProtocol
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.CheckSquare
-import compose.icons.feathericons.Cloud
-import compose.icons.feathericons.Edit2
-import compose.icons.feathericons.FileText
-import compose.icons.feathericons.HardDrive
-import compose.icons.feathericons.Layers
-import compose.icons.feathericons.Link2
-import compose.icons.feathericons.Trash2
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.ui.res.stringResource
 import com.R.codecore.R
 
@@ -58,7 +58,7 @@ fun SyncSettingsSection(
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        FeatherIcons.FileText,
+                        Icons.Rounded.Description,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
@@ -111,7 +111,7 @@ fun SyncSettingsSection(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Icon(
-                        FeatherIcons.CheckSquare,
+                        Icons.Rounded.CheckBox,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
@@ -151,7 +151,7 @@ fun SyncSettingsSection(
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        FeatherIcons.Layers,
+                        Icons.Rounded.Layers,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
@@ -214,7 +214,7 @@ fun RemoteConnectionCard(
                     modifier = Modifier.weight(1f)) {
                     val isLocal = conn.protocol == RemoteProtocol.LOCAL
                     Icon(
-                        if (isLocal) FeatherIcons.HardDrive else FeatherIcons.Cloud,
+                        if (isLocal) Icons.Rounded.Storage else Icons.Rounded.Cloud,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.width(12.dp))
@@ -230,10 +230,10 @@ fun RemoteConnectionCard(
                 }
                 Row {
                     IconButton(onClick = { onEdit(conn) }) {
-                        Icon(FeatherIcons.Edit2, contentDescription = stringResource(R.string.common_edit), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.common_edit), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     IconButton(onClick = { onDelete(conn) }) {
-                        Icon(FeatherIcons.Trash2, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -267,7 +267,7 @@ fun RemoteMountCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        FeatherIcons.Link2,
+                        Icons.Rounded.Link,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -306,10 +306,10 @@ fun RemoteMountCard(
                 }
                 Row {
                     IconButton(onClick = { onEdit(mount) }) {
-                        Icon(FeatherIcons.Edit2, contentDescription = stringResource(R.string.common_edit), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.common_edit), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     IconButton(onClick = { onDelete(mount) }) {
-                        Icon(FeatherIcons.Trash2, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

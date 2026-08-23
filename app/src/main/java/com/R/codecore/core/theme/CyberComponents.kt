@@ -50,9 +50,9 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Search
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Search
 import kotlin.math.roundToInt
 
 object CyberColors {
@@ -151,7 +151,7 @@ internal fun CyberMenuRow(
     val dividerColor = cyberColor(CyberColors.Divider, CyberColors.DarkDivider)
     val effectiveTrailing = trailing ?: {
         Icon(
-            imageVector = FeatherIcons.ChevronRight,
+            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
             contentDescription = null,
             tint = cyberColor(CyberColors.CyanDim, CyberColors.DarkCyanDim)
         )
@@ -303,7 +303,7 @@ internal fun CyberSearchBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = FeatherIcons.Search,
+                imageVector = Icons.Rounded.Search,
                 contentDescription = null,
                 tint = hintColor,
                 modifier = Modifier.size(18.dp)
