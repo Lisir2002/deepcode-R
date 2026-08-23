@@ -97,18 +97,17 @@ plugin/
 | 9 | 子代理 fork 继承上下文 + 并发/预算上限 | `feature/agent`：若引入 subagent，需带资源控制与上下文继承 | 大 | 中 |
 | 10 | 后台任务 + system-reminder 唤醒 | `feature/terminal` / MCP server：耗时任务「后台跑 + 结果唤醒」 | 中 | 中 |
 
-## 4. 候选方向与优先级
+## 4. 候选方向与深入讨论清单
 
-按「与现有模块强相关、改动可控、收益高」排序：
+全部 10 个方向均进入深入讨论范围（用户 2026-08-23 确认「都值得深入讨论」）。
+以下「批次」仅表示**讨论/实施顺序**，不表示取舍——每个方向都会深入讨论并产出设计。
 
-1. **P0｜Bash 命令静态预校验（#6）**：最小改动、直接提升终端/工具执行安全，可先落地。
-2. **P0｜Confidence Scoring 分级上报（#3）**：改进 Agent 输出质量与误报治理，改动小。
-3. **P1｜Hook 事件模型（#4）**：权限治理的体系化升级，需先设计事件模型与 asyncRewake 唤醒语义。
-4. **P1｜声明式规则引擎（#5）**：把权限策略做成用户可配置规则，与 #4 配套。
-5. **P2｜Agent 声明式定义（#1）→ 多 Agent 编排（#2）**：Agent 体系升级，改动面大，作专题。
-6. **P2｜权限分级 / Sandbox 网络 / 后台任务（#7/#8/#10）**：按需推进。
-
-> 注：子代理（#9）涉及 Android 侧资源与上下文管理，成本高，暂不优先，仅记录设计要点。
+- **批次 1（进行中）**：#6 Bash 命令静态预校验（设计定稿，实现细节待定，见第 7 节）
+- **批次 2**：#3 Confidence Scoring 分级上报
+- **批次 3**：#4 Hook 事件模型 + #5 声明式规则引擎（强耦合，成对讨论）
+- **批次 4**：#1 Agent 声明式定义 → #2 多 Agent 编排
+- **批次 5**：#7 权限分级（ask/deny + 禁绕过）/ #8 Sandbox 网络限制 / #10 后台任务 + system-reminder 唤醒
+- **批次 6**：#9 子代理 fork 继承上下文 + 并发/预算上限（重点讨论 Android 资源与上下文约束）
 
 ## 5. 决策记录（逐步讨论结论）
 
@@ -181,9 +180,22 @@ plugin/
 ### 7.4 待办
 
 - [ ] 实施 DangerousCommandGuard + 双层接入（详见 7.2）
-- [ ] 新增/补充单元测试（覆盖 4 类 Block + 2 类 Warn + 误报样本如 `chmod 777 工作区文件`、`curl -O`）
+- [ ] 新增/补充单元测试（覆盖 4 类 Block + 4 类 Warn + 误报样本如 `chmod 777 工作区文件`、`curl -O`、`ls /dev/`、`pkill nginx`）
 - [ ] 按资产同步纪律更新 `assets/prompts/`（命令纪律）与 `assets/docs/`（Bash 行为变化说明）
 - [ ] 同步 `docs/modules/`（agent 模块文档记录守卫体系）
+
+### 7.5 实现细节定稿（2026-08-23 确认）
+
+1. **B3 误报防护（三条子判定）**：dd 用参数 `of=/dev/...` 判定；mkfs.\* / fdisk 用程序名判定；重定向到设备用原始命令正则 `>[[:space:]]*/dev/` 兜底；覆盖关键文件用 `> /etc/(passwd|shadow|group|hosts|sudoers)` 正则。`ls /dev/`、`cat /dev/sda`（读设备）不拦。
+2. **B2 用 `parseChmodInfo`**：仿照 `ShellCommandParser.parseRmInfo` 解析 chmod/chown 的递归（-R/-r）、权限位（777/666）、目标路径，再与 sysDirs 比对；工作区路径不在 sysDirs，自动放行。
+3. **Block 优先级 = 安全底线最前**：`evaluateShell` 顺序 = Block → 灾难 rm → DENY 规则 → 内置白名单 → 已记忆 ALLOW → ASK。用户规则只能加严、不能放宽（即使配了 `allow: ["Bash(curl|sh)"]` 仍拦截）。
+4. **AUTO 模式**：Block 在 AUTO 分支返回 `Verdict.DENY` + `denyReason`（与现有灾难 rm 路径一致，无需新机制）。
+5. **Warn 展示整合**：`DangerousCommandGuard.warnMessage(command)` 与 `BusyBoxCompatibilityGuard.warningMessage` 合并成同一提示块，在 `buildPermissionRequest`（权限卡 details）与 `appendHint`（输出末尾）两处合并调用。
+6. **terminal(start) 双层覆盖**：权限引擎层覆盖全部 shell 工具（含 `terminal action=start` 常驻会话）；工具入口硬拦截（`ExecuteCommandTool`）只兜 Bash。
+
+### 7.6 设计状态
+
+✅ #6 设计定稿（规则清单 + 实现细节已确认），待实施。
 
 ## 8. 实施记录
 
