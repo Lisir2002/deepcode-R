@@ -19,8 +19,8 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
-// 当前版本基线：0.1.6；后续版本号升级必须由用户明确指令
-val BASE_VERSION = "0.1.6"
+// 当前版本基线：0.1.7；后续版本号升级必须由用户明确指令
+val BASE_VERSION = "0.1.7"
 
 // 版本号策略：
 //   1. 仅当 git tag 以 v0.1.6 开头时（如 v0.1.6 / v0.1.6-rc20），沿用 tag 中的后缀；
