@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BrightnessAuto
-import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
@@ -86,7 +84,6 @@ fun ChatDrawerContent(
     onRename: (ChatSession, String) -> Unit,
     onExport: (ChatSession) -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNavigateToCapabilityCenter: () -> Unit,
     currentThemeMode: AppThemeMode,
     onCycleTheme: () -> Unit,
     modifier: Modifier = Modifier
@@ -176,19 +173,14 @@ fun ChatDrawerContent(
             color = MaterialTheme.colorScheme.outlineVariant,
             modifier = Modifier.padding(vertical = Spacing.sm)
         )
-        // 底部导航：能力中心 / 主题切换 / 设置 三个图标按钮排成一排（浏览器入口保留在聊天顶栏右侧）。
+        // 底部导航：主题切换 / 设置 两个图标按钮贴右排列（能力中心已移入设置页，浏览器入口保留在聊天顶栏右侧）。
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(end = Spacing.md),
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DrawerBottomIconButton(
-                icon = Icons.Rounded.Dashboard,
-                contentDescription = stringResource(R.string.capability_center_title),
-                iconBgLight = Color(0xFF8B5CF6),
-                iconBgDark = Color(0xFF4C1D95),
-                onClick = onNavigateToCapabilityCenter
-            )
             DrawerBottomIconButton(
                 icon = when (currentThemeMode) {
                     AppThemeMode.DARK -> Icons.Rounded.DarkMode
@@ -308,11 +300,11 @@ private fun DrawerNavIcon(
 }
 
 /**
- * 侧边栏底部导航图标按钮：等宽排列、点击整块触发，内部复用 [DrawerNavIcon] 的彩色圆角图标块。
- * 声明为 [RowScope] 扩展以使用 weight 等宽布局。
+ * 侧边栏底部导航图标按钮：点击整块触发，内部复用 [DrawerNavIcon] 的彩色圆角图标块。
+ * 图标之间按 [Arrangement.End] 贴右排列，按钮本身不扩展占宽。
  */
 @Composable
-private fun RowScope.DrawerBottomIconButton(
+private fun DrawerBottomIconButton(
     icon: ImageVector,
     contentDescription: String,
     iconBgLight: Color,
@@ -321,7 +313,6 @@ private fun RowScope.DrawerBottomIconButton(
 ) {
     Box(
         modifier = Modifier
-            .weight(1f)
             .clip(RoundedCornerShape(Radius.sm))
             .clickable(onClick = onClick)
             .semantics { this.contentDescription = contentDescription }

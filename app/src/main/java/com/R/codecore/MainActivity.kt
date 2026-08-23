@@ -342,10 +342,6 @@ fun AppNavigation(
                         scope.launch { drawerState.close() }
                         navController.navigate("settings")
                     },
-                    onNavigateToCapabilityCenter = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate("capability_center")
-                    },
                     currentThemeMode = currentThemeMode,
                     onCycleTheme = onCycleTheme
                 )
@@ -414,7 +410,9 @@ fun AppNavigation(
                         )
                     },
                     onStopAllAndCloseTerminal = { agentViewModel.stopAllAndCloseTerminal() },
-                    onNavigateToNetProxy = { navController.navigate("proxy_config") }
+                    onNavigateToNetProxy = { navController.navigate("proxy_config") },
+                    // 能力中心入口（自侧边栏移入设置）：设置页点击直接跳转能力中心。
+                    onNavigateToCapabilityCenter = { navController.navigate("capability_center") }
                 )
             }
             composable("capability_center") {

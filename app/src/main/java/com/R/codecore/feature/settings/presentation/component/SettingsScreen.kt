@@ -81,6 +81,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Extension
@@ -124,7 +125,8 @@ fun SettingsScreen(
     onNavigateToTerminalSettings: () -> Unit = {},
     onNavigateToSshHosts: () -> Unit = {},
     onStopAllAndCloseTerminal: () -> Unit = {},
-    onNavigateToNetProxy: () -> Unit = {}
+    onNavigateToNetProxy: () -> Unit = {},
+    onNavigateToCapabilityCenter: () -> Unit = {}
 ) {
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val activeProvider by viewModel.activeProvider.collectAsStateWithLifecycle()
@@ -296,7 +298,8 @@ fun SettingsScreen(
                         section = it
                     },
                     onNavigateToTerminalSettings = onNavigateToTerminalSettings,
-                    onNavigateToNetProxy = onNavigateToNetProxy
+                    onNavigateToNetProxy = onNavigateToNetProxy,
+                    onNavigateToCapabilityCenter = onNavigateToCapabilityCenter
                 )
                 SettingsSection.Providers -> ProvidersSection(
                     providers = providers,
@@ -488,6 +491,7 @@ internal fun SettingsMenu(
     onOpen: (SettingsSection) -> Unit,
     onNavigateToTerminalSettings: () -> Unit = {},
     onNavigateToNetProxy: () -> Unit = {},
+    onNavigateToCapabilityCenter: () -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val themeLabel = stringResource(themeMode.labelRes)
@@ -588,6 +592,23 @@ internal fun SettingsMenu(
             iconBgDark = Color(0xFF9A5B1E),
             keywords = listOf("perm", stringResource(R.string.ui____98a315c0), stringResource(R.string.ui____b0fae043), "permission", "allow", stringResource(R.string.ui____20dce2c6_2), "tool"),
             action = { onOpen(SettingsSection.Permissions) }
+        ),
+        // 能力中心入口（自侧边栏移入设置）：技能管理、MCP 工具服务等，独立路由跳转，不走 section 切换。
+        MenuItem(
+            section = null,
+            group = groupAI,
+            title = stringResource(R.string.capability_center_title),
+            subtitle = stringResource(R.string.capability_center_subtitle),
+            icon = Icons.Rounded.Dashboard,
+            iconBgLight = Color(0xFF8B5CF6),
+            iconBgDark = Color(0xFF4C1D95),
+            keywords = listOf(
+                "skill", "skills", "capability",
+                stringResource(R.string.capability_tab_skills),
+                stringResource(R.string.capability_tab_tools),
+                "mcp"
+            ),
+            action = onNavigateToCapabilityCenter
         ),
         MenuItem(
             section = null,
