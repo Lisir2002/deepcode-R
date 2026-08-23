@@ -102,10 +102,10 @@ plugin/
 全部 10 个方向均进入深入讨论范围（用户 2026-08-23 确认「都值得深入讨论」）。
 以下「批次」仅表示**讨论/实施顺序**，不表示取舍——每个方向都会深入讨论并产出设计。
 
-- **批次 1（进行中）**：#6 Bash 命令静态预校验（设计定稿，实现细节待定，见第 7 节）
+- **批次 1**：#6 Bash 命令静态预校验（设计定稿，见第 7 节）
 - **批次 2**：#3 Confidence Scoring 分级上报
 - **批次 3**：#4 Hook 事件模型 + #5 声明式规则引擎（强耦合，成对讨论）
-- **批次 4**：#1 Agent 声明式定义 → #2 多 Agent 编排
+- **批次 4**：#1 Agent 声明式定义（设计定稿，见第 8 节；用户 2026-08-23 提前拍板）→ #2 多 Agent 编排
 - **批次 5**：#7 权限分级（ask/deny + 禁绕过）/ #8 Sandbox 网络限制 / #10 后台任务 + system-reminder 唤醒
 - **批次 6**：#9 子代理 fork 继承上下文 + 并发/预算上限（重点讨论 Android 资源与上下文约束）
 
@@ -124,6 +124,17 @@ plugin/
 - **Block（硬拦截）覆盖**：RCE 管道（curl/wget|sh/bash）、系统目录权限破坏（chmod/chown 到系统根目录）、设备/磁盘破坏（dd/mkfs/fdisk 写 /dev、覆盖关键文件）、关机/杀进程（shutdown/reboot/halt、kill -9 -1、无目标 pkill -9）。
 - **规则配置**：本阶段内置表、不可用户自定义；后续 #5 规则引擎落地时再开放加严（用户只能加严不能放宽，安全优先）。
 - **判定引擎**：复用 `ShellCommandParser` 段级 token 判定（非纯正则），降低误报。
+
+### 5.3 方向 #1 设计决策（2026-08-23 已确认）
+
+- **对象粒度**：完整 agent 化——多 agent 定义系统（主 agent + 可触发专项 agent），非仅升级主 agent 提示词。
+- **模式片段**：80-plan-mode.md / 81-auto-mode.md 统一进声明式资产（`mode` 字段），删除 `PlanModeSource`/`AutoModeSource` 两个特殊 Source。
+- **热加载**：mtime 懒刷新 + FileObserver 监听**双机制并行**（优劣兼具，mtime 兜底）。
+- **组合复用**：支持 `includes: [other-asset]` 引用机制。
+- **触发方式**：斜杠命令（复用现有 `SlashCommandRegistry`）+ 会话内切换。
+- **tools 白名单语义**：**仅建议**（不硬拦截，权限引擎仍管审批）——与 Claude Code 硬限制不同，避免与现有权限体系重复设墙。
+- **model 字段语义**：**仅提示**（实际仍用用户选定 provider/model，不跨 provider 强切）。
+- **#1/#2 边界**：#1 只做「定义/加载/触发/切换」基建；多阶段编排、按变更类型动态派发留给 #2。
 
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
@@ -197,6 +208,80 @@ plugin/
 
 ✅ #6 设计定稿（规则清单 + 实现细节已确认），待实施。
 
-## 8. 实施记录
+## 8. 方向 #1 设计定稿（草案）
+
+### 8.1 现状与缺口
+
+现有提示词装配（`SystemPromptProvider`）：
+- **硬编码顺序**：`StaticRuleSource` 写死 9 片段 join 顺序。
+- **无元数据**：文件名（`00-identity.md`）承载顺序 + 语义，无 name/description/tools/model。
+- **静态不热**：`StaticRuleSource` 一次性缓存永不失效；仅 `ProjectRuleSource`（mtime）/ `ActiveSkillsSource`（每轮）热。
+- **无组合**：无 includes 引用机制。
+
+已有可复用基建：
+- **三级优先级解析**：`prompts.custom/ > prompts/ > assets`（`resolvePrompt`）。
+- **斜杠命令系统**：`SlashCommandRegistry` / `SlashCommandHandler`（`ChatInputBar` 已有 `/` 菜单）。
+- **frontmatter 解析**：`SkillParser.splitAndParseFrontmatter` + SnakeYAML 2.2（依赖已在）。
+- **多 agent 雏形**：`SkillScope.AGENT` 已含 `agent_type` 字段。
+
+### 8.2 设计
+
+新增 `feature/agent/domain/prompt/AgentAssetRegistry.kt`：
+- 扫描 `prompts/` + `prompts.custom/`，解析 frontmatter，按 `order` 排序组装。
+- 区分主 agent 组件（`agent: false`）与专项 agent（`agent: true`）。
+- 支持 `includes` 引用组合。
+- 热加载双机制（mtime + FileObserver）。
+- 会话内 agent 切换：`AgentContext` 增加 `currentAgentId`，切换后系统提示词正文替换为该 agent。
+
+### 8.3 frontmatter 格式（YAML）
+
+```yaml
+---
+name: identity          # 资产唯一标识
+description: 角色与自我认知  # 用途/触发场景
+order: 0                # 加载顺序（替代硬编码列表）
+enabled: true           # 可禁用
+agent: false            # false=主 agent 组件；true=可触发专项 agent
+mode: [default]         # default/plan/auto（统一 mode 片段，替代 Plan/Auto Source）
+tools: []               # 仅建议语义（不硬拦截；权限引擎仍管审批）
+model: ""               # 仅提示语义（仍用用户选定 provider/model）
+includes: []            # 引用其它资产（组合复用）
+---
+正文
+```
+
+### 8.4 热加载双机制（已确认：mtime + FileObserver 并行）
+
+- **主机制（mtime 懒刷新）**：build 时比对 `prompts/` 目录与各文件 mtime，变化才重扫（对齐 `ProjectRuleSource`）。
+- **辅机制（FileObserver）**：监听 `prompts/` + `prompts.custom/` 增删改 → 失效 registry 缓存 + 触发 `ToolEvent` 增量刷新。
+- **兜底**：FileObserver 被系统回收 / inotify 上限超限时，mtime 懒刷新仍兜底生效。
+
+### 8.5 触发与切换
+
+- **命令触发**：复用 `SlashCommandRegistry`，新增 `/agent <name>` 命令（列出/切换专项 agent）。
+- **会话内切换**：新增「当前 agent」会话状态，切换后系统提示词正文替换；主 agent 为默认。
+- **tools/model 仅建议/提示**：不强制切换 provider，不拦截白名单外工具。
+
+### 8.6 接入改造
+
+- `StaticRuleSource` → 从 `AgentAssetRegistry` 读取（order 排序），删除硬编码片段列表。
+- `PlanModeSource` / `AutoModeSource` → 由 `mode` 字段统一，删除两个特殊 Source。
+- `resolvePrompt` 三级优先级保留（frontmatter 随文件覆盖）。
+- `AgentContext` 增加 `currentAgentId`；`SkillScope.AGENT` 的 `agent_type` 与之对齐。
+
+### 8.7 待办
+
+- [ ] `AgentAssetRegistry` + frontmatter 解析（复用 `SkillParser.splitAndParseFrontmatter` 风格 + SnakeYAML）
+- [ ] 现有 11 个 prompt 文件加 frontmatter（迁移）
+- [ ] `SlashCommandRegistry` 新增 `/agent` 命令
+- [ ] `AgentContext` / 会话状态加 `currentAgentId` + UI 切换入口
+- [ ] 单元测试（解析/排序/includes/热加载失效）
+- [ ] 按资产同步纪律更新 `assets/prompts/`、`assets/docs/` 与 `docs/modules/`
+
+### 8.8 设计状态
+
+✅ #1 设计定稿（8 个决策点已确认），待实施。
+
+## 9. 实施记录
 
 - （待定，按讨论结论逐项补充）
