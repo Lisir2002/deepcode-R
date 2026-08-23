@@ -5,6 +5,7 @@
 > 关联模块：`feature/agent`（工具系统 / 权限治理 / MCP）、`feature/terminal`、`feature/git`、`feature/settings`
 > 触发场景：以 anthropics/claude-code 公开仓库为范本，系统性挖掘对 R-CodeCore 可复用的产品/架构设计，形成分步落地方案。
 > 调研源：`/workspace/_research/claude-code/`（已克隆，深读 README / CHANGELOG / plugins / examples）
+> **执行清单**：落地优先级与逐条任务见 [claude-code-study-roadmap.md](./claude-code-study-roadmap.md)（R01–R22，P0–P4）
 
 ## 1. 背景与目的
 
