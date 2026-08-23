@@ -104,7 +104,7 @@ plugin/
 
 - **批次 1**：#6 Bash 命令静态预校验（设计定稿，见第 7 节）
 - **批次 2**：#3 Confidence Scoring 分级上报（设计定稿，见第 10 节；随 #1/#2 实施）
-- **批次 3**：#4 Hook 事件模型（设计定稿，见第 11 节；代码后声明）→ #5 声明式规则引擎（条件/动作声明式化）
+- **批次 3**：#4 Hook 事件模型（设计定稿，见第 11 节；代码后声明）→ #5 声明式规则引擎（设计定稿，见第 12 节；MD+JSON 共存、引入 warn、权限+Hook 双消费点）
 - **批次 4**：#1 Agent 声明式定义（设计定稿，见第 8 节；用户 2026-08-23 提前拍板）→ #2 多 Agent 编排（设计定稿，见第 9 节；依赖 #1 落地）
 - **批次 5**：#7 权限分级（ask/deny + 禁绕过）/ #8 Sandbox 网络限制 / #10 后台任务 + system-reminder 唤醒
 - **批次 6**：#9 子代理 fork 继承上下文 + 并发/预算上限（重点讨论 Android 资源与上下文约束）
@@ -159,6 +159,13 @@ plugin/
 - **asyncRewake 表达**：**下轮注入**——Stop 后台审查结果**持久化**（防会话结束/App 被杀丢失），下一轮开始前注入为 system-reminder，注入后**消费确认**（防重复/防丢失，确保注入成功且有效）。
 - **与 #5 分工**：**骨架 + 规则分离**——#4 事件分发骨架代码级；#5 把条件/动作声明式化。
 - **对齐 AGENTS.md 纪律**：hook 承载纪律检查（提交前检查、危险命令、规则合规等）。
+
+### 5.7 方向 #5 设计决策（2026-08-23 已确认）
+
+- **规则载体**：**MD + JSON 共存**——新增 MD 规则文件层（项目 `.rcodecore/rules/*.md` + 全局，frontmatter + 正文）；现有 JSON（`permissions.json`）保留为「记忆授权」产物，职责分离。
+- **动作扩展**：**引入 warn**（allow/deny/warn 三态）——warn 不拦截只提示（正文喂模型/弹窗附注），对齐 hookify + #6 Warn。
+- **作用域**：**权限 + Hook 全上**——统一规则引擎双消费点（ToolPermissionPolicyEngine + #4 HookDispatcher），实施可分层（先权限后 Hook）。
+- **优先级**：内置安全底线（灾难 rm / #6 Block）> 用户 deny/block > 已记忆 ALLOW > 内置白名单 > warn 提示 > ASK；用户规则只增不减（沿用 #6 原则）。
 
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
@@ -438,6 +445,56 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ✅ #4 设计定稿（4 个决策点已确认），代码级骨架可先行落地。
 
-## 12. 实施记录
+## 12. 方向 #5 设计定稿（草案）
+
+### 12.1 范式提取（Claude Code hookify rule_engine + config_loader）
+
+- **Condition**：`{field, operator, pattern}`；运算符 = `regex_match / contains / equals / not_contains / starts_with / ends_with`。
+- **Rule**：`{name, enabled, event, tool_matcher, conditions[], action(warn|block), message(正文)}`。
+- **评估**：tool_matcher 过滤 → 全部 conditions 匹配 → **block 优先 warn** → 输出 decision / systemMessage；PreToolUse 的 block → `permissionDecision: deny`。
+- **存储**：每规则一个 `.local.md`，frontmatter + 正文（正文即提示语）。
+
+### 12.2 现状与缺口
+
+- 现有 [PermissionRule](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/permission/PermissionModels.kt) 二元（toolName + pattern + ALLOW/DENY），**无条件表达式、无 warn、无事件维度**。
+- JSON（`permissions.json`）=「始终允许/拒绝」的**记忆授权**产物。
+- [evaluateShell](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/permission/ToolPermissionPolicyEngine.kt#L167-L229) 顺序：灾难 rm → DENY → 不可判定 → 内置白名单 → 已记忆 ALLOW → ASK。
+- 已有 frontmatter 解析（SkillParser + #1 定稿 SnakeYAML）可复用。
+
+### 12.3 设计（已确认：MD+JSON 共存、引入 warn、权限+Hook 双消费点）
+
+- **规则模型升级**：
+  - `Condition(field, operator, pattern)`，field ∈ command / file_path / content 等，operator 六种（对齐 hookify）。
+  - `Rule(name, enabled, event, tool_matcher, conditions[], action(allow|deny|warn), message)`。
+- **存储**：
+  - MD 规则层：项目 `.rcodecore/rules/*.md` + 全局 `filesDir/rcodecore/rules/*.md`（frontmatter + 正文，可 git 追踪/回滚）。
+  - JSON 保留：记忆授权产物，职责分离。
+- **统一规则引擎 RuleEngine**：解析 MD → 评估（tool_matcher + conditions → action），**双消费点**：
+  1. **权限评估**：接入 `ToolPermissionPolicyEngine.evaluateShell/evaluateGeneric`；deny 优先级最高，warn 附加提示（弹窗附注/注入对话）。
+  2. **Hook 事件**（#4）：`HookDispatcher` 事件消费规则，条件/动作声明式化。
+- **优先级**：内置安全底线（灾难 rm / #6 Block）> 用户 deny/block > 已记忆 ALLOW > 内置白名单 > warn 提示 > ASK；用户规则只增不减。
+- **热加载**：MD 规则 mtime 懒刷新（对齐 #1 `AgentAssetRegistry` / `ProjectRuleSource` 做法）。
+- **frontmatter 解析复用**：SnakeYAML（#1 定稿依赖）或现有 `SkillParser` 抽公共工具。
+
+### 12.4 决策记录（3 决策点）
+
+- 规则载体：**MD + JSON 共存**。
+- 动作扩展：**allow/deny/warn 三态**。
+- 作用域：**权限 + Hook 全上**（统一引擎双消费点，实施可分层）。
+
+### 12.5 待办
+
+- [ ] RuleEngine（Condition/六运算符/评估，对齐 hookify rule_engine）
+- [ ] MD 规则层（`.rcodecore/rules/` + 全局）+ mtime 热加载
+- [ ] 接入 ToolPermissionPolicyEngine（deny 优先、warn 附加）
+- [ ] 接入 #4 HookDispatcher（事件规则消费）
+- [ ] frontmatter 解析公共工具（SnakeYAML / SkillParser 抽取）
+- [ ] 按资产同步纪律更新 `docs/modules/` 与 `assets/docs/`
+
+### 12.6 设计状态
+
+✅ #5 设计定稿（3 个决策点已确认），实施与 #4 骨架协同。
+
+## 13. 实施记录
 
 - （待定，按讨论结论逐项补充）
