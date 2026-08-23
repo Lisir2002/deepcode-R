@@ -721,7 +721,10 @@
     <string name="providers_empty">还没有提供商，点右上角 + 添加</string>
     <string name="log_level">日志等级</string>
     <string name="log_level_desc">记录低于该等级的日志将被忽略。开发期建议 VERBOSE（全部记录）；NONE 关闭日志。</string>
-    <string name="log_file_location">日志文件位于 Android/data/&lt;包名&gt;/files/logs/。</string>
+    <string name="log_file_location">日志文件位于 Android/data/&lt;包名&gt;/files/logs/，并会自动导出到 下载/RCodeCore/logs/（文件管理器可直接查看）。</string>
+    <string name="logs_export_action">导出日志到下载</string>
+    <string name="logs_export_toast">已导出到 下载/RCodeCore/logs/，可在文件管理器查看</string>
+    <string name="logs_export_none">没有可导出的日志文件</string>
     <string name="provider_no_models_hint">未配置模型，点击编辑添加</string>
     <string name="provider_model_summary">模型：%1$s · 共 %2$s 个</string>
     <string name="provider_step_previous">上一步</string>

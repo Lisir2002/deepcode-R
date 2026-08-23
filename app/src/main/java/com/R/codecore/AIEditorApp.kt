@@ -138,6 +138,16 @@ class AIEditorApp : Application() {
         appScope.launch {
             ContainerInstaller.extractPrompts(this@AIEditorApp)
         }
+        // 启动即自动导出上一轮日志到公共外部存储 Download/RCodeCore/logs/。
+        // 目的：解决「进入应用即闪退」时崩溃处理来不及同步导出（或 CrashHandler 前的早期崩溃）
+        // 拿不到日志的问题——只要 App 能再次启动，上一轮的全部日志（含 CRASH 记录）就会自动
+        // 落到文件管理器可见的公共目录（API 29+ MediaStore 免权限，卸载后仍保留）。
+        // 与崩溃时同步导出互补：崩溃时导出保证当次崩溃可被捕获，启动时导出保证"漏网"的早期崩溃
+        // 也能在下次启动后被拿到。失败仅记日志，不阻断启动。
+        appScope.launch {
+            runCatching { FileLogger.exportLogsToDownloads(this@AIEditorApp) }
+                .onFailure { FileLogger.w(TAG, "启动时自动导出日志到公共目录失败（忽略，私有日志仍在）", it) }
+        }
         // 启动即把 Room 凭据 + DataStore 署名落盘到容器持久挂载（/root/.rcodecore），
         // 让终端裸 git / AI 工具 / UI 三端共用同一份凭据与署名配置。
         appScope.launch {

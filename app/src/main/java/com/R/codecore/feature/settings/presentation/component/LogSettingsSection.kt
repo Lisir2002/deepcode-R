@@ -41,6 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -82,6 +83,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Tab
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 // ── 日志等级颜色映射 ──
@@ -104,8 +106,6 @@ internal fun LogsSection(
     logViewerState: LogViewerUiState,
     onSelectFile: (String) -> Unit,
     onRefresh: () -> Unit,
-    // 导出日志到公共 Downloads（文件管理器可见）
-    onExportLogs: () -> Unit = {},
     // 筛选回调
     onToggleFilterPanel: () -> Unit = {},
     onCloseFilterPanel: () -> Unit = {},
@@ -156,7 +156,6 @@ internal fun LogsSection(
                 1 -> LogViewerContent(
                     state = logViewerState,
                     onSelectFile = onSelectFile,
-                    onExportLogs = onExportLogs,
                     onToggleFilterPanel = onToggleFilterPanel,
                     onCloseFilterPanel = onCloseFilterPanel,
                     onSetSelectedDates = onSetSelectedDates,
@@ -224,7 +223,6 @@ internal fun LogLevelCard(
 private fun ColumnScope.LogViewerContent(
     state: LogViewerUiState,
     onSelectFile: (String) -> Unit,
-    onExportLogs: () -> Unit,
     onToggleFilterPanel: () -> Unit,
     onCloseFilterPanel: () -> Unit,
     onSetSelectedDates: (Set<String>) -> Unit,
@@ -240,6 +238,8 @@ private fun ColumnScope.LogViewerContent(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val exportedTip = stringResource(R.string.logs_export_toast)
+    val exportNoneTip = stringResource(R.string.logs_export_none)
 
     // ── 文件选择 + 操作按钮行 ──
     Card(
@@ -266,6 +266,32 @@ private fun ColumnScope.LogViewerContent(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Spacing.xs)
+                    )
+                }
+
+                // 导出日志到公共 Downloads（文件管理器可见；失败 Snackbar 提示）
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    com.R.codecore.core.util.FileLogger.exportLogsToDownloads(context)
+                                }.getOrElse { emptyList() }
+                            }
+                            snackbarHostState.showSnackbar(
+                                if (result.isEmpty()) {
+                                    exportNoneTip
+                                } else {
+                                    exportedTip
+                                }
+                            )
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SaveAlt,
+                        contentDescription = stringResource(R.string.logs_export_action),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -378,6 +404,12 @@ private fun ColumnScope.LogViewerContent(
         // 主内容区域
         LogContentCard(
             state = state
+        )
+
+        // 导出结果提示
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
         )
 
         // 新日志提示按钮
