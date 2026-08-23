@@ -544,6 +544,13 @@ object AgentModule {
         return database.modeSwitchHistoryDao()
     }
 
+    // ══ R02 WakeQueue：wake_queue DAO 绑定
+    @Provides
+    @Singleton
+    fun provideWakeQueueDao(database: AgentDatabase): com.R.codecore.feature.agent.data.local.dao.WakeQueueDao {
+        return database.wakeQueueDao()
+    }
+
     // ══ RC69 T2I：ImageGenerator（interface）→ OpenAiCompatibleImageGenerator（实现）绑定
     //   AgentModule 是 @Module object，不能用 @Binds，所以用 @Provides 包一层构造器注入的 impl。
     @Provides
@@ -794,7 +801,8 @@ object AgentModule {
         skillStateRepository: com.R.codecore.feature.agent.domain.skill.SkillStateRepository,
         skillExecutor: com.R.codecore.feature.agent.domain.skill.SkillExecutor,
         skillRuntimeProbe: com.R.codecore.feature.agent.domain.skill.SkillRuntimeProbe,
-        hookDispatcher: com.R.codecore.feature.agent.domain.hook.HookDispatcher
+        hookDispatcher: com.R.codecore.feature.agent.domain.hook.HookDispatcher,
+        wakeQueueManager: com.R.codecore.feature.agent.domain.wake.WakeQueueManager
     ): AgentWorkflow {
         return com.R.codecore.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -822,7 +830,8 @@ object AgentModule {
             skillStateRepository,
             skillExecutor,
             skillRuntimeProbe,
-            hookDispatcher
+            hookDispatcher,
+            wakeQueueManager
         )
     }
 }

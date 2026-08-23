@@ -230,16 +230,28 @@
 - **分发器**（`domain/hook/HookDispatcher`）：Hilt 注入 `Set<HookHandler>`，构造时按事件类型分组并按 `id` 去重；每次分发对每个 handler 独立 try/catch——**异常隔离**（单个 hook 抛错不阻断后续 hook、不中断主流程），`CancellationException` 一律重抛（不吞协程取消信号），错误以 `HookOutcome.error` 上报，由调用方 `logHookFailures` 记日志。
 - **声明式注册**：实现类实现对应事件接口 + 在 `domain/hook/HookModule` 以 `@Binds @IntoSet` 绑定，即自动被 `HookDispatcher` 汇集（模式对齐 `SlashCommandHandler`）。
 - **挂点位置**（`StatefulAgentWorkflow`）：`UserPromptSubmit` 在 `executeEvents` 入口；`PreToolUse` 在 `ExecuteToolBatch` 起始（复用 ZTH preTool 挂点）；`PostToolUse` 在 `batchResults` 组装后逐条（复用 ZTH postTool 挂点）；`Stop` 在 `executeEvents` 的 `finally` 块。`SessionStart` **仅定义接口与注册点**，真实挂点属「会话创建处」，随会话生命周期阶段（roadmap R04）落地——不接入 `executeEvents` 入口以避免每轮用户消息冒名触发。
-- **示例 hook**：`CommitDisciplineHook`（PostToolUse）静态检查 Bash 中 `git commit`/`git push` 命令文本是否符合 AGENTS.md 纪律（Conventional Commits 格式、push 前跑单测），产出结构化报告。R01 阶段只计算报告，**消费/反馈到模型的接入属后续任务（R09）**。
+- **示例 hook**：`CommitDisciplineHook`（PostToolUse）静态检查 Bash 中 `git commit`/`git push` 命令文本是否符合 AGENTS.md 纪律（Conventional Commits 格式、push 前跑单测），产出结构化报告。R02 起审查发现经 `WakeQueueManager.enqueueAsync` 写入统一唤醒队列，下轮会话开始前注入用户消息前（见 3.9）；完整 system-reminder 注入机制（Stop 事件重扫、会话生命周期管理）见 roadmap R16。
+
+### 3.9 WakeQueue 统一唤醒队列（WakeQueueManager）
+
+- **定位**：统一唤醒队列（R02 骨架，对齐 Claude Code asyncRewake 下轮注入模型，见 `docs/plan-docs/claude-code-study-design.md` 第 11.3 / 16.2 节）。承载两类后台产出：**hook 后台审查结果**（如 CommitDisciplineHook 的纪律发现）与 **耗时任务结果**（roadmap R17 终端/MCP 后台化复用），一套机制两处消费。
+- **数据结构**（Room `wake_queue` 表）：`WakeItemEntity` 字段 `wake_id`（UUID 主键）/`session_id`（归属会话，null 存空串）/`source`（来源标识，如 `hook.commit-discipline`，注入时按 source 分组）/`type`/`content`/`status`（`PENDING`→`CONSUMED`）/`created_at_ms`。持久化保证 **App 被杀不丢**，下次启动重扫待注入队列继续唤醒（重扫入口随 R16 落地）。
+- **管理器**（`domain/wake/WakeQueueManager`，Hilt 单例，`@Inject constructor` 注入 `WakeQueueDao`）：
+  - `enqueue(sessionId, source, type, content)`：挂起写入，content 空白跳过；
+  - `enqueueAsync(...)`：非阻塞异步入队（独立 `SupervisorJob + Dispatchers.IO` scope），供同步 Hook 回调安全调用，单条失败隔离并记日志不抛到调用方；
+  - `pendingForSession(sessionId)`：读取会话全部待注入唤醒（升序）；
+  - `markConsumed(ids)`：注入成功后原子化标记 `CONSUMED`（防重复注入；失败保留待下轮重扫）；
+  - `allPending()`：启动重扫用。
+- **工作流注入挂点**（`StatefulAgentWorkflow`）：用户消息处理前读取 `pendingForSession(sessionId)`，非空则把 `buildWakeReminder` 生成的「【系统·补充审查发现】」文本拼到 `userRequestContent` 最前，随后 `markConsumed` 消费确认；读取/消费失败仅记日志跳过本轮（不阻断主流程）。
 
 ## 4. 对外接口与集成点
 
 - **被谁调用**：`presentation/AIAgentViewModel` 是 UI 唯一入口（被 Compose 聊天界面使用）；`StatefulAgentWorkflow` 由 ViewModel 驱动；其余领域服务（ToolRegistry、McpManager、SystemPromptProvider、CheckpointManager 等）均为 Hilt 单例，可被本模块内或外部注入。
-- **Room 数据库**：`AgentDatabase`（v46）聚合跨模块表——agent 自身（消息/会话/Todo/检查点/技能状态/模式切换/模型能力覆盖/ZTH 审计）、settings（`AIProviderEntity`）、workspace（`RemoteConnectionEntity`/`RemoteMountEntity`/`RemoteAuditLogEntity`）、credentials（`GitCredentialEntity`）、t2i（`T2IProviderEntity` 等）。
+- **Room 数据库**：`AgentDatabase`（v48）聚合跨模块表——agent 自身（消息/会话/Todo/检查点/技能状态/模式切换/模型能力覆盖/ZTH 审计/wake_queue）、settings（`AIProviderEntity`）、workspace（`RemoteConnectionEntity`/`RemoteMountEntity`/`RemoteAuditLogEntity`）、credentials（`GitCredentialEntity`）、t2i（`T2IProviderEntity` 等）。
 - **AI Provider**：`AIProvider` 接口 + `OpenAIAdapter`/`AnthropicAdapter`/`GeminiAdapter`；支持 reasoning（回传签名/思考文本）、token 统计、`stopReason` 截断续写；底层走 `data/remote/*` 的 Retrofit API。
 - **Bridge 能力**：`RcbBridge` 在 loopback 随机端口起 TCP 服务，`RCB_BRIDGE_TOKEN` 注入容器，容器内 `rcb-*` helper 经 base64 行协议调用宿主侧剪贴板/URL/通知能力；`openUrlHandler` 由宿主注入（默认仅记日志）。
 - **外部模块依赖**：workspace（`FileAccessProvider`、`WorkspacePathMapper`、`WorkspaceRepository`、远程连接/挂载）、settings（AI Provider 配置）、t2i（图片生成）、core（`FileLogger`、`HostKeyManager`、加密凭据）。
-- **DAOs（本模块）**：`AgentMessageDao`、`ChatSessionDao`、`TodoItemDao`、`SkillStateDao`、`ModeSwitchHistoryDao`、`ModelCapabilityOverrideDao`、`CheckpointDao`、`CheckpointFileSnapshotDao`、`FileEditHunkDao`、`ZthTelemetryEventDao`、`UserConfirmedSentinelDao`、`HallucinationFuseDao`、`SentinelPlanRejectionAuditDao`、`HardConstraintDeleteAuditDao`、`L0SoftCompactRestoreLogDao`。
+- **DAOs（本模块）**：`AgentMessageDao`、`ChatSessionDao`、`TodoItemDao`、`SkillStateDao`、`ModeSwitchHistoryDao`、`ModelCapabilityOverrideDao`、`CheckpointDao`、`CheckpointFileSnapshotDao`、`FileEditHunkDao`、`ZthTelemetryEventDao`、`UserConfirmedSentinelDao`、`HallucinationFuseDao`、`SentinelPlanRejectionAuditDao`、`HardConstraintDeleteAuditDao`、`L0SoftCompactRestoreLogDao`、`WakeQueueDao`。
 
 ## 5. 关键设计点与约束
 
@@ -257,7 +269,7 @@
 
 - **新增工具**：在 `domain/tool/<分类>/` 下实现 `AgentTool` 子类（流式输出再实现 `StreamingAgentTool`），声明 `name/description/parameters/capabilities/permissionPolicy`（按需 `provides/consumes/dependsOn/subscribedEvents/retryPolicy`）；在 `di/AgentModule`（Hilt `@Binds @IntoSet`）注册；若工具结果应被缓存，需同步登记进 `ToolResultCache.FILE_TOOLS` 相关集合，否则缓存静默失效。
 - **新增斜杠命令**：实现 `SlashCommandHandler` + `@Binds @IntoSet` 即自动纳入 `SlashCommandRegistry`（无需改注册表），建议同时提供 `trigger`/`matches`/`filterByPrefix` 语义。
-- **新增 Hook**：实现对应事件接口（如 `PostToolUseHook`）+ 在 `domain/hook/HookModule` 以 `@Binds @IntoSet` 绑定，即自动被 `HookDispatcher` 汇集；若事件逻辑需同步到模型可见行为，需同步检查 `assets/prompts/` 提示词与 `assets/docs/` 使用文档。hook 内不得吞 `CancellationException`，不得阻塞主流程（骨架阶段仅同步计算，耗时逻辑应内部异步化）。
+- **新增 Hook**：实现对应事件接口（如 `PostToolUseHook`）+ 在 `domain/hook/HookModule` 以 `@Binds @IntoSet` 绑定，即自动被 `HookDispatcher` 汇集；若事件逻辑需同步到模型可见行为，需同步检查 `assets/prompts/` 提示词与 `assets/docs/` 使用文档。hook 内不得吞 `CancellationException`，不得阻塞主流程（骨架阶段仅同步计算，耗时逻辑应内部异步化）；后台审查/耗时任务的产出走 `WakeQueueManager.enqueueAsync` 写入唤醒队列，下轮会话自动注入。
 - **新增 AI Provider**：实现 `AIProvider` 接口，新增 Adapter（参考 `OpenAIAdapter`/`AnthropicAdapter`/`GeminiAdapter`），在 `data/remote/` 加 Retrofit API，并在 Provider 选择处注册。
 - **新增 DAO/实体**：在 `data/local/` 新增 DAO/Entity，并在 `AgentDatabase` 的 `entities` 列表与抽象访问器中登记，提升 `SCHEMA_VERSION`（同时提供迁移）。
 - **新增能力/权限维度**：扩展 `ToolCapability` 枚举，并在 `ToolPermissionPolicyEngine` 的危险能力集、`ZthCapabilityGuard` 能力降级表、`ToolPermissionManager` 中同步处理。

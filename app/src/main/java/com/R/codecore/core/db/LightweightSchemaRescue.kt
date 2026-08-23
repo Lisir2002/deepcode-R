@@ -18,6 +18,7 @@ import com.R.codecore.feature.agent.data.local.entity.ModelCapabilityOverrideEnt
 import com.R.codecore.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
 import com.R.codecore.feature.agent.data.local.entity.SkillConversationStateEntity
 import com.R.codecore.feature.agent.data.local.entity.SkillStateEntity
+import com.R.codecore.feature.agent.data.local.entity.WakeItemEntity
 import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
 import com.R.codecore.feature.agent.data.local.entity.UserConfirmedSentinelEntity
 import com.R.codecore.feature.agent.data.local.entity.ZthTelemetryEventEntity
@@ -125,7 +126,9 @@ object LightweightSchemaRescue {
         T2ITaskEntity::class.java,
         // ══ RC74 Skill 新增：同步 AgentDatabase.kt @Database entities[21]（skill_state）══
         SkillConversationStateEntity::class.java,
-        SkillStateEntity::class.java
+        SkillStateEntity::class.java,
+        // ══ R02 WakeQueue 新增：同步 AgentDatabase.kt @Database entities 末尾（wake_queue）══
+        WakeItemEntity::class.java
     )
 
     // ── schema JSON 解析模型（Room 官方导出格式）──────────────────────────

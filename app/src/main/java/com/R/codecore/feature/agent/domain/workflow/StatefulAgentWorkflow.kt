@@ -47,12 +47,14 @@ import com.R.codecore.feature.agent.domain.tool.RetryPolicy
 import com.R.codecore.feature.agent.domain.tool.classifyError
 import com.R.codecore.feature.agent.domain.tool.ToolStreamEvent
 import com.R.codecore.feature.agent.domain.tool.toTransportString
+import com.R.codecore.feature.agent.data.local.entity.WakeItemEntity
 import com.R.codecore.feature.agent.domain.hook.HookDispatcher
 import com.R.codecore.feature.agent.domain.hook.HookOutcome
 import com.R.codecore.feature.agent.domain.hook.PostToolUseContext
 import com.R.codecore.feature.agent.domain.hook.PreToolUseContext
 import com.R.codecore.feature.agent.domain.hook.StopContext
 import com.R.codecore.feature.agent.domain.hook.UserPromptSubmitContext
+import com.R.codecore.feature.agent.domain.wake.WakeQueueManager
 import com.R.codecore.feature.agent.presentation.AgentAttachment
 import com.R.codecore.feature.settings.data.remote.ModelMetadataService
 import com.R.codecore.feature.settings.data.repository.CompatibilityPolicyRepository
@@ -132,7 +134,9 @@ class StatefulAgentWorkflow @Inject constructor(
     /** S-3 运行时依赖探针：SCRIPT 技能自动触发前与手动路径（runSkillScript）一致地做预检。 */
     private val skillRuntimeProbe: SkillRuntimeProbe,
     /** R01 Hook 分发器：工具执行前后 / 用户提交 / 停止等事件挂点（对齐 design 第 11 节）。 */
-    private val hookDispatcher: HookDispatcher
+    private val hookDispatcher: HookDispatcher,
+    /** R02 统一唤醒队列：下轮开始前注入后台审查/耗时任务结果（对齐 design 11.3/16.2）。 */
+    private val wakeQueueManager: WakeQueueManager
 ) : AgentWorkflow {
 
     init {
@@ -609,7 +613,7 @@ class StatefulAgentWorkflow @Inject constructor(
                 "5. 若确有无法落实的规则项（如环境无法满足），必须先向用户说明原因并请求确认，不得静默跳过。"
             systemPrompt = (systemPrompt?.takeIf { it.isNotBlank() }?.plus("\n\n$authorityHint")) ?: authorityHint
         }
-        val userRequestContent = if (autoTriggerResults.isEmpty()) {
+        var userRequestContent = if (autoTriggerResults.isEmpty()) {
             userRequest
         } else {
             // 技能输出 + 用户请求合并在同一条 User 消息内（技能在前、请求在后），保证模型必然读到规则；
@@ -617,6 +621,29 @@ class StatefulAgentWorkflow @Inject constructor(
             autoTriggerResults.joinToString("\n\n---\n\n") { it.noteContent } +
                 "\n\n【本次用户请求】\n" + userRequest
         }
+
+        // R02 WakeQueue 下轮注入：上一轮后台审查/耗时任务产出的待注入唤醒，
+        // 在系统提示词后、用户消息前拼入为 system-reminder；注入成功即消费确认（防重复/防丢失，
+        // 消费失败则保留待下轮重扫——宁可重复不可丢失，对齐 design 11.3 asyncRewake 下轮注入）。
+        val pendingWakeups = try {
+            withContext(Dispatchers.IO) { wakeQueueManager.pendingForSession(currentContext.sessionId) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "WakeQueue 读取失败，跳过本轮注入", e)
+            emptyList()
+        }
+        if (pendingWakeups.isNotEmpty()) {
+            userRequestContent = buildWakeReminder(pendingWakeups) + "\n\n" + userRequestContent
+            try {
+                withContext(Dispatchers.IO) { wakeQueueManager.markConsumed(pendingWakeups.map { it.wakeId }) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "WakeQueue 消费确认失败（保留待下轮重扫）", e)
+            }
+        }
+
         actionQueue.addLast(
             AgentAction.InitRequest(
                 currentContext.history + AgentMessage.UserMessage(
@@ -1072,6 +1099,24 @@ class StatefulAgentWorkflow @Inject constructor(
     private fun logHookFailures(kind: String, outcomes: List<HookOutcome>) {
         outcomes.forEach { outcome ->
             outcome.error?.let { FileLogger.w(TAG, "Hook[${outcome.handlerId}] $kind 异常", it) }
+        }
+    }
+
+    /**
+     * R02 WakeQueue：把待注入唤醒拼为 system-reminder 文本。
+     *
+     * 注入位置 = 系统提示词后、用户消息前；按 source 分组列出，末尾提示「处理完继续原任务」
+     * （对齐 design 11.3 asyncRewake：rewakeMessage + rewakeSummary）。
+     */
+    private fun buildWakeReminder(items: List<WakeItemEntity>): String {
+        val grouped = items.groupBy { it.source }
+        return buildString {
+            append("【系统·补充审查发现】")
+            grouped.forEach { (source, wakes) ->
+                append("\n\n来源：$source")
+                wakes.forEach { append("\n- ${it.content}") }
+            }
+            append("\n\n请在继续处理原任务前先完成以上事项。")
         }
     }
 

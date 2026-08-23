@@ -18,6 +18,7 @@ import com.R.codecore.feature.agent.data.local.dao.SkillConversationStateDao
 import com.R.codecore.feature.agent.data.local.dao.SkillStateDao
 import com.R.codecore.feature.agent.data.local.dao.TodoItemDao
 import com.R.codecore.feature.agent.data.local.dao.UserConfirmedSentinelDao
+import com.R.codecore.feature.agent.data.local.dao.WakeQueueDao
 import com.R.codecore.feature.agent.data.local.dao.ZthTelemetryEventDao
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
@@ -34,6 +35,7 @@ import com.R.codecore.feature.agent.data.local.entity.SkillConversationStateEnti
 import com.R.codecore.feature.agent.data.local.entity.SkillStateEntity
 import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
 import com.R.codecore.feature.agent.data.local.entity.UserConfirmedSentinelEntity
+import com.R.codecore.feature.agent.data.local.entity.WakeItemEntity
 import com.R.codecore.feature.agent.data.local.entity.ZthTelemetryEventEntity
 import com.R.codecore.feature.credentials.data.local.dao.GitCredentialDao
 import com.R.codecore.feature.credentials.data.local.entity.GitCredentialEntity
@@ -79,9 +81,10 @@ import com.R.codecore.feature.t2i.data.local.entity.T2ITaskEntity
         T2IProviderModelEntity::class,
         T2ITaskEntity::class,
         SkillConversationStateEntity::class,
-        SkillStateEntity::class
+        SkillStateEntity::class,
+        WakeItemEntity::class
     ],
-    version = 47,
+    version = 48,
     exportSchema = true
 )
 abstract class AgentDatabase : RoomDatabase() {
@@ -110,8 +113,9 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun t2iTaskDao(): T2ITaskDao
     abstract fun skillConversationStateDao(): SkillConversationStateDao
     abstract fun skillStateDao(): SkillStateDao
+    abstract fun wakeQueueDao(): WakeQueueDao
 
     companion object {
-        const val SCHEMA_VERSION = 47
+        const val SCHEMA_VERSION = 48
     }
 }

@@ -229,9 +229,11 @@ object SkillParser {
 
     /**
      * 利用 SnakeYAML 切分并解析 YAML frontmatter。
+     *
+     * 公开供其它资产解析方复用（R03 AgentAssetRegistry / R08 规则引擎 frontmatter 解析）。
      * @return (frontmatter 键值对, 正文)
      */
-    private fun splitAndParseFrontmatter(text: String): Pair<Map<String, Any>, String> {
+    fun splitAndParseFrontmatter(text: String): Pair<Map<String, Any>, String> {
         val normalized = text.replace("\r\n", "\n")
         if (!normalized.startsWith("---\n")) return emptyMap<String, Any>() to normalized
 

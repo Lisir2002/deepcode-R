@@ -1,6 +1,7 @@
 package com.R.codecore.feature.agent.domain.hook
 
 import com.R.codecore.feature.agent.domain.tool.ToolCall
+import com.R.codecore.feature.agent.domain.wake.WakeQueueManager
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
@@ -13,10 +14,13 @@ import javax.inject.Inject
  *   type ∈ feat|fix|refactor|docs|style|chore|ci|build|perf|test，见 AGENTS.md「Git 提交规范」）；
  * - `git push`：提醒 push 前需确认 `./gradlew :app:testReleaseUnitTest` 通过（AGENTS.md「推送到远端前必跑单元测试」）。
  *
- * R01 阶段为骨架演示：onPostToolUse 计算报告（消费/反馈到模型的接入属后续 #5/R09）。
+ * R02 接入：审查发现（notes 非空）经 [WakeQueueManager.enqueueAsync] 写入统一唤醒队列，
+ * 下一轮会话开始前由 workflow 注入 system-reminder 唤醒（align design 11.3 asyncRewake 下轮注入）。
  * 挂载验证：StatefulAgentWorkflow PostToolUse 挂点（batchResults 组装后）→ HookDispatcher.dispatchPostToolUse。
  */
-class CommitDisciplineHook @Inject constructor() : PostToolUseHook {
+class CommitDisciplineHook @Inject constructor(
+    private val wakeQueueManager: WakeQueueManager
+) : PostToolUseHook {
     override val id = "commit-discipline"
 
     /** 是否命中：Bash 工具且命令文本含 git commit / git push。 */
@@ -28,7 +32,19 @@ class CommitDisciplineHook @Inject constructor() : PostToolUseHook {
 
     override fun onPostToolUse(context: PostToolUseContext) {
         if (!matches(context.toolCall)) return
-        analyze(commandOf(context.toolCall).orEmpty())
+        val report = analyze(commandOf(context.toolCall).orEmpty())
+        if (report.notes.isNotEmpty()) {
+            // 审查发现入队（异步入队，不阻塞主流程；消费在下轮注入）。
+            wakeQueueManager.enqueueAsync(
+                sessionId = context.sessionId,
+                source = SOURCE,
+                type = TYPE,
+                content = buildString {
+                    append(if (report.isPush) "检测到 git push" else "检测到 git commit")
+                    report.notes.forEach { append("\n- $it") }
+                }
+            )
+        }
     }
 
     /**
@@ -63,6 +79,10 @@ class CommitDisciplineHook @Inject constructor() : PostToolUseHook {
 
     private companion object {
         const val BASH_TOOL = "Bash"
+
+        /** WakeQueue 来源标识（buildWakeReminder 按 source 分组展示）。 */
+        const val SOURCE = "hook.commit-discipline"
+        const val TYPE = "post-tool-use"
 
         // AGENTS.md「Git 提交规范」：type(scope): subject
         val CONVENTIONAL_COMMIT_REGEX = Regex("""^(feat|fix|refactor|docs|style|chore|ci|build|perf|test)(\([\w\-/]+\))?: .+""")
