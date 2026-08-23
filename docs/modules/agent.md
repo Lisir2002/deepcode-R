@@ -37,7 +37,7 @@
 | `domain/mcp/` | MCP 集成：`McpManager`（连接/工具注册/状态流）、`McpClient`、`McpTool`（MCP 工具适配 `AgentTool`）、`McpJsonRpc`、`McpServerConfig`、`McpConfigRepository`、`McpTransport` + `StdioTransport` / `StreamableHttpTransport`。**`server/` 子包（已实施）**：内置 MCP 服务器（`McpServerManager`/`McpHttpServer`/`McpServerSession`/`AgentToolMcpAdapter`/`McpServerSecurity`/`McpServerSettings`），把 App 能力开放给外部 MCP 客户端，见 [builtin-mcp-server-design](../plan-docs/builtin-mcp-server-design.md) |
 | `domain/memory/` | 记忆系统：`Memory` 模型（GLOBAL/PROJECT 作用域）、`MemoryParser`、`MemorySource` + `GlobalMemorySource`/`ProjectMemorySource`、`MemoryRepository` |
 | `domain/model/` | 领域模型：`AgentMessage`（含 `AgentContext`：currentFile/selectedCode/projectRoot 等）、`ChatSession`（含 `AgentMode`：BUILD/PLAN/AUTO）、`CodeChange`、`ReasoningEffort`、`TodoItem` |
-| `domain/permission/` | 权限引擎：`ToolPermissionPolicyEngine`（ALLOW/DENY/ASK 判定）、`PermissionRulesRepository`、`ShellCommandParser`、`BuiltInSafeCommands`、`BuildCommandClassifier`、`PermissionModels`、`ZthFailureModels` |
+| `domain/permission/` | 权限引擎：`ToolPermissionPolicyEngine`（ALLOW/DENY/ASK 判定）、`PermissionRulesRepository`、`ShellCommandParser`、`BuiltInSafeCommands`、`BuildCommandClassifier`、`PermissionModels`、`ZthFailureModels`、`DangerousCommandGuard`（危险命令静态守卫） |
 | `domain/prompt/SystemPromptProvider.kt` | 增量式系统提示词：按 `PromptSource` 组装静态规则（R04 起由 `AgentAssetRegistry` 按 mode 注入）、工作区上下文等片段，维护缓存与快照 |
 | `domain/provider/` | AI Provider 抽象：`AIProvider`（complete / completeStream，含 reasoning、signature、token 统计）、`OpenAIAdapter`、`AnthropicAdapter`、`GeminiAdapter`、`RetryPolicy`、`HttpErrorEnricher`（把 HTTP 错误体拼进 message） |
 | `domain/session/` | 会话用例：`SessionUseCase`、`MessagePersistenceUseCase` |
@@ -115,6 +115,10 @@
     - `terminal(action="start")`（`TerminalSessionTool`）：常驻终端无超时，**直接拒绝启动**并提示改用 `Bash`，防止 AI 把循环塞进常驻终端无限刷屏/空耗。
     - fork bomb 两个工具都**直接拒绝**（`&` 后台自复制，超时无法可靠终止）。
   - `BusyBoxCompatibilityGuard`：识别 BusyBox 不支持的 GNU 专属参数（`nc -q`/`grep -P`/grep 模式 `\d\s\w`/`find -printf`/`xargs -d`/`cp --parents`）与无限 `ping`（未带 `-c|-w`）。**只预警不拦截**：权限卡 `details` 附加提示，并把提示拼进工具结果末尾，让 AI 看到并改用兼容写法。
+  - `DangerousCommandGuard`（危险命令静态守卫，R05-R07 落地）：在 **权限引擎层（`ToolPermissionPolicyEngine.evaluateShell`/AUTO 分支）与工具入口层（`ExecuteCommandTool`）双层接入**，即使绕过权限引擎（如 AUTO 模式）也能拦截。两级判定：
+    - **Block（命中即 DENY，拒绝原因喂给模型）**：B1 RCE 管道（`curl|wget` + `sh|bash` 跨段相邻 `|` 连接、进程替换 `<(curl ...)`，`&&` 断开不拦）；B2 系统目录权限破坏（`chmod`/`chown` 目标在系统目录集且递归或宽松权限位，`parseChmodInfo` 解析段 token）；B3 设备/磁盘破坏（`dd of=/dev/sd*` 写设备、`mkfs.*`、`fdisk` 写操作、重定向写存储设备、覆盖 `/etc/passwd|shadow|group|hosts|sudoers`）；B4 关机/杀进程（`shutdown/reboot/halt/poweroff`、`kill -9 -1`、无目标 `pkill`/`killall`）。
+    - **Warn（放行，合并提示块）**：W1 权限过宽、W2 文件覆盖/清空（`> file`/`: > file`）、W3 下载到工作区外绝对路径、W4 `curl` 未带 `-o/-s` 刷屏、W5 sudo 高危、W6 读取凭据文件、W7 覆盖 SSH 密钥、W8 base64 解码执行、W9 明文密码、W10 `git push --force`、W11 疑似反向 shell（`nc -e`/`socat exec`/`/dev/tcp`）。
+    - **误报防护**：伪设备白名单（`/dev/null|zero|random|tty|pts/|fd/` 等）排除在 B3 之外；系统目录集合不覆盖工作区，正常开发命令不误拦。Warn 提示经 `mergedWarnBlock` 与 `BusyBoxCompatibilityGuard` 提示合并为统一提示块，在权限卡 `details` 与命令输出末尾两处展示，避免重复。
   - 背景：容器为 Alpine（BusyBox），AI 曾写出 `while true; do nc -q ...; done`（`nc -q` 为 GNU netcat 语法，BusyBox 不支持，每次调用失败又重试）塞进常驻终端导致无限刷屏，此护栏 + 提示词约束（`prompts/60-tools-and-paths.md`「容器命令兼容性与执行纪律」）双管齐下。
 - `ContainerInstaller` + `progress/` 子包负责环境安装与进度聚合解析（`RealProgressAggregator`/`InstallProgressParser`/`ApkStdoutParser`）。
 - **双架构容器（真机 + 模拟器）**：`ContainerInstaller` 支持 `container/arm`（arm64）与 `container/x86_64`（x86_64 rootfs + x86_64 原生 proot + qemu 转译器）双 rootfs 资产，`prootBinFor/rootfsDirFor` 按 `ContainerProfile.arch + EnvironmentDetector` 选择；`LinuxContainerEngine` 首次启动按宿主架构自动落到对应内置 profile（x86_64 宿主 → `BUILTIN_ALPINE_X86`），`buildBaseProotArgv` 仅「x86_64 容器 + 非 x86_64 宿主」时注入 `-q qemu`；容器不可用环境走明确降级报错，AI 核心（文件/对话/远程 SSH）不受影响（见 [emulator-support-design](../plan-docs/emulator-support-design.md)）。

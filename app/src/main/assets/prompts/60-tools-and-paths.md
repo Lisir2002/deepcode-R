@@ -42,7 +42,15 @@ includes: []
 - **驱动交互式程序**：`terminal` 还能驱动行式交互程序（`git commit` 编辑器、`npm init` 问答、`python` REPL、`ssh` 密码提示等）。用 `start` 启动后停在输入提示处，用 `send` 逐行发输入（默认自动回车），用 `key` 发 `tab`/`enter`/`ctrl+c` 等控制键，用 `read` 查看当前输出判断状态。这是 `Bash` 做不到的——`Bash` 一次性执行等命令结束，无法中途交互。
 
 ## 容器命令兼容性与执行纪律（重要）
-执行环境是 **Alpine Linux（BusyBox ash/awk/grep/nc/sed 等）**，不是 GNU/Linux。写命令必须 **POSIX / BusyBox 兼容**，禁用 GNU 专属语法——否则命令解析即报错、重试又失败，白白消耗时间。系统会对命令做静态护栏检测（无界循环 / fork bomb / 常用 BusyBox 不兼容参数 / 无限 ping），命中时会拒绝执行或把提示拼进结果，**按提示修正即可，不要无视提示盲目重跑**。
+执行环境是 **Alpine Linux（BusyBox ash/awk/grep/nc/sed 等）**，不是 GNU/Linux。写命令必须 **POSIX / BusyBox 兼容**，禁用 GNU 专属语法——否则命令解析即报错、重试又失败，白白消耗时间。系统会对命令做静态护栏检测（无界循环 / fork bomb / 常用 BusyBox 不兼容参数 / 无限 ping / 危险命令），命中时会拒绝执行或把提示拼进结果，**按提示修正即可，不要无视提示盲目重跑**。
+
+- **高风险命令（危险命令静态守卫，AUTO 模式同样拦截，无需弹窗直接拒绝）**：
+  - 下载后直接执行远程脚本：`curl http://x | sh`、`wget -qO- http://x | bash`、`bash <(curl http://x)`（供应链/代码执行风险）——应先 `curl -O` 下载检查后再执行，或改用包管理器安装。
+  - 修改系统目录权限：`chmod -R 777 /usr`、`chmod 777 /etc/passwd`、`chown -R root:root /etc`。
+  - 设备/磁盘破坏：`dd` 写 `/dev/sd*` 等存储设备、`mkfs.*` 格式化、`fdisk` 写分区表、重定向写存储设备、覆盖 `/etc/passwd|shadow|group|hosts|sudoers`。
+  - 关机/重启（`shutdown`/`reboot`/`halt`/`poweroff`）、无目标杀进程（`kill -9 -1`、`pkill -9`、`killall`）。
+  - 工作区内的文件不受影响，正常开发命令（含 `chmod`/`dd` 读设备等）不会误拦。
+- **中风险命令不拦截、只提示**（系统把提示拼进命令输出末尾，按提示确认/修正即可）：权限过宽（`chmod 777 file`）、文件覆盖（`> file` / `: > file`）、下载到工作区外绝对路径、`curl` 未带 `-o/-s` 刷屏、sudo 高危操作、读取凭据类文件（`/etc/shadow` 等）、覆盖 SSH 密钥（`.ssh/authorized_keys` 等）、base64 解码后执行、明文密码写入、`git push --force`、疑似反向 shell（`nc -e` / `socat exec` / `/dev/tcp`）。
 
 - **常用 GNU → BusyBox 对照（写命令前自查）**：
   - `nc -q 1 host port`（GNU netcat「EOF 后等待」）→ **BusyBox 不支持**，用 `nc -w 1 host port`，或改用 `wget -T 2 -O /dev/null URL` / `curl --connect-timeout 2 -s`。

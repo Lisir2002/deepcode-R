@@ -62,11 +62,15 @@ class ToolPermissionPolicyEngine @Inject constructor(
         }
 
         if (mode == com.R.codecore.feature.agent.domain.model.AgentMode.AUTO) {
-            // AUTO 模式放行所有权限，但仍保留灾难性 rm 防护（根目录/系统目录删除）
+            // AUTO 模式放行所有权限，但仍保留灾难性 rm 防护（根目录/系统目录删除）与危险命令静态拦截
             if (isShellTool(toolName, args)) {
                 val command = ((args["command"] ?: args["input"]) as? JsonPrimitive)?.content
                 if (command != null) {
                     val analysis = ShellCommandParser.analyze(command)
+                    val blockReason = DangerousCommandGuard.blockReason(command)
+                    if (blockReason != null) {
+                        return EvalResult(Verdict.DENY, emptyList(), denyReason = blockReason)
+                    }
                     val catastrophicReason = checkCatastrophicRm(analysis.segments)
                     if (catastrophicReason != null) {
                         return EvalResult(Verdict.DENY, emptyList(), denyReason = catastrophicReason)
@@ -172,13 +176,19 @@ class ToolPermissionPolicyEngine @Inject constructor(
         val allow = rules.filter { it.decision == PermissionDecision.ALLOW }
         val deny = rules.filter { it.decision == PermissionDecision.DENY }
 
-        // 0) rm 高危操作防护：禁止直接删除系统根目录、工作区根目录或系统关键目录
+        // 0) 危险命令静态守卫（Block 最优先）：用户规则只能加严、不能放宽。
+        val blockReason = DangerousCommandGuard.blockReason(command)
+        if (blockReason != null) {
+            return EvalResult(Verdict.DENY, emptyList(), denyReason = blockReason)
+        }
+
+        // 1) rm 高危操作防护：禁止直接删除系统根目录、工作区根目录或系统关键目录
         val catastrophicReason = checkCatastrophicRm(analysis.segments)
         if (catastrophicReason != null) {
             return EvalResult(Verdict.DENY, emptyList(), denyReason = catastrophicReason)
         }
 
-        // 1) DENY 优先（含对内置安全白名单的覆盖）：任一段命中 DENY 即拒。
+        // 2) DENY 优先（含对内置安全白名单的覆盖）：任一段命中 DENY 即拒。
         if (analysis.segments.any { seg -> deny.any { ShellCommandParser.matches(it.pattern, seg) } }) {
             return EvalResult(Verdict.DENY, emptyList(), denyReason = "该命令被项目权限规则策略禁止执行")
         }

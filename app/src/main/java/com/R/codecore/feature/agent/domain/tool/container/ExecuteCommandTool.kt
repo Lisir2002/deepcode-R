@@ -7,6 +7,7 @@ import com.R.codecore.feature.agent.domain.container.CommandResult
 import com.R.codecore.feature.agent.domain.container.LinuxContainerEngine
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.domain.model.AgentContext
+import com.R.codecore.feature.agent.domain.permission.DangerousCommandGuard
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ParameterType
 import com.R.codecore.feature.agent.domain.tool.PendingToolPermission
@@ -95,6 +96,25 @@ class ExecuteCommandTool @Inject constructor(
 
     /** 联动刷新用的后台作用域：fire-and-forget，不阻塞工具结果返回。 */
     private val linkageScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * 危险命令（DangerousCommandGuard）与 BusyBox 兼容性提示合并为同一提示块。
+     * 在权限卡 details 与命令输出末尾两处统一调用，一条命令一次展示。
+     */
+    private fun mergedWarnBlock(command: String): String? {
+        val hints = listOfNotNull(
+            DangerousCommandGuard.warnMessage(command),
+            BusyBoxCompatibilityGuard.warningMessage(command)
+        )
+        if (hints.isEmpty()) return null
+        return hints.joinToString("\n")
+    }
+
+    /** 把合并后的危险/兼容提示拼到命令输出末尾；无提示则原样返回。 */
+    private fun appendHints(command: String, output: String): String {
+        val hint = mergedWarnBlock(command) ?: return output
+        return output.trimEnd() + "\n\n" + hint
+    }
 
     /**
      * 若命令命中 apk 增删，异步触发一次 bundle 状态联动刷新（从容器真实 apk 世界校准）。
@@ -187,7 +207,7 @@ class ExecuteCommandTool @Inject constructor(
                 if (strict) {
                     append("\n严格模式：非零退出码将按失败返回")
                 }
-                BusyBoxCompatibilityGuard.warningMessage(command)?.let { append("\n$it") }
+                mergedWarnBlock(command)?.let { append("\n$it") }
             },
             argsPreview = argsPreview
         )
@@ -199,6 +219,10 @@ class ExecuteCommandTool @Inject constructor(
         if (CommandLoopGuard.isForkBomb(command)) {
             FileLogger.e(TAG, "拦截 fork bomb 命令: $command")
             return ToolResult.Error(CommandLoopGuard.forkBombWarningMessage() + "禁止执行此类命令。")
+        }
+        DangerousCommandGuard.blockReason(command)?.let { reason ->
+            FileLogger.e(TAG, "拦截危险命令: $command")
+            return ToolResult.Error(reason)
         }
 
         return try {
@@ -220,7 +244,7 @@ class ExecuteCommandTool @Inject constructor(
             }
             FileLogger.v(TAG, "execute_command 完成，输出 ${result.output.length} 字符，exit=${result.exitCode}")
             maybeSyncBundleStates(command)
-            aggregateResult(BusyBoxCompatibilityGuard.appendHint(command, result.output), result.exitCode, strict)
+            aggregateResult(appendHints(command, result.output), result.exitCode, strict)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -246,6 +270,11 @@ class ExecuteCommandTool @Inject constructor(
         if (CommandLoopGuard.isForkBomb(command)) {
             FileLogger.e(TAG, "拦截 fork bomb 命令(流式): $command")
             emit(ToolStreamEvent.Completed(ToolResult.Error(CommandLoopGuard.forkBombWarningMessage() + "禁止执行此类命令。")))
+            return@flow
+        }
+        DangerousCommandGuard.blockReason(command)?.let { reason ->
+            FileLogger.e(TAG, "拦截危险命令(流式): $command")
+            emit(ToolStreamEvent.Completed(ToolResult.Error(reason)))
             return@flow
         }
         val strict = resolveStrict(args)
@@ -283,7 +312,7 @@ class ExecuteCommandTool @Inject constructor(
             }
             FileLogger.v(TAG, "execute_command(流式) 完成，输出 ${accumulated.totalChars} 字符，exit=$exitCode")
             maybeSyncBundleStates(command)
-            emit(ToolStreamEvent.Completed(aggregateResult(BusyBoxCompatibilityGuard.appendHint(command, accumulated.build()), exitCode, strict)))
+            emit(ToolStreamEvent.Completed(aggregateResult(appendHints(command, accumulated.build()), exitCode, strict)))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
