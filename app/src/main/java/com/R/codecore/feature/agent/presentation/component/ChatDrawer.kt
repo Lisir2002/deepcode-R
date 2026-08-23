@@ -950,7 +950,7 @@ private fun WorkspaceFileRow(
         Icon(
             imageVector = if (entry.isDirectory) Icons.Rounded.Folder else fileTypeIcon(entry.name),
             contentDescription = null,
-            tint = if (entry.isDirectory) Color(0xFFF59E0B) else fileTypeIconTint(entry.name),
+            tint = if (entry.isDirectory) Color(0xFFF59E0B) else fileTypeIconTint(entry.name, MaterialTheme.colorScheme.onSurfaceVariant),
             modifier = Modifier.size(20.dp)
         )
         Spacer(Modifier.width(Spacing.md))
@@ -1061,8 +1061,8 @@ private fun fileTypeIcon(name: String): ImageVector {
     }
 }
 
-/** 文件图标配色：按类型给浅色着色，便于识别；未知类型回退中性灰。 */
-private fun fileTypeIconTint(name: String): Color {
+/** 文件图标配色：按类型给浅色着色，便于识别；未知类型回退 [fallback]。 */
+private fun fileTypeIconTint(name: String, fallback: Color): Color {
     return when (fileExtension(name)) {
         "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "heic", "avif" -> Color(0xFF8B5CF6)
         "pdf" -> Color(0xFFEF4444)
@@ -1077,7 +1077,7 @@ private fun fileTypeIconTint(name: String): Color {
         "kt", "kts", "java", "py", "js", "mjs", "cjs", "ts", "jsx", "tsx", "go", "rs", "c", "h",
         "cpp", "cc", "cxx", "hpp", "hxx", "swift", "rb", "php", "lua", "scala", "groovy", "dart",
         "ex", "exs", "erl", "hs", "clj", "cljs", "cljc", "vue", "svelte", "proto" -> Color(0xFF6366F1)
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> fallback
     }
 }
 
@@ -1193,11 +1193,13 @@ private fun WorkspaceDirRow(
                 when {
                     sessions == null -> DropdownMenuItem(
                         text = { Text(stringResource(R.string.common_loading)) },
-                        enabled = false
+                        enabled = false,
+                        onClick = {}
                     )
                     sessions.isEmpty() -> DropdownMenuItem(
                         text = { Text(stringResource(R.string.workspace_no_bound_sessions)) },
-                        enabled = false
+                        enabled = false,
+                        onClick = {}
                     )
                     else -> sessions.forEach { s ->
                         DropdownMenuItem(
@@ -1208,7 +1210,8 @@ private fun WorkspaceDirRow(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             },
-                            enabled = false
+                            enabled = false,
+                            onClick = {}
                         )
                     }
                 }
