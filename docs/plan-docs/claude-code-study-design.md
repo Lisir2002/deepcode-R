@@ -106,7 +106,7 @@ plugin/
 - **批次 2**：#3 Confidence Scoring 分级上报（设计定稿，见第 10 节；随 #1/#2 实施）
 - **批次 3**：#4 Hook 事件模型（设计定稿，见第 11 节；代码后声明）→ #5 声明式规则引擎（设计定稿，见第 12 节；MD+JSON 共存、引入 warn、权限+Hook 双消费点）
 - **批次 4**：#1 Agent 声明式定义（设计定稿，见第 8 节；用户 2026-08-23 提前拍板）→ #2 多 Agent 编排（设计定稿，见第 9 节；依赖 #1 落地）
-- **批次 5**：#7 权限分级（ask/deny + 禁绕过）/ #8 Sandbox 网络限制 / #10 后台任务 + system-reminder 唤醒
+- **批次 5**：#7 权限分级（设计定稿，见第 13 节；禁 AUTO+记忆、独立 deny 文件）/ #8 Sandbox 网络限制（设计定稿，见第 14 节；L1 HTTP 白名单基于 mihomo）/ #10 后台任务 + system-reminder 唤醒
 - **批次 6**：#9 子代理 fork 继承上下文 + 并发/预算上限（重点讨论 Android 资源与上下文约束）
 
 ## 5. 决策记录（逐步讨论结论）
@@ -175,6 +175,16 @@ plugin/
 - **反向 shell**：归 **Warn + 提示**（提示语注明「若为合法网络调试可忽略」），不入 Block。
 - **收编范围**：**高优先六条**（W5 sudo 敏感 / W6 敏感文件读取 / W7 SSH 密钥覆盖 / W8 base64 解码执行 / W9 明文密码入脚本 / W10 git force push）+ 反向 shell（W11）。
 - **去重**：**统一合并**——Warn 提示块统一合并（#6 + BusyBox + 多条 Warn 一条命令一次展示），避免重复弹窗/重复提示。
+
+### 5.9 方向 #7 + #8 设计决策（2026-08-23 已确认）
+
+**#7 权限分级 + 禁绕过**
+- **禁绕过范围**：**禁 AUTO + 禁新记忆「始终允许」**（全封闭，最接近 Claude Code `disableBypassPermissionsMode`）。
+- **deny 白名单**：**独立文件**（管理级强制 deny 策略，区别于 #5 用户可配规则）。
+
+**#8 Sandbox 网络限制**
+- **层级**：**L1 仅 HTTP 白名单**（allowedDomains → mihomo 规则，白名单放行 + 其余 REJECT），基于已有 mihomo 代理内核。
+- **配置**：**两级（全局 + 项目级）+ 默认关**（启用即白名单）。
 
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
@@ -512,6 +522,70 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ✅ #5 设计定稿（3 个决策点已确认），实施与 #4 骨架协同。
 
-## 13. 实施记录
+## 13. 方向 #7 设计定稿（草案）
+
+### 13.1 现状
+
+- Verdict{ALLOW/DENY/ASK} 三分已有；`PermissionsSettingsSection` 已列规则（项目/全局、删除、提升全局）。
+- **AUTO 模式 = 放行所有权限**（只查灾难 rm + #6 Block）——即「绕过」形态；「始终允许」记忆也是授权放宽。
+- #5 已定稿 MD 规则层（allow/deny/warn + deny 优先 + 只增不减）。
+
+### 13.2 设计（已确认：禁 AUTO + 禁记忆、独立 deny 文件）
+
+- **deny 白名单策略文件（独立）**：`.rcodecore/deny.json`（项目级）+ 全局 `filesDir/rcodecore/deny.json`，**管理级强制 deny**，最高优先（连已记忆 ALLOW 也拦）；区别于 #5 用户可配规则（#5 = 用户配置，deny 文件 = 管理/团队策略）。
+- **「禁绕过」开关**（settings 安全设置页，对齐 Claude Code `disableBypassPermissionsMode`）：
+  - **禁切 AUTO**：入口禁用 + 已有 AUTO 会话降级提示；
+  - **禁新增「始终允许」记忆**：权限弹窗不再提供「始终允许」。
+- **优先级链**（禁绕过开启）：deny 白名单文件 > 内置安全底线（灾难 rm / #6 Block）> #5 用户 deny/block > 已记忆 ALLOW（禁新记忆后仅存量生效）> 内置白名单 > warn > ASK。
+
+### 13.3 决策记录（2 决策点）
+
+- 禁绕过范围：**禁 AUTO + 禁新记忆「始终允许」**（全封闭）。
+- deny 白名单：**独立文件**（管理级强制 deny）。
+
+### 13.4 待办
+
+- [ ] `.rcodecore/deny.json`（项目 + 全局）加载与评估（最高优先）
+- [ ] settings 安全设置页「禁绕过」开关 + DataStore
+- [ ] AUTO 入口禁用 + 存量会话降级
+- [ ] 权限弹窗「始终允许」按开关隐藏
+- [ ] 按资产同步纪律更新 `assets/docs/`（权限使用说明）与 `docs/modules/`（agent/settings）
+
+### 13.5 设计状态
+
+✅ #7 设计定稿（2 个决策点已确认），与 #5 deny 分层协同。
+
+## 14. 方向 #8 设计定稿（草案）
+
+### 14.1 现状
+
+- 容器 PRoot **共享宿主网络**（无隔离），DNS 写阿里云。
+- **已有 mihomo 代理内核**（feature/proxy `ClashProxyManager`）+ 容器启动注入 `http/https/all_proxy → 127.0.0.1:7890`（`exportContainerEnv`）。
+- 无 allowedDomains / 域名白名单。
+
+### 14.2 设计（已确认：L1 仅 HTTP 白名单、两级配置 + 默认关）
+
+- **allowedDomains 两级配置**：全局（DataStore）+ 项目级（`.rcodecore/network.json`）。
+- **mihomo 规则注入**：启用时生成/追加白名单规则——allowedDomains → DIRECT（或走代理），**其余 → REJECT**（MATCH → REJECT），mode=rule 白名单策略。
+- **默认关闭**：默认不启用（软限制），启用即严格白名单。
+- **覆盖范围（诚实标注）**：HTTP(S) 代理流量受控；DNS / git ssh / 非标准端口 TCP 不受控（mihomo 只代理 HTTP(S)，非透明代理）。
+
+### 14.3 决策记录（2 决策点）
+
+- 层级：**L1 仅 HTTP 白名单**（基于 mihomo）。
+- 配置：**两级 + 默认关**。
+
+### 14.4 待办
+
+- [ ] allowedDomains 两级配置（DataStore + `.rcodecore/network.json`）
+- [ ] mihomo 规则生成/注入 + reload（白名单放行 + REJECT）
+- [ ] settings 网络代理页加 allowedDomains 编辑入口
+- [ ] 按资产同步纪律更新 `assets/docs/`（网络限制说明）与 `docs/modules/`（proxy/agent）
+
+### 14.5 设计状态
+
+✅ #8 设计定稿（2 个决策点已确认），基于现有 mihomo 代理基础设施。
+
+## 15. 实施记录
 
 - （待定，按讨论结论逐项补充）
