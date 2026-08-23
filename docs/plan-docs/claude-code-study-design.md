@@ -104,7 +104,7 @@ plugin/
 
 - **批次 1**：#6 Bash 命令静态预校验（设计定稿，见第 7 节）
 - **批次 2**：#3 Confidence Scoring 分级上报（设计定稿，见第 10 节；随 #1/#2 实施）
-- **批次 3**：#4 Hook 事件模型 + #5 声明式规则引擎（强耦合，成对讨论）
+- **批次 3**：#4 Hook 事件模型（设计定稿，见第 11 节；代码后声明）→ #5 声明式规则引擎（条件/动作声明式化）
 - **批次 4**：#1 Agent 声明式定义（设计定稿，见第 8 节；用户 2026-08-23 提前拍板）→ #2 多 Agent 编排（设计定稿，见第 9 节；依赖 #1 落地）
 - **批次 5**：#7 权限分级（ask/deny + 禁绕过）/ #8 Sandbox 网络限制 / #10 后台任务 + system-reminder 唤醒
 - **批次 6**：#9 子代理 fork 继承上下文 + 并发/预算上限（重点讨论 Android 资源与上下文约束）
@@ -151,6 +151,14 @@ plugin/
 - **低置信处置**：直接过滤（只报 ≥80，质量优先）。
 - **落地时机**：随 #1/#2 实施（作为 code-reviewer 等专项 agent 的正文纪律）。
 - **角色区分**：与 ZthToolOutputGuard 确定性置信（防幻觉）不合并——#3 是生成式置信（防误报）。
+
+### 5.6 方向 #4 设计决策（2026-08-23 已确认）
+
+- **落地形态**：**代码后声明**——先代码级 Hook 分发骨架（multibinding 同 SlashCommandHandler 模式）跑通，后续 #5 把条件/动作声明式化。
+- **事件范围**：**完整事件集**——PreToolUse / PostToolUse / UserPromptSubmit / Stop / SessionStart。
+- **asyncRewake 表达**：**下轮注入**——Stop 后台审查结果**持久化**（防会话结束/App 被杀丢失），下一轮开始前注入为 system-reminder，注入后**消费确认**（防重复/防丢失，确保注入成功且有效）。
+- **与 #5 分工**：**骨架 + 规则分离**——#4 事件分发骨架代码级；#5 把条件/动作声明式化。
+- **对齐 AGENTS.md 纪律**：hook 承载纪律检查（提交前检查、危险命令、规则合规等）。
 
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
@@ -383,6 +391,53 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ✅ #3 设计定稿（4 个决策点已确认），随 #1/#2 实施。
 
-## 11. 实施记录
+## 11. 方向 #4 设计定稿（草案）
+
+### 11.1 范式提取（Claude Code security-guidance / hookify）
+
+- **事件**：PreToolUse / PostToolUse / UserPromptSubmit / Stop / SessionStart。
+- **matcher**：按工具名匹配（`"Edit|Write|MultiEdit"`）；**if** 精确匹配（`"Bash(git commit:*)"`）。
+- **asyncRewake**：后台审查 + `rewakeMessage`/`rewakeSummary` 唤醒插入对话，不阻塞主流程。
+- **timeout**：hook 执行超时。
+- 典型：PostToolUse 挂 `Bash(git commit/push)` 后台安全审查；Stop 后台审查、下轮反馈。
+
+### 11.2 现状与机会
+
+- `ToolPermissionManager` 只管权限弹窗挂起；判定在 `ToolPermissionPolicyEngine`。
+- ZTH 已有 preTool/postTool 接入点雏形（`StatefulAgentWorkflow` 接入点 B/C）——hook 框架可复用这些挂点。
+- 无后台会话机制，「后台唤醒」需用「下轮注入」表达。
+
+### 11.3 设计
+
+- **HookDispatcher**：代码级 multibinding（同 `SlashCommandHandler` 模式），注册 Hook 处理器。
+- **完整事件集**：PreToolUse / PostToolUse / UserPromptSubmit / Stop / SessionStart，各事件定义回调接口，携带上下文（工具名/参数/输出/会话）。
+- **matcher / if**：事件过滤（工具名 + 精确匹配，对齐 `Bash(git commit:*)` 语法）。
+- **asyncRewake 下轮注入（关键：确保注入成功且有效）**：
+  1. Stop / PostToolUse 触发后台审查 → 结果**持久化**到 Room（key = sessionId，防会话结束 / App 被杀丢失）；
+  2. 下一轮 `executeEvents` 开始时检查未消费唤醒 → 在系统提示词后、用户消息前注入为 system-reminder；
+  3. 注入成功即**标记已消费**（防重复注入）；注入动作原子化，失败则保留待下次；
+  4. 唤醒内容结构化（`rewakeMessage` + `rewakeSummary`），说明「补充审查发现，处理完继续原任务」。
+- **对齐 AGENTS.md 纪律**：hook 承载纪律检查（提交前检查、危险命令静态拦截补强、规则合规、资产同步提醒等）。
+
+### 11.4 决策记录（4 决策点）
+
+- 落地形态：**代码后声明**（先代码级骨架，后续 #5 声明式化条件/动作）。
+- 事件范围：**完整事件集**。
+- 唤醒表达：**下轮注入 + 持久化 + 消费确认**。
+- 与 #5：**骨架 + 规则分离**。
+
+### 11.5 待办
+
+- [ ] `HookDispatcher` + 5 事件接口（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart）
+- [ ] 复用 ZTH preTool/postTool 挂点挂载
+- [ ] 唤醒持久化存储（Room）+ 下轮注入 + 消费确认（原子化）
+- [ ] 示例 hook（提交前纪律检查 / 危险命令补强）
+- [ ] 按资产同步纪律更新 `docs/modules/` 与 `assets/docs/`
+
+### 11.6 设计状态
+
+✅ #4 设计定稿（4 个决策点已确认），代码级骨架可先行落地。
+
+## 12. 实施记录
 
 - （待定，按讨论结论逐项补充）
