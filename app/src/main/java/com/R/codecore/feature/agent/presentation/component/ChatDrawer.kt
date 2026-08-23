@@ -187,6 +187,7 @@ fun ChatDrawerContent(
                 iconBgDark = Color(0xFF92400E),
                 onClick = onCycleTheme
             )
+            Spacer(Modifier.width(Spacing.sm))
             DrawerBottomIconButton(
                 icon = Icons.Rounded.Settings,
                 contentDescription = stringResource(R.string.chat_settings),
