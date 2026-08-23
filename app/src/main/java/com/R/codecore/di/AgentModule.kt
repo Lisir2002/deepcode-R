@@ -793,7 +793,8 @@ object AgentModule {
         incrementalIndexStore: com.R.codecore.feature.agent.domain.tool.IncrementalIndexStore,
         skillStateRepository: com.R.codecore.feature.agent.domain.skill.SkillStateRepository,
         skillExecutor: com.R.codecore.feature.agent.domain.skill.SkillExecutor,
-        skillRuntimeProbe: com.R.codecore.feature.agent.domain.skill.SkillRuntimeProbe
+        skillRuntimeProbe: com.R.codecore.feature.agent.domain.skill.SkillRuntimeProbe,
+        hookDispatcher: com.R.codecore.feature.agent.domain.hook.HookDispatcher
     ): AgentWorkflow {
         return com.R.codecore.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -820,7 +821,8 @@ object AgentModule {
             incrementalIndexStore,
             skillStateRepository,
             skillExecutor,
-            skillRuntimeProbe
+            skillRuntimeProbe,
+            hookDispatcher
         )
     }
 }

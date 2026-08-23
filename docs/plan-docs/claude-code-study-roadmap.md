@@ -200,7 +200,7 @@
 
 | 任务 | 状态 | 完成日期 | 验证结果 |
 |---|---|---|---|
-| R01 Hook 分发骨架 | ⬜ | — | — |
+| R01 Hook 分发骨架 | ✅ | 2026-08-23 | assembleDebug 通过；HookDispatcher 11 个单测全绿；已挂 CommitDisciplineHook 示例；agent.md 3.8 节同步 |
 | R02 WakeQueue 骨架 | ⬜ | — | — |
 | R03 AgentAssetRegistry | ⬜ | — | — |
 | R04 prompt 资产迁移 | ⬜ | — | — |

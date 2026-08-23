@@ -47,6 +47,12 @@ import com.R.codecore.feature.agent.domain.tool.RetryPolicy
 import com.R.codecore.feature.agent.domain.tool.classifyError
 import com.R.codecore.feature.agent.domain.tool.ToolStreamEvent
 import com.R.codecore.feature.agent.domain.tool.toTransportString
+import com.R.codecore.feature.agent.domain.hook.HookDispatcher
+import com.R.codecore.feature.agent.domain.hook.HookOutcome
+import com.R.codecore.feature.agent.domain.hook.PostToolUseContext
+import com.R.codecore.feature.agent.domain.hook.PreToolUseContext
+import com.R.codecore.feature.agent.domain.hook.StopContext
+import com.R.codecore.feature.agent.domain.hook.UserPromptSubmitContext
 import com.R.codecore.feature.agent.presentation.AgentAttachment
 import com.R.codecore.feature.settings.data.remote.ModelMetadataService
 import com.R.codecore.feature.settings.data.repository.CompatibilityPolicyRepository
@@ -124,7 +130,9 @@ class StatefulAgentWorkflow @Inject constructor(
     private val skillStateRepository: SkillStateRepository,
     private val skillExecutor: SkillExecutor,
     /** S-3 运行时依赖探针：SCRIPT 技能自动触发前与手动路径（runSkillScript）一致地做预检。 */
-    private val skillRuntimeProbe: SkillRuntimeProbe
+    private val skillRuntimeProbe: SkillRuntimeProbe,
+    /** R01 Hook 分发器：工具执行前后 / 用户提交 / 停止等事件挂点（对齐 design 第 11 节）。 */
+    private val hookDispatcher: HookDispatcher
 ) : AgentWorkflow {
 
     init {
@@ -537,6 +545,11 @@ class StatefulAgentWorkflow @Inject constructor(
         // 避免首轮准备阶段（prompt 构建 / provider 解析 / 上下文压缩 / 网络建连）长时间无反馈。
         send(AgentEvent.ReasoningDelta(""))
 
+        // Hook：UserPromptSubmit（用户消息提交，executeEvents 入口）
+        logHookFailures("UserPromptSubmit", hookDispatcher.dispatchUserPromptSubmit(
+            UserPromptSubmitContext(context.sessionId, userRequest, context.mode)
+        ))
+
         var currentContext = context
         var state = AgentSessionState()
         var currentTools = tools
@@ -873,6 +886,12 @@ class StatefulAgentWorkflow @Inject constructor(
                         // 并行执行本批已批准的工具。先统一记录 checkpoint（editFile/writeFile 修改前快照），
                         // 再并行执行；mode 切换检查在结果收集后于主协程串行处理（planApproval 单例）。
                         val toolCalls = effect.toolCalls
+
+                        // Hook：PreToolUse（挂点 B：复用 ZTH preTool 挂点，工具执行前）
+                        logHookFailures("PreToolUse", hookDispatcher.dispatchPreToolUse(
+                            PreToolUseContext(currentContext.sessionId, toolCalls, currentContext.mode)
+                        ))
+
                         toolCalls.forEach { toolCall ->
                             if (toolCall.name == "editFile" || toolCall.name == "writeFile") {
                                 (toolCall.arguments["path"] as? JsonPrimitive)?.contentOrNull?.let { path ->
@@ -999,6 +1018,16 @@ class StatefulAgentWorkflow @Inject constructor(
                             batchResults.add(ToolBatchResult(toolCall.id, toolCall.name, rawResult, isError, runResult.images, runResult.attachments))
                         }
 
+                        // Hook：PostToolUse（挂点 C：复用 ZTH postTool 挂点，逐条工具结果）
+                        batchResults.forEach { br ->
+                            val original = toolCalls.firstOrNull { it.id == br.id }
+                            if (original != null) {
+                                logHookFailures("PostToolUse", hookDispatcher.dispatchPostToolUse(
+                                    PostToolUseContext(currentContext.sessionId, original, br.result, br.isError, currentContext.mode)
+                                ))
+                            }
+                        }
+
                         // L6 增量索引：记录本批轮次快照并持久化。
                         recordIncrementalRound(currentContext, batchResults)
 
@@ -1016,6 +1045,11 @@ class StatefulAgentWorkflow @Inject constructor(
             // 未决工具权限请求，以 REJECT 唤醒挂起的 awaitApproval。正常路径下该请求已被
             // awaitApproval 的 finally 清掉，这里是空操作；取消/异常路径避免确认卡残留。
             permissionManager.cancelPending(currentContext.sessionId)
+
+            // Hook：Stop（工作流结束：正常 / 用户取消 / 异常）
+            logHookFailures("Stop", hookDispatcher.dispatchStop(
+                StopContext(currentContext.sessionId, state.isFinished, state.iterations)
+            ))
         }
 
         // 迭代上限兜底：若因达到 MAX_ITERATIONS 退出循环（isFinished 未置位），
@@ -1029,6 +1063,16 @@ class StatefulAgentWorkflow @Inject constructor(
 
         state.error?.let { send(AgentEvent.Failed(it)) }
         send(AgentEvent.Completed)
+    }
+
+    /**
+     * R01 Hook：把一次分发的失败结果记入日志。HookDispatcher 已做异常隔离（不中断主流程），
+     * 此处仅负责把失败落到日志，便于观测 hook 行为。
+     */
+    private fun logHookFailures(kind: String, outcomes: List<HookOutcome>) {
+        outcomes.forEach { outcome ->
+            outcome.error?.let { FileLogger.w(TAG, "Hook[${outcome.handlerId}] $kind 异常", it) }
+        }
     }
 
     // ════════════════════════════════════════════════════════════════

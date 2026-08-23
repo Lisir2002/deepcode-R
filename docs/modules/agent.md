@@ -223,6 +223,15 @@
 - 在计划前、工具调用前、工具完成后、异常抛出四处挂审计钩子（`ZthWorkflowHooks`），配合 `ZthContentReviewer`（幻觉内容审查）、`ZthToolOutputGuard`（工具输出守卫）、`ZthCapabilityGuard`（能力降级，如 `LOAD_MCP_SERVER`/`LOAD_SKILL_BUNDLE`/`MODIFY_USER_CONFIRMED_STATE`）、`ZthFailureClassifier`（异常分类）。
 - 审计与遥测经 `data/repository/` 落 Room，并经 `data/remote/zth/ZthFirestoreSyncManager` 同步 Firestore。
 
+### 3.8 Hook 事件模型（HookDispatcher）
+
+- **定位**：工具执行前后 / 用户提交 / 工作流结束等节点的扩展事件钩子（对齐 Claude Code Hook 模型，R01 为代码级骨架，见 `docs/plan-docs/claude-code-study-design.md` 第 11 节）。
+- **事件集（5 种）**：`PreToolUse`（工具执行前）、`PostToolUse`（工具执行后）、`UserPromptSubmit`（用户消息提交）、`Stop`（工作流结束）、`SessionStart`（会话创建）。每种事件有独立接口与上下文类（如 `PreToolUseContext` 携带 `sessionId/toolCalls/mode`）。
+- **分发器**（`domain/hook/HookDispatcher`）：Hilt 注入 `Set<HookHandler>`，构造时按事件类型分组并按 `id` 去重；每次分发对每个 handler 独立 try/catch——**异常隔离**（单个 hook 抛错不阻断后续 hook、不中断主流程），`CancellationException` 一律重抛（不吞协程取消信号），错误以 `HookOutcome.error` 上报，由调用方 `logHookFailures` 记日志。
+- **声明式注册**：实现类实现对应事件接口 + 在 `domain/hook/HookModule` 以 `@Binds @IntoSet` 绑定，即自动被 `HookDispatcher` 汇集（模式对齐 `SlashCommandHandler`）。
+- **挂点位置**（`StatefulAgentWorkflow`）：`UserPromptSubmit` 在 `executeEvents` 入口；`PreToolUse` 在 `ExecuteToolBatch` 起始（复用 ZTH preTool 挂点）；`PostToolUse` 在 `batchResults` 组装后逐条（复用 ZTH postTool 挂点）；`Stop` 在 `executeEvents` 的 `finally` 块。`SessionStart` **仅定义接口与注册点**，真实挂点属「会话创建处」，随会话生命周期阶段（roadmap R04）落地——不接入 `executeEvents` 入口以避免每轮用户消息冒名触发。
+- **示例 hook**：`CommitDisciplineHook`（PostToolUse）静态检查 Bash 中 `git commit`/`git push` 命令文本是否符合 AGENTS.md 纪律（Conventional Commits 格式、push 前跑单测），产出结构化报告。R01 阶段只计算报告，**消费/反馈到模型的接入属后续任务（R09）**。
+
 ## 4. 对外接口与集成点
 
 - **被谁调用**：`presentation/AIAgentViewModel` 是 UI 唯一入口（被 Compose 聊天界面使用）；`StatefulAgentWorkflow` 由 ViewModel 驱动；其余领域服务（ToolRegistry、McpManager、SystemPromptProvider、CheckpointManager 等）均为 Hilt 单例，可被本模块内或外部注入。
@@ -248,6 +257,7 @@
 
 - **新增工具**：在 `domain/tool/<分类>/` 下实现 `AgentTool` 子类（流式输出再实现 `StreamingAgentTool`），声明 `name/description/parameters/capabilities/permissionPolicy`（按需 `provides/consumes/dependsOn/subscribedEvents/retryPolicy`）；在 `di/AgentModule`（Hilt `@Binds @IntoSet`）注册；若工具结果应被缓存，需同步登记进 `ToolResultCache.FILE_TOOLS` 相关集合，否则缓存静默失效。
 - **新增斜杠命令**：实现 `SlashCommandHandler` + `@Binds @IntoSet` 即自动纳入 `SlashCommandRegistry`（无需改注册表），建议同时提供 `trigger`/`matches`/`filterByPrefix` 语义。
+- **新增 Hook**：实现对应事件接口（如 `PostToolUseHook`）+ 在 `domain/hook/HookModule` 以 `@Binds @IntoSet` 绑定，即自动被 `HookDispatcher` 汇集；若事件逻辑需同步到模型可见行为，需同步检查 `assets/prompts/` 提示词与 `assets/docs/` 使用文档。hook 内不得吞 `CancellationException`，不得阻塞主流程（骨架阶段仅同步计算，耗时逻辑应内部异步化）。
 - **新增 AI Provider**：实现 `AIProvider` 接口，新增 Adapter（参考 `OpenAIAdapter`/`AnthropicAdapter`/`GeminiAdapter`），在 `data/remote/` 加 Retrofit API，并在 Provider 选择处注册。
 - **新增 DAO/实体**：在 `data/local/` 新增 DAO/Entity，并在 `AgentDatabase` 的 `entities` 列表与抽象访问器中登记，提升 `SCHEMA_VERSION`（同时提供迁移）。
 - **新增能力/权限维度**：扩展 `ToolCapability` 枚举，并在 `ToolPermissionPolicyEngine` 的危险能力集、`ZthCapabilityGuard` 能力降级表、`ToolPermissionManager` 中同步处理。
