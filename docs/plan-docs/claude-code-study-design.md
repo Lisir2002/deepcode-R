@@ -208,6 +208,11 @@ plugin/
 - **安全审查**：**复用 Zth 审查**——导入时复用 ZthContentReviewer 2 步内容审查（Skill 正文/规则/MCP server.json），有风险资产标记警告。
 - **分发形态**：**预留市场**——marketplace 协议预留扩展点，本期只做本地导入。
 
+### 5.13 插件移植决策（2026-08-23 已确认）
+
+- **推进方式**：**先建容器再移植**——先实施 #4 Hook 代码级骨架 + #1 agent 资产系统（容器），再按 A→B→C→D 分类逐个移植 13 个插件。
+- **移植范围**：**全部 13 个插件**（含翻译与自定义实现）。
+
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
 1. ~~**范围确认**~~（已定：A→B→C，见 5.1）
@@ -730,6 +735,50 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ✅ 插件五件套复用设计定稿（4 个决策点已确认），与 #1/#4/#5 基建协同。
 
-## 18. 实施记录
+## 18. 插件移植计划定稿（延伸方向）
+
+### 18.1 可行性结论（三种硬差异）
+
+- **语言差异（最硬）**：hook 是 Python/shell 脚本（security-guidance 11 个 py、hookify 4 个 py、ralph-wiggum stop-hook.sh），R-CodeCore 运行时无 Python——**hooks 必须翻译**为 Kotlin 或 #5 规则引擎 MD 规则。
+- **格式差异**：插件是 Claude Code 格式（YAML frontmatter + plugin.json + hooks.json），需**格式转换层**（#17 插件化）。
+- **环境差异**：提示词含 `CLAUDE.md`/`gh pr`/`npm` 等 Claude Code 环境引用；agent tools 白名单需映射到 R-CodeCore ToolRegistry。
+
+### 18.2 移植分类（13 个）
+
+| 类别 | 插件 | 工作量 | 说明 |
+|---|---|---|---|
+| **A 轻改移植**（纯 Markdown，格式转换） | commit-commands、frontend-design、claude-opus-4-5-migration、explanatory-output-style、learning-output-style | 小 | 提示词为主，frontmatter 适配 + 工具映射 |
+| **B 适配移植**（多 agent 编排，改环境引用） | feature-dev、pr-review-toolkit、code-review、plugin-dev | 中 | `gh`→本地 git、`CLAUDE.md`→项目规则、tools 映射 |
+| **C 翻译移植**（Python hook → #5 规则） | hookify、security-guidance | 大 | 4+11 个 py 翻译为 Kotlin 规则/规则引擎 MD |
+| **D 自定义实现**（行为型） | ralph-wiggum、agent-sdk-dev | 中/低价值 | ralph 需 workflow 循环控制；SDK 开发对 R-CodeCore 低价值 |
+
+### 18.3 决策记录
+
+- 推进方式：**先建容器再移植**（#4 Hook 骨架 + #1 agent 资产系统先行）。
+- 移植范围：**全部 13 个**。
+
+### 18.4 实施路线图（阶段 0 → D）
+
+- **阶段 0（容器）**：#4 Hook 代码级骨架（HookDispatcher + WakeQueue）+ #1 agent 资产系统（AgentAssetRegistry + frontmatter）→ 容器就绪。
+- **阶段 A**：4-5 个纯资产插件轻改移植（commit-commands / frontend-design / claude-opus-4-5-migration / 两个 output-style）。
+- **阶段 B**：4 个编排型插件适配移植（feature-dev / pr-review-toolkit / code-review / plugin-dev）。
+- **阶段 C**：2 个 hook 型插件翻译移植（hookify / security-guidance → #5 规则）。
+- **阶段 D**：2 个行为型自定义实现（ralph-wiggum / agent-sdk-dev，按需取舍）。
+
+### 18.5 待办
+
+- [ ] 阶段 0：#4 HookDispatcher + WakeQueue（代码级骨架）
+- [ ] 阶段 0：#1 AgentAssetRegistry + frontmatter 解析 + 热加载
+- [ ] 阶段 A：A 类 5 个插件格式转换 + 工具映射
+- [ ] 阶段 B：B 类 4 个插件 `gh`/`CLAUDE.md` 适配 + tools 映射
+- [ ] 阶段 C：hookify / security-guidance 的 py → #5 规则翻译
+- [ ] 阶段 D：ralph-wiggum / agent-sdk-dev 按需实现
+- [ ] 按资产同步纪律更新 `docs/modules/` 与 `assets/docs/`
+
+### 18.6 设计状态
+
+✅ 插件移植计划定稿（2 个决策点已确认），实施依赖阶段 0 容器。
+
+## 19. 实施记录
 
 - （待定，按讨论结论逐项补充）
