@@ -42,6 +42,23 @@ class TerminalBundleRepository @Inject constructor(
         const val OLD_PROVISION_VERSION = "py3.12-pip-node-bash-curl-rg-gitcredhelper-v4"
     }
 
+    /**
+     * 当前生效的 rootfs 目录（bundle 标记的落盘目录），默认内置 arm64。
+     *
+     * 容器 profile 切换（x86_64 / 自定义容器）时必须由 Engine 调用 [updateRootfsDir] 切换，
+     * 否则标记会写错 rootfs、冷启动也会从错误的目录恢复状态——这正是
+     * 「终端已装 Python 仍弹未安装提示」的底层根因之一（状态与真实容器脱节）。
+     *
+     * ⚠️ 初始化顺序：必须声明在 `_states` / `_customPackages` **之前**。Kotlin 按声明顺序
+     * 初始化字段，而这两个 StateFlow 的初始值分别由 [loadInitialStates] / [loadCustomPackages]
+     * 计算，内部都会读取 [rootfsDir]（即本字段）；若本字段声明在后面，初始化时还是 null，
+     * `rootfsDir.exists()` 会抛 NPE 导致启动即崩（线上闪退根因）。
+     */
+    @Volatile
+    private var currentRootfs: File = containerInstaller.rootfsDir
+
+    private val rootfsDir get() = currentRootfs
+
     /** 每个 bundle 的独立状态。key 稳定 = [TerminalBundleId.ordinal]，不会丢失。 */
     private val _states = MutableStateFlow<Map<TerminalBundleId, BundleInstallState>>(loadInitialStates())
     val states: StateFlow<Map<TerminalBundleId, BundleInstallState>> = _states.asStateFlow()
@@ -49,18 +66,6 @@ class TerminalBundleRepository @Inject constructor(
     /** 某个 bundle 已安装的"自定义 apk 包"列表（即不在 TerminalBundles.ALL.packages 里的 apk 世界包）。独立管理。 */
     private val _customPackages = MutableStateFlow<List<String>>(loadCustomPackages())
     val customPackages: StateFlow<List<String>> = _customPackages.asStateFlow()
-
-    /**
-     * 当前生效的 rootfs 目录（bundle 标记的落盘目录），默认内置 arm64。
-     *
-     * 容器 profile 切换（x86_64 / 自定义容器）时必须由 Engine 调用 [updateRootfsDir] 切换，
-     * 否则标记会写错 rootfs、冷启动也会从错误的目录恢复状态——这正是
-     * 「终端已装 Python 仍弹未安装提示」的底层根因之一（状态与真实容器脱节）。
-     */
-    @Volatile
-    private var currentRootfs: File = containerInstaller.rootfsDir
-
-    private val rootfsDir get() = currentRootfs
 
     // ── 公共：读取 ────────────────────────────────────────────────────────
 
