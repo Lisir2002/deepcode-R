@@ -181,7 +181,30 @@ class TerminalViewModel @Inject constructor(
                 _lastSeenRevision.value = _lastSeenRevision.value + (id to curRev)
             }
         }
+        syncBundleStatesWhenReady()
         prepare()
+    }
+
+    /**
+     * 容器就绪后，从真实 apk 世界刷新 bundle 安装状态，避免 Banner 误判。
+     *
+     * 底层根因：bundle 状态（[TerminalBundleRepository.states]）默认只由「功能包卡片安装」这一条路径
+     * 维护（[com.R.codecore.feature.agent.domain.container.LinuxContainerEngine.markInstalled] 写磁盘标记），
+     * 用户在终端里直接 `apk add python3`、AI 通过 Bash 安装、或预置镜像自带的运行时都不会写标记，
+     * 导致「容器里明明有 Python，终端页却仍弹未安装提示」。这里在容器就绪时用 `apk info` 校准一次
+     * 真实环境，让 Banner 依据容器实际内容判断。
+     */
+    private fun syncBundleStatesWhenReady() {
+        viewModelScope.launch {
+            // 仅在容器进入 Ready 时校准一次（含冷启动后首次进入、以及再次回到终端页时
+            // StateFlow 复播 Ready 立即触发）；避开 BundleInstalling/Uninstalling 状态，
+            // 以免 apk info 误判正在安装的 bundle 而打断其 Installing 状态。
+            containerInit.collect { state ->
+                if (state is ContainerInitState.Ready) {
+                    runCatching { containerEngine.refreshBundleStatesFromApk() }
+                }
+            }
+        }
     }
 
     /** 进入终端页：确保至少有一个标签（首次会解压容器或连 SSH）。 */

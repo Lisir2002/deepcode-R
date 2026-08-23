@@ -133,6 +133,9 @@ class LinuxContainerEngine @Inject constructor(
         CoroutineScope(Dispatchers.IO).launch {
             containerSettingsRepository.activeProfileIdFlow.collect { id ->
                 currentProfile = resolveProfile(id)
+                // Bundle 标记目录跟随当前 profile（x86_64 / 自定义容器各用各的 rootfs），
+                // 目录变化时仓库会重扫磁盘标记，避免状态与实际容器脱节。
+                bundleRepository.updateRootfsDir(containerInstaller.rootfsDirFor(currentProfile))
             }
         }
         // 存储共享开关缓存：buildBaseProotArgv 是同步方法，不能在它内部挂起读 DataStore，故用 flow 预热。
@@ -1084,6 +1087,8 @@ class LinuxContainerEngine @Inject constructor(
      */
     override suspend fun ensureInstalled() {
         val profile = currentProfile
+        // Bundle 标记目录跟随当前 profile（目录未变时不重扫，幂等）。
+        bundleRepository.updateRootfsDir(containerInstaller.rootfsDirFor(profile))
         // 每次进入终端页前确保提取最新的内置文档
         containerInstaller.extractDocs()
         if (containerInstaller.isInstalledFor(profile)) {
@@ -1138,6 +1143,8 @@ class LinuxContainerEngine @Inject constructor(
         FileLogger.i(TAG, "切换容器 profile: ${currentProfile.id} -> ${target.id} (arch=${target.arch})")
         currentProfile = target
         containerSettingsRepository.setActiveProfile(target.id)
+        // Bundle 标记目录立即跟随新 profile（不等 DataStore flow 异步刷新）。
+        bundleRepository.updateRootfsDir(containerInstaller.rootfsDirFor(target))
         val job = initMutex.withLock {
             val existing = initJob
             if (existing == null || !existing.isActive) {

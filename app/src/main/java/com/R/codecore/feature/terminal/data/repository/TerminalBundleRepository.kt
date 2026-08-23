@@ -50,7 +50,17 @@ class TerminalBundleRepository @Inject constructor(
     private val _customPackages = MutableStateFlow<List<String>>(loadCustomPackages())
     val customPackages: StateFlow<List<String>> = _customPackages.asStateFlow()
 
-    private val rootfsDir get() = containerInstaller.rootfsDir
+    /**
+     * 当前生效的 rootfs 目录（bundle 标记的落盘目录），默认内置 arm64。
+     *
+     * 容器 profile 切换（x86_64 / 自定义容器）时必须由 Engine 调用 [updateRootfsDir] 切换，
+     * 否则标记会写错 rootfs、冷启动也会从错误的目录恢复状态——这正是
+     * 「终端已装 Python 仍弹未安装提示」的底层根因之一（状态与真实容器脱节）。
+     */
+    @Volatile
+    private var currentRootfs: File = containerInstaller.rootfsDir
+
+    private val rootfsDir get() = currentRootfs
 
     // ── 公共：读取 ────────────────────────────────────────────────────────
 
@@ -114,6 +124,21 @@ class TerminalBundleRepository @Inject constructor(
     fun resetAllToNotInstalled() {
         _states.value = TerminalBundleId.entries.associateWith { BundleInstallState.NotInstalled }
         _customPackages.value = emptyList()
+    }
+
+    /**
+     * 容器 profile 切换 / 容器就绪后由 Engine 调用：把 bundle 标记的落盘目录切到该 profile
+     * 对应的 rootfs，并在目录发生变化时重扫磁盘标记刷新内存状态。
+     *
+     * 冷启动时本仓库默认指向内置 arm64 目录；若实际激活的容器是 x86_64 / 自定义 profile，
+     * 目录切换会触发一次重扫，让「已装 Python」等状态从正确的 rootfs 恢复（冷启动兜底）。
+     * 目录相同时不做重扫，避免打断进行中的 Installing/Uninstalling 状态。
+     */
+    fun updateRootfsDir(dir: File) {
+        if (currentRootfs == dir) return
+        currentRootfs = dir
+        _states.value = loadInitialStates()
+        _customPackages.value = loadCustomPackages()
     }
 
     /**
