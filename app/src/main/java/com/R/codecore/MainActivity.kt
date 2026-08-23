@@ -144,6 +144,16 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val themeMode by themeSettings.themeModeFlow.collectAsStateWithLifecycle(initialValue = AppThemeMode.AUTO)
+            val uiScope = rememberCoroutineScope()
+            // 侧边栏主题按钮：三态顺序切换（AUTO → DARK → LIGHT → AUTO），无需弹出选择弹窗。
+            val cycleTheme: () -> Unit = {
+                val next = when (themeMode) {
+                    AppThemeMode.AUTO -> AppThemeMode.DARK
+                    AppThemeMode.DARK -> AppThemeMode.LIGHT
+                    AppThemeMode.LIGHT -> AppThemeMode.AUTO
+                }
+                uiScope.launch { themeSettings.setThemeMode(next) }
+            }
             val systemDarkTheme = isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
                 AppThemeMode.AUTO -> systemDarkTheme
@@ -172,7 +182,9 @@ class MainActivity : ComponentActivity() {
                             browserController = browserController,
                             browserLoginPromptManager = browserLoginPromptManager,
                             browserTakeoverManager = browserTakeoverManager,
-                            dataSafetyNotifier = dataSafetyNotifier
+                            dataSafetyNotifier = dataSafetyNotifier,
+                            currentThemeMode = themeMode,
+                            onCycleTheme = cycleTheme
                         )
                         // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
                         com.R.codecore.feature.credentials.presentation.component.GlobalCredentialDialogHost(
@@ -234,7 +246,9 @@ fun AppNavigation(
     browserController: com.R.codecore.feature.browser.domain.BrowserController,
     browserLoginPromptManager: com.R.codecore.feature.browser.domain.BrowserLoginPromptManager,
     browserTakeoverManager: com.R.codecore.feature.browser.domain.BrowserTakeoverManager,
-    dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier
+    dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier,
+    currentThemeMode: AppThemeMode,
+    onCycleTheme: () -> Unit
 ) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -332,10 +346,8 @@ fun AppNavigation(
                         scope.launch { drawerState.close() }
                         navController.navigate("capability_center")
                     },
-                    onNavigateToBrowser = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate("browser")
-                    }
+                    currentThemeMode = currentThemeMode,
+                    onCycleTheme = onCycleTheme
                 )
             }
         }
