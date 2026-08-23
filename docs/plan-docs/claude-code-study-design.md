@@ -107,7 +107,7 @@ plugin/
 - **批次 3**：#4 Hook 事件模型（设计定稿，见第 11 节；代码后声明）→ #5 声明式规则引擎（设计定稿，见第 12 节；MD+JSON 共存、引入 warn、权限+Hook 双消费点）
 - **批次 4**：#1 Agent 声明式定义（设计定稿，见第 8 节；用户 2026-08-23 提前拍板）→ #2 多 Agent 编排（设计定稿，见第 9 节；依赖 #1 落地）
 - **批次 5**：#7 权限分级（设计定稿，见第 13 节；禁 AUTO+记忆、独立 deny 文件）/ #8 Sandbox 网络限制（设计定稿，见第 14 节；L1 HTTP 白名单基于 mihomo）/ #10 后台任务 + system-reminder 唤醒
-- **批次 6**：#9 子代理 fork 继承上下文 + 并发/预算上限（重点讨论 Android 资源与上下文约束）
+- **批次 6**：#9 子代理 fork（设计定稿，见第 15 节；独立会话落库、继承环境+简报、并发/预算用户可配置、骨架先行）
 
 ## 5. 决策记录（逐步讨论结论）
 
@@ -185,6 +185,13 @@ plugin/
 **#8 Sandbox 网络限制**
 - **层级**：**L1 仅 HTTP 白名单**（allowedDomains → mihomo 规则，白名单放行 + 其余 REJECT），基于已有 mihomo 代理内核。
 - **配置**：**两级（全局 + 项目级）+ 默认关**（启用即白名单）。
+
+### 5.10 方向 #9 设计决策（2026-08-23 已确认）
+
+- **subagent 形态**：**独立会话落库**——复用现有 ChatSession + StatefulAgentWorkflow 实例，type 标记 subagent，可持久化、可追溯、结果可恢复。
+- **上下文继承**：**继承环境 + 简报**——继承 workspace/skills/权限/MCP 环境 + 主 agent 生成的任务简报，**不继承对话历史**（token 成本低，符合 Android 资源现实）。
+- **并发/预算上限**：**用户可配置**（settings 项：最大并发数 + 单 subagent 轮数上限 + API 次数上限 + 超时；默认并发 1 + 硬上限）。
+- **落地依赖**：**骨架先行**——独立实现 fork 工具 + 预算控制骨架，agent_type 动态化后续接入（#1 落地后启用 agent_type 专用 subagent）。
 
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
@@ -586,6 +593,41 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ✅ #8 设计定稿（2 个决策点已确认），基于现有 mihomo 代理基础设施。
 
-## 15. 实施记录
+## 15. 方向 #9 设计定稿（草案）
+
+### 15.1 现状（三个既有支撑）
+
+- **agent_type 雏形已存在**：[SkillScope.AGENT](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/skill/Skill.kt#L41) + `Skill.agentType`（默认 `"coding"`），`SkillStateRepository` 注释「多 Agent 演进后由调用方传入动态值」——#1 的 agent_type 动态化即 #9 基础。
+- **上下文预算体系成熟**：[ContextCompactor](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/workflow/ContextCompactor.kt#L211) + `ModelContextPolicy.preserveRecentTokens` 可被 subagent 复用。
+- **工具并行安全已就绪**：[ToolSessionState](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/tool/ToolSessionState.kt#L17)「并行工具同 key 串行安全」；provider 多 tool_use 已支持。
+
+### 15.2 设计（已确认：独立会话落库、继承环境+简报、并发/预算可配置、骨架先行）
+
+- **形态**：subagent = 复用现有 `StatefulAgentWorkflow` 实例 + 独立 ChatSession（type 标记 subagent），落库可追溯、结果可恢复。
+- **上下文继承**：继承环境（workspace/skills/权限/MCP）+ 主 agent 生成的**任务简报**；不继承对话历史（token 成本低）。
+- **并发/预算上限（用户可配置）**：settings 项 = 最大并发数 + 单 subagent 轮数上限 + API 次数上限 + 超时；默认并发 1 + 硬上限。
+- **落地**：骨架先行——独立实现 fork 工具 + 预算控制；agent_type 动态化后续接入（#1 落地后启用）。
+- **与 #2 衔接**：#9 落地 = #2 的物理 subagent 派发能力。
+
+### 15.3 决策记录（4 决策点）
+
+- 形态：**独立会话落库**。
+- 上下文继承：**环境 + 简报，不继承历史**。
+- 并发/预算：**用户可配置**（默认并发 1 + 硬上限）。
+- 落地：**骨架先行**。
+
+### 15.4 待办
+
+- [ ] fork 工具（新建 subagent 会话 + 派发任务简报）
+- [ ] 预算控制（并发/轮数/API 次数/超时，settings 可配）
+- [ ] subagent 结果回收与摘要返回主会话（衔接 #3 置信度）
+- [ ] agent_type 动态化接入（#1 落地后）
+- [ ] 按资产同步纪律更新 `docs/modules/`（agent）与 `assets/docs/`
+
+### 15.5 设计状态
+
+✅ #9 设计定稿（4 个决策点已确认），10 个方向全部定稿。
+
+## 16. 实施记录
 
 - （待定，按讨论结论逐项补充）
