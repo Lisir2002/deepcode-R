@@ -165,11 +165,15 @@ class AIAgentViewModel @Inject constructor(
         _currentWorkspace.value = path
     }
 
+    // 会话列表 = 当前工作台的已绑定会话 + 所有「未绑定工作台」的会话。
+    // 工作台绑定在用户首条消息时自动发生（此前会话处于未绑定态），未绑定会话需始终可见。
     val sessions: StateFlow<List<ChatSession>> = _currentWorkspace
         .flatMapLatest { path ->
             if (path.isBlank()) flowOf(emptyList())
-            else chatSessionDao.getAllSessionsByWorkspace(path)
-                .map { list -> list.map { it.toDomain() } }
+            else chatSessionDao.getAll().map { list ->
+                list.filter { it.workspacePath.isBlank() || it.workspacePath == path }
+                    .map { it.toDomain() }
+            }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -521,14 +525,11 @@ class AIAgentViewModel @Inject constructor(
 
             _currentWorkspace.collectLatest { path ->
                 if (path.isBlank()) return@collectLatest
+                // 切到某工作台：优先选中其最近会话；否则选中最近一条未绑定工作台的会话；
+                // 都没有则置空（进入欢迎页），等用户新建/首条消息时再绑定，避免空会话堆积。
                 val existing = sessionUseCase.getFirstSessionOfWorkspace(path)
-                _currentSessionId.value = if (existing != null) {
-                    existing.id // ORDER BY updatedAt DESC：最近一条
-                } else {
-                    val s = createSession(path)
-                    sessionUseCase.upsertSession(s)
-                    s.id
-                }
+                    ?: sessionUseCase.getFirstUnboundSession()
+                _currentSessionId.value = existing?.id
             }
         }
 
@@ -772,7 +773,11 @@ class AIAgentViewModel @Inject constructor(
                 val userMsgId = UUID.randomUUID().toString()
                 messagePersistenceUseCase.persist(sessionId, MessageRole.USER, request, id = userMsgId, taskId = taskId, attachments = inputAttachments)
                 checkpointManager.createCheckpoint(sessionId, userMsgId, request)
-                if (isFirst) sessionUseCase.updateTitle(sessionId, sessionUseCase.deriveTitle(request))
+                if (isFirst) {
+                    sessionUseCase.updateTitle(sessionId, sessionUseCase.deriveTitle(request))
+                    // 首条消息自动绑定当前工作台（仅未绑定会话生效；bindWorkspace 内部保证一次性绑定）
+                    sessionUseCase.bindWorkspace(sessionId, projectRoot)
+                }
             }
             sessionUseCase.touch(sessionId, messagePersistenceUseCase.nextTimestamp())
 
@@ -1177,7 +1182,7 @@ class AIAgentViewModel @Inject constructor(
             setChanges(curId, emptyList())
             return@launch
         }
-        val s = createSession(_currentWorkspace.value)
+        val s = createSession()
         sessionUseCase.upsertSession(s)
         _currentSessionId.value = s.id
     }
@@ -1328,14 +1333,10 @@ class AIAgentViewModel @Inject constructor(
             if (ws.isBlank()) {
                 _currentSessionId.value = null
             } else {
+                // 删除后选中该工作台最近会话；否则选最近未绑定会话；都没有则置空。
                 val remaining = sessionUseCase.getFirstSessionOfWorkspace(ws)
-                if (remaining != null) {
-                    _currentSessionId.value = remaining.id
-                } else {
-                    val s = createSession(ws)
-                    sessionUseCase.upsertSession(s)
-                    _currentSessionId.value = s.id
-                }
+                    ?: sessionUseCase.getFirstUnboundSession()
+                _currentSessionId.value = remaining?.id
             }
         }
     }
@@ -1345,6 +1346,15 @@ class AIAgentViewModel @Inject constructor(
         val trimmed = newTitle.trim()
         if (trimmed.isEmpty()) return@launch
         sessionUseCase.updateTitle(id, trimmed)
+    }
+
+    /**
+     * 手动绑定当前会话到指定工作台（「更多配置 → 工作台绑定」）。
+     * 绑定即一次性的：仅未绑定会话生效，已绑定会话忽略（bindWorkspace 内部保证）。
+     */
+    fun bindSessionWorkspace(workspacePath: String) = viewModelScope.launch {
+        val sid = _currentSessionId.value ?: return@launch
+        sessionUseCase.bindWorkspace(sid, workspacePath)
     }
 
     /**
@@ -1373,7 +1383,7 @@ class AIAgentViewModel @Inject constructor(
         if (ws.isBlank()) return ""
         val existing = sessionUseCase.getFirstSessionOfWorkspace(ws)
         val id = if (existing != null) existing.id else {
-            val s = createSession(_currentWorkspace.value)
+            val s = createSession()
             sessionUseCase.upsertSession(s)
             s.id
         }
@@ -1384,9 +1394,12 @@ class AIAgentViewModel @Inject constructor(
     /**
      * 创建新会话并按「新会话默认模型」绑定 provider/model；未设置默认时回退全局 active provider。
      * 所有新建会话的入口（冷启动、新建、删除兜底、ensureSession）都走这里。
+     *
+     * 新会话初始**不绑定工作台**（workspacePath 为空）：工作台绑定发生在用户发第一条消息时自动绑定，
+     * 或由用户在「更多配置 → 工作台绑定」手动绑定。
      */
-    private suspend fun createSession(workspacePath: String): ChatSessionEntity {
-        val s = sessionUseCase.newSessionEntity(workspacePath)
+    private suspend fun createSession(): ChatSessionEntity {
+        val s = sessionUseCase.newSessionEntity("")
         val providerId = defaultModelSettingsRepository.getDefaultProviderId()
         val model = defaultModelSettingsRepository.getDefaultModel()
         if (providerId.isNotBlank() && model.isNotBlank()) {
@@ -1502,7 +1515,7 @@ class AIAgentViewModel @Inject constructor(
     fun newChatAndSend(content: String) = viewModelScope.launch {
         val ws = _currentWorkspace.value
         if (ws.isBlank()) return@launch
-        val s = createSession(ws)
+        val s = createSession()
         sessionUseCase.upsertSession(s)
         _currentSessionId.value = s.id
         enqueueAgentRequest(

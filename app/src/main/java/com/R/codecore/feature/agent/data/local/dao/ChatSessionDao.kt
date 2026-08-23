@@ -18,6 +18,9 @@ interface ChatSessionDao {
     @Query("SELECT * FROM chat_sessions WHERE workspacePath = :workspacePath ORDER BY updatedAtMs DESC")
     suspend fun getAllSessionsByWorkspaceOnce(workspacePath: String): List<ChatSessionEntity>
 
+    @Query("SELECT * FROM chat_sessions ORDER BY updatedAtMs DESC")
+    fun getAll(): Flow<List<ChatSessionEntity>>
+
     @Query("SELECT * FROM chat_sessions")
     suspend fun getAllOnce(): List<ChatSessionEntity>
 
@@ -41,6 +44,9 @@ interface ChatSessionDao {
     /** 工作区重命名后批量更新其下所有会话的绑定路径（会话与工作区一对一绑定，路径随之迁移）。 */
     @Query("UPDATE chat_sessions SET workspacePath = :newPath WHERE workspacePath = :oldPath")
     suspend fun updateWorkspacePath(oldPath: String, newPath: String)
+
+    @Query("UPDATE chat_sessions SET workspacePath = :path WHERE id = :id")
+    suspend fun setWorkspacePath(id: String, path: String)
 
     @Query("UPDATE chat_sessions SET updatedAtMs = :updatedAtMs WHERE id = :id")
     suspend fun touch(id: String, updatedAtMs: Long)

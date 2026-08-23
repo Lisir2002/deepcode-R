@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Article
 import androidx.compose.material.icons.rounded.BrightnessAuto
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.DarkMode
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
@@ -121,6 +123,10 @@ fun ChatDrawerContent(
     onOpenFile: (String) -> Unit = {},
     /** 查询某工作区绑定的会话（供「所有工作台 → 查看对话绑定」展示）。 */
     boundSessionsForWorkspace: suspend (String) -> List<ChatSession> = { emptyList() },
+    /** 当前会话（供「更多配置 → 工作台绑定」展示绑定状态）。 */
+    currentSession: ChatSession? = null,
+    /** 手动绑定当前会话到指定工作台（「更多配置 → 工作台绑定」）。 */
+    onBindWorkspace: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var pendingDelete by remember { mutableStateOf<ChatSession?>(null) }
@@ -187,7 +193,12 @@ fun ChatDrawerContent(
             } else {
                 MoreConfigPlaceholder(modifier = Modifier.weight(1f))
             }
-            else -> MoreConfigPlaceholder(modifier = Modifier.weight(1f))
+            else -> MoreConfigPanel(
+                workspaceViewModel = workspaceViewModel,
+                currentSession = currentSession,
+                onBindWorkspace = onBindWorkspace,
+                modifier = Modifier.weight(1f)
+            )
         }
 
         HorizontalDivider(
@@ -1244,5 +1255,180 @@ private fun MoreConfigPlaceholder(modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+/**
+ * 侧边栏「更多配置」tab：工作台绑定等配置项。
+ *
+ * 工作台绑定：会话与工作台一一绑定、不可中途切换。新会话创建时未绑定，用户发送首条消息时
+ * 自动绑定当前工作台；也可在本面板把当前（未绑定）会话手动绑定到任一工作台。
+ */
+@Composable
+private fun MoreConfigPanel(
+    workspaceViewModel: WorkspaceViewModel?,
+    currentSession: ChatSession?,
+    onBindWorkspace: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val workspaces = workspaceViewModel?.workspaces?.collectAsStateWithLifecycle()?.value ?: emptyList()
+    val currentWorkspace = workspaceViewModel?.current?.collectAsStateWithLifecycle()?.value
+    val currentWorkspacePath = currentWorkspace?.path.orEmpty()
+
+    val sessionWorkspacePath = currentSession?.workspacePath.orEmpty()
+    val isBound = sessionWorkspacePath.isNotBlank()
+    val boundWorkspaceName = workspaces.firstOrNull { it.path == sessionWorkspacePath }?.name
+        ?: sessionWorkspacePath.substringAfterLast('/').ifBlank { sessionWorkspacePath }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+    ) {
+        item {
+            Column(Modifier.padding(horizontal = Spacing.xs)) {
+                // 板块标题
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(vertical = Spacing.md)
+                ) {
+                    Icon(
+                        Icons.Rounded.Link,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(Spacing.sm))
+                    Text(
+                        text = stringResource(R.string.workspace_bind_section_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.workspace_bind_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.md))
+
+                if (isBound) {
+                    // 已绑定：展示绑定目标，绑定一次性、不可中途切换
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Radius.sm))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
+                            .padding(horizontal = Spacing.md, vertical = Spacing.md)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(Spacing.md))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.workspace_bind_bound, boundWorkspaceName),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.workspace_bind_bound_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    // 未绑定：展示可绑定的工作台列表
+                    Text(
+                        text = stringResource(R.string.workspace_bind_unbound_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    when {
+                        currentSession == null -> Text(
+                            text = stringResource(R.string.workspace_bind_no_session),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = Spacing.sm)
+                        )
+                        workspaces.isEmpty() -> Text(
+                            text = stringResource(R.string.workspace_bind_empty),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = Spacing.sm)
+                        )
+                        else -> workspaces.forEach { ws ->
+                            WorkspaceBindRow(
+                                workspace = ws,
+                                isCurrent = ws.path == currentWorkspacePath,
+                                onClick = { onBindWorkspace(ws.path) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 手动绑定面板中的工作台选择行：点击即把当前会话绑定到该工作台。 */
+@Composable
+private fun WorkspaceBindRow(
+    workspace: Workspace,
+    isCurrent: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.sm))
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.md, vertical = Spacing.md)
+    ) {
+        Icon(
+            Icons.Rounded.Folder,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(Spacing.md))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = workspace.name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = workspace.path,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (isCurrent) {
+            Text(
+                text = stringResource(R.string.workspace_current),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = Spacing.xs)
+            )
+        }
+        Spacer(Modifier.width(Spacing.xs))
+        Icon(
+            Icons.Rounded.Link,
+            contentDescription = stringResource(R.string.workspace_bind_action),
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }

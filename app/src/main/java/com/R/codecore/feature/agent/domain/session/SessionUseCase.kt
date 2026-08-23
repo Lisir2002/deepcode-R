@@ -68,6 +68,19 @@ class SessionUseCase @Inject constructor(
         return chatSessionDao.getAllSessionsByWorkspaceOnce(workspacePath).firstOrNull()
     }
 
+    /** 最近一条「未绑定工作台」的会话（工作台绑定在首条消息时自动发生，此前会话处于未绑定态）。 */
+    suspend fun getFirstUnboundSession(): ChatSessionEntity? {
+        return chatSessionDao.getAllOnce().firstOrNull { it.workspacePath.isBlank() }
+    }
+
+    /** 绑定/解绑会话工作台路径。绑定即一次性的（会话中途不可切换工作台）：仅未绑定会话可绑定，已绑定则忽略。 */
+    suspend fun bindWorkspace(sessionId: String, workspacePath: String) {
+        if (workspacePath.isBlank()) return
+        val current = chatSessionDao.getById(sessionId)?.workspacePath ?: return
+        if (current.isNotBlank()) return
+        chatSessionDao.setWorkspacePath(sessionId, workspacePath)
+    }
+
     suspend fun upsertSession(entity: ChatSessionEntity) {
         chatSessionDao.upsert(entity)
     }

@@ -286,6 +286,7 @@ fun AppNavigation(
 
     val sessions by agentViewModel.sessions.collectAsStateWithLifecycle()
     val currentSessionId by agentViewModel.currentSessionId.collectAsStateWithLifecycle()
+    val currentSession = sessions.find { it.id == currentSessionId }
     val agentStates by agentViewModel.agentStates.collectAsStateWithLifecycle()
 
     // ── 导出会话：SAF 保存文件 ──
@@ -361,7 +362,10 @@ fun AppNavigation(
                         reopenDrawerAfterFileReader = true
                         scope.launch { drawerState.close() }
                         navController.navigate("file_reader/" + Uri.encode(path))
-                    }
+                    },
+                    // 「更多配置 → 工作台绑定」：当前会话 + 手动绑定回调
+                    currentSession = currentSession,
+                    onBindWorkspace = { path -> agentViewModel.bindSessionWorkspace(path) }
                 )
             }
         }

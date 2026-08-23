@@ -927,6 +927,16 @@
     <string name="workspace_current">当前</string>
     <string name="workspace_menu">工作区操作</string>
 
+    <!-- Workspace Bind (More Config) -->
+    <string name="workspace_bind_section_title">工作台绑定</string>
+    <string name="workspace_bind_desc">会话与工作台绑定后，AI 的工作目录固定为该工作台，绑定后不可中途切换。新会话在发送第一条消息时自动绑定当前工作台，也可在此手动绑定。</string>
+    <string name="workspace_bind_bound">已绑定：%1$s</string>
+    <string name="workspace_bind_bound_hint">绑定已确定，如需更换请新建会话</string>
+    <string name="workspace_bind_unbound_hint">当前会话尚未绑定，选择要绑定的工作台：</string>
+    <string name="workspace_bind_no_session">尚未选择会话</string>
+    <string name="workspace_bind_empty">暂无可用工作台</string>
+    <string name="workspace_bind_action">绑定到该工作台</string>
+
     <!-- Workspace Dir Sub-tabs & File Browser -->
     <string name="workspace_tab_current">当前工作台</string>
     <string name="workspace_tab_all">所有工作台</string>
