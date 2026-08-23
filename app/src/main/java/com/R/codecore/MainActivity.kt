@@ -343,7 +343,11 @@ fun AppNavigation(
                         navController.navigate("settings")
                     },
                     currentThemeMode = currentThemeMode,
-                    onCycleTheme = onCycleTheme
+                    onCycleTheme = onCycleTheme,
+                    // 侧边栏「工作目录」tab：复用工作区 ViewModel，切换时若有运行会话则确认
+                    workspaceViewModel = workspaceViewModel,
+                    hasRunningSessions = { agentViewModel.hasRunningSessionsInCurrentWorkspace() },
+                    onSwitchWorkspaceConfirmed = { agentViewModel.stopAllAndCloseTerminal() }
                 )
             }
         }

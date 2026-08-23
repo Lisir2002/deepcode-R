@@ -347,6 +347,10 @@
     <string name="backup_import_failed">导入失败</string>
 
     <!-- Chat Drawer -->
+    <string name="chat_drawer_tab_chats">对话列表</string>
+    <string name="chat_drawer_tab_workspace">工作目录</string>
+    <string name="chat_drawer_tab_more">更多配置</string>
+    <string name="chat_drawer_tab_more_placeholder">更多配置功能即将上线</string>
     <string name="chat_history">历史记录</string>
     <string name="chat_no_sessions_hint">暂无会话，点击「新建会话」开始</string>
     <string name="chat_settings">设置</string>
