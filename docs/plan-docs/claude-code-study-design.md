@@ -106,7 +106,7 @@ plugin/
 - **批次 2**：#3 Confidence Scoring 分级上报（设计定稿，见第 10 节；随 #1/#2 实施）
 - **批次 3**：#4 Hook 事件模型（设计定稿，见第 11 节；代码后声明）→ #5 声明式规则引擎（设计定稿，见第 12 节；MD+JSON 共存、引入 warn、权限+Hook 双消费点）
 - **批次 4**：#1 Agent 声明式定义（设计定稿，见第 8 节；用户 2026-08-23 提前拍板）→ #2 多 Agent 编排（设计定稿，见第 9 节；依赖 #1 落地）
-- **批次 5**：#7 权限分级（设计定稿，见第 13 节；禁 AUTO+记忆、独立 deny 文件）/ #8 Sandbox 网络限制（设计定稿，见第 14 节；L1 HTTP 白名单基于 mihomo）/ #10 后台任务 + system-reminder 唤醒
+- **批次 5**：#7 权限分级（设计定稿，见第 13 节；禁 AUTO+记忆、独立 deny 文件）/ #8 Sandbox 网络限制（设计定稿，见第 14 节；L1 HTTP 白名单基于 mihomo）/ #10 后台任务 + system-reminder 唤醒（设计定稿，见第 16 节；统一 WakeQueue）
 - **批次 6**：#9 子代理 fork（设计定稿，见第 15 节；独立会话落库、继承环境+简报、并发/预算用户可配置、骨架先行）
 
 ## 5. 决策记录（逐步讨论结论）
@@ -192,6 +192,13 @@ plugin/
 - **上下文继承**：**继承环境 + 简报**——继承 workspace/skills/权限/MCP 环境 + 主 agent 生成的任务简报，**不继承对话历史**（token 成本低，符合 Android 资源现实）。
 - **并发/预算上限**：**用户可配置**（settings 项：最大并发数 + 单 subagent 轮数上限 + API 次数上限 + 超时；默认并发 1 + 硬上限）。
 - **落地依赖**：**骨架先行**——独立实现 fork 工具 + 预算控制骨架，agent_type 动态化后续接入（#1 落地后启用 agent_type 专用 subagent）。
+
+### 5.11 方向 #10 设计决策（2026-08-23 已确认）
+
+- **唤醒机制**：**统一 WakeQueue**——单一 Room 队列承载 #4 hook 审查结果 + #10 耗时任务结果，下轮注入 system-reminder + 消费确认，一套机制两处消费。
+- **后台化范围**：**终端长命令（detach）+ 容器下载/安装完成 + MCP server 处理完成**；Agent Bash 工具超时转后台本期不纳入。
+- **生命周期**：**Room 持久化 + 重扫**——唤醒队列落库，App 被杀后下次启动重扫待注入队列继续唤醒。
+- **并发/预算**：**用户可配置 + 默认并发 1**（对齐 #9 预算思想）。
 
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
@@ -628,6 +635,49 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ✅ #9 设计定稿（4 个决策点已确认），10 个方向全部定稿。
 
-## 16. 实施记录
+## 16. 方向 #10 设计定稿（草案）
+
+### 16.1 现状（三个事实）
+
+- **无现成 system-reminder 机制**——全新能力；「下轮注入」概念 #4 asyncRewake 已定稿。
+- **无 WorkManager**——项目风格为 Service + 协程 + App 启动周期调用（AuditPurgeWorker/CredentialRotationWorker），不引入新框架。
+- **已有两个常驻后台**：`TerminalKeepaliveService`（终端保活）+ `McpServerManager`（MCP server 常驻）。
+
+### 16.2 设计（已确认：统一 WakeQueue、终端/容器/MCP、Room 持久化+重扫、可配置默认 1）
+
+- **统一 WakeQueue（Room 表）**：wake_id / source / type / content / status(待注入/已注入) / createdAt。
+  - #4 hook 审查结果 + #10 耗时任务结果**共用一套队列**，下轮注入 system-reminder + 消费确认（防重复）。
+- **后台化范围**：
+  - 终端长命令：detach 到会话后台跑（TerminalKeepaliveService 已保活），完成写唤醒队列；
+  - 容器下载/安装：完成写唤醒队列；
+  - MCP server：处理完成通知写唤醒队列。
+  - Agent Bash 工具超时转后台**本期不纳入**。
+- **注入时机**：下一轮会话开始前拼入 system-reminder（需在 SystemPromptProvider 或 workflow 前处理，全新机制）。
+- **生命周期**：WakeQueue Room 持久化 + 会话落库；App 被杀后下次启动**重扫待注入队列**继续唤醒。
+- **并发/预算**：后台任务并发上限**用户可配置**（对齐 #9），默认并发 1 + 超时上限。
+- **与 #4 关系**：#4 先做骨架（HookDispatcher + WakeQueue），#10 复用队列承载耗时任务。
+
+### 16.3 决策记录（4 决策点）
+
+- 唤醒机制：**统一 WakeQueue**（一套机制两处消费）。
+- 后台化范围：**终端 + 容器 + MCP**（Bash 超时转后台不纳入）。
+- 生命周期：**Room 持久化 + 重扫**。
+- 并发/预算：**可配置 + 默认 1**。
+
+### 16.4 待办
+
+- [ ] WakeQueue 表 + DAO（Room 迁移）
+- [ ] system-reminder 注入机制（下轮会话开始前拼接 + 消费确认）
+- [ ] 终端长命令 detach 后台化 + 完成唤醒
+- [ ] 容器下载/安装完成唤醒
+- [ ] MCP server 完成通知唤醒
+- [ ] 后台并发预算用户可配置（对齐 #9）
+- [ ] 按资产同步纪律更新 `docs/modules/`（agent/terminal）与 `assets/docs/`
+
+### 16.5 设计状态
+
+✅ #10 设计定稿（4 个决策点已确认）——**10 个方向全部定稿完成**。
+
+## 17. 实施记录
 
 - （待定，按讨论结论逐项补充）
