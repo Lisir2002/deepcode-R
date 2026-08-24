@@ -94,6 +94,8 @@ internal fun AgentMessageItem(
     var copied by remember { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val copyScope = rememberCoroutineScope()
+    // 款式分发：由 LocalBubbleStyle 决定当前生效的消息外框（切换只影响渲染层，不读写对话数据）
+    val renderer = BubbleStyleProvider.provide(LocalBubbleStyle.current)
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -103,19 +105,10 @@ internal fun AgentMessageItem(
             ReasoningBubble(text = message.reasoning.orEmpty(), initiallyExpanded = false, cache = markdownCache)
         }
         if (hasContent || hasAttachments || message.role != MessageRole.ASSISTANT) {
-            // 用户消息：右侧透明文本（无背景、无色线，仅右对齐，与模型消息的色线体系区分）
-            // 正文 Column 用 Alignment.End 水平右对齐 + 宽度上限 0.86f：短消息贴屏幕右缘，长消息自动换行限宽，
-            // 与上方「用户」标签、下方操作按钮的 End 对齐在同一竖线，不再悬空居中。
-            if (isUser && (hasContent || hasAttachments)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(0.86f),
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                    ) {
+            when {
+                // 用户消息：款式外框（纯文字右对齐 / 细线右框 / 终端日志顶格色块 / 时间线圆节点）
+                isUser && (hasContent || hasAttachments) -> {
+                    renderer.UserContainer(timestamp = message.timestamp) {
                         if (hasContent) {
                             SelectionContainer {
                                 Text(
@@ -130,37 +123,53 @@ internal fun AgentMessageItem(
                         }
                     }
                 }
-            } else if (message.role == MessageRole.ASSISTANT && hasContent && formalMode) {
-                // 正式回复（独立于过程内容）：透明底 + 左侧主色竖条
-                FormalReplyContainer(
-                    barColor = MessageAccent.Content.resolveLine()
-                ) {
-                    SelectionContainer {
-                        MarkdownContent(
-                            text = message.content,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            cache = markdownCache
-                        )
-                    }
-                    if (hasAttachments) {
-                        MessageAttachmentPreviewRow(attachments = message.attachments)
+                // 正式回复：款式外框（isFormal=true，款式据此轻微强调）
+                message.role == MessageRole.ASSISTANT && hasContent && formalMode -> {
+                    renderer.AssistantContainer(isFormal = true, timestamp = message.timestamp) {
+                        SelectionContainer {
+                            MarkdownContent(
+                                text = message.content,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                cache = markdownCache
+                            )
+                        }
+                        if (hasAttachments) {
+                            MessageAttachmentPreviewRow(attachments = message.attachments)
+                        }
                     }
                 }
-            } else {
-                // 助手 / 工具消息：左对齐直出
-                if (message.role == MessageRole.ASSISTANT && hasContent) {
-                    // 一轮回复正文顶部的整行淡主色线（横向锚点）
-                    FullWidthAccentBar(MessageAccent.Content.resolveLine())
+                // 助手过程内容：款式外框（isFormal=false，与正式回复区分）
+                message.role == MessageRole.ASSISTANT && hasContent -> {
+                    renderer.AssistantContainer(isFormal = false, timestamp = message.timestamp) {
+                        SelectionContainer {
+                            MarkdownContent(
+                                text = message.content,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                cache = markdownCache
+                            )
+                        }
+                        if (hasAttachments) {
+                            MessageAttachmentPreviewRow(attachments = message.attachments)
+                        }
+                    }
                 }
-                if (hasContent || message.role == MessageRole.TOOL) {
-                    if (message.role == MessageRole.TOOL) {
+                // 工具消息：款式外框（内容自带折叠）
+                message.role == MessageRole.TOOL -> {
+                    renderer.ToolContainer(timestamp = message.timestamp) {
                         ToolMessageBody(
                             message,
                             liveOutput = liveOutput,
                             initiallyExpanded = initiallyExpanded,
                             environmentSnapshots = environmentSnapshots
                         )
-                    } else if (hasContent) {
+                        if (hasAttachments) {
+                            MessageAttachmentPreviewRow(attachments = message.attachments)
+                        }
+                    }
+                }
+                // 兜底：其余角色有正文时直出
+                hasContent -> {
+                    renderer.AssistantContainer(isFormal = false, timestamp = message.timestamp) {
                         SelectionContainer {
                             MarkdownContent(
                                 text = message.content,
@@ -170,7 +179,7 @@ internal fun AgentMessageItem(
                         }
                     }
                 }
-                if (hasAttachments) {
+                hasAttachments -> {
                     MessageAttachmentPreviewRow(attachments = message.attachments)
                 }
             }

@@ -28,9 +28,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.R.codecore.R
@@ -41,7 +43,43 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 各款式共用的灰阶「任务头」行：流式脉冲点 / 标题（折叠态显示摘要）/ 流式文案 /
+ * 三点流式脉冲：标题后的「…」呼吸点（依次错峰，0/200/400ms）。
+ * 决策 D3：纯文字流在标题后展示三点脉冲作为「思考中 / 执行中」状态。
+ */
+@Composable
+fun StreamingDots(
+    color: Color,
+    modifier: Modifier = Modifier,
+    dotSize: Dp = 4.dp
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "streamingDots")
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        repeat(3) { index ->
+            val alpha by infiniteTransition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, delayMillis = index * 200, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dot$index"
+            )
+            Box(
+                modifier = Modifier
+                    .size(dotSize)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = alpha))
+            )
+        }
+    }
+}
+
+/**
+ * 各款式共用的灰阶「任务头」行：标题（折叠态显示摘要）/ 流式三点脉冲（标题后）/ 流式文案 /
  * 时间戳 / 展开折叠箭头。款式通过 [leading] 附加节点或色块（如时间线的任务头节点）。
  */
 @Composable
@@ -55,16 +93,6 @@ fun BubbleTaskHeader(
     leading: @Composable RowScope.() -> Unit = {},
     headerTrailing: @Composable RowScope.() -> Unit = {}
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "streamingPulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.9f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseAlpha"
-    )
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -74,14 +102,6 @@ fun BubbleTaskHeader(
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         leading()
-        if (isStreaming) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha))
-            )
-        }
         if (isExpanded) {
             Box(Modifier.weight(1f))
         } else {
@@ -96,6 +116,9 @@ fun BubbleTaskHeader(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
+        }
+        if (isStreaming) {
+            StreamingDots(color = MaterialTheme.colorScheme.primary)
         }
         headerTrailing()
         if (timestamp > 0) {
@@ -128,7 +151,8 @@ fun BubbleSubLabel(
     modifier: Modifier = Modifier,
     leading: @Composable RowScope.() -> Unit = {},
     trailing: @Composable RowScope.() -> Unit = {},
-    alignEnd: Boolean = false
+    alignEnd: Boolean = false,
+    bold: Boolean = false
 ) {
     Row(
         modifier = modifier
@@ -145,7 +169,9 @@ fun BubbleSubLabel(
         leading()
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal
+            ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = if (alignEnd) Modifier else Modifier.weight(1f)
         )

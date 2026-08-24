@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -128,7 +127,7 @@ object TerminalLogBubbleStyle : MessageBubbleStyle {
         modifier: Modifier,
         content: @Composable ColumnScope.() -> Unit
     ) {
-        Row(modifier = modifier.fillMaxWidth()) {
+        Box(modifier = modifier.fillMaxWidth()) {
             // 行首加粗色块：贯穿内容高度（用户深档强调色）
             Box(
                 modifier = Modifier
@@ -137,11 +136,10 @@ object TerminalLogBubbleStyle : MessageBubbleStyle {
                     .align(Alignment.CenterStart)
                     .background(BubblePalette.user())
             )
-            Spacer(Modifier.width(Spacing.sm))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = Spacing.sm, end = Spacing.xs, top = Spacing.xs, bottom = Spacing.xs),
+                    .padding(start = Spacing.sm + 3.dp, end = Spacing.xs, top = Spacing.xs, bottom = Spacing.xs),
                 content = content
             )
         }
@@ -154,7 +152,7 @@ object TerminalLogBubbleStyle : MessageBubbleStyle {
         modifier: Modifier,
         content: @Composable ColumnScope.() -> Unit
     ) {
-        Row(modifier = modifier.fillMaxWidth()) {
+        Box(modifier = modifier.fillMaxWidth()) {
             // 行首色线：正式回复 3dp 粗（左侧竖条），过程回复 2dp 细
             Box(
                 modifier = Modifier
@@ -163,12 +161,11 @@ object TerminalLogBubbleStyle : MessageBubbleStyle {
                     .align(Alignment.CenterStart)
                     .background(BubblePalette.assistant())
             )
-            Spacer(Modifier.width(Spacing.sm))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(
-                        start = if (isFormal) Spacing.sm else Spacing.xs,
+                        start = if (isFormal) Spacing.sm + 3.dp else Spacing.xs + 2.dp,
                         end = Spacing.xs,
                         top = Spacing.xs,
                         bottom = Spacing.xs
@@ -184,7 +181,7 @@ object TerminalLogBubbleStyle : MessageBubbleStyle {
         modifier: Modifier,
         content: @Composable ColumnScope.() -> Unit
     ) {
-        Row(modifier = modifier.fillMaxWidth()) {
+        Box(modifier = modifier.fillMaxWidth()) {
             // 行首色线（工具灰）
             Box(
                 modifier = Modifier
@@ -193,11 +190,10 @@ object TerminalLogBubbleStyle : MessageBubbleStyle {
                     .align(Alignment.CenterStart)
                     .background(BubblePalette.tool())
             )
-            Spacer(Modifier.width(Spacing.sm))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = Spacing.xs, end = Spacing.xs, top = Spacing.xs, bottom = Spacing.xs),
+                    .padding(start = Spacing.xs + 2.dp, end = Spacing.xs, top = Spacing.xs, bottom = Spacing.xs),
                 content = content
             )
         }

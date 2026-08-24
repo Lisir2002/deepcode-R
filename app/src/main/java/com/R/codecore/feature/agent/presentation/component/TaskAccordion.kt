@@ -2,11 +2,6 @@ package com.R.codecore.feature.agent.presentation.component
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.InfiniteTransition
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -23,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,13 +35,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.R.codecore.R
-import com.R.codecore.core.theme.Brand
-import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.MessageAccent
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.core.theme.resolveLine
+import com.R.codecore.feature.chatrender.BubbleStyleProvider
+import com.R.codecore.feature.chatrender.BubbleSubGroupType
+import com.R.codecore.feature.chatrender.LocalBubbleStyle
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot
 import com.R.codecore.feature.agent.presentation.MessageRole
@@ -66,11 +60,7 @@ import androidx.compose.material.icons.rounded.Construction
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Sync
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -111,18 +101,6 @@ internal fun TaskAccordion(
         shrinkTowards = Alignment.Top
     ) + fadeOut(animationSpec = tween(250))
 
-    // 流式生成脉冲动画：任务头小圆点透明度呼吸
-    val infiniteTransition = rememberInfiniteTransition(label = "streamingPulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.9f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseAlpha"
-    )
-
     Column(modifier = modifier.fillMaxWidth()) {
         // 用户消息（右侧气泡）：独立于大气泡（贯穿竖条）之外，仅展开时显示
         AnimatedVisibility(
@@ -155,158 +133,97 @@ internal fun TaskAccordion(
                     }
             }
         }
-        // 大气泡：贯穿竖条（靛蓝）包裹模型整轮回复（整行色线 + 任务头 + 过程内容 + 正式回复）。
-        // 整行色线作为大气泡首行、从左缘铺满；竖条自其左端贯穿到底，形成「拐角钉」纵向锚点。
-        Box(modifier = Modifier.fillMaxWidth()) {
-            // 贯穿竖条：不参与父布局尺寸计算，随内容高度伸缩，作为整轮回复的纵向时间轴锚点
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .width(3.dp)
-                    .align(Alignment.CenterStart)
-                    .background(MessageAccent.Spine.resolveLine())
-            )
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // 一轮回复顶部的整行淡主色线（横向锚点，与贯穿竖条左端交汇）
-                FullWidthAccentBar(MessageAccent.Content.resolveLine())
+        // 任务组外框：由当前生效款式决定（贯穿竖条+顶部色线 / 细线框 / 时间线轨道 / 纯文字流）。
+        // 任务头（标题 / 流式状态 / 时间 / 折叠箭头）与纵向锚点均由款式实现，内容层注入过程内容与正式回复。
+        val renderer = BubbleStyleProvider.provide(LocalBubbleStyle.current)
+        renderer.TaskGroupContainer(
+            isExpanded = group.isExpanded,
+            isStreaming = group.isStreaming,
+            title = group.title,
+            timestamp = group.timestamp,
+            onToggle = { onToggleTask(group.taskId) },
+            headerTrailing = {
+                // 流式状态文案：显示在任务头（流式点 / 标题 / 时间 / 箭头之间）
+                if (group.isStreaming) {
+                    Text(
+                        text = stringResource(R.string.chat_task_streaming),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        ) {
+            // 任务过程内容：二级子手风琴（无底仅色线结构，不添加背景容器）
+            AnimatedVisibility(
+                visible = group.isExpanded,
+                enter = taskExpand,
+                exit = taskShrink
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = Spacing.md)
+                        .padding(end = Spacing.sm, bottom = Spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                 ) {
-                    // 任务头：灰阶日志行（无卡片 / 无渐变徽章 / 无阴影）
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onToggleTask(group.taskId) }
-                            .padding(vertical = Spacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-                    ) {
-                    // 流式状态圆点：仅在生成中显示，脉冲呼吸
-                    if (group.isStreaming) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha))
-                        )
-                    }
-                    // 任务标题：仅折叠态显示用户消息摘要作为折叠锚点；
-                    // 展开态隐藏标题，避免与下方用户消息块重复展示同一段文案，留白撑开右侧对齐。
-                    if (group.isExpanded) {
-                        Spacer(Modifier.weight(1f))
-                    } else {
-                        HorizontalScrollableText(
-                            text = group.title,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = if (group.isStreaming) FontWeight.SemiBold else FontWeight.Medium,
-                                lineHeight = 20.sp
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    // 流式状态文案
-                    if (group.isStreaming) {
-                        Text(
-                            text = stringResource(R.string.chat_task_streaming),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // 时间戳
-                    if (group.timestamp > 0) {
-                        Text(
-                            text = formatTaskTime(group.timestamp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // 展开/折叠箭头
-                    androidx.compose.material3.Icon(
-                        imageVector = if (group.isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = stringResource(
-                            if (group.isExpanded) R.string.chat_task_collapse else R.string.chat_task_expand
-                        ),
-                        tint = Brand.IconGray,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // 任务过程内容：二级子手风琴（无底仅色线结构，不添加背景容器）
-                AnimatedVisibility(
-                    visible = group.isExpanded,
-                    enter = taskExpand,
-                    exit = taskShrink
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(end = Spacing.sm, bottom = Spacing.xs),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                    ) {
-                        split.processUnits
-                            .filter { it.subGroup.type != TaskSubGroupType.USER }
-                            .forEach { unit ->
-                                // 纯思考过程（仅 reasoning 无正文）：直接渲染 ReasoningBubble（自带短条+竖条+标题+折叠），
-                                // 不套 SubAccordion 的「思考」片段头，避免「思考 → 思考过程」双层嵌套。
-                                if (unit.subGroup.type == TaskSubGroupType.REASONING) {
-                                    val reasoningText = remember(unit.subGroup.id, unit.subGroup.messages) {
-                                        unit.subGroup.messages.joinToString("\n\n") { it.reasoning.orEmpty() }
-                                    }
-                                    ReasoningBubble(
-                                        text = reasoningText,
-                                        initiallyExpanded = true,
-                                        cache = markdownCache
-                                    )
-                                } else {
-                                    SubAccordion(
-                                        group = group,
-                                        subGroup = unit.subGroup,
-                                        attachedTools = unit.attachedTools,
-                                        toolLogs = toolLogs,
-                                        markdownCache = markdownCache,
-                                        onToggleSubGroup = onToggleSubGroup,
-                                        onEditClick = onEditClick,
-                                        onNewChatClick = onNewChatClick,
-                                        onViewChanges = onViewChanges,
-                                        runningTool = runningTool,
-                                        environmentSnapshots = environmentSnapshots
-                                    )
+                    split.processUnits
+                        .filter { it.subGroup.type != TaskSubGroupType.USER }
+                        .forEach { unit ->
+                            // 纯思考过程（仅 reasoning 无正文）：直接渲染 ReasoningBubble（自带短条+竖条+标题+折叠），
+                            // 不套 SubAccordion 的「思考」片段头，避免「思考 → 思考过程」双层嵌套。
+                            if (unit.subGroup.type == TaskSubGroupType.REASONING) {
+                                val reasoningText = remember(unit.subGroup.id, unit.subGroup.messages) {
+                                    unit.subGroup.messages.joinToString("\n\n") { it.reasoning.orEmpty() }
                                 }
+                                ReasoningBubble(
+                                    text = reasoningText,
+                                    initiallyExpanded = true,
+                                    cache = markdownCache
+                                )
+                            } else {
+                                SubAccordion(
+                                    group = group,
+                                    subGroup = unit.subGroup,
+                                    attachedTools = unit.attachedTools,
+                                    toolLogs = toolLogs,
+                                    markdownCache = markdownCache,
+                                    onToggleSubGroup = onToggleSubGroup,
+                                    onEditClick = onEditClick,
+                                    onNewChatClick = onNewChatClick,
+                                    onViewChanges = onViewChanges,
+                                    runningTool = runningTool,
+                                    environmentSnapshots = environmentSnapshots
+                                )
                             }
-                        // 正式回复关联的工具调用：独立折叠块（过程内容，无底仅色线）
-                        if (split.formalTools.isNotEmpty()) {
-                            EmbeddedToolAccordion(
-                                attachedTools = split.formalTools,
-                                markdownCache = markdownCache,
-                                runningTool = runningTool,
-                                environmentSnapshots = environmentSnapshots
-                            )
                         }
-                    }
-                }
-                // 正式回复：独立于过程内容，淡底 + 左侧主色竖条（独特样式）
-                split.formalMessage?.let { formal ->
-                    AgentMessageItem(
-                        message = formal,
-                        markdownCache = markdownCache,
-                        formalMode = true,
-                        environmentSnapshots = environmentSnapshots
-                    )
-                    // 查看修改：正式回复对应批次的文件变更
-                    if (onViewChanges != null && split.formalTools.isNotEmpty()) {
-                        val formalDiffs = remember(split.formalTools) { collectBatchFileDiffs(split.formalTools) }
-                        if (formalDiffs.isNotEmpty()) {
-                            ViewChangesButton(
-                                fileDiffs = formalDiffs,
-                                onClick = { onViewChanges(TaskChangesSheetData(formalDiffs, toolLogs)) }
-                            )
-                        }
+                    // 正式回复关联的工具调用：独立折叠块（过程内容，无底仅色线）
+                    if (split.formalTools.isNotEmpty()) {
+                        EmbeddedToolAccordion(
+                            attachedTools = split.formalTools,
+                            markdownCache = markdownCache,
+                            runningTool = runningTool,
+                            environmentSnapshots = environmentSnapshots
+                        )
                     }
                 }
             }
+            // 正式回复：款式外框（isFormal=true，与过程内容区分）
+            split.formalMessage?.let { formal ->
+                AgentMessageItem(
+                    message = formal,
+                    markdownCache = markdownCache,
+                    formalMode = true,
+                    environmentSnapshots = environmentSnapshots
+                )
+                // 查看修改：正式回复对应批次的文件变更
+                if (onViewChanges != null && split.formalTools.isNotEmpty()) {
+                    val formalDiffs = remember(split.formalTools) { collectBatchFileDiffs(split.formalTools) }
+                    if (formalDiffs.isNotEmpty()) {
+                        ViewChangesButton(
+                            fileDiffs = formalDiffs,
+                            onClick = { onViewChanges(TaskChangesSheetData(formalDiffs, toolLogs)) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -878,48 +795,18 @@ private fun SubAccordion(
     val label = stringResource(subGroup.type.labelRes())
     // 用户消息整体右侧对齐（气泡 + 标签 + 操作按钮），模型消息保持左侧日志流
     val isUser = subGroup.type == TaskSubGroupType.USER
-    // 片段类型分档色条：REPLY=正文蓝、REASONING=思考紫、TOOL=工具蓝灰、USER=中性灰
-    val barColor = when (subGroup.type) {
-        TaskSubGroupType.REPLY -> MessageAccent.Content.resolveLine()
-        TaskSubGroupType.REASONING -> MessageAccent.Reasoning.resolveLine()
-        TaskSubGroupType.TOOL -> MessageAccent.Tool.resolveLine()
-        TaskSubGroupType.USER -> if (LocalAppDarkMode.current) Color(0xFF64748B) else Color(0xFFCBD5E1)
-    }
     // 该片段关联的工具调用批次内的文件变更（增/删/改），按路径聚合
     val batchFileDiffs = remember(subGroup.id, attachedTools) { collectBatchFileDiffs(attachedTools) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // 片段头：灰阶小标签 + 展开箭头（无彩色、无背景）
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onToggleSubGroup(group.taskId, subGroup.id) }
-                .padding(top = Spacing.xs, bottom = Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = if (isUser) {
-                Arrangement.spacedBy(Spacing.sm, Alignment.End)
-            } else {
-                Arrangement.spacedBy(Spacing.sm)
-            }
-        ) {
-            // 片段类型短色条：用户消息无色线（仅右侧对齐文本），其余片段保留色标
-            if (!isUser) {
-                ShortAccentBar(barColor)
-                Spacer(Modifier.width(Spacing.sm))
-            }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = if (isUser) Modifier else Modifier.weight(1f)
-            )
-            androidx.compose.material3.Icon(
-                imageVector = if (subGroup.isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                contentDescription = null,
-                tint = Brand.IconGray,
-                modifier = Modifier.size(14.dp)
-            )
-        }
+        // 片段头：款式分发（标签 + 色条 / 节点 / 前缀由当前款式实现）
+        BubbleStyleProvider.provide(LocalBubbleStyle.current).SubGroupHeader(
+            type = subGroup.type.toBubbleSubGroupType(),
+            label = label,
+            isExpanded = subGroup.isExpanded,
+            isUser = isUser,
+            onToggle = { onToggleSubGroup(group.taskId, subGroup.id) }
+        )
         // 片段内容：消息（保持时间顺序）
         AnimatedVisibility(
             visible = subGroup.isExpanded,
@@ -1013,11 +900,12 @@ private fun TaskSubGroupType.labelRes(): Int = when (this) {
     TaskSubGroupType.TOOL -> R.string.chat_task_tool
 }
 
-private fun formatTaskTime(timestamp: Long): String {
-    if (timestamp <= 0) return ""
-    return runCatching {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
-    }.getOrDefault("")
+/** 映射到 chatrender 模块的片段类型（保持两层解耦）。 */
+private fun TaskSubGroupType.toBubbleSubGroupType(): BubbleSubGroupType = when (this) {
+    TaskSubGroupType.USER -> BubbleSubGroupType.USER
+    TaskSubGroupType.REASONING -> BubbleSubGroupType.REASONING
+    TaskSubGroupType.REPLY -> BubbleSubGroupType.REPLY
+    TaskSubGroupType.TOOL -> BubbleSubGroupType.TOOL
 }
 
 /**

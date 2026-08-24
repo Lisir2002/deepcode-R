@@ -28,6 +28,8 @@ import com.R.codecore.core.theme.Spacing
  * - 不显示时间戳。
  */
 object ThinBubbleStyle : MessageBubbleStyle {
+    override val id: BubbleStyle = BubbleStyle.THIN_BUBBLE
+
     private val shape = RoundedCornerShape(8.dp)
 
     @Composable

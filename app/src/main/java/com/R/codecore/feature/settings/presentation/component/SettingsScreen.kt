@@ -68,6 +68,7 @@ import com.R.codecore.R
 import com.R.codecore.feature.agent.domain.mcp.McpServerConfig
 import com.R.codecore.feature.agent.domain.mcp.McpServerStatus
 import com.R.codecore.feature.backup.presentation.BackupSection
+import com.R.codecore.feature.chatrender.BubbleStyle
 import com.R.codecore.feature.settings.data.repository.AppThemeMode
 import com.R.codecore.feature.settings.domain.model.AIProviderConfig
 import com.R.codecore.feature.settings.domain.model.ModelMetadata
@@ -79,6 +80,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Dashboard
@@ -147,6 +149,7 @@ fun SettingsScreen(
     val currentProjectName by viewModel.currentProjectName.collectAsStateWithLifecycle()
     val keepaliveEnabled by viewModel.keepaliveEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val bubbleStyle by viewModel.bubbleStyle.collectAsStateWithLifecycle()
     val visionProviderId by viewModel.visionProviderId.collectAsStateWithLifecycle()
     val visionModel by viewModel.visionModel.collectAsStateWithLifecycle()
     val compactionProviderId by viewModel.compactionProviderId.collectAsStateWithLifecycle()
@@ -165,6 +168,7 @@ fun SettingsScreen(
     var editingMcp by remember { mutableStateOf<McpServerConfig?>(null) }
     var showContainerAddSheet by remember { mutableStateOf(false) }
     var showThemeSheet by remember { mutableStateOf(false) }
+    var showBubbleStyleSheet by remember { mutableStateOf(false) }
 
     // RC62：跨屏跳转（terminal_settings → settings → RemoteServers）：接收来自 SettingsViewModel
     //   的 openSection 请求，切到 SettingsScreen 内部的 section。
@@ -288,6 +292,8 @@ fun SettingsScreen(
                     permissionRuleCount = projectRules.size + globalRules.size,
                     themeMode = themeMode,
                     onOpenThemeSheet = { showThemeSheet = true },
+                    bubbleStyle = bubbleStyle,
+                    onOpenBubbleStyleSheet = { showBubbleStyleSheet = true },
                     keepaliveEnabled = keepaliveEnabled,
                     onToggleKeepalive = { viewModel.setKeepaliveEnabled(it) },
                     onOpen = {
@@ -441,6 +447,14 @@ fun SettingsScreen(
         )
     }
 
+    if (showBubbleStyleSheet) {
+        BubbleStyleSelectionSheet(
+            selected = bubbleStyle,
+            onSelected = { viewModel.setBubbleStyle(it) },
+            onDismiss = { showBubbleStyleSheet = false }
+        )
+    }
+
     if (showAddProviderSheet) {
         AddProviderSheet(
             viewModel = viewModel,
@@ -486,6 +500,8 @@ internal fun SettingsMenu(
     permissionRuleCount: Int,
     themeMode: AppThemeMode,
     onOpenThemeSheet: () -> Unit,
+    bubbleStyle: BubbleStyle,
+    onOpenBubbleStyleSheet: () -> Unit,
     keepaliveEnabled: Boolean,
     onToggleKeepalive: (Boolean) -> Unit,
     onOpen: (SettingsSection) -> Unit,
@@ -711,6 +727,17 @@ internal fun SettingsMenu(
             iconBgDark = Color(0xFF4C1D95),
             keywords = listOf("theme", "appearance", stringResource(R.string.ui____afcde261), stringResource(R.string.ui____41e8e8b9), stringResource(R.string.ui____48d0a09b), stringResource(R.string.ui____f0789e79), stringResource(R.string.ui____9970ad07)),
             action = onOpenThemeSheet
+        ),
+        MenuItem(
+            section = null,
+            group = groupSystem,
+            title = stringResource(R.string.settings_bubble_style_title),
+            subtitle = stringResource(R.string.settings_log_current, stringResource(bubbleStyle.labelRes)),
+            icon = Icons.Rounded.ChatBubble,
+            iconBgLight = Color(0xFF3B82F6),
+            iconBgDark = Color(0xFF1E40AF),
+            keywords = listOf("bubble", "style", "reply", "chat", "message", stringResource(R.string.bubble_style_pure_text), stringResource(R.string.bubble_style_terminal_log)),
+            action = onOpenBubbleStyleSheet
         ),
         MenuItem(
             section = null,

@@ -10,6 +10,8 @@ import com.R.codecore.feature.agent.domain.container.ContainerInstaller
 import com.R.codecore.feature.agent.domain.container.ContainerProfile
 import com.R.codecore.feature.agent.domain.container.RemoteSshConnection
 import com.R.codecore.feature.agent.domain.container.RootfsSource
+import com.R.codecore.feature.chatrender.BubbleStyle
+import com.R.codecore.feature.chatrender.BubbleStyleRepository
 import com.R.codecore.feature.agent.domain.mcp.McpConfigRepository
 import com.R.codecore.feature.agent.domain.mcp.McpManager
 import com.R.codecore.feature.agent.domain.mcp.server.McpServerManager
@@ -104,6 +106,7 @@ class SettingsViewModel @Inject constructor(
     private val logSettingsRepository: LogSettingsRepository,
     private val logFilterSettingsRepository: LogFilterSettingsRepository,
     private val themeSettingsRepository: ThemeSettingsRepository,
+    private val bubbleStyleRepository: BubbleStyleRepository,
     private val keepaliveSettingsRepository: KeepaliveSettingsRepository,
     private val mcpConfigRepository: McpConfigRepository,
     private val mcpManager: McpManager,
@@ -198,6 +201,9 @@ class SettingsViewModel @Inject constructor(
 
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
+    private val _bubbleStyle = MutableStateFlow(BubbleStyle.DEFAULT)
+    val bubbleStyle: StateFlow<BubbleStyle> = _bubbleStyle.asStateFlow()
 
     private val _mcpServers = MutableStateFlow<List<McpServerConfig>>(emptyList())
     val mcpServers: StateFlow<List<McpServerConfig>> = _mcpServers.asStateFlow()
@@ -390,6 +396,12 @@ class SettingsViewModel @Inject constructor(
             launch {
                 themeSettingsRepository.themeModeFlow.collectLatest {
                     _themeMode.value = it
+                }
+            }
+
+            launch {
+                bubbleStyleRepository.bubbleStyleFlow.collectLatest {
+                    _bubbleStyle.value = it
                 }
             }
 
@@ -870,6 +882,12 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: AppThemeMode) {
         viewModelScope.launch {
             themeSettingsRepository.setThemeMode(mode)
+        }
+    }
+
+    fun setBubbleStyle(style: BubbleStyle) {
+        viewModelScope.launch {
+            bubbleStyleRepository.setBubbleStyle(style)
         }
     }
 
