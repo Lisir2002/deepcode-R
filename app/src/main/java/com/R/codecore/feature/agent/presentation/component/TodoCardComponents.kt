@@ -185,17 +185,13 @@ internal fun TodoItemRow(item: ParsedTodoItem) {
         )
         if (isInProgress) {
             Spacer(Modifier.width(Spacing.xs))
-            Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Text(
-                    text = stringResource(R.string.todo_in_progress),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                )
-            }
+            // 进行中标签：无容器填色，仅 primary 色文字（左侧已有跳动圆点作状态标识）
+            Text(
+                text = stringResource(R.string.todo_in_progress),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp)
+            )
         }
     }
     if (item.description.isNotBlank() && !isCompleted) {
