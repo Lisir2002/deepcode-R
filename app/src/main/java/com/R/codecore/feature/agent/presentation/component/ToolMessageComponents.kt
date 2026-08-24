@@ -900,4 +900,3 @@ private fun EnvironmentStatusStrip(
             }
         }
     }
-}
