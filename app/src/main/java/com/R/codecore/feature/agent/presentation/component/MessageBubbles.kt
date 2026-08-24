@@ -104,6 +104,8 @@ internal fun AgentMessageItem(
         }
         if (hasContent || hasAttachments || message.role != MessageRole.ASSISTANT) {
             // 用户消息：右侧透明文本（无背景、无色线，仅右对齐，与模型消息的色线体系区分）
+            // 正文 Column 用 Alignment.End 水平右对齐 + 宽度上限 0.86f：短消息贴屏幕右缘，长消息自动换行限宽，
+            // 与上方「用户」标签、下方操作按钮的 End 对齐在同一竖线，不再悬空居中。
             if (isUser && (hasContent || hasAttachments)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -111,6 +113,7 @@ internal fun AgentMessageItem(
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(0.86f),
+                        horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                     ) {
                         if (hasContent) {

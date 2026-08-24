@@ -57,8 +57,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.R.codecore.core.theme.LocalAppDarkMode
+import com.R.codecore.core.theme.MessageAccent
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
+import com.R.codecore.core.theme.resolveLine
 import com.R.codecore.feature.git.presentation.component.highlightCode
 import com.R.codecore.feature.git.presentation.component.inferSyntaxLanguage
 import androidx.compose.material.icons.Icons
@@ -149,7 +151,8 @@ private fun LinkAwareText(
     nav: SegmentationNavigationActions,
     modifier: Modifier = Modifier
 ) {
-    val codeBackground = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    // 行内代码：无背景填色（背景透明），用等宽 + 颜色区分语义，符合"仅竖线横线填色"的日志流风格
+    val codeBackground = Color.Transparent
     val annotated = androidx.compose.runtime.remember(inlines, baseStyle, codeBackground) {
         renderInlines(inlines, baseStyle, codeBackground)
     }
@@ -359,125 +362,122 @@ private fun CodeBlockCard(seg: RichSegment.CodeBlock, isDark: Boolean) {
     val syntaxLang = seg.language?.let { inferByLabel(it) }
     val lineCount = seg.code.count { it == '\n' } + 1
     val shouldCollapse = lineCount > 30
+    val barColor = MessageAccent.Tool.resolveLine()
 
-    val bg = if (isDark) Color(0xFF101722) else Color(0xFFF1F5F9)
     val fg = if (isDark) Color(0xFFE2E8F0) else Color(0xFF0F172A)
     val label = seg.language?.uppercase() ?: "CODE"
+    val headerTint = MaterialTheme.colorScheme.onSurfaceVariant
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(codeBlockCorner)
-            .background(bg)
-            .border(BorderStroke(1.dp, Color(0xFFE4E7EC).copy(alpha = if (isDark) 0.12f else 0.5f)), codeBlockCorner)
-            .animateContentSize(animationSpec = tween(160))
-    ) {
-        // Header：语言角标 + 复制 + 展开/收起
-        Row(
+    // 透明底 + 左侧主色竖条（符合"仅竖线/横线填色"的日志流风格），去掉整块淡灰底与蓝绿渐变 header
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .width(3.dp)
+                .align(Alignment.CenterStart)
+                .background(barColor)
+        )
+        Column(
             Modifier
                 .fillMaxWidth()
-                .height(codeBlockHeaderHeight)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(Color(0xFF0984E3), Color(0xFF00B894))
+                .padding(start = Spacing.md)
+                .animateContentSize(animationSpec = tween(160))
+        ) {
+            // Header：语言角标 + 复制 + 展开/收起（无填色，灰阶文字 + 图标）
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(codeBlockHeaderHeight)
+                    .padding(end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = label,
+                    color = headerTint,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.Monospace
                     )
                 )
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Rounded.InsertDriveFile,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.size(14.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = label,
-                color = Color.White,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = FontFamily.Monospace
-                )
-            )
-            Spacer(Modifier.weight(1f))
-            val plainText = seg.code
-            androidx.compose.material3.IconButton(
-                modifier = Modifier.size(30.dp),
-                onClick = { clipboard.setText(AnnotatedString(plainText)) }
-            ) {
-                Icon(
-                    Icons.Rounded.ContentCopy,
-                    contentDescription = stringResource(R.string.ui______224996c0),
-                    tint = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.size(15.dp)
-                )
-            }
-            if (shouldCollapse) {
+                Spacer(Modifier.weight(1f))
+                val plainText = seg.code
                 androidx.compose.material3.IconButton(
                     modifier = Modifier.size(30.dp),
-                    onClick = { expanded = !expanded }
+                    onClick = { clipboard.setText(AnnotatedString(plainText)) }
                 ) {
                     Icon(
-                        if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = if (expanded) stringResource(R.string.ui____def9e98b) else stringResource(R.string.ui____e2edde5a),
-                        tint = Color.White.copy(alpha = 0.9f),
+                        Icons.Rounded.ContentCopy,
+                        contentDescription = stringResource(R.string.ui______224996c0),
+                        tint = headerTint,
                         modifier = Modifier.size(15.dp)
                     )
                 }
-            }
-        }
-
-        SelectionContainer {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (!expanded) Modifier.height(260.dp).verticalScroll(rememberScrollState())
-                        else Modifier
-                    )
-                    .padding(horizontal = 10.dp, vertical = 10.dp)
-            ) {
-                val rawStyle = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.5.sp,
-                    lineHeight = 17.sp,
-                    color = fg
-                )
-                val highlighted = syntaxLang?.let { highlightCode(seg.code, it) }
-                if (highlighted != null) {
-                    // 水平滚动：避免窄屏上长行被截断
-                    Row(Modifier.horizontalScroll(rememberScrollState())) {
-                        // 行号
-                        val gutterW = remember(lineCount) { (lineCount.toString().length * 8 + 10).dp }
-                        Column(
-                            modifier = Modifier
-                                .width(gutterW)
-                                .fillMaxHeight(),
-                            horizontalAlignment = Alignment.End
-                        ) {
-                            (1..lineCount).forEach { n ->
-                                Text(
-                                    text = "$n",
-                                    style = rawStyle.copy(
-                                        color = fg.copy(alpha = 0.42f),
-                                        fontSize = 11.5.sp
-                                    ),
-                                    modifier = Modifier.padding(end = 8.dp)
-                                )
-                            }
-                        }
-                        Text(
-                            text = highlighted,
-                            style = rawStyle,
-                            modifier = Modifier.padding(start = 8.dp)
+                if (shouldCollapse) {
+                    androidx.compose.material3.IconButton(
+                        modifier = Modifier.size(30.dp),
+                        onClick = { expanded = !expanded }
+                    ) {
+                        Icon(
+                            if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = if (expanded) stringResource(R.string.ui____def9e98b) else stringResource(R.string.ui____e2edde5a),
+                            tint = headerTint,
+                            modifier = Modifier.size(15.dp)
                         )
                     }
-                } else {
-                    Text(
-                        text = seg.code,
-                        style = rawStyle
+                }
+            }
+
+            SelectionContainer {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (!expanded) Modifier.height(260.dp).verticalScroll(rememberScrollState())
+                            else Modifier
+                        )
+                        .padding(vertical = 2.dp)
+                ) {
+                    val rawStyle = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.5.sp,
+                        lineHeight = 17.sp,
+                        color = fg
                     )
+                    val highlighted = syntaxLang?.let { highlightCode(seg.code, it) }
+                    if (highlighted != null) {
+                        // 水平滚动：避免窄屏上长行被截断
+                        Row(Modifier.horizontalScroll(rememberScrollState())) {
+                            // 行号
+                            val gutterW = remember(lineCount) { (lineCount.toString().length * 8 + 10).dp }
+                            Column(
+                                modifier = Modifier
+                                    .width(gutterW)
+                                    .fillMaxHeight(),
+                                horizontalAlignment = Alignment.End
+                            ) {
+                                (1..lineCount).forEach { n ->
+                                    Text(
+                                        text = "$n",
+                                        style = rawStyle.copy(
+                                            color = fg.copy(alpha = 0.42f),
+                                            fontSize = 11.5.sp
+                                        ),
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = highlighted,
+                                style = rawStyle,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = seg.code,
+                            style = rawStyle
+                        )
+                    }
                 }
             }
         }
@@ -502,68 +502,68 @@ private fun inferByLabel(label: String): SyntaxLanguage? {
 @Composable
 private fun CommandCard(command: String, isDark: Boolean) {
     val clipboard = LocalClipboardManager.current
-    Row(
+    val barColor = Color(0xFF22C55E)
+    val promptColor = barColor
+    val textColor = if (isDark) Color(0xFFE2E8F0) else Color(0xFF0F172A)
+    // 透明底 + 左侧绿色竖条（终端语义色条），去掉整块黑底/边框
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (isDark) Color(0xFF0B1018) else Color(0xFF0F172A))
-            .border(
-                BorderStroke(
-                    1.dp,
-                    Color(0xFF22C55E).copy(alpha = 0.6f)
-                ),
-                RoundedCornerShape(10.dp)
-            )
-            .clickable { clipboard.setText(AnnotatedString(command)) },
-        verticalAlignment = Alignment.CenterVertically
+            .clickable { clipboard.setText(AnnotatedString(command)) }
     ) {
-        // 左侧绿色提示色条
         Box(
             Modifier
+                .matchParentSize()
                 .width(3.dp)
-                .fillMaxHeight()
-                .background(Color(0xFF22C55E))
+                .align(Alignment.CenterStart)
+                .background(barColor)
         )
-        Spacer(Modifier.width(10.dp))
-        Icon(
-            Icons.Rounded.Terminal,
-            contentDescription = null,
-            tint = if (LocalAppDarkMode.current) Color(0xFF4ADE80) else Color(0xFF22C55E),
-            modifier = Modifier.size(16.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        SelectionContainer {
-            Box(
-                Modifier
-                    .weight(1f)
-                    .padding(vertical = 10.dp)
-            ) {
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    Text(
-                        text = "$ ",
-                        color = Color(0xFF22C55E),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                    Text(
-                        text = command,
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = FontFamily.Monospace
-                        )
-                    )
-                }
-            }
-        }
-        androidx.compose.material3.IconButton(onClick = { clipboard.setText(AnnotatedString(command)) }) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = Spacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Icon(
-                Icons.Rounded.ContentCopy,
-                contentDescription = stringResource(R.string.ui______ee92cd5e),
-                tint = Color.White.copy(alpha = 0.8f),
+                Icons.Rounded.Terminal,
+                contentDescription = null,
+                tint = barColor,
                 modifier = Modifier.size(16.dp)
             )
+            Spacer(Modifier.width(8.dp))
+            SelectionContainer {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .padding(vertical = 6.dp)
+                ) {
+                    Row(Modifier.horizontalScroll(rememberScrollState())) {
+                        Text(
+                            text = "$ ",
+                            color = promptColor,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                        Text(
+                            text = command,
+                            color = textColor,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = FontFamily.Monospace
+                            )
+                        )
+                    }
+                }
+            }
+            androidx.compose.material3.IconButton(onClick = { clipboard.setText(AnnotatedString(command)) }) {
+                Icon(
+                    Icons.Rounded.ContentCopy,
+                    contentDescription = stringResource(R.string.ui______ee92cd5e),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }
@@ -579,8 +579,9 @@ private fun TableCard(
 ) {
     val colCount = seg.header.size
     if (colCount <= 0) return
-    val headerBg = if (isDark) Color(0xFF152030) else Color(0xFF0984E3).copy(alpha = 0.1f)
-    val rowBgAlt = if (isDark) Color(0xFF111A27) else Color(0xFFF8FAFC)
+    // 透明底：表头/交替行均不填色，仅保留边框横线 + 竖线分隔（符合"只留线不留底"）
+    val headerBg = Color.Transparent
+    val rowBgAlt = Color.Transparent
     val borderColor = if (isDark) Color(0xFF2A3F56) else Color(0xFFCBD5E1)
 
     Surface(
