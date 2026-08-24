@@ -51,28 +51,112 @@ class MessagePersistenceUseCase @Inject constructor(
         outputTokens: Int = 0,
         isCompacted: Boolean = false
     ) {
-        agentMessageDao.insert(
-            AgentMessageEntity(
-                id = id,
-                sessionId = sessionId,
-                taskId = taskId,
-                role = role.name,
-                content = sanitizeContent(content),
-                timestamp = nextTimestamp(),
-                toolCallsJson = if (toolCalls.isNotEmpty()) json.encodeToString(toolCalls) else null,
-                toolCallId = toolCallId,
-                toolName = toolName,
-                toolArgs = toolArgs,
-                isError = isError,
-                reasoning = reasoning?.let { sanitizeContent(it) },
-                signature = signature,
-                attachmentsJson = if (attachments.isNotEmpty()) json.encodeToString(attachments) else null,
-                inputTokens = inputTokens,
-                outputTokens = outputTokens,
-                isCompacted = isCompacted
+        // 先剥离内嵌 base64 图片（不截断），避免超大 data URL 直接进 content。
+        val clean = stripInlineImages(content)
+        val toolCallsJson = if (toolCalls.isNotEmpty()) json.encodeToString(toolCalls) else null
+        // reasoning 走单行兜底（分块优先级低于正文，且单行 200k 已安全）。
+        val cleanReasoning = reasoning?.let { sanitizeContent(it) }
+        val attachmentsJson = if (attachments.isNotEmpty()) json.encodeToString(attachments) else null
+
+        if (clean.length <= CHUNK_SIZE) {
+            agentMessageDao.insert(
+                buildEntity(
+                    id = id,
+                    sessionId = sessionId,
+                    taskId = taskId,
+                    role = role,
+                    content = clean,
+                    timestamp = nextTimestamp(),
+                    chunkGroupId = "",
+                    chunkIndex = 0,
+                    toolCallsJson = toolCallsJson,
+                    toolCallId = toolCallId,
+                    toolName = toolName,
+                    toolArgs = toolArgs,
+                    isError = isError,
+                    reasoning = cleanReasoning,
+                    signature = signature,
+                    attachmentsJson = attachmentsJson,
+                    inputTokens = inputTokens,
+                    outputTokens = outputTokens,
+                    isCompacted = isCompacted
+                )
             )
-        )
+        } else {
+            // 超长内容分块落库：主行（chunk 0）携带全部元数据，续块行仅携带内容。
+            // 全组共享同一 timestamp（块号递增），保证按时间序查询时块与块邻接、不被其它消息穿插，
+            // 且主行 id 字典序在续块行之前（`<id>` < `<id>#c1` < `<id>#c2` …），keyset 分页也稳定。
+            val chunks = clean.chunked(CHUNK_SIZE)
+            val ts = nextTimestamp()
+            val rows = chunks.mapIndexed { i, chunkText ->
+                buildEntity(
+                    id = if (i == 0) id else "$id$CHUNK_ID_SUFFIX_PREFIX$i",
+                    sessionId = sessionId,
+                    taskId = taskId,
+                    role = role,
+                    content = chunkText,
+                    timestamp = ts,
+                    chunkGroupId = id,
+                    chunkIndex = i,
+                    // 元数据只写主行，续块行复用主行的会话/角色/timestamp 即可。
+                    toolCallsJson = if (i == 0) toolCallsJson else null,
+                    toolCallId = if (i == 0) toolCallId else null,
+                    toolName = if (i == 0) toolName else null,
+                    toolArgs = if (i == 0) toolArgs else null,
+                    isError = if (i == 0) isError else false,
+                    reasoning = if (i == 0) cleanReasoning else null,
+                    signature = if (i == 0) signature else null,
+                    attachmentsJson = if (i == 0) attachmentsJson else null,
+                    inputTokens = if (i == 0) inputTokens else 0,
+                    outputTokens = if (i == 0) outputTokens else 0,
+                    isCompacted = isCompacted
+                )
+            }
+            agentMessageDao.insertAll(rows)
+        }
     }
+
+    private fun buildEntity(
+        id: String,
+        sessionId: String,
+        taskId: String,
+        role: MessageRole,
+        content: String,
+        timestamp: Long,
+        chunkGroupId: String,
+        chunkIndex: Int,
+        toolCallsJson: String?,
+        toolCallId: String?,
+        toolName: String?,
+        toolArgs: String?,
+        isError: Boolean,
+        reasoning: String?,
+        signature: String?,
+        attachmentsJson: String?,
+        inputTokens: Int,
+        outputTokens: Int,
+        isCompacted: Boolean
+    ): AgentMessageEntity = AgentMessageEntity(
+        id = id,
+        sessionId = sessionId,
+        taskId = taskId,
+        role = role.name,
+        content = content,
+        timestamp = timestamp,
+        chunkGroupId = chunkGroupId,
+        chunkIndex = chunkIndex,
+        toolCallsJson = toolCallsJson,
+        toolCallId = toolCallId,
+        toolName = toolName,
+        toolArgs = toolArgs,
+        isError = isError,
+        reasoning = reasoning,
+        signature = signature,
+        attachmentsJson = attachmentsJson,
+        inputTokens = inputTokens,
+        outputTokens = outputTokens,
+        isCompacted = isCompacted
+    )
 
     suspend fun updateContent(messageId: String, newContent: String) {
         agentMessageDao.updateMessageContent(messageId, newContent)
@@ -80,11 +164,21 @@ class MessagePersistenceUseCase @Inject constructor(
 
     companion object {
         /**
-         * 单条消息字段持久化上限（字符数）。远小于 SQLite CursorWindow 单行约 2MB 的硬限制，
-         * 防止生图/多模态模型返回的超大 base64 图片撑爆数据行，导致读取消息时抛
-         * [android.database.sqlite.SQLiteBlobTooBigException] 使应用启动即崩。
+         * 单条消息字段单行持久化上限（字符数）。分块行 / reasoning 等非分块字段都以它兜底，
+         * 防止超大单行读取时触发 [android.database.sqlite.SQLiteBlobTooBigException]。
          */
         const val MAX_CONTENT_CHARS = 200_000
+
+        /**
+         * 分块大小（字符数）：单块 UTF-8 约 ≤300KB，远低于 SQLite CursorWindow 单行约 2MB 的硬限制。
+         * 超长消息按 CHUNK_SIZE 拆多行落库，读取侧（mergeChunks）按 chunk_index 序拼接，
+         * 最终消息长度不再受限。
+         */
+        const val CHUNK_SIZE = 100_000
+
+        /** 续块行 id 后缀前缀：`<主id>#c<i>`，保证同组块按 id 字典序也相邻。 */
+        const val CHUNK_ID_SUFFIX_PREFIX = "#c"
+
         const val IMAGE_OMITTED_MARKER = "[图片已省略：内嵌图片数据过大]"
         const val CONTENT_TRUNCATED_MARKER = "…[内容过长，已截断]"
 
@@ -92,19 +186,67 @@ class MessagePersistenceUseCase @Inject constructor(
         private val INLINE_BASE64_IMAGE = Regex("""data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\r\n]+""")
 
         /**
-         * 落库前的内容净化，为所有 provider/模型提供统一兜底防线：
-         * 1. 剥离内嵌的 base64 图片 data URL（替换为占位说明），此类内容本不该进数据库文本；
-         * 2. 剥离后仍超长的内容截断到 [MAX_CONTENT_CHARS]，避免任何超大行触发 CursorWindow 崩溃。
+         * 仅剥离内嵌 base64 图片 data URL（替换为占位说明），不截断。
+         * 长内容的截断 / 分块由调用方按需处理（persist 先剥离再分块）。
+         */
+        internal fun stripInlineImages(raw: String): String {
+            if (!raw.contains("data:image/", ignoreCase = true)) return raw
+            return INLINE_BASE64_IMAGE.replace(raw, IMAGE_OMITTED_MARKER)
+        }
+
+        /**
+         * 单行兜底净化：剥离 base64 图片 + 超长截断到 [MAX_CONTENT_CHARS]。
+         * 供 reasoning 等非分块字段使用；content 正文走分块路径（见 [persist]），不再截断。
          */
         internal fun sanitizeContent(raw: String): String {
             if (raw.length <= MAX_CONTENT_CHARS && !raw.contains("data:image/", ignoreCase = true)) {
                 return raw
             }
-            var text = INLINE_BASE64_IMAGE.replace(raw, IMAGE_OMITTED_MARKER)
-            if (text.length > MAX_CONTENT_CHARS) {
-                text = text.take(MAX_CONTENT_CHARS) + CONTENT_TRUNCATED_MARKER
+            val text = stripInlineImages(raw)
+            return if (text.length > MAX_CONTENT_CHARS) {
+                text.take(MAX_CONTENT_CHARS) + CONTENT_TRUNCATED_MARKER
+            } else {
+                text
             }
-            return text
+        }
+
+        /**
+         * 把分块存储的消息按 [chunk_index] 序拼接回单条完整消息（保持原时间顺序输出）。
+         * 未分块消息原样透传。用于 UI 流 / buildHistory 等所有读取侧。
+         * 分页边界被截断的病态场景（单条 > 3M 字符）下按已加载块拼接，loadMore 拉全后自动补齐。
+         */
+        internal fun mergeChunks(entities: List<AgentMessageEntity>): List<AgentMessageEntity> {
+            if (entities.none { it.chunkGroupId.isNotBlank() }) return entities
+            val byGroup = HashMap<String, MutableList<AgentMessageEntity>>()
+            for (e in entities) {
+                if (e.chunkGroupId.isNotBlank()) {
+                    byGroup.getOrPut(e.chunkGroupId) { mutableListOf() }.add(e)
+                }
+            }
+            val emitted = HashSet<String>(byGroup.size)
+            val result = ArrayList<AgentMessageEntity>(entities.size)
+            for (e in entities) {
+                val gid = e.chunkGroupId
+                if (gid.isBlank()) {
+                    result.add(e)
+                    continue
+                }
+                // 同一分块组只合并一次，输出位置取该组首次出现的块（各块共享 timestamp，时间序一致）。
+                if (!emitted.add(gid)) continue
+                val group = byGroup.getValue(gid).sortedBy { it.chunkIndex }
+                val base = group.first()
+                val content = group.joinToString("") { it.content }
+                val reasoning = group.mapNotNull { it.reasoning }.joinToString("").ifEmpty { null }
+                result.add(
+                    base.copy(
+                        content = content,
+                        reasoning = reasoning,
+                        chunkGroupId = "",
+                        chunkIndex = 0
+                    )
+                )
+            }
+            return result
         }
     }
 
@@ -115,7 +257,8 @@ class MessagePersistenceUseCase @Inject constructor(
      * 已被上下文压缩标记的消息（isCompacted=true）不参与回放。
      */
     suspend fun buildHistory(sessionId: String, pendingToolMarker: String): List<AgentMessage> {
-        val entities = agentMessageDao.getMessagesBySessionOnce(sessionId)
+        // 先按 chunk_index 拼接分块消息（chunk 行共享 timestamp，压缩标记也是全组一致），再过滤已压缩行。
+        val entities = mergeChunks(agentMessageDao.getMessagesBySessionOnce(sessionId))
             .filter { !it.isCompacted }
 
         // 第一遍：求 assistant 声明的 toolCallId 与 tool 结果 toolCallId 的交集。

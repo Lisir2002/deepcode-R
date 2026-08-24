@@ -162,7 +162,9 @@ data class AgentMessageDto(
     val attachmentsJson: String? = null,
     val isCompacted: Boolean = false,
     val isContextSummary: Boolean = false,
-    val isCompactionMarker: Boolean = false
+    val isCompactionMarker: Boolean = false,
+    val chunkGroupId: String = "",
+    val chunkIndex: Int = 0
 )
 
 @Serializable

@@ -221,7 +221,8 @@ class AIAgentViewModel @Inject constructor(
             else agentMessageDao.getMessagesBySessionPaged(id, limit).map { list ->
                 ChatMessagesState(
                     sessionId = id,
-                    messages = list.asSequence()
+                    // 先拼接分块消息（chunk 行按 chunk_index 序合并为单条完整消息），再走既有过滤/映射。
+                    messages = MessagePersistenceUseCase.mergeChunks(list).asSequence()
                         .filterNot { it.isContextSummary }
                         .filterNot {
                             it.role == MessageRole.ASSISTANT.name &&

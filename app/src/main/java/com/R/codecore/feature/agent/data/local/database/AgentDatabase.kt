@@ -84,7 +84,7 @@ import com.R.codecore.feature.t2i.data.local.entity.T2ITaskEntity
         SkillStateEntity::class,
         WakeItemEntity::class
     ],
-    version = 48,
+    version = 49,
     exportSchema = true
 )
 abstract class AgentDatabase : RoomDatabase() {
@@ -116,6 +116,6 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun wakeQueueDao(): WakeQueueDao
 
     companion object {
-        const val SCHEMA_VERSION = 48
+        const val SCHEMA_VERSION = 49
     }
 }

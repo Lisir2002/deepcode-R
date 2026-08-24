@@ -50,7 +50,16 @@ data class AgentMessageEntity(
     @ColumnInfo(defaultValue = "0")
     val inputTokens: Int = 0,
     @ColumnInfo(defaultValue = "0")
-    val outputTokens: Int = 0
+    val outputTokens: Int = 0,
+    /**
+     * 分块组 id：超长消息（> CHUNK_SIZE）按块拆分落库时，主行与续块行共享同一 chunkGroupId（= 主行 id），
+     * 读取侧按 chunk_index 升序拼接出完整内容。非分块消息为空串。
+     */
+    @ColumnInfo(defaultValue = "")
+    val chunkGroupId: String = "",
+    /** 块序号（0 起）：主行（含全部元数据）为 0，续块行为 1..N-1。非分块消息恒为 0。 */
+    @ColumnInfo(defaultValue = "0")
+    val chunkIndex: Int = 0
 ) {
     fun toUIMessage(): AgentUIMessage {
         val roleEnum: MessageRole = runCatching {
