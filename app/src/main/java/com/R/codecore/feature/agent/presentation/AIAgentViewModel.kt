@@ -360,14 +360,11 @@ class AIAgentViewModel @Inject constructor(
         return result
     }
 
-    /** 消息归属的二级片段类型：有正文的助手消息归 REPLY；仅思考（无正文）独立为 REASONING，避免被回复空壳包裹。 */
+    /** 消息归属的二级片段类型：ASSISTANT 消息（含内嵌思考）统一归 REPLY，保持 reasoning 与正文同处时间线。 */
     private fun AgentUIMessage.subGroupType(): TaskSubGroupType? = when {
         role == MessageRole.USER && !isBackgroundNotification -> TaskSubGroupType.USER
-        // 纯思考：有 reasoning 但无正文（如工具执行前的推理）→ 独立思考片段
         role == MessageRole.ASSISTANT &&
-            reasoning?.hasVisibleContent() == true && !content.hasVisibleContent() -> TaskSubGroupType.REASONING
-        // 有正文的助手消息（可能同时含内嵌思考）→ 回复片段，reasoning 与正文同处时间线
-        role == MessageRole.ASSISTANT && content.hasVisibleContent() -> TaskSubGroupType.REPLY
+            (reasoning?.hasVisibleContent() == true || content.hasVisibleContent()) -> TaskSubGroupType.REPLY
         role == MessageRole.TOOL -> TaskSubGroupType.TOOL
         else -> null
     }

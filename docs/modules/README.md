@@ -36,7 +36,6 @@
 | browser | `feature/browser/` | [browser.md](./browser.md) | 内置浏览器：WebView 会话、登录接管、动态数据捕获 |
 | capability | `feature/capability/` | [capability.md](./capability.md) | 能力中心：工具/Agent/技能聚合视图 |
 | t2i | `feature/t2i/` | [t2i.md](./t2i.md) | 文生图：Provider 抽象、SYNC/ASYNC/AUTO 端点、权限策略 |
-| chatrender | `feature/chatrender/` | [chatrender.md](./chatrender.md) | 聊天回复渲染：四款气泡样式抽象（纯文字/细线/终端日志/时间线）+ 设置切换 |
 | core（公共基础层） | `core/` + `di/` + 应用入口 | [core.md](./core.md) | 跨模块基础设施：数据库迁移、安全加密、主题、日志、Worker、Hilt DI、App 入口 |
 
 ## 设计文档（docs/plan-docs/）

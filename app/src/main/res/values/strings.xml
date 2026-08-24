@@ -80,12 +80,6 @@
     <string name="theme_auto">自动</string>
     <string name="theme_dark">深色</string>
     <string name="theme_light">浅色</string>
-    <string name="settings_bubble_style_title">回复样式</string>
-    <string name="settings_bubble_style_subtitle">选择聊天气泡外观，切换不影响对话数据</string>
-    <string name="bubble_style_pure_text">纯文字流</string>
-    <string name="bubble_style_thin_bubble">细线气泡</string>
-    <string name="bubble_style_terminal_log">终端日志</string>
-    <string name="bubble_style_timeline">时间线</string>
     <string name="settings_keepalive_title">后台运行保活</string>
     <string name="settings_keepalive_subtitle">显示前台通知，避免退到后台时系统杀进程</string>
     <string name="settings_backup_subtitle">加密导出/导入配置、聊天历史与凭据</string>

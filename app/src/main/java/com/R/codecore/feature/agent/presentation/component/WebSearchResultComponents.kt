@@ -1,6 +1,7 @@
 package com.R.codecore.feature.agent.presentation.component
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,7 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -141,7 +142,10 @@ private fun WebSearchSummary(result: ParsedWebSearchResult) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(32.dp),
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(Radius.sm))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -175,7 +179,7 @@ private fun WebSearchResultItem(index: Int, item: ParsedWebSearchItem) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(Radius.sm),
-        color = Color.Transparent,
+        color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(

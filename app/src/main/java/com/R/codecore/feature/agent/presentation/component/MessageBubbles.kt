@@ -1,6 +1,7 @@
 package com.R.codecore.feature.agent.presentation.component
 
 import android.content.ClipData
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,14 +10,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,19 +37,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.R.codecore.R
+import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot
 import com.R.codecore.feature.agent.presentation.hasVisibleContent
 import com.R.codecore.feature.agent.presentation.MessageRole
-import com.R.codecore.feature.chatrender.BubbleStyleProvider
-import com.R.codecore.feature.chatrender.LocalBubbleStyle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Check
@@ -51,15 +58,6 @@ import androidx.compose.material.icons.rounded.Edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * 单条消息渲染：Claude Code 风格日志流。
- *
- * 设计原则：
- * - 无气泡容器、无左右对称布局、无彩色填充底；
- * - 灰阶正文，仅保留语义色（绿=成功、红=失败）与一个提示符强调色；
- * - 用户消息以终端提示符 `>` 前缀区分角色，助手消息左对齐直出 Markdown；
- * - 工具消息折叠为「状态圆点 + 工具名 + 参数摘要」一行。
- */
 @Composable
 internal fun AgentMessageItem(
     message: AgentUIMessage,
@@ -68,12 +66,7 @@ internal fun AgentMessageItem(
     onEditClick: ((AgentUIMessage) -> Unit)? = null,
     onNewChatClick: ((AgentUIMessage) -> Unit)? = null,
     initiallyExpanded: Boolean = true,
-    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap(),
-    /**
-     * 正式回复模式：仅渲染正文（含操作按钮），不渲染思考过程；
-     * 正文置于「淡底 + 左侧主色竖条」容器中，与无底仅色线的过程内容区分。
-     */
-    formalMode: Boolean = false
+    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
 ) {
     if (message.isCompactionMarker) {
         CompactionDivider()
@@ -91,153 +84,147 @@ internal fun AgentMessageItem(
     if (message.role == MessageRole.ASSISTANT && !hasContent && !hasReasoning) return
 
     val isUser = message.role == MessageRole.USER
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    // 紧凑优化：用户气泡放宽到 92% 屏宽，减少换行、降低整体纵向占用
+    val maxUserBubbleWidth = remember(screenWidthDp) { (screenWidthDp * 0.92).dp }
     var copied by remember { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val copyScope = rememberCoroutineScope()
-    // 款式分发：由 LocalBubbleStyle 决定当前生效的消息外框（切换只影响渲染层，不读写对话数据）
-    val renderer = BubbleStyleProvider.provide(LocalBubbleStyle.current)
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
-        if (hasReasoning && !formalMode) {
+        if (hasReasoning) {
             ReasoningBubble(text = message.reasoning.orEmpty(), initiallyExpanded = false, cache = markdownCache)
         }
         if (hasContent || hasAttachments || message.role != MessageRole.ASSISTANT) {
-            when {
-                // 用户消息：款式外框（纯文字右对齐 / 细线右框 / 终端日志顶格色块 / 时间线圆节点）
-                isUser && (hasContent || hasAttachments) -> {
-                    renderer.UserContainer(timestamp = message.timestamp) {
-                        if (hasContent) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                // 助手消息左对齐，用户消息右对齐
+                horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
+            ) {
+                if (hasContent || message.role == MessageRole.TOOL) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = if (isUser) {
+                                RoundedCornerShape(Radius.md, Radius.md, Radius.xs, Radius.md)
+                            } else {
+                                RoundedCornerShape(Radius.md, Radius.md, Radius.md, Radius.xs)
+                            },
+                            color = when (message.role) {
+                                MessageRole.USER -> MaterialTheme.colorScheme.primary
+                                MessageRole.ASSISTANT -> MaterialTheme.colorScheme.surface
+                                MessageRole.TOOL -> MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            border = if (message.role == MessageRole.ASSISTANT) {
+                                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            } else null,
+                            // 用户气泡按内容自适应宽度；AI/工具气泡填满可用宽度，两侧外边距由 LazyColumn contentPadding 统一提供
+                            modifier = if (isUser) {
+                                Modifier.widthIn(max = maxUserBubbleWidth)
+                            } else {
+                                Modifier.fillMaxWidth()
+                            }
+                        ) {
+                        if (message.role == MessageRole.TOOL) {
+                            ToolMessageBody(message, liveOutput = liveOutput, initiallyExpanded = initiallyExpanded, environmentSnapshots = environmentSnapshots)
+                        } else {
+                            val textColor = when (message.role) {
+                                MessageRole.USER -> MaterialTheme.colorScheme.onPrimary
+                                else -> MaterialTheme.colorScheme.onSurface
+                            }
                             SelectionContainer {
-                                Text(
-                                    text = message.content,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp)
-                                )
+                                val selectionColors = if (isUser) {
+                                    TextSelectionColors(
+                                        handleColor = MaterialTheme.colorScheme.onPrimary,
+                                        backgroundColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.28f),
+                                    )
+                                } else {
+                                    TextSelectionColors(
+                                        handleColor = MaterialTheme.colorScheme.primary,
+                                        backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f),
+                                    )
+                                }
+                                CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
+                                    if (isUser) {
+                                        Text(
+                                            text = message.content,
+                                            color = textColor,
+                                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                                            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs)
+                                        )
+                                    } else {
+                                        MarkdownContent(
+                                            text = message.content,
+                                            color = textColor,
+                                            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+                                            cache = markdownCache
+                                        )
+                                    }
+                                }
                             }
                         }
-                        if (hasAttachments) {
-                            MessageAttachmentPreviewRow(attachments = message.attachments)
-                        }
                     }
                 }
-                // 正式回复：款式外框（isFormal=true，款式据此轻微强调）
-                message.role == MessageRole.ASSISTANT && hasContent && formalMode -> {
-                    renderer.AssistantContainer(isFormal = true, timestamp = message.timestamp) {
-                        SelectionContainer {
-                            MarkdownContent(
-                                text = message.content,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                cache = markdownCache
-                            )
-                        }
-                        if (hasAttachments) {
-                            MessageAttachmentPreviewRow(attachments = message.attachments)
-                        }
-                    }
                 }
-                // 助手过程内容：款式外框（isFormal=false，与正式回复区分）
-                message.role == MessageRole.ASSISTANT && hasContent -> {
-                    renderer.AssistantContainer(isFormal = false, timestamp = message.timestamp) {
-                        SelectionContainer {
-                            MarkdownContent(
-                                text = message.content,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                cache = markdownCache
-                            )
-                        }
-                        if (hasAttachments) {
-                            MessageAttachmentPreviewRow(attachments = message.attachments)
-                        }
-                    }
-                }
-                // 工具消息：款式外框（内容自带折叠）
-                message.role == MessageRole.TOOL -> {
-                    renderer.ToolContainer(timestamp = message.timestamp) {
-                        ToolMessageBody(
-                            message,
-                            liveOutput = liveOutput,
-                            initiallyExpanded = initiallyExpanded,
-                            environmentSnapshots = environmentSnapshots
-                        )
-                        if (hasAttachments) {
-                            MessageAttachmentPreviewRow(attachments = message.attachments)
-                        }
-                    }
-                }
-                // 兜底：其余角色有正文时直出
-                hasContent -> {
-                    renderer.AssistantContainer(isFormal = false, timestamp = message.timestamp) {
-                        SelectionContainer {
-                            MarkdownContent(
-                                text = message.content,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                cache = markdownCache
-                            )
-                        }
-                    }
-                }
-                hasAttachments -> {
+                if (isUser && hasAttachments) {
                     MessageAttachmentPreviewRow(attachments = message.attachments)
                 }
-            }
-            // 消息下方操作按钮（工具消息不显示）
-            if (message.content.hasVisibleContent() && message.role != MessageRole.TOOL) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-                ) {
-                    val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
-                    // 复制
-                    MessageActionIconButton(
-                        icon = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                        contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
-                        tint = iconTint,
-                        onClick = {
-                            copyScope.launch {
-                                clipboard.setClipEntry(
-                                    ClipEntry(ClipData.newPlainText("message", message.content))
-                                )
-                                copied = true
+                // 气泡下方操作按钮（工具消息不显示）
+                if (message.content.hasVisibleContent() && message.role != MessageRole.TOOL) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+                        // 复制
+                        MessageActionIconButton(
+                            icon = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                            contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
+                            tint = iconTint,
+                            onClick = {
+                                copyScope.launch {
+                                    clipboard.setClipEntry(
+                                        ClipEntry(ClipData.newPlainText("message", message.content))
+                                    )
+                                    copied = true
+                                }
                             }
+                        )
+                        // 编辑（仅用户消息）：填入输入框，允许修改后重发
+                        if (isUser && onEditClick != null) {
+                            MessageActionIconButton(
+                                icon = Icons.Rounded.Edit,
+                                contentDescription = stringResource(R.string.chat_action_edit),
+                                tint = iconTint,
+                                onClick = { onEditClick(message) }
+                            )
                         }
-                    )
-                    // 编辑（仅用户消息）：填入输入框，允许修改后重发
-                    if (isUser && onEditClick != null) {
-                        MessageActionIconButton(
-                            icon = Icons.Rounded.Edit,
-                            contentDescription = stringResource(R.string.chat_action_edit),
-                            tint = iconTint,
-                            onClick = { onEditClick(message) }
-                        )
+                        // 创建新聊天（仅用户消息）
+                        if (isUser && onNewChatClick != null) {
+                            MessageActionIconButton(
+                                icon = Icons.Rounded.ChatBubble,
+                                contentDescription = stringResource(R.string.chat_action_new_chat),
+                                tint = iconTint,
+                                onClick = { onNewChatClick(message) }
+                            )
+                        }
+                        if (message.role == MessageRole.ASSISTANT && (message.inputTokens > 0 || message.outputTokens > 0)) {
+                            val inStr = formatTokenCount(message.inputTokens)
+                            val outStr = formatTokenCount(message.outputTokens)
+                            Text(
+                                text = "↑$inStr ↓$outStr",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    // 创建新聊天（仅用户消息）
-                    if (isUser && onNewChatClick != null) {
-                        MessageActionIconButton(
-                            icon = Icons.Rounded.ChatBubble,
-                            contentDescription = stringResource(R.string.chat_action_new_chat),
-                            tint = iconTint,
-                            onClick = { onNewChatClick(message) }
-                        )
-                    }
-                    if (message.role == MessageRole.ASSISTANT && (message.inputTokens > 0 || message.outputTokens > 0)) {
-                        val inStr = formatTokenCount(message.inputTokens)
-                        val outStr = formatTokenCount(message.outputTokens)
-                        Text(
-                            text = "↑$inStr ↓$outStr",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                // 复制成功 1.5s 后恢复图标
-                if (copied) {
-                    LaunchedEffect(copied) {
-                        delay(1500)
-                        copied = false
+                    // 复制成功 1.5s 后恢复图标
+                    if (copied) {
+                        LaunchedEffect(copied) {
+                            delay(1500)
+                            copied = false
+                        }
                     }
                 }
             }
@@ -288,48 +275,61 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
         }
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+    Surface(
+        shape = RoundedCornerShape(Radius.md),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(dotColor)
-        )
-        Text(
-            text = label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(dotColor)
+            )
+            Text(
+                text = label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
 @Composable
 private fun CompactionDivider() {
-    Row(
+    Surface(
+        shape = RoundedCornerShape(Radius.md),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = Spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            .padding(vertical = Spacing.xs)
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
-        )
-        Text(
-            text = stringResource(R.string.chat_context_compressed),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f)
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+            Text(
+                text = stringResource(R.string.chat_context_compressed),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }

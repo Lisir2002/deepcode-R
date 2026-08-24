@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +30,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -60,8 +58,6 @@ import com.R.codecore.feature.agent.presentation.AIAgentViewModel
 import com.R.codecore.feature.agent.presentation.ConversationSkillsViewModel
 import com.R.codecore.feature.agent.presentation.MessageRole
 import com.R.codecore.feature.agent.presentation.hasVisibleContent
-import com.R.codecore.feature.chatrender.BubbleStyle
-import com.R.codecore.feature.chatrender.LocalBubbleStyle
 import com.R.codecore.feature.settings.presentation.SettingsViewModel
 import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
 import androidx.compose.material.icons.Icons
@@ -438,8 +434,6 @@ fun AIChatPanel(
     val executionMode = settingsViewModel?.executionMode?.collectAsStateWithLifecycle()?.value
     val connectionState = settingsViewModel?.connectionState?.collectAsStateWithLifecycle()?.value
     val isRemote = executionMode == com.R.codecore.feature.settings.data.repository.ExecutionMode.REMOTE_SSH
-    // 回复气泡款式：由设置页 DataStore 持久化，注入 CompositionLocal 全局生效（切换只影响渲染层）
-    val bubbleStyle = settingsViewModel?.bubbleStyle?.collectAsStateWithLifecycle()?.value ?: BubbleStyle.DEFAULT
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -462,7 +456,6 @@ fun AIChatPanel(
             )
         }
     ) { padding ->
-        CompositionLocalProvider(LocalBubbleStyle provides bubbleStyle) {
         Column(
             modifier = modifier
                 .fillMaxSize()
@@ -497,12 +490,6 @@ fun AIChatPanel(
                                 onViewChanges = { fileDiffsForSheet = it },
                                 runningTool = runningTool,
                                 environmentSnapshots = environmentSnapshots
-                            )
-                            // 日志流细分割线：任务（回合）之间用极淡灰线分隔
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = Spacing.sm),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                                thickness = 0.5.dp
                             )
                         }
                         val reasoning = streamingReasoning
@@ -663,7 +650,6 @@ fun AIChatPanel(
                     onDismiss = { fileDiffsForSheet = null }
                 )
             }
-        }
         }
     }
 }

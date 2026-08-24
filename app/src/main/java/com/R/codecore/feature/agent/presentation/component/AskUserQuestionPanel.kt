@@ -39,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,7 +94,7 @@ fun AskUserQuestionPanel(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Spacing.lg, vertical = Spacing.xs),
-        color = Color.Transparent,
+        color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(Radius.md),
         shadowElevation = Elevation.z2,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -195,13 +194,17 @@ private fun QuestionCard(
         // 标题行：header 标签 + 问题文本
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (item.header.isNotBlank()) {
-                // header 标签：无容器填色，仅 primary 色文字
-                Text(
-                    text = item.header,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = Spacing.sm, vertical = 2.dp)
-                )
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(Radius.xs)
+                ) {
+                    Text(
+                        text = item.header,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = Spacing.sm, vertical = 2.dp)
+                    )
+                }
                 Spacer(Modifier.width(Spacing.sm))
             }
             // Q-2：问题文本支持轻量 markdown（**加粗**、`代码`、链接等）
@@ -229,7 +232,7 @@ private fun QuestionCard(
                 stringResource(R.string.ask_custom_answer)
             }
 
-            // Q-1：默认选项仅用主色细边框高亮，不填底色，让推荐项一眼可见
+            // Q-1：默认选项用主色底 + 细边框高亮，让推荐项一眼可见
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -237,6 +240,7 @@ private fun QuestionCard(
                     .then(
                         if (isDefault) {
                             Modifier
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
                                 .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(Radius.xs))
                         } else {
                             Modifier
@@ -278,15 +282,20 @@ private fun QuestionCard(
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                         )
-                        // Q-1：推荐角标（无容器填色，仅 primary 色文字）
+                        // Q-1：推荐角标
                         if (isDefault) {
                             Spacer(Modifier.width(Spacing.xs))
-                            Text(
-                                text = stringResource(R.string.common_recommended),
-                                style = MaterialTheme.typography.labelSmall,
+                            Surface(
                                 color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp)
-                            )
+                                shape = RoundedCornerShape(Radius.xs)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.common_recommended),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                     }
                     if (description.isNotBlank()) {
