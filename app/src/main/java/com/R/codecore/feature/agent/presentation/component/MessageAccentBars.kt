@@ -17,7 +17,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 
@@ -77,22 +76,16 @@ internal fun ShortAccentBar(color: Color, height: Dp = 14.dp) {
 }
 
 /**
- * 正式回复容器：淡底 + 左侧主色竖条。
+ * 正式回复容器：透明底 + 左侧主色竖条。
  * 用于独立于过程内容（思考/工具）的模型正式回复，与「无底仅色线」的过程区形成视觉区分，
  * 突出正式回复作为一轮回复最终结论的地位。
  */
 @Composable
 internal fun FormalReplyContainer(
     barColor: Color,
-    bgColor: Color,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.md))
-            .background(bgColor)
-    ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .matchParentSize()

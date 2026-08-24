@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,11 +36,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.R.codecore.R
-import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.MessageAccent
-import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
-import com.R.codecore.core.theme.resolveBg
 import com.R.codecore.core.theme.resolveLine
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot
@@ -107,18 +103,14 @@ internal fun AgentMessageItem(
             ReasoningBubble(text = message.reasoning.orEmpty(), initiallyExpanded = false, cache = markdownCache)
         }
         if (hasContent || hasAttachments || message.role != MessageRole.ASSISTANT) {
-            // 用户消息：右侧灰底淡气泡（无色线，与模型消息的色线体系区分）
+            // 用户消息：右侧透明文本（无背景、无色线，仅右对齐，与模型消息的色线体系区分）
             if (isUser && (hasContent || hasAttachments)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth(0.86f)
-                            .clip(RoundedCornerShape(Radius.md))
-                            .background(userBubbleColor())
-                            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                        modifier = Modifier.fillMaxWidth(0.86f),
                         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                     ) {
                         if (hasContent) {
@@ -136,10 +128,9 @@ internal fun AgentMessageItem(
                     }
                 }
             } else if (message.role == MessageRole.ASSISTANT && hasContent && formalMode) {
-                // 正式回复（独立于过程内容）：淡底 + 左侧主色竖条
+                // 正式回复（独立于过程内容）：透明底 + 左侧主色竖条
                 FormalReplyContainer(
-                    barColor = MessageAccent.Content.resolveLine(),
-                    bgColor = MessageAccent.Content.resolveBg()
+                    barColor = MessageAccent.Content.resolveLine()
                 ) {
                     SelectionContainer {
                         MarkdownContent(
@@ -241,13 +232,6 @@ internal fun AgentMessageItem(
         }
     }
 }
-
-/**
- * 用户消息灰底淡气泡的背景色：亮色用 slate-100、暗色用 slate-800，中性灰，无色线。
- */
-@Composable
-private fun userBubbleColor(): Color =
-    if (LocalAppDarkMode.current) Color(0xFF1E293B) else Color(0xFFF1F5F9)
 
 @Composable
 private fun MessageActionIconButton(
