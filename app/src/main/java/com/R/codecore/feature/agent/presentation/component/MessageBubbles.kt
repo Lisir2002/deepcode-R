@@ -41,6 +41,7 @@ import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.MessageAccent
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
+import com.R.codecore.core.theme.resolveBg
 import com.R.codecore.core.theme.resolveLine
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot

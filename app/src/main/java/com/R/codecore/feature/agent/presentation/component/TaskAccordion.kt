@@ -124,74 +124,11 @@ internal fun TaskAccordion(
     )
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // 一轮回复顶部的整行淡主色线（横向锚点）
-        FullWidthAccentBar(MessageAccent.Content.resolveLine())
-        // 任务头：灰阶日志行（无卡片 / 无渐变徽章 / 无阴影）
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onToggleTask(group.taskId) }
-                .padding(vertical = Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            // 流式状态圆点：仅在生成中显示，脉冲呼吸
-            if (group.isStreaming) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha))
-                )
-            }
-            // 任务标题：占据剩余空间（过长横向滚动，不再用省略号截断）
-            HorizontalScrollableText(
-                text = group.title,
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = if (group.isStreaming) FontWeight.SemiBold else FontWeight.Medium,
-                    lineHeight = 20.sp
-                ),
-                modifier = Modifier.weight(1f)
-            )
-            // 流式状态文案
-            if (group.isStreaming) {
-                Text(
-                    text = stringResource(R.string.chat_task_streaming),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            // 时间戳
-            if (group.timestamp > 0) {
-                Text(
-                    text = formatTaskTime(group.timestamp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            // 展开/折叠箭头
-            androidx.compose.material3.Icon(
-                imageVector = if (group.isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                contentDescription = stringResource(
-                    if (group.isExpanded) R.string.chat_task_collapse else R.string.chat_task_expand
-                ),
-                tint = Brand.IconGray,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-
-        // 任务内容：二级子手风琴（无卡片容器）
+        // 用户消息（右侧气泡）：独立于大气泡（贯穿竖条）之外，仅展开时显示
         AnimatedVisibility(
             visible = group.isExpanded,
-            enter = expandVertically(
-                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
-                expandFrom = Alignment.Top
-            ) + fadeIn(animationSpec = tween(350)),
-            exit = shrinkVertically(
-                animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
-                shrinkTowards = Alignment.Top
-            ) + fadeOut(animationSpec = tween(250))
+            enter = taskExpand,
+            exit = taskShrink
         ) {
             Column(
                 modifier = Modifier
@@ -199,20 +136,155 @@ internal fun TaskAccordion(
                     .padding(start = Spacing.sm, end = Spacing.sm, bottom = Spacing.xs),
                 verticalArrangement = Arrangement.spacedBy(Spacing.xs)
             ) {
-                renderUnits.forEach { unit ->
-                    SubAccordion(
-                        group = group,
-                        subGroup = unit.subGroup,
-                        attachedTools = unit.attachedTools,
-                        toolLogs = toolLogs,
+                split.processUnits
+                    .filter { it.subGroup.type == TaskSubGroupType.USER }
+                    .forEach { unit ->
+                        SubAccordion(
+                            group = group,
+                            subGroup = unit.subGroup,
+                            attachedTools = unit.attachedTools,
+                            toolLogs = toolLogs,
+                            markdownCache = markdownCache,
+                            onToggleSubGroup = onToggleSubGroup,
+                            onEditClick = onEditClick,
+                            onNewChatClick = onNewChatClick,
+                            onViewChanges = onViewChanges,
+                            runningTool = runningTool,
+                            environmentSnapshots = environmentSnapshots
+                        )
+                    }
+            }
+        }
+        // 一轮回复顶部的整行淡主色线（横向锚点）
+        FullWidthAccentBar(MessageAccent.Content.resolveLine())
+        // 大气泡：贯穿竖条（靛蓝）包裹模型整轮回复（任务头 + 过程内容 + 正式回复）
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // 贯穿竖条：不参与父布局尺寸计算，随内容高度伸缩，作为整轮回复的纵向时间轴锚点
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .width(3.dp)
+                    .align(Alignment.CenterStart)
+                    .background(MessageAccent.Spine.resolveLine())
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = Spacing.md)
+            ) {
+                // 任务头：灰阶日志行（无卡片 / 无渐变徽章 / 无阴影）
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleTask(group.taskId) }
+                        .padding(vertical = Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                ) {
+                    // 流式状态圆点：仅在生成中显示，脉冲呼吸
+                    if (group.isStreaming) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha))
+                        )
+                    }
+                    // 任务标题：占据剩余空间（过长横向滚动，不再用省略号截断）
+                    HorizontalScrollableText(
+                        text = group.title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = if (group.isStreaming) FontWeight.SemiBold else FontWeight.Medium,
+                            lineHeight = 20.sp
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    // 流式状态文案
+                    if (group.isStreaming) {
+                        Text(
+                            text = stringResource(R.string.chat_task_streaming),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // 时间戳
+                    if (group.timestamp > 0) {
+                        Text(
+                            text = formatTaskTime(group.timestamp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // 展开/折叠箭头
+                    androidx.compose.material3.Icon(
+                        imageVector = if (group.isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = stringResource(
+                            if (group.isExpanded) R.string.chat_task_collapse else R.string.chat_task_expand
+                        ),
+                        tint = Brand.IconGray,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // 任务过程内容：二级子手风琴（无底仅色线结构，不添加背景容器）
+                AnimatedVisibility(
+                    visible = group.isExpanded,
+                    enter = taskExpand,
+                    exit = taskShrink
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = Spacing.sm, bottom = Spacing.xs),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                    ) {
+                        split.processUnits
+                            .filter { it.subGroup.type != TaskSubGroupType.USER }
+                            .forEach { unit ->
+                                SubAccordion(
+                                    group = group,
+                                    subGroup = unit.subGroup,
+                                    attachedTools = unit.attachedTools,
+                                    toolLogs = toolLogs,
+                                    markdownCache = markdownCache,
+                                    onToggleSubGroup = onToggleSubGroup,
+                                    onEditClick = onEditClick,
+                                    onNewChatClick = onNewChatClick,
+                                    onViewChanges = onViewChanges,
+                                    runningTool = runningTool,
+                                    environmentSnapshots = environmentSnapshots
+                                )
+                            }
+                        // 正式回复关联的工具调用：独立折叠块（过程内容，无底仅色线）
+                        if (split.formalTools.isNotEmpty()) {
+                            EmbeddedToolAccordion(
+                                attachedTools = split.formalTools,
+                                markdownCache = markdownCache,
+                                runningTool = runningTool,
+                                environmentSnapshots = environmentSnapshots
+                            )
+                        }
+                    }
+                }
+                // 正式回复：独立于过程内容，淡底 + 左侧主色竖条（独特样式）
+                split.formalMessage?.let { formal ->
+                    AgentMessageItem(
+                        message = formal,
                         markdownCache = markdownCache,
-                        onToggleSubGroup = onToggleSubGroup,
-                        onEditClick = onEditClick,
-                        onNewChatClick = onNewChatClick,
-                        onViewChanges = onViewChanges,
-                        runningTool = runningTool,
+                        formalMode = true,
                         environmentSnapshots = environmentSnapshots
                     )
+                    // 查看修改：正式回复对应批次的文件变更
+                    if (onViewChanges != null && split.formalTools.isNotEmpty()) {
+                        val formalDiffs = remember(split.formalTools) { collectBatchFileDiffs(split.formalTools) }
+                        if (formalDiffs.isNotEmpty()) {
+                            ViewChangesButton(
+                                fileDiffs = formalDiffs,
+                                onClick = { onViewChanges(TaskChangesSheetData(formalDiffs, toolLogs)) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -584,6 +656,62 @@ private fun buildRenderUnits(subGroups: List<TaskSubGroup>): List<RenderUnit> {
     }
     flushPendingTools(pendingTools, units, lastReplyIndex)
     return units
+}
+
+/**
+ * 一轮回复的拆分结果：过程区渲染单元 + 独立正式回复（含其关联工具调用）。
+ * - [processUnits]：过程区渲染单元（用户消息 / 思考 / 工具 / 中间回复），无底仅色线；
+ * - [formalMessage]：正式回复消息（正文独立渲染为「淡底 + 左侧主色竖条」块）；
+ * - [formalTools]：正式回复关联的工具调用，独立折叠在过程区底部。
+ */
+private data class RenderSplit(
+    val processUnits: List<RenderUnit>,
+    val formalMessage: AgentUIMessage?,
+    val formalTools: List<AgentUIMessage>
+)
+
+/**
+ * 把任务内的渲染单元拆分为「过程区 + 正式回复」：
+ * - 取最后一个含可见正文的 REPLY 片段，其正文作为正式回复独立渲染；
+ * - 该片段的思考（reasoning）独立为 REASONING 过程单元（正文移入正式回复块，不重复展示）；
+ * - 该片段嵌入的工具调用保留为 [RenderSplit.formalTools]，独立折叠在过程区底部，
+ *   保持「思考 / 工具（过程区）→ 正式回复」的层级，不再把正式回复与思考混在一起。
+ */
+private fun splitFormalReply(subGroups: List<TaskSubGroup>): RenderSplit {
+    val units = buildRenderUnits(subGroups)
+    for (i in units.indices.reversed()) {
+        val unit = units[i]
+        if (unit.subGroup.type != TaskSubGroupType.REPLY) continue
+        val idx = unit.subGroup.messages.indexOfLast { msg ->
+            msg.role == MessageRole.ASSISTANT && msg.content.hasVisibleContent()
+        }
+        if (idx < 0) continue
+        val formal = unit.subGroup.messages[idx]
+        val processUnits = mutableListOf<RenderUnit>()
+        // 正式回复消息的思考 → 独立为思考过程单元
+        val reasoningOnly = formal.reasoning?.takeIf { it.hasVisibleContent() }
+        if (reasoningOnly != null) {
+            processUnits += RenderUnit(
+                TaskSubGroup(
+                    id = "${unit.subGroup.id}-reasoning",
+                    type = TaskSubGroupType.REASONING,
+                    messages = listOf(formal.copy(content = "")),
+                    isExpanded = unit.subGroup.isExpanded
+                )
+            )
+        }
+        // 该 REPLY 单元内其余消息（若有）保留在过程区
+        val remaining = unit.subGroup.messages.filterIndexed { j, msg -> j != idx }
+        if (remaining.isNotEmpty()) {
+            processUnits += RenderUnit(unit.subGroup.copy(messages = remaining))
+        }
+        return RenderSplit(
+            processUnits = units.take(i) + processUnits + units.drop(i + 1),
+            formalMessage = formal,
+            formalTools = unit.attachedTools
+        )
+    }
+    return RenderSplit(units, null, emptyList())
 }
 
 /** 把暂存的工具调用嵌入最近回复；无最近回复时兜底为独立 TOOL 单元。 */
