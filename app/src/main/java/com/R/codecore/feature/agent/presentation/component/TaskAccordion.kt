@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.InfiniteTransition
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -13,7 +12,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,10 +22,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -47,8 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.R.codecore.R
 import com.R.codecore.core.theme.Brand
-import com.R.codecore.core.theme.LocalAppDarkMode
-import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot
@@ -62,15 +55,12 @@ import com.R.codecore.feature.agent.domain.container.progress.InstallProgressPar
 import com.R.codecore.feature.agent.domain.permission.ShellCommandParser
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cancel
-import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Construction
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Sync
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -82,9 +72,10 @@ import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 一级任务手风琴：一个任务（taskId）对应一个折叠面板。
- * 头部显示任务标题 / 消息数 / 时间；展开后渲染该任务下的二级子手风琴（按消息类型分类）。
+ * 头部显示任务标题 / 流式状态 / 时间；展开后渲染该任务下的二级子手风琴（按消息类型分类）。
  *
- * 视觉设计：卡片式阴影 + 渐变图标徽章 + 流式脉冲动画 + 子分类强调色体系
+ * 视觉设计：Claude Code 风格灰阶日志流——无卡片、无渐变徽章、无阴影、无彩色强调底。
+ * 仅保留流式脉冲圆点作为正在生成的状态信号。
  */
 @Composable
 internal fun TaskAccordion(
@@ -99,13 +90,12 @@ internal fun TaskAccordion(
     environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
-    val totalCount = group.subGroups.sumOf { it.messages.size }
     // 任务内全部工具执行日志（含查询操作），供弹窗「日志」Tab 展示
     val toolLogs = remember(group.taskId, group.subGroups) { collectTaskLogs(group) }
-    // 归并渲染单元：TOOL 片段嵌入紧随其后的 REPLY 片段（作为回复气泡的子气泡）
+    // 归并渲染单元：TOOL 片段嵌入紧随其后的 REPLY 片段（作为回复消息的子块）
     val renderUnits = remember(group.taskId, group.subGroups) { buildRenderUnits(group.subGroups) }
 
-    // 流式生成脉冲动画：动态调整边框高亮
+    // 流式生成脉冲动画：任务头小圆点透明度呼吸
     val infiniteTransition = rememberInfiniteTransition(label = "streamingPulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,
@@ -116,197 +106,105 @@ internal fun TaskAccordion(
         ),
         label = "pulseAlpha"
     )
-    val borderAlpha = if (group.isStreaming) pulseAlpha else 0.6f
 
-    // 根据状态动态调整卡片阴影
-    val elevation by animateDpAsState(
-        targetValue = if (group.isStreaming) 4.dp else if (group.isExpanded) 2.dp else 1.dp,
-        animationSpec = tween(300),
-        label = "cardElevation"
-    )
-
-    Surface(
-        shape = RoundedCornerShape(Radius.lg),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            width = if (group.isStreaming) 2.dp else 1.dp,
-            color = if (group.isStreaming) {
-                Brand.Blue.copy(alpha = borderAlpha)
-            } else {
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha)
-            }
-        ),
-        tonalElevation = 0.dp,
-        shadowElevation = elevation,
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Column {
-            // 一级手风琴头部：渐变图标徽章 + 标题 + 时间 + 计数 + 展开箭头
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggleTask(group.taskId) }
-                    .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-            ) {
-                // 渐变图标徽章：品牌蓝渐变底 + 白色图标，形成任务视觉锚点
+    Column(modifier = modifier.fillMaxWidth()) {
+        // 任务头：灰阶日志行（无卡片 / 无渐变徽章 / 无阴影）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggleTask(group.taskId) }
+                .padding(vertical = Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            // 流式状态圆点：仅在生成中显示，脉冲呼吸
+            if (group.isStreaming) {
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(Radius.sm))
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    Brand.Blue,
-                                    Brand.Sky
-                                )
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    androidx.compose.material3.Icon(
-                        imageVector = Icons.Rounded.ChatBubble,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-
-                // 任务标题：占据剩余空间（过长横向滚动，不再用省略号截断）
-                HorizontalScrollableText(
-                    text = group.title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = if (group.isStreaming) FontWeight.SemiBold else FontWeight.Medium,
-                        lineHeight = 20.sp
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-
-                // 流式生成状态徽章
-                if (group.isStreaming) {
-                    StreamingBadge(infiniteTransition)
-                }
-
-                // 消息计数徽章
-                MessageCountBadge(totalCount)
-
-                // 时间戳
-                if (group.timestamp > 0) {
-                    Text(
-                        text = formatTaskTime(group.timestamp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // 展开/折叠箭头
-                androidx.compose.material3.Icon(
-                    imageVector = if (group.isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = stringResource(
-                        if (group.isExpanded) R.string.chat_task_collapse else R.string.chat_task_expand
-                    ),
-                    tint = Brand.IconGray,
-                    modifier = Modifier.size(20.dp)
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha))
                 )
             }
-
-            // 一级手风琴内容：二级子手风琴
-            AnimatedVisibility(
-                visible = group.isExpanded,
-                enter = expandVertically(
-                    animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
-                    expandFrom = Alignment.Top
-                ) + fadeIn(animationSpec = tween(350)),
-                exit = shrinkVertically(
-                    animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
-                    shrinkTowards = Alignment.Top
-                ) + fadeOut(animationSpec = tween(250))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = Spacing.sm, end = Spacing.sm, bottom = Spacing.xs),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                ) {
-                    renderUnits.forEach { unit ->
-                        SubAccordion(
-                            group = group,
-                            subGroup = unit.subGroup,
-                            attachedTools = unit.attachedTools,
-                            toolLogs = toolLogs,
-                            markdownCache = markdownCache,
-                            onToggleSubGroup = onToggleSubGroup,
-                            onEditClick = onEditClick,
-                            onNewChatClick = onNewChatClick,
-                            onViewChanges = onViewChanges,
-                            runningTool = runningTool,
-                            environmentSnapshots = environmentSnapshots
-                        )
-                    }
-                }
+            // 任务标题：占据剩余空间（过长横向滚动，不再用省略号截断）
+            HorizontalScrollableText(
+                text = group.title,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = if (group.isStreaming) FontWeight.SemiBold else FontWeight.Medium,
+                    lineHeight = 20.sp
+                ),
+                modifier = Modifier.weight(1f)
+            )
+            // 流式状态文案
+            if (group.isStreaming) {
+                Text(
+                    text = stringResource(R.string.chat_task_streaming),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
+            // 时间戳
+            if (group.timestamp > 0) {
+                Text(
+                    text = formatTaskTime(group.timestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            // 展开/折叠箭头
+            androidx.compose.material3.Icon(
+                imageVector = if (group.isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                contentDescription = stringResource(
+                    if (group.isExpanded) R.string.chat_task_collapse else R.string.chat_task_expand
+                ),
+                tint = Brand.IconGray,
+                modifier = Modifier.size(18.dp)
+            )
         }
-    }
-}
 
-@Composable
-private fun StreamingBadge(transition: InfiniteTransition) {
-    val dotAlpha by transition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dotAlpha"
-    )
-    Surface(
-        shape = RoundedCornerShape(Radius.pill),
-        color = Brand.Blue.copy(alpha = 0.12f)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        // 任务内容：二级子手风琴（无卡片容器）
+        AnimatedVisibility(
+            visible = group.isExpanded,
+            enter = expandVertically(
+                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                expandFrom = Alignment.Top
+            ) + fadeIn(animationSpec = tween(350)),
+            exit = shrinkVertically(
+                animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+                shrinkTowards = Alignment.Top
+            ) + fadeOut(animationSpec = tween(250))
         ) {
-            Box(
+            Column(
                 modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(Brand.Blue.copy(alpha = dotAlpha))
-            )
-            Text(
-                text = stringResource(R.string.chat_task_streaming),
-                style = MaterialTheme.typography.labelSmall,
-                color = Brand.Blue,
-                fontWeight = FontWeight.Medium
-            )
+                    .fillMaxWidth()
+                    .padding(start = Spacing.sm, end = Spacing.sm, bottom = Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+            ) {
+                renderUnits.forEach { unit ->
+                    SubAccordion(
+                        group = group,
+                        subGroup = unit.subGroup,
+                        attachedTools = unit.attachedTools,
+                        toolLogs = toolLogs,
+                        markdownCache = markdownCache,
+                        onToggleSubGroup = onToggleSubGroup,
+                        onEditClick = onEditClick,
+                        onNewChatClick = onNewChatClick,
+                        onViewChanges = onViewChanges,
+                        runningTool = runningTool,
+                        environmentSnapshots = environmentSnapshots
+                    )
+                }
+            }
         }
-    }
-}
-
-@Composable
-private fun MessageCountBadge(count: Int) {
-    Surface(
-        shape = RoundedCornerShape(Radius.pill),
-        color = MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Text(
-            text = stringResource(R.string.chat_task_message_count, count),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-        )
     }
 }
 
 /**
  * 工具调用摘要行：把一批文件变更聚合为一行（「修改了 N 个文件 · +X -Y」）。
- * 作为回复气泡内的工具调用子气泡折叠态，[onClick] 非空时可点击展开完整工具调用列表。
- * 视觉采用工具子气泡样式（橙色淡底 + 琥珀强调色），与回复气泡形成层次。
+ * 作为回复消息内的工具调用子块折叠态，[onClick] 非空时可点击展开完整工具调用列表。
+ * 视觉采用灰阶日志行，仅变更分类统计保留语义色（绿=增、蓝=改、红=删）。
  */
 @Composable
 private fun ToolSummaryRow(
@@ -316,79 +214,71 @@ private fun ToolSummaryRow(
     val createCount = fileDiffs.count { it.type == FileChangeType.CREATE }
     val deleteCount = fileDiffs.count { it.type == FileChangeType.DELETE }
     val modifyCount = fileDiffs.count { it.type == FileChangeType.MODIFY }
-    val visual = subGroupVisual(TaskSubGroupType.TOOL)
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = visual.bg,
-        border = BorderStroke(1.dp, visual.accent.copy(alpha = 0.2f)),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-                .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            // 工具图标（琥珀强调色）
+        // 工具图标（灰阶）
+        androidx.compose.material3.Icon(
+            imageVector = Icons.Rounded.Construction,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = stringResource(R.string.tool_summary_files, fileDiffs.size),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        // 变更分类统计（语义色）
+        if (createCount > 0) {
+            Text(
+                text = stringResource(R.string.tool_summary_create, createCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF22C55E),
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        if (modifyCount > 0) {
+            Text(
+                text = stringResource(R.string.tool_summary_modify, modifyCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF3B82F6),
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        if (deleteCount > 0) {
+            Text(
+                text = stringResource(R.string.tool_summary_delete, deleteCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFEF4444),
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        // 可展开箭头
+        if (onClick != null) {
             androidx.compose.material3.Icon(
-                imageVector = Icons.Rounded.Construction,
+                imageVector = Icons.Rounded.KeyboardArrowDown,
                 contentDescription = null,
-                tint = visual.accent,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
             )
-            Text(
-                text = stringResource(R.string.tool_summary_files, fileDiffs.size),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            // 变更分类统计
-            if (createCount > 0) {
-                Text(
-                    text = stringResource(R.string.tool_summary_create, createCount),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF22C55E),
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            if (modifyCount > 0) {
-                Text(
-                    text = stringResource(R.string.tool_summary_modify, modifyCount),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF3B82F6),
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            if (deleteCount > 0) {
-                Text(
-                    text = stringResource(R.string.tool_summary_delete, deleteCount),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFEF4444),
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            // 可展开箭头
-            if (onClick != null) {
-                androidx.compose.material3.Icon(
-                    imageVector = Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = visual.accent.copy(alpha = 0.5f),
-                    modifier = Modifier.size(16.dp)
-                )
-            }
         }
     }
 }
 
 /**
- * 嵌入在回复气泡顶部的工具调用子手风琴组件。
+ * 嵌入在回复消息顶部的工具调用子手风琴组件。
  * - 默认折叠：显示 ToolSummaryRow（有文件变更）或 ToolCallCountRow（仅工具名/次数）；
  * - 点击展开：显示该批次工具调用的完整列表（按连续相同工具名分组）。
- * 「查看修改」按钮由回复气泡底部统一提供，此处不重复。
+ * 「查看修改」按钮由回复消息底部统一提供，此处不重复。
  */
 @Composable
 private fun EmbeddedToolAccordion(
@@ -401,12 +291,12 @@ private fun EmbeddedToolAccordion(
     val batchFileDiffs = remember(attachedTools) { collectBatchFileDiffs(attachedTools) }
     // 检测正在运行的安装命令进度（apt/apk/pip/sdkmanager），有则折叠态显示进度条
     val activeInstall = remember(attachedTools, runningTool) { resolveAttachedInstall(attachedTools, runningTool) }
-    // 安装进行中自动展开：让执行安装的工具气泡内联显示实时进度；安装完成后自动收起
+    // 安装进行中自动展开：让执行安装的工具消息内联显示实时进度；安装完成后自动收起
     val hasActiveInstall = activeInstall != null
     var expanded by remember(hasActiveInstall) { mutableStateOf(hasActiveInstall) }
 
     Column {
-        // 折叠态：安装进度 > 文件变更摘要 > 工具调用计数（展开时由工具气泡内联展示进度，避免重复）
+        // 折叠态：安装进度 > 文件变更摘要 > 工具调用计数（展开时由工具消息内联展示进度，避免重复）
         if (!expanded && activeInstall != null) {
             InstallProgressRow(progress = activeInstall)
         } else if (!expanded && batchFileDiffs.isNotEmpty()) {
@@ -467,8 +357,8 @@ private fun EmbeddedToolAccordion(
 
 /**
  * 工具调用计数行：当工具调用不涉及文件变更时（如 websearch/todo/readFile 等），
- * 在回复气泡顶部展示「N 个工具调用」可折叠摘要，避免非文件工具被完全隐藏。
- * 若该批次中有工具触发了环境探测，则在右侧显示紧凑状态气泡。
+ * 在回复消息顶部展示「N 个工具调用」可折叠摘要，避免非文件工具被完全隐藏。
+ * 若该批次中有工具触发了环境探测，则在右侧显示紧凑状态条。
  */
 @Composable
 private fun ToolCallCountRow(
@@ -478,65 +368,58 @@ private fun ToolCallCountRow(
 ) {
     val count = tools.size
     val toolNames = tools.mapNotNull { it.toolName }.distinct()
-    val visual = subGroupVisual(TaskSubGroupType.TOOL)
     // 找到该批次中触发了环境探测的消息对应的快照
     val envSnapshot = remember(environmentSnapshots, tools) {
         tools.firstNotNullOfOrNull { msg -> environmentSnapshots[msg.id] }
     }
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = visual.bg,
-        border = BorderStroke(1.dp, visual.accent.copy(alpha = 0.2f)),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            androidx.compose.material3.Icon(
-                imageVector = Icons.Rounded.Construction,
-                contentDescription = null,
-                tint = visual.accent,
-                modifier = Modifier.size(16.dp)
-            )
-            Text(
-                text = stringResource(R.string.tool_summary_count, count),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            if (toolNames.isNotEmpty()) {
-                // 过长工具名列表横向滚动展示，不再用省略号截断
-                HorizontalScrollableText(
-                    text = toolNames.joinToString(", "),
-                    color = visual.accent.copy(alpha = 0.8f),
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-            }
-            // 环境探测状态气泡：紧凑展示，仅显示当前所需构建环境的检测状态
-            if (envSnapshot != null) {
-                EnvironmentStatusBubble(snapshot = envSnapshot)
-            }
-            androidx.compose.material3.Icon(
-                imageVector = Icons.Rounded.KeyboardArrowDown,
-                contentDescription = null,
-                tint = visual.accent.copy(alpha = 0.5f),
-                modifier = Modifier.size(16.dp)
+        androidx.compose.material3.Icon(
+            imageVector = Icons.Rounded.Construction,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = stringResource(R.string.tool_summary_count, count),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (toolNames.isNotEmpty()) {
+            // 过长工具名列表横向滚动展示，不再用省略号截断
+            HorizontalScrollableText(
+                text = toolNames.joinToString(", "),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.weight(1f, fill = false)
             )
         }
+        // 环境探测状态条：紧凑展示，仅显示当前所需构建环境的检测状态
+        if (envSnapshot != null) {
+            EnvironmentStatusBubble(snapshot = envSnapshot)
+        }
+        androidx.compose.material3.Icon(
+            imageVector = Icons.Rounded.KeyboardArrowDown,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
 /**
- * 构建环境状态气泡：紧凑展示当前所需构建环境的检测状态（如 `php ✓`）。
- * 仅显示探测结果摘要，不展开细节；完整状态条由展开列表内的工具气泡提供。
+ * 构建环境状态条：紧凑展示当前所需构建环境的检测状态（如 `php ✓`）。
+ * 仅显示探测结果摘要，不展开细节；完整状态条由展开列表内的工具消息提供。
+ * 语义色：检测中=灰、就绪=绿、缺少=红。
  */
 @Composable
 private fun EnvironmentStatusBubble(snapshot: EnvironmentSnapshot) {
@@ -546,7 +429,7 @@ private fun EnvironmentStatusBubble(snapshot: EnvironmentSnapshot) {
     val missing = components.filter { it.status == EnvironmentStatus.MISSING }
     val ready = missing.isEmpty() && components.isNotEmpty()
     val statusColor = when {
-        running -> Brand.Blue
+        running -> MaterialTheme.colorScheme.onSurfaceVariant
         ready -> Color(0xFF22C55E)
         else -> Color(0xFFEF4444)
     }
@@ -560,43 +443,37 @@ private fun EnvironmentStatusBubble(snapshot: EnvironmentSnapshot) {
         ready -> stringResource(R.string.env_bubble_ready, components.joinToString(", ") { it.name })
         else -> stringResource(R.string.env_bubble_missing, missing.joinToString(", ") { it.name })
     }
-    Surface(
-        shape = RoundedCornerShape(Radius.pill),
-        color = statusColor.copy(alpha = 0.1f),
-        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            if (running) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(11.dp),
-                    strokeWidth = 1.5.dp,
-                    color = statusColor
-                )
-            } else {
-                androidx.compose.material3.Icon(
-                    imageVector = statusIcon,
-                    contentDescription = null,
-                    tint = statusColor,
-                    modifier = Modifier.size(12.dp)
-                )
-            }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = statusColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+        if (running) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(11.dp),
+                strokeWidth = 1.5.dp,
+                color = statusColor
+            )
+        } else {
+            androidx.compose.material3.Icon(
+                imageVector = statusIcon,
+                contentDescription = null,
+                tint = statusColor,
+                modifier = Modifier.size(12.dp)
             )
         }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = statusColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
 /**
- * 回复气泡底部的「查看修改」按钮：对应批次有文件变更时显示，点击打开底部弹窗。
+ * 回复消息底部的「查看修改」按钮：对应批次有文件变更时显示，点击打开底部弹窗。
+ * 灰阶日志行样式，仅保留一个主色图标作为可点击信号。
  */
 @Composable
 private fun ViewChangesButton(
@@ -605,49 +482,42 @@ private fun ViewChangesButton(
 ) {
     val totalAdded = fileDiffs.sumOf { it.added }
     val totalRemoved = fileDiffs.sumOf { it.removed }
-    Surface(
-        shape = RoundedCornerShape(Radius.pill),
-        color = Brand.Blue.copy(alpha = 0.08f),
-        border = BorderStroke(1.dp, Brand.Blue.copy(alpha = 0.25f)),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            androidx.compose.material3.Icon(
-                imageVector = Icons.Rounded.Description,
-                contentDescription = null,
-                tint = Brand.Blue,
-                modifier = Modifier.size(16.dp)
-            )
+        androidx.compose.material3.Icon(
+            imageVector = Icons.Rounded.Description,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = stringResource(R.string.tool_view_changes, fileDiffs.size),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (totalAdded > 0 || totalRemoved > 0) {
             Text(
-                text = stringResource(R.string.tool_view_changes, fileDiffs.size),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = Brand.Blue,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            if (totalAdded > 0 || totalRemoved > 0) {
-                Text(
-                    text = "+$totalAdded -$totalRemoved",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Brand.Blue.copy(alpha = 0.8f),
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            androidx.compose.material3.Icon(
-                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                contentDescription = null,
-                tint = Brand.Blue,
-                modifier = Modifier.size(18.dp)
+                text = "+$totalAdded -$totalRemoved",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
             )
         }
+        androidx.compose.material3.Icon(
+            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
@@ -663,7 +533,7 @@ private data class RenderUnit(
 
 /**
  * 把任务内的二级片段归并为渲染单元，保持消息真实时间顺序：
- * - TOOL 片段 → 暂存，不独立渲染；check_environment 等工具以紧凑状态条形态内嵌于回复气泡顶部；
+ * - TOOL 片段 → 暂存，不独立渲染；check_environment 等工具以紧凑状态条形态内嵌于回复顶部；
  * - REPLY 片段 → 携带暂存的工具调用（嵌入回复顶部），并成为「最近回复」；
  * - 其他片段（USER）→ 若暂存非空，嵌入最近回复；无最近回复则兜底独立 TOOL 单元；
  * - 任务结束 → 若暂存非空，同样嵌入最近回复或兜底。
@@ -815,8 +685,8 @@ private const val LOG_RESULT_LIMIT = 2000
 
 /**
  * 二级片段手风琴：任务组内时间上连续的同类型消息片段（用户消息 / 助手回复 / 工具调用）。
- * 每种子类型有独立的强调色、图标和淡色背景，便于视觉分区。
- * 片段按真实执行顺序排列，reasoning 内嵌在助手消息气泡中，不单独拆组。
+ * 每种片段以灰阶小标签区分，不再使用彩色强调色与淡色背景。
+ * 片段按真实执行顺序排列，reasoning 内嵌在助手消息中，不单独拆组。
  */
 @Composable
 private fun SubAccordion(
@@ -833,134 +703,111 @@ private fun SubAccordion(
     environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
 ) {
     val label = stringResource(subGroup.type.labelRes())
-    val visual = subGroupVisual(subGroup.type)
     // 该片段关联的工具调用批次内的文件变更（增/删/改），按路径聚合
     val batchFileDiffs = remember(subGroup.id, attachedTools) { collectBatchFileDiffs(attachedTools) }
 
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = visual.bg,
-        border = BorderStroke(1.dp, visual.accent.copy(alpha = 0.15f)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column {
-            // 二级片段头部
-            Row(
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // 片段头：灰阶小标签 + 展开箭头（无彩色、无背景）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggleSubGroup(group.taskId, subGroup.id) }
+                .padding(top = Spacing.xs, bottom = Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            androidx.compose.material3.Icon(
+                imageVector = if (subGroup.isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = Brand.IconGray,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+        // 片段内容：消息（保持时间顺序）
+        AnimatedVisibility(
+            visible = subGroup.isExpanded,
+            enter = expandVertically(
+                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                expandFrom = Alignment.Top
+            ) + fadeIn(tween(200)),
+            exit = shrinkVertically(
+                animationSpec = tween(200),
+                shrinkTowards = Alignment.Top
+            ) + fadeOut(tween(150))
+        ) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onToggleSubGroup(group.taskId, subGroup.id) }
-                    .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    .padding(start = Spacing.xs, end = Spacing.xs, bottom = Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
             ) {
-                // 子分类图标
-                androidx.compose.material3.Icon(
-                    imageVector = visual.icon,
-                    contentDescription = null,
-                    tint = visual.accent,
-                    modifier = Modifier.size(16.dp)
-                )
-                // 子分类标签
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = visual.accent,
-                    modifier = Modifier.weight(1f)
-                )
-                // 消息计数
-                Text(
-                    text = "${subGroup.messages.size}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = visual.accent.copy(alpha = 0.7f)
-                )
-                // 展开/折叠箭头
-                androidx.compose.material3.Icon(
-                    imageVector = if (subGroup.isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = visual.accent.copy(alpha = 0.5f),
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-            // 二级片段内容：消息气泡（保持时间顺序）
-            AnimatedVisibility(
-                visible = subGroup.isExpanded,
-                enter = expandVertically(
-                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                    expandFrom = Alignment.Top
-                ) + fadeIn(tween(200)),
-                exit = shrinkVertically(
-                    animationSpec = tween(200),
-                    shrinkTowards = Alignment.Top
-                ) + fadeOut(tween(150))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                ) {
-                    // TOOL 片段（兜底独立单元）：折叠为一行摘要
-                    if (subGroup.type == TaskSubGroupType.TOOL) {
-                        // 兜底单元无 attachedTools，基于自身消息收集文件变更
-                        val toolFileDiffs = remember(subGroup.id, subGroup.messages) {
-                            collectBatchFileDiffs(subGroup.messages)
-                        }
-                        if (toolFileDiffs.isNotEmpty()) {
-                            ToolSummaryRow(fileDiffs = toolFileDiffs)
-                        } else {
-                            // 无文件修改的工具调用（如 websearch/todo 等）：保留紧凑列表
-                            groupConsecutiveToolCalls(subGroup.messages).forEach { (toolName, msgs) ->
-                                if (msgs.size > 1) {
-                                    ToolCallGroup(
-                                        toolName = toolName ?: stringResource(R.string.common_tool),
-                                        messages = msgs,
-                                        runningTool = runningTool,
-                                        markdownCache = markdownCache,
-                                        environmentSnapshots = environmentSnapshots
-                                    )
-                                } else {
-                                    val message = msgs.first()
-                                    val live = runningTool.firstOrNull { it.messageId == message.id }?.text
-                                    AgentMessageItem(
-                                        message = message,
-                                        liveOutput = live,
-                                        markdownCache = markdownCache,
-                                        onEditClick = onEditClick,
-                                        onNewChatClick = onNewChatClick,
-                                        environmentSnapshots = environmentSnapshots
-                                    )
-                                }
+                // TOOL 片段（兜底独立单元）：折叠为一行摘要
+                if (subGroup.type == TaskSubGroupType.TOOL) {
+                    // 兜底单元无 attachedTools，基于自身消息收集文件变更
+                    val toolFileDiffs = remember(subGroup.id, subGroup.messages) {
+                        collectBatchFileDiffs(subGroup.messages)
+                    }
+                    if (toolFileDiffs.isNotEmpty()) {
+                        ToolSummaryRow(fileDiffs = toolFileDiffs)
+                    } else {
+                        // 无文件修改的工具调用（如 websearch/todo 等）：保留紧凑列表
+                        groupConsecutiveToolCalls(subGroup.messages).forEach { (toolName, msgs) ->
+                            if (msgs.size > 1) {
+                                ToolCallGroup(
+                                    toolName = toolName ?: stringResource(R.string.common_tool),
+                                    messages = msgs,
+                                    runningTool = runningTool,
+                                    markdownCache = markdownCache,
+                                    environmentSnapshots = environmentSnapshots
+                                )
+                            } else {
+                                val message = msgs.first()
+                                val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                                AgentMessageItem(
+                                    message = message,
+                                    liveOutput = live,
+                                    markdownCache = markdownCache,
+                                    onEditClick = onEditClick,
+                                    onNewChatClick = onNewChatClick,
+                                    environmentSnapshots = environmentSnapshots
+                                )
                             }
                         }
-                    } else {
-                        // REPLY 等类型：顶部嵌入工具调用子气泡
-                        if (subGroup.type == TaskSubGroupType.REPLY && attachedTools.isNotEmpty()) {
-                            EmbeddedToolAccordion(
-                                attachedTools = attachedTools,
-                                markdownCache = markdownCache,
-                                runningTool = runningTool,
-                                environmentSnapshots = environmentSnapshots
-                            )
-                        }
-                        // 消息正文
-                        subGroup.messages.forEach { message ->
-                            val live = runningTool.firstOrNull { it.messageId == message.id }?.text
-                            AgentMessageItem(
-                                message = message,
-                                liveOutput = live,
-                                markdownCache = markdownCache,
-                                onEditClick = onEditClick,
-                                onNewChatClick = onNewChatClick,
-                                environmentSnapshots = environmentSnapshots
-                            )
-                        }
-                        // REPLY 片段底部：查看修改按钮（用批次数据）
-                        if (subGroup.type == TaskSubGroupType.REPLY && batchFileDiffs.isNotEmpty() && onViewChanges != null) {
-                            ViewChangesButton(
-                                fileDiffs = batchFileDiffs,
-                                onClick = { onViewChanges(TaskChangesSheetData(batchFileDiffs, toolLogs)) }
-                            )
-                        }
+                    }
+                } else {
+                    // REPLY 等类型：顶部嵌入工具调用子块
+                    if (subGroup.type == TaskSubGroupType.REPLY && attachedTools.isNotEmpty()) {
+                        EmbeddedToolAccordion(
+                            attachedTools = attachedTools,
+                            markdownCache = markdownCache,
+                            runningTool = runningTool,
+                            environmentSnapshots = environmentSnapshots
+                        )
+                    }
+                    // 消息正文
+                    subGroup.messages.forEach { message ->
+                        val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                        AgentMessageItem(
+                            message = message,
+                            liveOutput = live,
+                            markdownCache = markdownCache,
+                            onEditClick = onEditClick,
+                            onNewChatClick = onNewChatClick,
+                            environmentSnapshots = environmentSnapshots
+                        )
+                    }
+                    // REPLY 片段底部：查看修改按钮（用批次数据）
+                    if (subGroup.type == TaskSubGroupType.REPLY && batchFileDiffs.isNotEmpty() && onViewChanges != null) {
+                        ViewChangesButton(
+                            fileDiffs = batchFileDiffs,
+                            onClick = { onViewChanges(TaskChangesSheetData(batchFileDiffs, toolLogs)) }
+                        )
                     }
                 }
             }
@@ -973,43 +820,6 @@ private fun TaskSubGroupType.labelRes(): Int = when (this) {
     TaskSubGroupType.REASONING -> R.string.chat_task_reasoning
     TaskSubGroupType.REPLY -> R.string.chat_task_reply
     TaskSubGroupType.TOOL -> R.string.chat_task_tool
-}
-
-/**
- * 子分类视觉定义：每种消息类型有独立的图标 + 强调色 + 淡色背景。
- * 明暗模式使用不同色阶，保证对比度与可读性。
- */
-private data class SubGroupVisual(
-    val icon: ImageVector,
-    val accent: Color,
-    val bg: Color
-)
-
-@Composable
-private fun subGroupVisual(type: TaskSubGroupType): SubGroupVisual {
-    val isDark = LocalAppDarkMode.current
-    return when (type) {
-        TaskSubGroupType.USER -> SubGroupVisual(
-            icon = Icons.Rounded.Person,
-            accent = if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB),
-            bg = if (isDark) Color(0xFF60A5FA).copy(alpha = 0.14f) else Color(0xFF2563EB).copy(alpha = 0.06f)
-        )
-        TaskSubGroupType.REASONING -> SubGroupVisual(
-            icon = Icons.Rounded.Star,
-            accent = if (isDark) Color(0xFFA78BFA) else Color(0xFF7C3AED),
-            bg = if (isDark) Color(0xFFA78BFA).copy(alpha = 0.14f) else Color(0xFF7C3AED).copy(alpha = 0.06f)
-        )
-        TaskSubGroupType.REPLY -> SubGroupVisual(
-            icon = Icons.Rounded.ChatBubble,
-            accent = if (isDark) Color(0xFF34D399) else Color(0xFF059669),
-            bg = if (isDark) Color(0xFF34D399).copy(alpha = 0.14f) else Color(0xFF059669).copy(alpha = 0.06f)
-        )
-        TaskSubGroupType.TOOL -> SubGroupVisual(
-            icon = Icons.Rounded.Construction,
-            accent = if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706),
-            bg = if (isDark) Color(0xFFFBBF24).copy(alpha = 0.14f) else Color(0xFFD97706).copy(alpha = 0.06f)
-        )
-    }
 }
 
 private fun formatTaskTime(timestamp: Long): String {
@@ -1044,8 +854,8 @@ private fun groupConsecutiveToolCalls(messages: List<AgentUIMessage>): List<Pair
 }
 
 /**
- * 从嵌入回复气泡的工具调用中解析正在运行的安装进度。
- * 作用域限定在 attachedTools（回复气泡的子气泡）。
+ * 从嵌入回复消息的工具调用中解析正在运行的安装进度。
+ * 作用域限定在 attachedTools（回复消息的子块）。
  */
 private fun resolveAttachedInstall(
     attachedTools: List<AgentUIMessage>,

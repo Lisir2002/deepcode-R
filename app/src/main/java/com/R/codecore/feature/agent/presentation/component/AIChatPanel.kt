@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -490,6 +491,12 @@ fun AIChatPanel(
                                 onViewChanges = { fileDiffsForSheet = it },
                                 runningTool = runningTool,
                                 environmentSnapshots = environmentSnapshots
+                            )
+                            // 日志流细分割线：任务（回合）之间用极淡灰线分隔
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = Spacing.sm),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                thickness = 0.5.dp
                             )
                         }
                         val reasoning = streamingReasoning

@@ -11,7 +11,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -35,7 +34,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,7 +54,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.R.codecore.core.theme.Brand
-import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.domain.container.progress.InstallProgress
@@ -296,95 +293,89 @@ internal fun ToolCallGroup(
     val errorCount = messages.count { it.isError }
     val successCount = messages.size - errorCount
 
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column {
-            // 聚合面板头部
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-            ) {
-                // 工具图标（琥珀强调色，与 TOOL 子分类一致）
-                androidx.compose.material3.Icon(
-                    imageVector = Icons.Rounded.Construction,
-                    contentDescription = null,
-                    tint = if (LocalAppDarkMode.current) Color(0xFFFBBF24) else Color(0xFFD97706),
-                    modifier = Modifier.size(16.dp)
-                )
-                // 工具名（过长横向滚动，不再用省略号截断）
-                HorizontalScrollableText(
-                    text = toolName,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                    modifier = Modifier.weight(1f)
-                )
-                // 调用次数
+    // 聚合面板：灰阶日志行，无卡片容器、无边框、无背景
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // 聚合面板头部
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            // 工具图标（灰阶，与日志流风格一致）
+            androidx.compose.material3.Icon(
+                imageVector = Icons.Rounded.Construction,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+            // 工具名（过长横向滚动，不再用省略号截断）
+            HorizontalScrollableText(
+                text = toolName,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.weight(1f)
+            )
+            // 调用次数
+            Text(
+                text = "×${messages.size}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold
+            )
+            // 状态汇总（语义色：红=失败、绿=成功）
+            if (errorCount > 0) {
                 Text(
-                    text = "×${messages.size}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.SemiBold
+                    text = stringResource(R.string.tool_group_failed, errorCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = DiffRemoveText,
+                    fontWeight = FontWeight.Medium
                 )
-                // 状态汇总
-                if (errorCount > 0) {
-                    Text(
-                        text = stringResource(R.string.tool_group_failed, errorCount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = DiffRemoveText,
-                        fontWeight = FontWeight.Medium
-                    )
-                } else if (successCount > 0 && !anyStreaming) {
-                    Text(
-                        text = stringResource(R.string.tool_group_success, successCount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = DiffAddText,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                // 展开/折叠箭头
-                androidx.compose.material3.Icon(
-                    imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
-                    tint = Brand.IconGray,
-                    modifier = Modifier.size(18.dp)
+            } else if (successCount > 0 && !anyStreaming) {
+                Text(
+                    text = stringResource(R.string.tool_group_success, successCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = DiffAddText,
+                    fontWeight = FontWeight.Medium
                 )
             }
-            // 聚合面板内容：每个调用一行（默认折叠）
-            AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically(
-                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                    expandFrom = Alignment.Top
-                ) + fadeIn(tween(200)),
-                exit = shrinkVertically(
-                    animationSpec = tween(200),
-                    shrinkTowards = Alignment.Top
-                ) + fadeOut(tween(150))
+            // 展开/折叠箭头
+            androidx.compose.material3.Icon(
+                imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
+                tint = Brand.IconGray,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        // 聚合面板内容：每个调用一行（默认折叠）
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(
+                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                expandFrom = Alignment.Top
+            ) + fadeIn(tween(200)),
+            exit = shrinkVertically(
+                animationSpec = tween(200),
+                shrinkTowards = Alignment.Top
+            ) + fadeOut(tween(150))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                ) {
-                    messages.forEach { message ->
-                        val live = runningTool.firstOrNull { it.messageId == message.id }?.text
-                        AgentMessageItem(
-                            message = message,
-                            liveOutput = live,
-                            markdownCache = markdownCache,
-                            initiallyExpanded = false,
-                            environmentSnapshots = environmentSnapshots
-                        )
-                    }
+                messages.forEach { message ->
+                    val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                    AgentMessageItem(
+                        message = message,
+                        liveOutput = live,
+                        markdownCache = markdownCache,
+                        initiallyExpanded = false,
+                        environmentSnapshots = environmentSnapshots
+                    )
                 }
             }
         }
@@ -806,7 +797,6 @@ private fun EnvironmentStatusStrip(
     message: AgentUIMessage? = null,
     snapshot: EnvironmentSnapshot? = null
 ) {
-    val isDark = LocalAppDarkMode.current
     val components = when {
         snapshot != null -> snapshot.components
         message != null -> remember(message.id, message.content) { parseEnvironmentComponents(message.content) }
@@ -840,13 +830,8 @@ private fun EnvironmentStatusStrip(
         )
     }
 
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = if (isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else Color(0xFFF1F5F9),
-        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.35f)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column {
+    // 环境探测状态条：灰阶日志行，无卡片容器、无边框
+    Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

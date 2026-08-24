@@ -1,7 +1,6 @@
 package com.R.codecore.feature.agent.presentation.component
 
 import android.content.ClipData
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,20 +9,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,14 +30,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.R.codecore.R
-import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot
@@ -58,6 +49,15 @@ import androidx.compose.material.icons.rounded.Edit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * 单条消息渲染：Claude Code 风格日志流。
+ *
+ * 设计原则：
+ * - 无气泡容器、无左右对称布局、无彩色填充底；
+ * - 灰阶正文，仅保留语义色（绿=成功、红=失败）与一个提示符强调色；
+ * - 用户消息以终端提示符 `>` 前缀区分角色，助手消息左对齐直出 Markdown；
+ * - 工具消息折叠为「状态圆点 + 工具名 + 参数摘要」一行。
+ */
 @Composable
 internal fun AgentMessageItem(
     message: AgentUIMessage,
@@ -84,9 +84,6 @@ internal fun AgentMessageItem(
     if (message.role == MessageRole.ASSISTANT && !hasContent && !hasReasoning) return
 
     val isUser = message.role == MessageRole.USER
-    val screenWidthDp = LocalConfiguration.current.screenWidthDp
-    // 紧凑优化：用户气泡放宽到 92% 屏宽，减少换行、降低整体纵向占用
-    val maxUserBubbleWidth = remember(screenWidthDp) { (screenWidthDp * 0.92).dp }
     var copied by remember { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val copyScope = rememberCoroutineScope()
@@ -99,132 +96,111 @@ internal fun AgentMessageItem(
             ReasoningBubble(text = message.reasoning.orEmpty(), initiallyExpanded = false, cache = markdownCache)
         }
         if (hasContent || hasAttachments || message.role != MessageRole.ASSISTANT) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                // 助手消息左对齐，用户消息右对齐
-                horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
-            ) {
-                if (hasContent || message.role == MessageRole.TOOL) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
+            // 用户消息：终端提示符前缀 + 纯文本（无气泡容器）
+            if (isUser && (hasContent || hasAttachments)) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(
+                        text = ">",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            lineHeight = 20.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = Spacing.sm)
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                     ) {
-                        Surface(
-                            shape = if (isUser) {
-                                RoundedCornerShape(Radius.md, Radius.md, Radius.xs, Radius.md)
-                            } else {
-                                RoundedCornerShape(Radius.md, Radius.md, Radius.md, Radius.xs)
-                            },
-                            color = when (message.role) {
-                                MessageRole.USER -> MaterialTheme.colorScheme.primary
-                                MessageRole.ASSISTANT -> MaterialTheme.colorScheme.surface
-                                MessageRole.TOOL -> MaterialTheme.colorScheme.surfaceVariant
-                            },
-                            border = if (message.role == MessageRole.ASSISTANT) {
-                                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                            } else null,
-                            // 用户气泡按内容自适应宽度；AI/工具气泡填满可用宽度，两侧外边距由 LazyColumn contentPadding 统一提供
-                            modifier = if (isUser) {
-                                Modifier.widthIn(max = maxUserBubbleWidth)
-                            } else {
-                                Modifier.fillMaxWidth()
-                            }
-                        ) {
-                        if (message.role == MessageRole.TOOL) {
-                            ToolMessageBody(message, liveOutput = liveOutput, initiallyExpanded = initiallyExpanded, environmentSnapshots = environmentSnapshots)
-                        } else {
-                            val textColor = when (message.role) {
-                                MessageRole.USER -> MaterialTheme.colorScheme.onPrimary
-                                else -> MaterialTheme.colorScheme.onSurface
-                            }
+                        if (hasContent) {
                             SelectionContainer {
-                                val selectionColors = if (isUser) {
-                                    TextSelectionColors(
-                                        handleColor = MaterialTheme.colorScheme.onPrimary,
-                                        backgroundColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.28f),
-                                    )
-                                } else {
-                                    TextSelectionColors(
-                                        handleColor = MaterialTheme.colorScheme.primary,
-                                        backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f),
-                                    )
-                                }
-                                CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
-                                    if (isUser) {
-                                        Text(
-                                            text = message.content,
-                                            color = textColor,
-                                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                                            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs)
-                                        )
-                                    } else {
-                                        MarkdownContent(
-                                            text = message.content,
-                                            color = textColor,
-                                            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-                                            cache = markdownCache
-                                        )
-                                    }
-                                }
+                                Text(
+                                    text = message.content,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp)
+                                )
                             }
+                        }
+                        if (hasAttachments) {
+                            MessageAttachmentPreviewRow(attachments = message.attachments)
                         }
                     }
                 }
+            } else {
+                // 助手 / 工具消息：左对齐直出
+                if (hasContent || message.role == MessageRole.TOOL) {
+                    if (message.role == MessageRole.TOOL) {
+                        ToolMessageBody(
+                            message,
+                            liveOutput = liveOutput,
+                            initiallyExpanded = initiallyExpanded,
+                            environmentSnapshots = environmentSnapshots
+                        )
+                    } else if (hasContent) {
+                        SelectionContainer {
+                            MarkdownContent(
+                                text = message.content,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                cache = markdownCache
+                            )
+                        }
+                    }
                 }
-                if (isUser && hasAttachments) {
+                if (hasAttachments) {
                     MessageAttachmentPreviewRow(attachments = message.attachments)
                 }
-                // 气泡下方操作按钮（工具消息不显示）
-                if (message.content.hasVisibleContent() && message.role != MessageRole.TOOL) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
-                        // 复制
-                        MessageActionIconButton(
-                            icon = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                            contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
-                            tint = iconTint,
-                            onClick = {
-                                copyScope.launch {
-                                    clipboard.setClipEntry(
-                                        ClipEntry(ClipData.newPlainText("message", message.content))
-                                    )
-                                    copied = true
-                                }
+            }
+            // 消息下方操作按钮（工具消息不显示）
+            if (message.content.hasVisibleContent() && message.role != MessageRole.TOOL) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+                    // 复制
+                    MessageActionIconButton(
+                        icon = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                        contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
+                        tint = iconTint,
+                        onClick = {
+                            copyScope.launch {
+                                clipboard.setClipEntry(
+                                    ClipEntry(ClipData.newPlainText("message", message.content))
+                                )
+                                copied = true
                             }
+                        }
+                    )
+                    // 编辑（仅用户消息）：填入输入框，允许修改后重发
+                    if (isUser && onEditClick != null) {
+                        MessageActionIconButton(
+                            icon = Icons.Rounded.Edit,
+                            contentDescription = stringResource(R.string.chat_action_edit),
+                            tint = iconTint,
+                            onClick = { onEditClick(message) }
                         )
-                        // 编辑（仅用户消息）：填入输入框，允许修改后重发
-                        if (isUser && onEditClick != null) {
-                            MessageActionIconButton(
-                                icon = Icons.Rounded.Edit,
-                                contentDescription = stringResource(R.string.chat_action_edit),
-                                tint = iconTint,
-                                onClick = { onEditClick(message) }
-                            )
-                        }
-                        // 创建新聊天（仅用户消息）
-                        if (isUser && onNewChatClick != null) {
-                            MessageActionIconButton(
-                                icon = Icons.Rounded.ChatBubble,
-                                contentDescription = stringResource(R.string.chat_action_new_chat),
-                                tint = iconTint,
-                                onClick = { onNewChatClick(message) }
-                            )
-                        }
-                        if (message.role == MessageRole.ASSISTANT && (message.inputTokens > 0 || message.outputTokens > 0)) {
-                            val inStr = formatTokenCount(message.inputTokens)
-                            val outStr = formatTokenCount(message.outputTokens)
-                            Text(
-                                text = "↑$inStr ↓$outStr",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
-                    // 复制成功 1.5s 后恢复图标
-                    if (copied) {
-                        LaunchedEffect(copied) {
-                            delay(1500)
-                            copied = false
-                        }
+                    // 创建新聊天（仅用户消息）
+                    if (isUser && onNewChatClick != null) {
+                        MessageActionIconButton(
+                            icon = Icons.Rounded.ChatBubble,
+                            contentDescription = stringResource(R.string.chat_action_new_chat),
+                            tint = iconTint,
+                            onClick = { onNewChatClick(message) }
+                        )
+                    }
+                    if (message.role == MessageRole.ASSISTANT && (message.inputTokens > 0 || message.outputTokens > 0)) {
+                        val inStr = formatTokenCount(message.inputTokens)
+                        val outStr = formatTokenCount(message.outputTokens)
+                        Text(
+                            text = "↑$inStr ↓$outStr",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                // 复制成功 1.5s 后恢复图标
+                if (copied) {
+                    LaunchedEffect(copied) {
+                        delay(1500)
+                        copied = false
                     }
                 }
             }
@@ -275,61 +251,48 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
         }
     }
 
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(dotColor)
-            )
-            Text(
-                text = label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+        )
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
 @Composable
 private fun CompactionDivider() {
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = Spacing.xs)
+            .padding(vertical = Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-            )
-            Text(
-                text = stringResource(R.string.chat_context_compressed),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+        )
+        Text(
+            text = stringResource(R.string.chat_context_compressed),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
