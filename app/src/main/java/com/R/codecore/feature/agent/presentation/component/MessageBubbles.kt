@@ -183,6 +183,7 @@ internal fun AgentMessageItem(
             // 消息下方操作按钮（工具消息不显示）
             if (message.content.hasVisibleContent() && message.role != MessageRole.TOOL) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
                 ) {

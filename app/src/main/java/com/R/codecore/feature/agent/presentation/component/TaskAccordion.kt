@@ -855,6 +855,8 @@ private fun SubAccordion(
     environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
 ) {
     val label = stringResource(subGroup.type.labelRes())
+    // 用户消息整体右侧对齐（气泡 + 标签 + 操作按钮），模型消息保持左侧日志流
+    val isUser = subGroup.type == TaskSubGroupType.USER
     // 片段类型分档色条：REPLY=正文蓝、REASONING=思考紫、TOOL=工具蓝灰、USER=中性灰
     val barColor = when (subGroup.type) {
         TaskSubGroupType.REPLY -> MessageAccent.Content.resolveLine()
@@ -873,7 +875,11 @@ private fun SubAccordion(
                 .clickable { onToggleSubGroup(group.taskId, subGroup.id) }
                 .padding(top = Spacing.xs, bottom = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            horizontalArrangement = if (isUser) {
+                Arrangement.spacedBy(Spacing.sm, Alignment.End)
+            } else {
+                Arrangement.spacedBy(Spacing.sm)
+            }
         ) {
             // 片段类型短色条
             ShortAccentBar(barColor)
@@ -882,7 +888,7 @@ private fun SubAccordion(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f)
+                modifier = if (isUser) Modifier else Modifier.weight(1f)
             )
             androidx.compose.material3.Icon(
                 imageVector = if (subGroup.isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
