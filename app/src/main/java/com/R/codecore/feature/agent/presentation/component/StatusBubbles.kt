@@ -43,8 +43,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.R.codecore.R
 import com.R.codecore.core.theme.Brand
+import com.R.codecore.core.theme.MessageAccent
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
+import com.R.codecore.core.theme.resolveLine
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -133,7 +135,9 @@ internal fun ReasoningBubble(
     val overThreshold = lineCount > REASONING_COLLAPSE_LINE_LIMIT
     // 自动折叠：仅在用户尚未手动 toggle 过时生效；用户手动展开/折叠后以用户选择为准
     val effectiveExpanded = if (userToggled) expanded else (initiallyExpanded && !overThreshold)
-    Column(modifier = Modifier.fillMaxWidth()) {
+    val barColor = MessageAccent.Reasoning.resolveLine()
+    // 淡紫竖条贯穿整个思考块 + 标题行短条，形成引用块式分层
+    AccentBarContainer(barColor = barColor) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -143,6 +147,8 @@ internal fun ReasoningBubble(
                 },
             verticalAlignment = Alignment.CenterVertically
         ) {
+            ShortAccentBar(barColor)
+            Spacer(Modifier.width(Spacing.sm))
             Icon(
                 Icons.Rounded.Star,
                 contentDescription = null,

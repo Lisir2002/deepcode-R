@@ -54,8 +54,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.R.codecore.core.theme.Brand
+import com.R.codecore.core.theme.MessageAccent
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
+import com.R.codecore.core.theme.resolveLine
 import com.R.codecore.feature.agent.domain.container.progress.InstallProgress
 import com.R.codecore.feature.agent.domain.container.progress.InstallProgressParsers
 import com.R.codecore.feature.agent.domain.session.SessionUseCase
@@ -149,16 +151,22 @@ internal fun ToolMessageBody(
         resolveBubbleInstallProgress(message, liveOutput)
     } else null
 
-    Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (expandable) Modifier.clickable { expanded = !expanded } else Modifier
-                ),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            ToolStatusDot(running = running, isError = message.isError)
+    // 技能类工具（loadSkill/runSkillScript/自动触发技能）走淡粉分档，其余工具淡蓝灰
+    val barColor = if (isSkillMessage(message)) MessageAccent.Skill.resolveLine() else MessageAccent.Tool.resolveLine()
+    // 淡色竖条贯穿整个工具块 + 标题行短条，形成引用块式分层
+    AccentBarContainer(barColor = barColor) {
+        Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (expandable) Modifier.clickable { expanded = !expanded } else Modifier
+                    ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ShortAccentBar(barColor)
+                Spacer(Modifier.width(Spacing.sm))
+                ToolStatusDot(running = running, isError = message.isError)
             Spacer(Modifier.width(Spacing.sm))
             Row(
                 modifier = Modifier.weight(1f),
@@ -267,6 +275,7 @@ internal fun ToolMessageBody(
                 onClick = { openAttachment(context, it) }
             )
         }
+        }
     }
 }
 
@@ -293,8 +302,11 @@ internal fun ToolCallGroup(
     val errorCount = messages.count { it.isError }
     val successCount = messages.size - errorCount
 
-    // 聚合面板：灰阶日志行，无卡片容器、无边框、无背景
-    Column(modifier = Modifier.fillMaxWidth()) {
+    // 技能类聚合（loadSkill/runSkillScript）走淡粉分档，其余工具淡蓝灰
+    val barColor = if (isSkillToolName(toolName)) MessageAccent.Skill.resolveLine() else MessageAccent.Tool.resolveLine()
+    // 聚合面板：淡色竖条贯穿 + 头部短条，灰阶日志行、无卡片容器、无边框、无背景
+    AccentBarContainer(barColor = barColor) {
+        Column(modifier = Modifier.fillMaxWidth()) {
         // 聚合面板头部
         Row(
             modifier = Modifier
@@ -304,6 +316,9 @@ internal fun ToolCallGroup(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
+            // 标题行短色条（色标提示）
+            ShortAccentBar(barColor)
+            Spacer(Modifier.width(Spacing.sm))
             // 工具图标（灰阶，与日志流风格一致）
             androidx.compose.material3.Icon(
                 imageVector = Icons.Rounded.Construction,
@@ -379,6 +394,7 @@ internal fun ToolCallGroup(
                 }
             }
         }
+    }
     }
 }
 

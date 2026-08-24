@@ -70,6 +70,56 @@ object ChatAccent {
     val Skill = Tone(Color(0xFFDB2777), Color(0xFFF472B6), Color.White, Color(0xFF500724))
 }
 
+/**
+ * 消息流色线分档色板（Claude Code 风格日志流的淡彩分层）。
+ * 每类消息一条淡色线，亮暗双取值（[LocalAppDarkMode] 切换）：
+ * - [Content] 正文：淡主色蓝，整行线横贯一轮回复顶部；
+ * - [Reasoning] 思考：淡紫，子块左侧短条 + 竖条贯穿；
+ * - [Tool] 工具：淡蓝灰，子块左侧短条 + 竖条贯穿；
+ * - [Skill] 技能：淡粉，子块左侧短条 + 竖条贯穿。
+ * 色值刻意压低饱和度，避免回到旧版彩色卡片的花哨观感。
+ */
+object MessageAccent {
+    data class Tone(val lightLine: Color, val darkLine: Color, val lightBg: Color, val darkBg: Color)
+
+    /** 正文 · 淡主色蓝（blue-300/400） */
+    val Content = Tone(
+        lightLine = Color(0xFF93C5FD),
+        darkLine = Color(0xFF60A5FA),
+        lightBg = Color(0xFFEFF6FF),
+        darkBg = Color(0xFF16283F)
+    )
+    /** 思考 · 淡紫（violet-300/400） */
+    val Reasoning = Tone(
+        lightLine = Color(0xFFC4B5FD),
+        darkLine = Color(0xFFA78BFA),
+        lightBg = Color(0xFFF5F3FF),
+        darkBg = Color(0xFF221B3E)
+    )
+    /** 工具 · 淡蓝灰（slate-400/300） */
+    val Tool = Tone(
+        lightLine = Color(0xFF94A3B8),
+        darkLine = Color(0xFF94A3B8),
+        lightBg = Color(0xFFF1F5F9),
+        darkBg = Color(0xFF1E293B)
+    )
+    /** 技能 · 淡粉（pink-300/400） */
+    val Skill = Tone(
+        lightLine = Color(0xFFF9A8D4),
+        darkLine = Color(0xFFF472B6),
+        lightBg = Color(0xFFFDF2F8),
+        darkBg = Color(0xFF3A1E2E)
+    )
+}
+
+/** 当前日夜模式下的色线颜色。 */
+@Composable
+fun MessageAccent.Tone.resolveLine(): Color = if (LocalAppDarkMode.current) darkLine else lightLine
+
+/** 当前日夜模式下的淡背景色（气泡/浅底）。 */
+@Composable
+fun MessageAccent.Tone.resolveBg(): Color = if (LocalAppDarkMode.current) darkBg else lightBg
+
 /** 当前日夜模式下的语义背景色（跟随应用主题设置 LocalAppDarkMode）。 */
 @Composable
 fun ChatAccent.Tone.resolve(): Color = if (LocalAppDarkMode.current) dark else light

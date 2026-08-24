@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -42,7 +44,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.R.codecore.R
 import com.R.codecore.core.theme.Brand
+import com.R.codecore.core.theme.LocalAppDarkMode
+import com.R.codecore.core.theme.MessageAccent
 import com.R.codecore.core.theme.Spacing
+import com.R.codecore.core.theme.resolveLine
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot
 import com.R.codecore.feature.agent.presentation.MessageRole
@@ -108,6 +113,8 @@ internal fun TaskAccordion(
     )
 
     Column(modifier = modifier.fillMaxWidth()) {
+        // 一轮回复顶部的整行淡主色线（横向锚点）
+        FullWidthAccentBar(MessageAccent.Content.resolveLine())
         // 任务头：灰阶日志行（无卡片 / 无渐变徽章 / 无阴影）
         Row(
             modifier = Modifier
@@ -222,6 +229,9 @@ private fun ToolSummaryRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
+        // 工具子行短色条
+        ShortAccentBar(MessageAccent.Tool.resolveLine())
+        Spacer(Modifier.width(Spacing.sm))
         // 工具图标（灰阶）
         androidx.compose.material3.Icon(
             imageVector = Icons.Rounded.Construction,
@@ -380,6 +390,9 @@ private fun ToolCallCountRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
+        // 工具子行短色条
+        ShortAccentBar(MessageAccent.Tool.resolveLine())
+        Spacer(Modifier.width(Spacing.sm))
         androidx.compose.material3.Icon(
             imageVector = Icons.Rounded.Construction,
             contentDescription = null,
@@ -703,6 +716,13 @@ private fun SubAccordion(
     environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
 ) {
     val label = stringResource(subGroup.type.labelRes())
+    // 片段类型分档色条：REPLY=正文蓝、REASONING=思考紫、TOOL=工具蓝灰、USER=中性灰
+    val barColor = when (subGroup.type) {
+        TaskSubGroupType.REPLY -> MessageAccent.Content.resolveLine()
+        TaskSubGroupType.REASONING -> MessageAccent.Reasoning.resolveLine()
+        TaskSubGroupType.TOOL -> MessageAccent.Tool.resolveLine()
+        TaskSubGroupType.USER -> if (LocalAppDarkMode.current) Color(0xFF64748B) else Color(0xFFCBD5E1)
+    }
     // 该片段关联的工具调用批次内的文件变更（增/删/改），按路径聚合
     val batchFileDiffs = remember(subGroup.id, attachedTools) { collectBatchFileDiffs(attachedTools) }
 
@@ -716,6 +736,9 @@ private fun SubAccordion(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
+            // 片段类型短色条
+            ShortAccentBar(barColor)
+            Spacer(Modifier.width(Spacing.sm))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
