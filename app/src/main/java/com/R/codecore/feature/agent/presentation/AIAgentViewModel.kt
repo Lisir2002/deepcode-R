@@ -435,8 +435,26 @@ class AIAgentViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /**
+     * 流式正文/思考的内存护栏：单条流式文本显示上限。模型输出超长内容（如一次性吐出
+     * 超大 diff / 内嵌 base64）时，若不做截断，整段文本会同时存在 workflow 累加器、
+     * 本 StateFlow 与 Compose 重组三份拷贝，长流式下内存持续攀升，极易触发 LMKD
+     * 静默杀进程 → 「模型输出时突然闪退且无 Java 日志」。这里只截断**流式显示**，
+     * 最终落库仍由 MessagePersistenceUseCase.MAX_CONTENT_CHARS（200k）兜底。
+     */
+    private fun capStreamingText(text: String, isReasoning: Boolean): String {
+        val max = if (isReasoning) STREAMING_REASONING_MAX_CHARS else STREAMING_TEXT_MAX_CHARS
+        if (text.length <= max) return text
+        FileLogger.w(
+            "AgentVM",
+            "流式${if (isReasoning) "思考" else "正文"}超长已截断显示: len=${text.length} > $max（仅截断流式显示，落库走 MAX_CONTENT_CHARS 兜底）"
+        )
+        return text.take(max)
+    }
+
     private fun setStreamingText(sessionId: String, text: String?) {
-        _streamingTexts.value = if (text == null) _streamingTexts.value - sessionId else _streamingTexts.value + (sessionId to text)
+        val capped = text?.let { capStreamingText(it, isReasoning = false) }
+        _streamingTexts.value = if (capped == null) _streamingTexts.value - sessionId else _streamingTexts.value + (sessionId to capped)
         updateStreamingTask(sessionId)
     }
 
@@ -449,7 +467,8 @@ class AIAgentViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private fun setStreamingReasoning(sessionId: String, text: String?) {
-        _streamingReasonings.value = if (text == null) _streamingReasonings.value - sessionId else _streamingReasonings.value + (sessionId to text)
+        val capped = text?.let { capStreamingText(it, isReasoning = true) }
+        _streamingReasonings.value = if (capped == null) _streamingReasonings.value - sessionId else _streamingReasonings.value + (sessionId to capped)
         updateStreamingTask(sessionId)
     }
 
@@ -523,6 +542,12 @@ class AIAgentViewModel @Inject constructor(
 
         /** 旁路探测节流窗口：同一触发消息 30s 内不重复探测。 */
         const val PROBE_THROTTLE_MS = 30_000L
+
+        /** 流式正文单条显示上限（字符）：防御超长模型输出撑爆流式显示内存（落库另有 200k 兜底）。 */
+        const val STREAMING_TEXT_MAX_CHARS = 400_000
+
+        /** 流式思考单条显示上限（字符）。 */
+        const val STREAMING_REASONING_MAX_CHARS = 100_000
     }
 
     init {

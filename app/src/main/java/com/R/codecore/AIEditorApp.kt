@@ -1,11 +1,14 @@
 package com.R.codecore
 
+import android.app.ActivityManager
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ComponentCallbacks2
 import android.os.Build
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.feature.agent.data.local.database.AgentDatabase
 import net.schmizz.sshj.common.SecurityUtils
 import com.R.codecore.feature.agent.domain.container.ContainerInstaller
 import com.R.codecore.feature.credentials.data.GitCredentialsFileSync
@@ -105,6 +108,11 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var credentialEncryptor: CredentialEncryptor
 
+    /** Room 数据库：启动期后台做完整性检查，提前暴露损坏（损坏的 DB 会触发 SQLite 原生崩溃，
+     *  绕过 Java CrashHandler，正是「模型输出时闪退却无日志」的典型盲区）。 */
+    @Inject
+    lateinit var agentDatabase: AgentDatabase
+
     /**
      * 数据保全通知器：启动即跑哨兵（D4）+ 升级前双保险自动备份（D5），并把判定结果发布给
      * MainActivity 的启动级全局告警弹窗（解决「数据消失却不报错」，数据保全防线 D8b）。
@@ -156,6 +164,14 @@ class AIEditorApp : Application() {
         // 启动即异步刷新 models.dev 模型元数据（24h 缓存；失败静默，resolve 兜底内置 assets 数据）。
         appScope.launch {
             modelMetadataService.refreshFromNetworkIfStale()
+        }
+        // 启动即后台做数据库完整性检查：损坏的 DB 会触发 SQLite 原生崩溃（SIGSEGV/SIGABRT），
+        // 完全绕过 Java CrashHandler，表现为「模型输出/写入时突然闪退、日志无报错」。
+        // 这里提前把损坏状态写进日志（并在崩溃时随快照导出），让下次闪退有迹可循。
+        // 失败仅记日志，不阻断启动；integrity_check 在 IO 线程跑，不抢首帧。
+        appScope.launch {
+            runCatching { checkDatabaseIntegrity() }
+                .onFailure { FileLogger.w(TAG, "数据库完整性检查异常（忽略，不影响启动）", it) }
         }
         // 启动即加载持久化等级，并随设置页改动实时生效（唯一同步点）。
         appScope.launch {
@@ -339,6 +355,58 @@ class AIEditorApp : Application() {
                 setShowBadge(false)
             }
             notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    /**
+     * 内存压力回调：系统在 LMKD 杀进程前会先逐级回调这里。流式输出 + 工具执行是本应用
+     * 内存峰值时刻，若在此被 LMKD 静默杀死，Java CrashHandler 完全感知不到（无 CRASH 日志）。
+     * 这里把逐级压力 + 可用内存写进日志，让「看不见报错」的闪退留下最后一次内存记录。
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val am = getSystemService(ActivityManager::class.java)
+        val info = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        val heap = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024)
+        val avail = info.availMem / (1024 * 1024)
+        val total = info.totalMem / (1024 * 1024)
+        val levelTag = when (level) {
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> "RUNNING_CRITICAL"
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> "RUNNING_LOW"
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> "RUNNING_MODERATE"
+            ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> "UI_HIDDEN"
+            else -> "level=$level"
+        }
+        FileLogger.w("Memory", "onTrimMemory $levelTag, heapUsed=${heap}MB, avail=${avail}MB/$total" +
+            "MB, lowMemory=${info.lowMemory}")
+        if (info.lowMemory) {
+            FileLogger.e("Memory", "系统内存严重不足（lowMemory=true），极可能被 LMKD 静默杀进程 → 闪退且无 Java 日志")
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        FileLogger.e("Memory", "onLowMemory 回调：进程即将被系统回收，流式输出/工具执行期间最易在此闪退")
+    }
+
+    /**
+     * 数据库完整性检查：损坏的 DB 会让 SQLite 在写入时原生崩溃（SIGABRT），绕过 Java 崩溃处理器，
+     * 是「模型输出落库时闪退且看不到日志」的高概率根因之一。启动期后台执行，把结果写日志；
+     * 一旦发现损坏，至少让下次崩溃有据可查（崩溃快照会一并导出）。
+     */
+    private fun checkDatabaseIntegrity() {
+        val db = agentDatabase.openHelper.writableDatabase
+        val cursor = db.query("PRAGMA integrity_check")
+        val result = runCatching {
+            cursor.moveToFirst()
+            cursor.getString(0)
+        }.getOrDefault("error")
+        cursor.close()
+        if (result == "ok") {
+            FileLogger.d("DBIntegrity", "数据库完整性检查通过")
+        } else {
+            FileLogger.e("DBIntegrity", "数据库完整性检查失败: $result（写入时可能触发 SQLite 原生崩溃，建议恢复备份或清理重建）")
         }
     }
 }
