@@ -19,12 +19,12 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
-// 当前版本基线：0.1.7；后续版本号升级必须由用户明确指令
-val BASE_VERSION = "0.1.7"
+// 当前版本基线：0.2.0；后续版本号升级必须由用户明确指令
+val BASE_VERSION = "0.2.0"
 
 // 版本号策略：
-//   1. 仅当 git tag 以 v0.1.6 开头时（如 v0.1.6 / v0.1.6-rc20），沿用 tag 中的后缀；
-//   2. 其他情况（tag 为其他版本号 / 无 tag / 无 git 环境），一律 fallback 到 "0.1.6-dev"；
+//   1. 仅当 git tag 以 v0.2.0 开头时（如 v0.2.0 / v0.2.0-rc15），沿用 tag 中的后缀；
+//   2. 其他情况（tag 为其他版本号 / 无 tag / 无 git 环境），一律 fallback 到 "0.2.0-dev"；
 //   3. 严禁从旧 1.x tag 推导版本号，避免版本号回跳到 1.x 系列。
 fun gitVersionName(): String = try {
     val process = Runtime.getRuntime().exec(
@@ -36,9 +36,9 @@ fun gitVersionName(): String = try {
     val raw = process.inputStream.bufferedReader().readText().trim()
     if (raw.startsWith("v")) {
         val version = raw.substring(1)
-        // 仅接受 0.1.1 系列的 tag
+        // 仅接受 0.2.0 系列的 tag
         if (version.startsWith("$BASE_VERSION")) {
-            // "0.1.1" / "0.1.1-rc20" / "0.1.1-2-g04bc2fa"
+            // "0.2.0" / "0.2.0-rc15" / "0.2.0-2-g04bc2fa"
             val devRegex = Regex("""^(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?)-(\d+)-g([0-9a-f]+)(.*)$""")
             val match = devRegex.matchEntire(version)
             if (match != null) {
@@ -48,7 +48,7 @@ fun gitVersionName(): String = try {
                 version
             }
         } else {
-            // 非 0.1.1 系列 tag（如旧的 1.8.0），一律忽略，走 fallback
+            // 非 0.2.0 系列 tag（如旧的 1.8.0），一律忽略，走 fallback
             "$BASE_VERSION-dev"
         }
     } else if (raw.isNotEmpty()) {
