@@ -45,7 +45,7 @@ R-CodeCore 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 | 构建 | Android Gradle Plugin 8.9.3 + KSP |
 | UI | Jetpack Compose（BOM 2025.12.01）+ Material 3 |
 | 依赖注入 | Hilt 2.56.1 (Dagger) |
-| 数据库 | Room 2.7.1（文件驱动 SQL 迁移，Schema v46） |
+| 数据库 | Room 2.7.1（按域拆库：agent / settings / credentials / workspace / t2i 五库，各 v1 全新；旧单库经 LegacyAgentDatabase 一次性移植） |
 | 网络 | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
 | 终端 | Termux terminal-emulator + terminal-view（JNI libtermux.so） |
 | 容器 | PRoot + Alpine Linux 3.21 rootfs（arm64-v8a / x86_64 双架构，运行时按宿主选择） |
@@ -196,13 +196,19 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 
 ## 数据库与迁移
 
-应用使用 Room 做本地数据库存储，核心定义在 `feature/agent/data/local/database/AgentDatabase.kt`（当前 Schema v46）及相关 DAO（如 `ChatSessionDao`、`AgentMessageDao`）。
+数据层已按域拆库（数据层重构「新写法」）：5 个独立 Room 库，各归属其 feature 模块，均为 v1 全新、无历史迁移链——
 
-**数据库迁移**：采用自定义的轻量级文件驱动迁移系统（`MigrationLoader.kt`）。更新数据库 schema 步骤：
-1. 在 `AgentDatabase.kt` 中递增数据库版本号。
-2. 在 `app/src/main/assets/migrations/` 下新建 SQL 文件，命名为 `{VERSION}_description.sql`（如 `8_add_remote_servers.sql`、`26_add_session_last_input_tokens.sql`）。
-3. 在该文件中写入必要的 DDL/SQL 语句。系统会在启动时自动执行并记录到 `migration_history` 表。
-   - ⚠️ **注意**：迁移文件按 `;` 切分语句（见 `MigrationLoader`），因此 **SQL 字符串字面量里不能出现 `;`**（例如不要写 `';base64,'`）——会被切分器误切导致整个迁移失败。需要字面量分号时用 `char(59)`。
+| 库 | 文件 | 表 |
+|---|---|---|
+| agent | `feature/agent/data/local/database/AgentDatabase.kt` | 消息/会话/todo/checkpoint/skill/wake/zth 等 17 表 |
+| settings | `feature/settings/data/local/database/SettingsDatabase.kt` | `ai_providers` |
+| credentials | `feature/credentials/data/local/database/CredentialsDatabase.kt` | `git_credentials` |
+| workspace | `feature/workspace/data/local/database/WorkspaceDatabase.kt` | remote_connections / remote_mounts / remote_audit_logs / credential_encryption_state |
+| t2i | `feature/t2i/data/local/database/T2IDatabase.kt` | t2i_providers / t2i_provider_models / t2i_tasks |
+
+**数据库迁移（一次性移植）**：旧单巨库（`LegacyAgentDatabase`，v49 + 全迁移链）仅保留用于读取旧文件 `rcodecore_agent_db`。启动时 `DbSplitMigrator.migrateIfNeeded` 检测「旧文件存在 && 移植标记未置位」→ 逐表拷贝到新 5 库 → 旧文件改名 `rcodecore_agent_db.migrated.v49` 留底 → 置位标记（幂等，只跑一次，失败下次启动自动重试）。新库 v1 起无迁移链，后续版本各自独立演进。若未来仍需为老库补迁移（仅历史读取场景），沿用 `MigrationLoader` 文件驱动迁移：迁移 SQL 放 `app/src/main/assets/migrations/`，⚠️ 语句按 `;` 切分，SQL 字面量中不得出现 `;`（用 `char(59)`）。
+
+**数据注册表（备份/恢复单一事实源）**：`core/data/DataRegistry` 枚举全应用数据域（26 张 Room 表 + DataStore 目录），备份/恢复/自动迁移统一经它全量导出/导入（见 [docs/modules/core.md](./docs/modules/core.md) 与 [docs/modules/backup.md](./docs/modules/backup.md)）。
 
 ## 常见坑
 
@@ -225,8 +231,10 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 | `docs/plan-docs/` | 设计文档目录（架构/功能设计方案，命名 `<名称>-design.md`） |
 | `docs/modules/README.md` | 模块文档索引（每模块一份文档） |
 | `app/build.gradle.kts` | 构建配置 + 版本号动态推导（勿手写 versionName） |
-| `app/src/main/java/com/R/codecore/feature/agent/data/local/database/AgentDatabase.kt` | Room schema 唯一事实源（v46） |
-| `app/src/main/assets/migrations/` | 数据库迁移 SQL（`{VERSION}_description.sql`） |
+| `app/src/main/java/com/R/codecore/feature/agent/data/local/database/AgentDatabase.kt` | agent 域独立库（v1）+ `LegacyAgentDatabase.kt`（旧单库 v49 只读，一次性移植源） |
+| `app/src/main/java/com/R/codecore/core/db/DbSplitMigrator.kt` | 旧单库 → 新 5 域库的一次性移植器（幂等、只跑一次） |
+| `app/src/main/java/com/R/codecore/core/data/DataRegistry.kt` | 数据注册表（备份/恢复/自动迁移的单一事实源，枚举 26 表 + DataStore） |
+| `app/src/main/assets/migrations/` | 老库历史迁移 SQL（仅 `LegacyAgentDatabase` 读取旧数据用） |
 | `app/src/main/assets/prompts/` | 系统提示词资产（AI 行为来源，随工作流同步） |
 | `app/src/main/assets/docs/` | 用户使用文档资产（运行时「设置 → 帮助」） |
 | `app/src/main/java/com/R/codecore/AIEditorApp.kt` | Application 入口（核心服务初始化） |

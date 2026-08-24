@@ -45,6 +45,7 @@
 | `chatSessions.jsonl` | 会话大表（JSONL，逐行一条 DTO） |
 | `messages.jsonl` | 消息大表（JSONL） |
 | `todoItems.jsonl` | Todo 大表（JSONL） |
+| `registry.tar` | **数据注册表全量段**（数据层重构「新写法」新增）：除上述三个已 jsonl 流式导出的表外，其余全部 Room 表（checkpoint/skill/wake/telemetry/t2i/credentials/…）与 DataStore 目录（`files/datastore/`）经 `DataRegistry.snapshotAll()` 打包，恢复时 `restoreAll` 逐域还原 |
 | `snapshot.json` | 旧版单文件快照格式（仅导入兼容用，导出不再产生） |
 
 ### 3.2 导出主流程（`export`）
@@ -62,8 +63,9 @@
 1. 有口令：先解密到临时文件，再解 gzip+tar；无口令：直接解 gzip+tar。
 2. 遍历 tar 条目：
    - `snapshot.json` → `checkVersion` → `restoreLegacy`（旧格式还原）。
-   - `metadata.json` → 解析并 `checkVersion`（备份 schema 高于当前版本直接拒绝）。
+   - `metadata.json` → 解析并 `checkVersion`（备份 schema 高于已知最大版本直接拒绝）。
    - 各 `*.jsonl` → `restoreJsonl` 按行解析、每 `PAGE_SIZE` 条回调一次批量插入（upsert/insertAll）。
+   - `registry.tar` → `DataRegistry.unpack` + `restoreAll`（逐域还原注册表全量段；DataStore 目录覆盖后由下方 `restoreMeta` 的 repository 级恢复再写一遍，刷新内存缓存）。
 3. `restoreMeta` 还原小表与设置（provider/gitCredential/remote/mcp/permission 及各类设置 repository 的 `restore`），并返回 `RestoreStats` 汇总。
 4. 异常归类：`BackupDecryptionException`（口令错误）与 `IllegalStateException` 原样抛出；其余包装为带用户可读提示的 `IllegalArgumentException`。
 
@@ -101,6 +103,7 @@
   - D7 同签名旧包检测横幅 `LegacyDataRecoveryBanner`（见 3.6）。
   - D8 数据丢失告警 `DataLossAlertBanner`：哨兵返回 `DATA_LOST`/`PACKAGE_CHANGED` 时展示红色横幅，本机有自动备份则提供「从最近备份恢复」（`AutoBackupManager.latestBackup()` + `BackupManager.import(file, null)` 无口令导入）。
   - D8b 启动级全局告警 `DataSafetyStartupAlert`（MainActivity 顶层）：`DataSafetyNotifier` 发布哨兵判定结果，`DATA_LOST`/`PACKAGE_CHANGED` 时**冷启动即弹全局弹窗**（不再只藏在备份设置页里），一键跳转「设置 → 备份与还原」；「我知道了」仅本次会话去重，恢复后下次启动自然回落不弹。
+  - R1 **无感自动迁移**（数据层重构「新写法」新增）：哨兵判定 `PACKAGE_CHANGED` 时，`DataSafetyNotifier` 自动调 `AutoBackupManager.restoreFromLatestExternal()` 从外部加密备份**全量恢复**（经 `DataRegistry` 覆盖全部 Room 表 + DataStore），成功则重置哨兵记忆（`AppRunMeta.updateLastRun`）且**本轮不弹窗**（用户零操作）；失败（无外部备份 / 密钥派生失败 / 解密失败）才回退 D8b 告警弹窗，保留手动恢复入口。
   - D9 About 页变体/包名展示（`VariantPill`，见 settings 模块）。
 
 **挂载点**：`AIEditorApp.onCreate` 中 `appScope.launch { delay(500L); dataSafetyNotifier.run() }`（内部：哨兵 → `UPGRADED` 时 `autoBackupManager.backupAll()` → 发布判定结果），延后首帧且 `runCatching` 兜底，任何失败不影响启动。`MainActivity` 注入 `DataSafetyNotifier` 观察 `verdict` 弹全局告警。`DataSentinel` / `AutoBackupManager` / `DataSafetyNotifier` 等由 Hilt 单例注入。

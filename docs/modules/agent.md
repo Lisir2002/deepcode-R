@@ -16,7 +16,7 @@
 | 路径 | 职责 |
 | --- | --- |
 | `data/local/dao/` | Room DAO：`AgentMessageDao`、`ChatSessionDao`、`TodoItemDao`、`SkillStateDao`、`SkillConversationStateDao`、`ModeSwitchHistoryDao`、`ModelCapabilityOverrideDao`、Checkpoint 系列（`CheckpointDao`、`CheckpointFileSnapshotDao`、`FileEditHunkDao`）、ZTH 审计系列（`ZthTelemetryEventDao`、`UserConfirmedSentinelDao`、`HallucinationFuseDao`、`SentinelPlanRejectionAuditDao`、`HardConstraintDeleteAuditDao`、`L0SoftCompactRestoreLogDao`） |
-| `data/local/database/AgentDatabase.kt` | 全局 Room 数据库（schema v47，`exportSchema=true`），跨模块聚合 agent/settings/workspace/credentials/t2i 的表 |
+| `data/local/database/AgentDatabase.kt` | **agent 域独立库**（v1 全新，`exportSchema=true`），仅承载 agent 域 17 张表（消息/会话/todo/checkpoint/skill/wake/zth）；`LegacyAgentDatabase.kt` 为旧单巨库（v49）只读副本，供一次性移植 |
 | `data/local/entity/` | 与 DAO 一一对应的实体类（`AgentMessageEntity`、`ChatSessionEntity`、`CheckpointEntity`、`SkillStateEntity`、`SkillConversationStateEntity`、`TodoItemEntity` 等） |
 | `data/remote/anthropic/` | Anthropic API 客户端（`AnthropicApi`、`AnthropicModels`），含 `@Streaming` SSE 流式接口 |
 | `data/remote/openai/` | OpenAI 兼容 API 客户端（`OpenAIApi`、`OpenAIModels`） |
@@ -275,7 +275,7 @@
 ## 4. 对外接口与集成点
 
 - **被谁调用**：`presentation/AIAgentViewModel` 是 UI 唯一入口（被 Compose 聊天界面使用）；`StatefulAgentWorkflow` 由 ViewModel 驱动；其余领域服务（ToolRegistry、McpManager、SystemPromptProvider、CheckpointManager 等）均为 Hilt 单例，可被本模块内或外部注入。
-- **Room 数据库**：`AgentDatabase`（v48）聚合跨模块表——agent 自身（消息/会话/Todo/检查点/技能状态/模式切换/模型能力覆盖/ZTH 审计/wake_queue）、settings（`AIProviderEntity`）、workspace（`RemoteConnectionEntity`/`RemoteMountEntity`/`RemoteAuditLogEntity`）、credentials（`GitCredentialEntity`）、t2i（`T2IProviderEntity` 等）。
+- **Room 数据库**：agent 域独立库 `AgentDatabase`（v1）只承载 agent 自身 17 张表（消息/会话/Todo/检查点/技能状态/模式切换/模型能力覆盖/ZTH 审计/wake_queue）。settings（`AIProviderEntity`）、workspace（`RemoteConnectionEntity`/`RemoteMountEntity`/`RemoteAuditLogEntity`）、credentials（`GitCredentialEntity`）、t2i（`T2IProviderEntity` 等）已随数据层重构（新写法）拆到各自 feature 域的独立库（见 `di/DatabaseModule`）；旧单巨库数据由 `DbSplitMigrator` 一次性移植。
 - **AI Provider**：`AIProvider` 接口 + `OpenAIAdapter`/`AnthropicAdapter`/`GeminiAdapter`；支持 reasoning（回传签名/思考文本）、token 统计、`stopReason` 截断续写；底层走 `data/remote/*` 的 Retrofit API。
 - **Bridge 能力**：`RcbBridge` 在 loopback 随机端口起 TCP 服务，`RCB_BRIDGE_TOKEN` 注入容器，容器内 `rcb-*` helper 经 base64 行协议调用宿主侧剪贴板/URL/通知能力；`openUrlHandler` 由宿主注入（默认仅记日志）。
 - **外部模块依赖**：workspace（`FileAccessProvider`、`WorkspacePathMapper`、`WorkspaceRepository`、远程连接/挂载）、settings（AI Provider 配置）、t2i（图片生成）、core（`FileLogger`、`HostKeyManager`、加密凭据）。
@@ -299,7 +299,7 @@
 - **新增斜杠命令**：实现 `SlashCommandHandler` + `@Binds @IntoSet` 即自动纳入 `SlashCommandRegistry`（无需改注册表），建议同时提供 `trigger`/`matches`/`filterByPrefix` 语义。
 - **新增 Hook**：实现对应事件接口（如 `PostToolUseHook`）+ 在 `domain/hook/HookModule` 以 `@Binds @IntoSet` 绑定，即自动被 `HookDispatcher` 汇集；若事件逻辑需同步到模型可见行为，需同步检查 `assets/prompts/` 提示词与 `assets/docs/` 使用文档。hook 内不得吞 `CancellationException`，不得阻塞主流程（骨架阶段仅同步计算，耗时逻辑应内部异步化）；后台审查/耗时任务的产出走 `WakeQueueManager.enqueueAsync` 写入唤醒队列，下轮会话自动注入。
 - **新增 AI Provider**：实现 `AIProvider` 接口，新增 Adapter（参考 `OpenAIAdapter`/`AnthropicAdapter`/`GeminiAdapter`），在 `data/remote/` 加 Retrofit API，并在 Provider 选择处注册。
-- **新增 DAO/实体**：在 `data/local/` 新增 DAO/Entity，并在 `AgentDatabase` 的 `entities` 列表与抽象访问器中登记，提升 `SCHEMA_VERSION`（同时提供迁移）。
+- **新增 DAO/实体**：agent 域新增 DAO/Entity 时，在 `data/local/` 新增并在 `AgentDatabase` 的 `entities` 列表与抽象访问器中登记，同时把新表名加进 `core/data/DataRegistryModule`（数据注册表，保证备份/恢复全量覆盖）与 `core/db/DbSplitMigrator` 的表映射（如仍需从旧库移植）。agent 库为 v1 全新、无历史迁移链，新增表无需再提供迁移 SQL。
 - **新增能力/权限维度**：扩展 `ToolCapability` 枚举，并在 `ToolPermissionPolicyEngine` 的危险能力集、`ZthCapabilityGuard` 能力降级表、`ToolPermissionManager` 中同步处理。
 - **新增 ZTH 审计维度**：新增 DAO/Entity 与 `data/repository/` 仓库，接入 `ZthGuardAggregateFacade` 对应审计阶段，如需云端同步则在 `data/remote/zth/` 补 DTO 与 Firestore 映射。
 - **新增容器能力**：扩展 `CommandEngine` 实现（本地/远程），或新增 `domain/tool/container/` 下的环境类工具；安装进度解析在 `domain/container/progress/` 扩展 `InstallProgressParser`。
