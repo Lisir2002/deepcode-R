@@ -1,6 +1,7 @@
 package com.R.codecore.feature.agent.presentation.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -16,6 +17,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.R.codecore.core.theme.Radius
+import com.R.codecore.core.theme.Spacing
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 
 /**
@@ -71,6 +74,40 @@ internal fun ShortAccentBar(color: Color, height: Dp = 14.dp) {
             .clip(RoundedCornerShape(1.dp))
             .background(color)
     )
+}
+
+/**
+ * 正式回复容器：淡底 + 左侧主色竖条。
+ * 用于独立于过程内容（思考/工具）的模型正式回复，与「无底仅色线」的过程区形成视觉区分，
+ * 突出正式回复作为一轮回复最终结论的地位。
+ */
+@Composable
+internal fun FormalReplyContainer(
+    barColor: Color,
+    bgColor: Color,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.md))
+            .background(bgColor)
+    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .width(3.dp)
+                .align(Alignment.CenterStart)
+                .background(barColor)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = Spacing.md, end = Spacing.md, top = Spacing.sm, bottom = Spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            content = content
+        )
+    }
 }
 
 /** 是否为技能类工具（loadSkill / runSkillScript / 自动触发技能消息）。 */

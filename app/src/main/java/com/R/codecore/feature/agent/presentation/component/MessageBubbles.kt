@@ -71,7 +71,12 @@ internal fun AgentMessageItem(
     onEditClick: ((AgentUIMessage) -> Unit)? = null,
     onNewChatClick: ((AgentUIMessage) -> Unit)? = null,
     initiallyExpanded: Boolean = true,
-    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap()
+    environmentSnapshots: Map<String, EnvironmentSnapshot> = emptyMap(),
+    /**
+     * 正式回复模式：仅渲染正文（含操作按钮），不渲染思考过程；
+     * 正文置于「淡底 + 左侧主色竖条」容器中，与无底仅色线的过程内容区分。
+     */
+    formalMode: Boolean = false
 ) {
     if (message.isCompactionMarker) {
         CompactionDivider()
@@ -97,7 +102,7 @@ internal fun AgentMessageItem(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
-        if (hasReasoning) {
+        if (hasReasoning && !formalMode) {
             ReasoningBubble(text = message.reasoning.orEmpty(), initiallyExpanded = false, cache = markdownCache)
         }
         if (hasContent || hasAttachments || message.role != MessageRole.ASSISTANT) {
@@ -127,6 +132,23 @@ internal fun AgentMessageItem(
                         if (hasAttachments) {
                             MessageAttachmentPreviewRow(attachments = message.attachments)
                         }
+                    }
+                }
+            } else if (message.role == MessageRole.ASSISTANT && hasContent && formalMode) {
+                // 正式回复（独立于过程内容）：淡底 + 左侧主色竖条
+                FormalReplyContainer(
+                    barColor = MessageAccent.Content.resolveLine(),
+                    bgColor = MessageAccent.Content.resolveBg()
+                ) {
+                    SelectionContainer {
+                        MarkdownContent(
+                            text = message.content,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            cache = markdownCache
+                        )
+                    }
+                    if (hasAttachments) {
+                        MessageAttachmentPreviewRow(attachments = message.attachments)
                     }
                 }
             } else {

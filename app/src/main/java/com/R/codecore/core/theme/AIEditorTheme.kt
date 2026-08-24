@@ -110,6 +110,13 @@ object MessageAccent {
         lightBg = Color(0xFFFDF2F8),
         darkBg = Color(0xFF3A1E2E)
     )
+    /** 贯穿整轮回复的长竖条 · 靛蓝（indigo-300/400），统一模型回复的纵向锚点 */
+    val Spine = Tone(
+        lightLine = Color(0xFF818CF8),
+        darkLine = Color(0xFFA5B4FC),
+        lightBg = Color.Transparent,
+        darkBg = Color.Transparent
+    )
 }
 
 /** 当前日夜模式下的色线颜色。 */

@@ -55,6 +55,7 @@ import com.R.codecore.feature.agent.presentation.RunningToolOutput
 import com.R.codecore.feature.agent.presentation.TaskGroup
 import com.R.codecore.feature.agent.presentation.TaskSubGroup
 import com.R.codecore.feature.agent.presentation.TaskSubGroupType
+import com.R.codecore.feature.agent.presentation.hasVisibleContent
 import com.R.codecore.feature.agent.domain.container.progress.InstallProgress
 import com.R.codecore.feature.agent.domain.container.progress.InstallProgressParsers
 import com.R.codecore.feature.agent.domain.permission.ShellCommandParser
@@ -97,8 +98,18 @@ internal fun TaskAccordion(
 ) {
     // 任务内全部工具执行日志（含查询操作），供弹窗「日志」Tab 展示
     val toolLogs = remember(group.taskId, group.subGroups) { collectTaskLogs(group) }
-    // 归并渲染单元：TOOL 片段嵌入紧随其后的 REPLY 片段（作为回复消息的子块）
-    val renderUnits = remember(group.taskId, group.subGroups) { buildRenderUnits(group.subGroups) }
+    // 归并渲染单元 + 拆分正式回复：TOOL 片段嵌入紧随其后的 REPLY 片段；
+    // 最后一个含正文的 REPLY 消息被拆出为「正式回复」，其思考/工具保留为过程内容。
+    val split = remember(group.taskId, group.subGroups) { splitFormalReply(group.subGroups) }
+    // 任务内容展开/收起过渡
+    val taskExpand = expandVertically(
+        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+        expandFrom = Alignment.Top
+    ) + fadeIn(animationSpec = tween(350))
+    val taskShrink = shrinkVertically(
+        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+        shrinkTowards = Alignment.Top
+    ) + fadeOut(animationSpec = tween(250))
 
     // 流式生成脉冲动画：任务头小圆点透明度呼吸
     val infiniteTransition = rememberInfiniteTransition(label = "streamingPulse")
