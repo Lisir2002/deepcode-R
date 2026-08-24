@@ -523,8 +523,8 @@ internal fun DiffView(diff: String, startLine: Int) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // 透明底：不整块填色，仅保留行级 +/- 增删语义色
                     .clip(RoundedCornerShape(Radius.sm))
-                    .background(MaterialTheme.colorScheme.background)
                     .horizontalScroll(rememberScrollState())
             ) {
                 var oldLineNo = startLine

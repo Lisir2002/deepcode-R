@@ -155,9 +155,8 @@ internal fun TaskAccordion(
                     }
             }
         }
-        // 一轮回复顶部的整行淡主色线（横向锚点）
-        FullWidthAccentBar(MessageAccent.Content.resolveLine())
-        // 大气泡：贯穿竖条（靛蓝）包裹模型整轮回复（任务头 + 过程内容 + 正式回复）
+        // 大气泡：贯穿竖条（靛蓝）包裹模型整轮回复（整行色线 + 任务头 + 过程内容 + 正式回复）。
+        // 整行色线作为大气泡首行、从左缘铺满；竖条自其左端贯穿到底，形成「拐角钉」纵向锚点。
         Box(modifier = Modifier.fillMaxWidth()) {
             // 贯穿竖条：不参与父布局尺寸计算，随内容高度伸缩，作为整轮回复的纵向时间轴锚点
             Box(
@@ -167,20 +166,23 @@ internal fun TaskAccordion(
                     .align(Alignment.CenterStart)
                     .background(MessageAccent.Spine.resolveLine())
             )
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = Spacing.md)
-            ) {
-                // 任务头：灰阶日志行（无卡片 / 无渐变徽章 / 无阴影）
-                Row(
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // 一轮回复顶部的整行淡主色线（横向锚点，与贯穿竖条左端交汇）
+                FullWidthAccentBar(MessageAccent.Content.resolveLine())
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onToggleTask(group.taskId) }
-                        .padding(vertical = Spacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        .padding(start = Spacing.md)
                 ) {
+                    // 任务头：灰阶日志行（无卡片 / 无渐变徽章 / 无阴影）
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onToggleTask(group.taskId) }
+                            .padding(vertical = Spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    ) {
                     // 流式状态圆点：仅在生成中显示，脉冲呼吸
                     if (group.isStreaming) {
                         Box(
@@ -190,16 +192,21 @@ internal fun TaskAccordion(
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha))
                         )
                     }
-                    // 任务标题：占据剩余空间（过长横向滚动，不再用省略号截断）
-                    HorizontalScrollableText(
-                        text = group.title,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = if (group.isStreaming) FontWeight.SemiBold else FontWeight.Medium,
-                            lineHeight = 20.sp
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
+                    // 任务标题：仅折叠态显示用户消息摘要作为折叠锚点；
+                    // 展开态隐藏标题，避免与下方用户消息块重复展示同一段文案，留白撑开右侧对齐。
+                    if (group.isExpanded) {
+                        Spacer(Modifier.weight(1f))
+                    } else {
+                        HorizontalScrollableText(
+                            text = group.title,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = if (group.isStreaming) FontWeight.SemiBold else FontWeight.Medium,
+                                lineHeight = 20.sp
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                     // 流式状态文案
                     if (group.isStreaming) {
                         Text(
@@ -242,19 +249,32 @@ internal fun TaskAccordion(
                         split.processUnits
                             .filter { it.subGroup.type != TaskSubGroupType.USER }
                             .forEach { unit ->
-                                SubAccordion(
-                                    group = group,
-                                    subGroup = unit.subGroup,
-                                    attachedTools = unit.attachedTools,
-                                    toolLogs = toolLogs,
-                                    markdownCache = markdownCache,
-                                    onToggleSubGroup = onToggleSubGroup,
-                                    onEditClick = onEditClick,
-                                    onNewChatClick = onNewChatClick,
-                                    onViewChanges = onViewChanges,
-                                    runningTool = runningTool,
-                                    environmentSnapshots = environmentSnapshots
-                                )
+                                // 纯思考过程（仅 reasoning 无正文）：直接渲染 ReasoningBubble（自带短条+竖条+标题+折叠），
+                                // 不套 SubAccordion 的「思考」片段头，避免「思考 → 思考过程」双层嵌套。
+                                if (unit.subGroup.type == TaskSubGroupType.REASONING) {
+                                    val reasoningText = remember(unit.subGroup.id, unit.subGroup.messages) {
+                                        unit.subGroup.messages.joinToString("\n\n") { it.reasoning.orEmpty() }
+                                    }
+                                    ReasoningBubble(
+                                        text = reasoningText,
+                                        initiallyExpanded = true,
+                                        cache = markdownCache
+                                    )
+                                } else {
+                                    SubAccordion(
+                                        group = group,
+                                        subGroup = unit.subGroup,
+                                        attachedTools = unit.attachedTools,
+                                        toolLogs = toolLogs,
+                                        markdownCache = markdownCache,
+                                        onToggleSubGroup = onToggleSubGroup,
+                                        onEditClick = onEditClick,
+                                        onNewChatClick = onNewChatClick,
+                                        onViewChanges = onViewChanges,
+                                        runningTool = runningTool,
+                                        environmentSnapshots = environmentSnapshots
+                                    )
+                                }
                             }
                         // 正式回复关联的工具调用：独立折叠块（过程内容，无底仅色线）
                         if (split.formalTools.isNotEmpty()) {
@@ -286,6 +306,7 @@ internal fun TaskAccordion(
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -881,9 +902,11 @@ private fun SubAccordion(
                 Arrangement.spacedBy(Spacing.sm)
             }
         ) {
-            // 片段类型短色条
-            ShortAccentBar(barColor)
-            Spacer(Modifier.width(Spacing.sm))
+            // 片段类型短色条：用户消息无色线（仅右侧对齐文本），其余片段保留色标
+            if (!isUser) {
+                ShortAccentBar(barColor)
+                Spacer(Modifier.width(Spacing.sm))
+            }
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
