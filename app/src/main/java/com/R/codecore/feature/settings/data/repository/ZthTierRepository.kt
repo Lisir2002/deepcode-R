@@ -3,7 +3,6 @@ package com.R.codecore.feature.settings.data.repository
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.domain.zth.ZthPerformanceClass
 import com.R.codecore.feature.agent.domain.zth.ZthPresetTier
@@ -30,8 +29,6 @@ class ZthTierRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private companion object {
-        const val STORE = "zth_tier_prefs"
-        private val Context.zthDataStore by preferencesDataStore(name = STORE)
         val KEY_TIER = stringPreferencesKey("zth_tier")
         val KEY_PERF = stringPreferencesKey("zth_perf_class")
         val KEY_SWIPE = stringPreferencesKey("zth_swipe_on")
@@ -41,21 +38,21 @@ class ZthTierRepository @Inject constructor(
     }
 
     /** 默认档位 = BALANCED（C.4.2 推荐默认 2）。 */
-    val tierFlow: Flow<ZthPresetTier> = context.zthDataStore.data
+    val tierFlow: Flow<ZthPresetTier> = context.settingsDataStore.data
         .catch { e -> if (e is IOException) { FileLogger.w(TAG, "DataStore 读失败：${e.message}"); emit(emptyPreferences()) } else throw e }
         .map { prefs ->
             prefs[KEY_TIER]?.let { runCatching { ZthPresetTier.valueOf(it) }.getOrNull() }
                 ?: ZthPresetTier.BALANCED
         }
 
-    val perfClassFlow: Flow<ZthPerformanceClass> = context.zthDataStore.data
+    val perfClassFlow: Flow<ZthPerformanceClass> = context.settingsDataStore.data
         .catch { e -> if (e is IOException) { FileLogger.w(TAG, "DataStore 读失败：${e.message}"); emit(emptyPreferences()) } else throw e }
         .map { prefs ->
             prefs[KEY_PERF]?.let { runCatching { ZthPerformanceClass.valueOf(it) }.getOrNull() }
                 ?: ZthPerformanceClass.HIGH_END
         }
 
-    val swipeEnabledFlow: Flow<Boolean> = context.zthDataStore.data
+    val swipeEnabledFlow: Flow<Boolean> = context.settingsDataStore.data
         .catch { e -> if (e is IOException) { FileLogger.w(TAG, "DataStore 读失败：${e.message}"); emit(emptyPreferences()) } else throw e }
         .map { prefs ->
             when (prefs[KEY_SWIPE]) {
@@ -66,12 +63,12 @@ class ZthTierRepository @Inject constructor(
         }
 
     suspend fun setTier(tier: ZthPresetTier) {
-        context.zthDataStore.edit { it[KEY_TIER] = tier.name }
+        context.settingsDataStore.edit { it[KEY_TIER] = tier.name }
         FileLogger.i(TAG, "ZTH 档位设置 → ${tier.name}")
     }
 
     suspend fun setPerformanceClass(cls: ZthPerformanceClass) {
-        context.zthDataStore.edit { it[KEY_PERF] = cls.name }
+        context.settingsDataStore.edit { it[KEY_PERF] = cls.name }
         FileLogger.i(TAG, "ZTH 性能等级 → ${cls.name}")
     }
 
@@ -81,7 +78,7 @@ class ZthTierRepository @Inject constructor(
             FileLogger.w(TAG, "tier$currentTier ≥ 2：禁止关闭 SwipeToConfirm（C.4.8 最严格）")
             return
         }
-        context.zthDataStore.edit { it[KEY_SWIPE] = if (enabled) SWIPE_TRUE else SWIPE_FALSE }
+        context.settingsDataStore.edit { it[KEY_SWIPE] = if (enabled) SWIPE_TRUE else SWIPE_FALSE }
         FileLogger.i(TAG, "ZTH Swipe 开关 → enabled=$enabled (tier=$currentTier)")
     }
 

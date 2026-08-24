@@ -3,7 +3,6 @@ package com.R.codecore.core.db
 import android.content.Context
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
-import com.R.codecore.core.db.entity.CredentialEncryptionStateEntity
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
@@ -22,14 +21,6 @@ import com.R.codecore.feature.agent.data.local.entity.WakeItemEntity
 import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
 import com.R.codecore.feature.agent.data.local.entity.UserConfirmedSentinelEntity
 import com.R.codecore.feature.agent.data.local.entity.ZthTelemetryEventEntity
-import com.R.codecore.feature.credentials.data.local.entity.GitCredentialEntity
-import com.R.codecore.feature.settings.data.local.entity.AIProviderEntity
-import com.R.codecore.feature.workspace.data.local.entity.RemoteAuditLogEntity
-import com.R.codecore.feature.workspace.data.local.entity.RemoteConnectionEntity
-import com.R.codecore.feature.workspace.data.local.entity.RemoteMountEntity
-import com.R.codecore.feature.t2i.data.local.entity.T2IProviderEntity
-import com.R.codecore.feature.t2i.data.local.entity.T2IProviderModelEntity
-import com.R.codecore.feature.t2i.data.local.entity.T2ITaskEntity
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
@@ -92,7 +83,8 @@ object LightweightSchemaRescue {
     )
 
     /**
-     * ALL_ENTITY_CLASSES：与 AgentDatabase.kt @Database(entities=[...]) 一一对应（22 项顺序一致）。
+     * ALL_ENTITY_CLASSES：与瘦身 AgentDatabase.kt @Database(entities=[...]) 一一对应（17 项顺序一致）。
+     * 数据层重构（新写法）后，本清单仅代表 agent 域库；其余 4 个域库各自独立、无救援清单。
      * 加表/删表时必须同步更新；DbSCHIELDPreflightTest.ENTITY-COUNT-TEST CI 闸门强制校验。
      *
      * 注意：RC94 起 Funnel 2 抢救不再用反射读注解（改读 schema JSON），此清单仅保留给
@@ -101,18 +93,11 @@ object LightweightSchemaRescue {
     val ALL_ENTITY_CLASSES: List<Class<*>> = listOf<Class<*>>(
         AgentMessageEntity::class.java,
         ChatSessionEntity::class.java,
-        AIProviderEntity::class.java,
-        RemoteConnectionEntity::class.java,
-        RemoteMountEntity::class.java,
         TodoItemEntity::class.java,
-        GitCredentialEntity::class.java,
         CheckpointEntity::class.java,
         CheckpointFileSnapshotEntity::class.java,
-        // ══ v46 工具系统优化新增：同步 AgentDatabase.kt @Database entities[9..10] ══
         FileEditHunkEntity::class.java,
         ModeSwitchHistoryEntity::class.java,
-        CredentialEncryptionStateEntity::class.java,
-        RemoteAuditLogEntity::class.java,
         ModelCapabilityOverrideEntity::class.java,
         UserConfirmedSentinelEntity::class.java,
         HallucinationFuseEntity::class.java,
@@ -120,14 +105,8 @@ object LightweightSchemaRescue {
         HardConstraintDeleteAuditEntity::class.java,
         L0SoftCompactRestoreLogEntity::class.java,
         ZthTelemetryEventEntity::class.java,
-        // ══ RC69 T2I 新增：同步 AgentDatabase.kt @Database entities[18..20] ══
-        T2IProviderEntity::class.java,
-        T2IProviderModelEntity::class.java,
-        T2ITaskEntity::class.java,
-        // ══ RC74 Skill 新增：同步 AgentDatabase.kt @Database entities[21]（skill_state）══
         SkillConversationStateEntity::class.java,
         SkillStateEntity::class.java,
-        // ══ R02 WakeQueue 新增：同步 AgentDatabase.kt @Database entities 末尾（wake_queue）══
         WakeItemEntity::class.java
     )
 

@@ -3,15 +3,12 @@ package com.R.codecore.feature.settings.data.repository
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private val Context.visionModelDataStore by preferencesDataStore(name = "vision_model_prefs")
 
 /**
  * 持久化「识图专用模型」选择（providerId + model 两字符串）。
@@ -32,14 +29,14 @@ class VisionModelSettingsRepository @Inject constructor(
     }
 
     /** 当前持久化的识图专用 providerId 流；未设置时为空字符串（=跟随聊天模型）。 */
-    val providerIdFlow: Flow<String> = context.visionModelDataStore.data.map { it[PROVIDER_ID_KEY] ?: "" }
+    val providerIdFlow: Flow<String> = context.settingsDataStore.data.map { it[PROVIDER_ID_KEY] ?: "" }
 
     /** 当前持久化的识图专用 model 流；未设置时为空字符串。 */
-    val modelFlow: Flow<String> = context.visionModelDataStore.data.map { it[MODEL_KEY] ?: "" }
+    val modelFlow: Flow<String> = context.settingsDataStore.data.map { it[MODEL_KEY] ?: "" }
 
     /** 写入识图专用模型（设空字符串即等同 [clear]）。 */
     suspend fun setVisionModel(providerId: String, model: String) {
-        context.visionModelDataStore.edit {
+        context.settingsDataStore.edit {
             it[PROVIDER_ID_KEY] = providerId
             it[MODEL_KEY] = model
         }
@@ -47,7 +44,7 @@ class VisionModelSettingsRepository @Inject constructor(
 
     /** 清空配置——回退到「跟随当前聊天模型」。 */
     suspend fun clear() {
-        context.visionModelDataStore.edit {
+        context.settingsDataStore.edit {
             it.remove(PROVIDER_ID_KEY)
             it.remove(MODEL_KEY)
         }

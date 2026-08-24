@@ -3,15 +3,12 @@ package com.R.codecore.feature.settings.data.repository
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private val Context.compactionModelDataStore by preferencesDataStore(name = "compaction_model_prefs")
 
 /**
  * 持久化「压缩专用模型」选择（providerId + model 两字符串）。
@@ -29,19 +26,19 @@ class CompactionModelSettingsRepository @Inject constructor(
         val MODEL_KEY = stringPreferencesKey("compaction_model")
     }
 
-    val providerIdFlow: Flow<String> = context.compactionModelDataStore.data.map { it[PROVIDER_ID_KEY] ?: "" }
+    val providerIdFlow: Flow<String> = context.settingsDataStore.data.map { it[PROVIDER_ID_KEY] ?: "" }
 
-    val modelFlow: Flow<String> = context.compactionModelDataStore.data.map { it[MODEL_KEY] ?: "" }
+    val modelFlow: Flow<String> = context.settingsDataStore.data.map { it[MODEL_KEY] ?: "" }
 
     suspend fun setCompactionModel(providerId: String, model: String) {
-        context.compactionModelDataStore.edit {
+        context.settingsDataStore.edit {
             it[PROVIDER_ID_KEY] = providerId
             it[MODEL_KEY] = model
         }
     }
 
     suspend fun clear() {
-        context.compactionModelDataStore.edit {
+        context.settingsDataStore.edit {
             it.remove(PROVIDER_ID_KEY)
             it.remove(MODEL_KEY)
         }

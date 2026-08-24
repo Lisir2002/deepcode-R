@@ -1,10 +1,13 @@
 package com.R.codecore.feature.backup.data
 
 import android.content.Context
+import com.R.codecore.core.data.DataBlob
+import com.R.codecore.core.data.DataRegistry
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.data.local.dao.TodoItemDao
 import com.R.codecore.feature.agent.data.local.database.AgentDatabase
+import com.R.codecore.feature.agent.data.local.database.LegacyAgentDatabase
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
 import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
@@ -82,7 +85,8 @@ class BackupManagerImpl @Inject constructor(
     private val compactionModelSettingsRepository: CompactionModelSettingsRepository,
     private val syncSettingsRepository: SyncSettingsRepository,
     private val workspaceRepository: WorkspaceRepository,
-    private val encryptor: CredentialEncryptor
+    private val encryptor: CredentialEncryptor,
+    private val dataRegistry: DataRegistry,
 ) : BackupManager {
 
     private val json = Json {
@@ -282,9 +286,25 @@ class BackupManagerImpl @Inject constructor(
                             }
                         }
                     }
+                    // 注册表全量段：除已由 jsonl 流式导出的大表（chatSessions/messages/todos）外，
+                    // 其余全部 Room 表 + DataStore 目录都走数据注册表导出（R3 全量覆盖，不再手工白名单）。
+                    writeRegistryEntry(tar)
                 }
             }
         }
+    }
+
+    /**
+     * 写入注册表全量段（`registry.tar`）：对 [DataRegistry.snapshotAll] 结果做一次打包。
+     * 大表（chat_sessions / agent_messages / todo_items）已由 jsonl 流式导出，这里排除避免体积翻倍；
+     * 其余表（checkpoint/skill/wake/telemetry/t2i/credentials…）与 DataStore 目录在此全量覆盖。
+     */
+    private suspend fun writeRegistryEntry(tar: TarArchiveOutputStream) {
+        val blobs = dataRegistry.snapshotAll().filterNot { it.key in JSONL_STREAMED_TABLES }
+        if (blobs.isEmpty()) return
+        val packed = dataRegistry.pack(blobs)
+        writeTarEntry(tar, FILE_REGISTRY, packed)
+        FileLogger.i(TAG, "注册表段写入 ${blobs.size} 个数据域（${packed.size} bytes）")
     }
 
     private suspend fun buildMetadata(options: BackupOptions): BackupMetadata = BackupMetadata(
@@ -390,6 +410,13 @@ class BackupManagerImpl @Inject constructor(
                         }
                     })
                 }
+                FILE_REGISTRY -> {
+                    // 注册表全量段还原：解包后逐域恢复（大表键不在其中，天然跳过；DataStore 目录
+                    // 覆盖后由下方 restoreMeta 的 repository 级恢复再写一遍，保证内存缓存同步刷新）。
+                    val blobs = dataRegistry.unpack(tar.readBytes())
+                    dataRegistry.restoreAll(blobs)
+                    FileLogger.i(TAG, "注册表段还原 ${blobs.size} 个数据域")
+                }
             }
             entry = tar.nextEntry
         }
@@ -445,9 +472,17 @@ class BackupManagerImpl @Inject constructor(
         return count
     }
 
+    /**
+     * 校验备份 schemaVersion 上界：仅拒绝「未来未知版本」。
+     *
+     * 拆库后当前库版本为 [AgentDatabase.SCHEMA_VERSION]（v1），但旧版备份可能携带旧单库 v49
+     * （[LegacyAgentDatabase.SCHEMA_VERSION]）的 schemaVersion——那同样可读可迁移，不能按当前
+     * v1 上界误拒。因此上界取「已知最大版本」，超过才拒绝。
+     */
     private fun checkVersion(schemaVersion: Int) {
-        if (schemaVersion > currentSchemaVersion()) {
-            error("备份的数据库版本 v$schemaVersion 高于本应用 v${currentSchemaVersion()}，请升级应用")
+        val maxKnown = maxOf(AgentDatabase.SCHEMA_VERSION, LegacyAgentDatabase.SCHEMA_VERSION)
+        if (schemaVersion > maxKnown) {
+            error("备份的数据库版本 v$schemaVersion 高于本应用已知最大版本 v$maxKnown，请升级应用")
         }
     }
 
@@ -728,6 +763,10 @@ class BackupManagerImpl @Inject constructor(
         const val FILE_MESSAGES = "messages.jsonl"
         const val FILE_TODOS = "todoItems.jsonl"
         const val FILE_LEGACY_SNAPSHOT = "snapshot.json"
+        const val FILE_REGISTRY = "registry.tar"
+
+        /** 已由 jsonl 流式导出的大表（注册表导出时排除，避免备份体积翻倍）。 */
+        val JSONL_STREAMED_TABLES = setOf("chat_sessions", "agent_messages", "todo_items")
     }
 }
 

@@ -5,8 +5,8 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.feature.workspace.data.repository.workspaceDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +32,6 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private val Context.ftpServerDataStore by preferencesDataStore(name = "ftp_server_prefs")
 
 @Singleton
 class FtpServerManager @Inject constructor(
@@ -81,7 +79,7 @@ class FtpServerManager @Inject constructor(
 
     init {
         scope.launch {
-            val prefs = context.ftpServerDataStore.data.first()
+            val prefs = context.workspaceDataStore.data.first()
             _port.value = prefs[PORT_KEY] ?: 2121
             _username.value = prefs[USERNAME_KEY] ?: "rcodecore"
             _password.value = prefs[PASSWORD_KEY] ?: "123456"
@@ -134,7 +132,7 @@ class FtpServerManager @Inject constructor(
         _autoStart.value = autoStart
         updateServerUrl()
 
-        context.ftpServerDataStore.edit { prefs ->
+        context.workspaceDataStore.edit { prefs ->
             prefs[PORT_KEY] = port
             prefs[USERNAME_KEY] = username
             prefs[PASSWORD_KEY] = password

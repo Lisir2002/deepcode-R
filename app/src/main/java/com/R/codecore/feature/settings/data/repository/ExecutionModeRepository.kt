@@ -3,7 +3,6 @@ package com.R.codecore.feature.settings.data.repository
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.R.codecore.core.security.CredentialEncryptionContract
 import com.R.codecore.core.security.CredentialEncryptor
 import com.R.codecore.core.util.FileLogger
@@ -13,8 +12,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private val Context.executionModeDataStore by preferencesDataStore(name = "execution_mode_prefs")
 
 /** 执行环境模式。 */
 enum class ExecutionMode {
@@ -94,7 +91,7 @@ class ExecutionModeRepository @Inject constructor(
     }
 
     /** 当前执行模式；无值时默认本地 PRoot。 */
-    val executionModeFlow: Flow<ExecutionMode> = context.executionModeDataStore.data.map { prefs ->
+    val executionModeFlow: Flow<ExecutionMode> = context.settingsDataStore.data.map { prefs ->
         prefs[MODE_KEY]?.let {
             runCatching { ExecutionMode.valueOf(it) }.getOrNull()
         } ?: ExecutionMode.LOCAL_PROOT
@@ -109,7 +106,7 @@ class ExecutionModeRepository @Inject constructor(
      * - null → v1 fallback 模式，host/port/username/password 已从 legacy 字段填好。
      */
     val remoteConnectionFlow: Flow<RemoteConnectionSettings?> =
-        context.executionModeDataStore.data.mapLatest { prefs ->
+        context.settingsDataStore.data.mapLatest { prefs ->
             val activeConnId = prefs[SSH_ACTIVE_CONN_ID_KEY]
             val workspacePath = prefs[REMOTE_PATH_KEY]
             // v2 分支：已存 active connection id，返回占位配置（host 等由调用方从 Room 填）
@@ -176,7 +173,7 @@ class ExecutionModeRepository @Inject constructor(
     }
 
     suspend fun setExecutionMode(mode: ExecutionMode) {
-        context.executionModeDataStore.edit { it[MODE_KEY] = mode.name }
+        context.settingsDataStore.edit { it[MODE_KEY] = mode.name }
     }
 
     /**
@@ -190,7 +187,7 @@ class ExecutionModeRepository @Inject constructor(
         settings: RemoteConnectionSettings,
         activeProfileId: String? = null,
     ) {
-        context.executionModeDataStore.edit { prefs ->
+        context.settingsDataStore.edit { prefs ->
             prefs[REMOTE_PATH_KEY] = settings.remoteWorkspacePath
             val activeConnId = settings.activeConnectionId
             if (!activeConnId.isNullOrBlank()) {

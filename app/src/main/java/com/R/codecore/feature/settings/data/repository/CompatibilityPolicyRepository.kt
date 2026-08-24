@@ -4,15 +4,12 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private val Context.compatibilityPolicyDataStore by preferencesDataStore(name = "compatibility_policy_prefs")
 
 /**
  * 兼容端点默认策略枚举。持久化时存 name() 字符串；新值追加末尾即可，避免破坏存量。
@@ -64,19 +61,19 @@ class CompatibilityPolicyRepository @Inject constructor(
     }
 
     /** 默认策略流（未设置时回退 STRICT，严格不影响整体）。 */
-    val defaultPolicyFlow: Flow<DefaultPolicy> = context.compatibilityPolicyDataStore.data.map { prefs ->
+    val defaultPolicyFlow: Flow<DefaultPolicy> = context.settingsDataStore.data.map { prefs ->
         prefs[Keys.DEFAULT_POLICY]?.let { runCatching { DefaultPolicy.valueOf(it) }.getOrNull() }
             ?: DefaultPolicy.STRICT
     }
 
     /** 发送失败自动降级（备选方案②）总开关；默认开启。 */
-    val autoDowngradeOnSendFailureFlow: Flow<Boolean> = context.compatibilityPolicyDataStore.data.map { prefs ->
+    val autoDowngradeOnSendFailureFlow: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
         prefs[Keys.AUTO_DOWNGRADE_ON_SEND_FAILURE] ?: true
     }
 
     /** viewImage 未收录模型守卫策略流；默认自动回退识图模型。 */
     val viewImageUnknownGuardPolicyFlow: Flow<ViewImageUnknownGuardPolicy> =
-        context.compatibilityPolicyDataStore.data.map { prefs ->
+        context.settingsDataStore.data.map { prefs ->
             prefs[Keys.VIEWIMAGE_UNKNOWN_GUARD_POLICY]
                 ?.let { runCatching { ViewImageUnknownGuardPolicy.valueOf(it) }.getOrNull() }
                 ?: ViewImageUnknownGuardPolicy.FALLBACK_VISION_MODEL
@@ -93,15 +90,15 @@ class CompatibilityPolicyRepository @Inject constructor(
     // —— 写入：设置页 UI 修改时调用。 ——
 
     suspend fun setDefaultPolicy(policy: DefaultPolicy) {
-        context.compatibilityPolicyDataStore.edit { it[Keys.DEFAULT_POLICY] = policy.name }
+        context.settingsDataStore.edit { it[Keys.DEFAULT_POLICY] = policy.name }
     }
 
     suspend fun setAutoDowngradeOnSendFailure(enabled: Boolean) {
-        context.compatibilityPolicyDataStore.edit { it[Keys.AUTO_DOWNGRADE_ON_SEND_FAILURE] = enabled }
+        context.settingsDataStore.edit { it[Keys.AUTO_DOWNGRADE_ON_SEND_FAILURE] = enabled }
     }
 
     suspend fun setViewImageUnknownGuardPolicy(policy: ViewImageUnknownGuardPolicy) {
-        context.compatibilityPolicyDataStore.edit { it[Keys.VIEWIMAGE_UNKNOWN_GUARD_POLICY] = policy.name }
+        context.settingsDataStore.edit { it[Keys.VIEWIMAGE_UNKNOWN_GUARD_POLICY] = policy.name }
     }
 
     /** 备份快照（保留字段以便后续备份还原功能统一接入）。 */

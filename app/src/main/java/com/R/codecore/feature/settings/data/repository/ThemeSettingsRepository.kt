@@ -5,7 +5,6 @@ import com.R.codecore.R
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -13,8 +12,7 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.themeDataStore by preferencesDataStore(name = "theme_prefs")
-
+// 数据层重构 T2：统一 settings DataStore（settings_prefs），不再独享 theme_prefs
 enum class AppThemeMode(val labelRes: Int) {
     AUTO(R.string.theme_auto),
     DARK(R.string.theme_dark),
@@ -35,14 +33,14 @@ class ThemeSettingsRepository @Inject constructor(
         val DARK_THEME_KEY = booleanPreferencesKey("dark_theme_enabled")
     }
 
-    val themeModeFlow: Flow<AppThemeMode> = context.themeDataStore.data.map { prefs ->
+    val themeModeFlow: Flow<AppThemeMode> = context.settingsDataStore.data.map { prefs ->
         AppThemeMode.fromPersisted(prefs[THEME_MODE_KEY])
             ?: prefs[DARK_THEME_KEY]?.let { if (it) AppThemeMode.DARK else AppThemeMode.LIGHT }
             ?: AppThemeMode.AUTO
     }
 
     suspend fun setThemeMode(mode: AppThemeMode) {
-        context.themeDataStore.edit { it[THEME_MODE_KEY] = mode.name }
+        context.settingsDataStore.edit { it[THEME_MODE_KEY] = mode.name }
     }
 
     /** 备份快照：返回当前持久化的主题模式名（未设置时为 null，导入时回退默认）。 */
@@ -50,7 +48,7 @@ class ThemeSettingsRepository @Inject constructor(
 
     /** 从备份还原主题模式；null 时清除键回退默认。 */
     suspend fun restore(value: String?) {
-        context.themeDataStore.edit {
+        context.settingsDataStore.edit {
             if (value == null) it.remove(THEME_MODE_KEY) else it[THEME_MODE_KEY] = value
         }
     }

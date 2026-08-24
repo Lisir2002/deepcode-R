@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.R.codecore.core.util.LogLevel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -12,8 +11,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private val Context.logFilterDataStore by preferencesDataStore(name = "log_filter_prefs")
 
 /**
  * 持久化日志查看页面的筛选条件偏好。
@@ -33,38 +30,38 @@ class LogFilterSettingsRepository @Inject constructor(
     }
 
     /** 持久化的选中等级（逗号分隔的枚举名）；空字符串表示全部。 */
-    val selectedLevelsFlow: Flow<Set<LogLevel>> = context.logFilterDataStore.data.map { prefs ->
+    val selectedLevelsFlow: Flow<Set<LogLevel>> = context.settingsDataStore.data.map { prefs ->
         val raw = prefs[LEVELS_KEY] ?: ""
         if (raw.isBlank()) emptySet()
         else raw.split(",").mapNotNull { runCatching { LogLevel.valueOf(it.trim()) }.getOrNull() }.toSet()
     }
 
     /** 持久化的选中 Tag（逗号分隔）；空字符串表示全部。 */
-    val selectedTagsFlow: Flow<Set<String>> = context.logFilterDataStore.data.map { prefs ->
+    val selectedTagsFlow: Flow<Set<String>> = context.settingsDataStore.data.map { prefs ->
         val raw = prefs[TAGS_KEY] ?: ""
         if (raw.isBlank()) emptySet()
         else raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     }
 
     /** 日期选择模式：false=列表点选，true=日历范围。 */
-    val dateRangeModeFlow: Flow<Boolean> = context.logFilterDataStore.data.map { prefs ->
+    val dateRangeModeFlow: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
         prefs[DATE_RANGE_MODE_KEY] ?: false
     }
 
     suspend fun saveSelectedLevels(levels: Set<LogLevel>) {
-        context.logFilterDataStore.edit {
+        context.settingsDataStore.edit {
             it[LEVELS_KEY] = if (levels.isEmpty()) "" else levels.joinToString(",") { l -> l.name }
         }
     }
 
     suspend fun saveSelectedTags(tags: Set<String>) {
-        context.logFilterDataStore.edit {
+        context.settingsDataStore.edit {
             it[TAGS_KEY] = if (tags.isEmpty()) "" else tags.joinToString(",")
         }
     }
 
     suspend fun saveDateRangeMode(rangeMode: Boolean) {
-        context.logFilterDataStore.edit {
+        context.settingsDataStore.edit {
             it[DATE_RANGE_MODE_KEY] = rangeMode
         }
     }

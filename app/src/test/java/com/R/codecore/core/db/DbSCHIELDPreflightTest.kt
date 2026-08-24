@@ -13,8 +13,10 @@ import java.io.FileFilter
  *
  * 1) GAP-TEST：assets/migrations 目录下所有版本化 SQL（例如 08_xxx.sql / 33_xxx.sql）
  *    的版本号必须连续覆盖
- *    MigrationLoader.MIN_REQUIRED_START_VERSION .. AgentDatabase.SCHEMA_VERSION
+ *    MigrationLoader.MIN_REQUIRED_START_VERSION .. LegacyAgentDatabase.SCHEMA_VERSION
  *    且无重复、无悬空（version > SCHEMA_VERSION）
+ *    数据层重构（新写法）后，迁移链只服务于旧单巨库的一次性移植（DbSplitMigrator → LegacyAgentDatabase，v49），
+ *    故基准为 LegacyAgentDatabase 而非瘦身后的新 AgentDatabase（v1 全新、无历史迁移链）。
  *
  * 2) ENTITY-LIST-COUNT-TEST：LightweightSchemaRescue.ALL_ENTITY_CLASSES.size
  *    必须与 AgentDatabase.kt 里 @Database(entities=[...]) 数组 size 一致。
@@ -68,7 +70,9 @@ class DbSCHIELDPreflightTest {
     fun `GAP-TEST - migration 版本号连续覆盖 MIN 到 SCHEMA_VERSION`() {
         val migrations = listMigrationFiles().sortedBy { it.version }
         val MIN = MigrationLoader.MIN_REQUIRED_START_VERSION
-        val DECLARED = findDeclaredSchemaVersionInAgentDatabaseKt()
+        // 数据层重构（新写法）后，迁移链只服务于旧单巨库的一次性移植
+        // （DbSplitMigrator → LegacyAgentDatabase，v49），因此以 LegacyAgentDatabase 版本为基准。
+        val DECLARED = com.R.codecore.feature.agent.data.local.database.LegacyAgentDatabase.SCHEMA_VERSION
 
         val have = migrations.map { it.version }.toSortedSet()
         // 程序化迁移（如 RobustMigration44 v43→v44）没有对应 SQL 文件，从缺失校验中豁免。

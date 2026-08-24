@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.R.codecore.core.environment.EnvironmentDetector
 import com.R.codecore.feature.agent.domain.container.ContainerProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -15,8 +14,6 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private val Context.containerDataStore by preferencesDataStore(name = "container_prefs")
 
 /**
  * 持久化当前选中的容器 profile 与用户自定义 profile 列表。
@@ -41,36 +38,36 @@ class ContainerSettingsRepository @Inject constructor(
      * 开启后在 `buildBaseProotArgv` 动态追加 `-b <外存>:<容器路径>`。
      * 因 proot 的 `-b` 是 per-process 视图，新命令/新终端即生效，已运行的 shell 需重开。
      */
-    val storageShareEnabledFlow: Flow<Boolean> = context.containerDataStore.data.map { prefs ->
+    val storageShareEnabledFlow: Flow<Boolean> = context.settingsDataStore.data.map { prefs ->
         prefs[STORAGE_SHARE_ENABLED_KEY] ?: false
     }
 
     suspend fun setStorageShareEnabled(enabled: Boolean) {
-        context.containerDataStore.edit { it[STORAGE_SHARE_ENABLED_KEY] = enabled }
+        context.settingsDataStore.edit { it[STORAGE_SHARE_ENABLED_KEY] = enabled }
     }
 
     suspend fun readStorageShareEnabled(): Boolean = storageShareEnabledFlow.first()
 
     /** 当前选中的 profile id；无值时按宿主架构取内置容器（x86_64 宿主 → x86_64 内置，其余 → arm64 内置）。 */
-    val activeProfileIdFlow: Flow<String> = context.containerDataStore.data.map { prefs ->
+    val activeProfileIdFlow: Flow<String> = context.settingsDataStore.data.map { prefs ->
         prefs[ACTIVE_PROFILE_ID_KEY]?.takeIf { it.isNotBlank() }
             ?: EnvironmentDetector.defaultProfileId()
     }
 
     /** 用户自定义 profile 列表（不含内置）。解析失败回退空列表。 */
-    val customProfilesFlow: Flow<List<ContainerProfile>> = context.containerDataStore.data.map { prefs ->
+    val customProfilesFlow: Flow<List<ContainerProfile>> = context.settingsDataStore.data.map { prefs ->
         prefs[CUSTOM_PROFILES_KEY]?.let { raw ->
             runCatching { json.decodeFromString(profileSerializer, raw) }.getOrNull()
         } ?: emptyList()
     }
 
     suspend fun setActiveProfile(id: String) {
-        context.containerDataStore.edit { it[ACTIVE_PROFILE_ID_KEY] = id }
+        context.settingsDataStore.edit { it[ACTIVE_PROFILE_ID_KEY] = id }
     }
 
     /** 新增或覆盖同名 id 的自定义 profile。 */
     suspend fun upsertCustomProfile(profile: ContainerProfile) {
-        context.containerDataStore.edit { prefs ->
+        context.settingsDataStore.edit { prefs ->
             val current = prefs[CUSTOM_PROFILES_KEY]?.let { raw ->
                 runCatching { json.decodeFromString(profileSerializer, raw) }.getOrNull()
             } ?: emptyList()
@@ -80,7 +77,7 @@ class ContainerSettingsRepository @Inject constructor(
     }
 
     suspend fun deleteCustomProfile(id: String) {
-        context.containerDataStore.edit { prefs ->
+        context.settingsDataStore.edit { prefs ->
             val current = prefs[CUSTOM_PROFILES_KEY]?.let { raw ->
                 runCatching { json.decodeFromString(profileSerializer, raw) }.getOrNull()
             } ?: emptyList()

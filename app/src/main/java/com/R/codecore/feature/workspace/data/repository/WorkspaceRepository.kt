@@ -3,7 +3,6 @@ package com.R.codecore.feature.workspace.data.repository
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.domain.container.ConnectionState
@@ -21,8 +20,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private val Context.workspaceDataStore by preferencesDataStore(name = "workspace_prefs")
 
 /**
  * 管理 App 内的"工作区/项目"。

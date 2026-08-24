@@ -139,7 +139,9 @@ object MigrationLoader {
             migrations.add(RobustMigration44.MIGRATION_43_44)
 
             // DB-SHIELD-1: 连续性闸门（不抛异常，但写 FATAL 级日志供 CrashHandler 同步落盘 + 下次诊断用）
-            val declaredDbVersion = com.R.codecore.feature.agent.data.local.database.AgentDatabase.SCHEMA_VERSION
+            // 数据层重构（新写法）后，本迁移链只服务于旧单巨库的一次性移植
+            // （DbSplitMigrator → LegacyAgentDatabase，v49），因此以 LegacyAgentDatabase 版本为基准。
+            val declaredDbVersion = com.R.codecore.feature.agent.data.local.database.LegacyAgentDatabase.SCHEMA_VERSION
             val versionsSorted = migrations
                 .mapNotNull { migration ->
                     when (migration) {

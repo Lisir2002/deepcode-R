@@ -9,6 +9,10 @@ import android.os.Build
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.data.local.database.AgentDatabase
+import com.R.codecore.feature.credentials.data.local.database.CredentialsDatabase
+import com.R.codecore.feature.settings.data.local.database.SettingsDatabase
+import com.R.codecore.feature.workspace.data.local.database.WorkspaceDatabase
+import com.R.codecore.feature.t2i.data.local.database.T2IDatabase
 import net.schmizz.sshj.common.SecurityUtils
 import com.R.codecore.feature.agent.domain.container.ContainerInstaller
 import com.R.codecore.feature.credentials.data.GitCredentialsFileSync
@@ -30,6 +34,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 
@@ -108,10 +113,30 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var credentialEncryptor: CredentialEncryptor
 
-    /** Room 数据库：启动期后台做完整性检查，提前暴露损坏（损坏的 DB 会触发 SQLite 原生崩溃，
-     *  绕过 Java CrashHandler，正是「模型输出时闪退却无日志」的典型盲区）。 */
+    /** Room 数据库（数据层重构后为 5 个域库）：启动期后台做完整性检查，提前暴露损坏
+     * （损坏的 DB 会触发 SQLite 原生崩溃，绕过 Java CrashHandler，正是「模型输出时闪退却无日志」的典型盲区）。 */
     @Inject
     lateinit var agentDatabase: AgentDatabase
+
+    @Inject
+    lateinit var settingsDatabase: SettingsDatabase
+
+    @Inject
+    lateinit var credentialsDatabase: CredentialsDatabase
+
+    @Inject
+    lateinit var workspaceDatabase: WorkspaceDatabase
+
+    @Inject
+    lateinit var t2iDatabase: T2IDatabase
+
+    /** settings DataStore 收敛搬迁器（数据层重构 T2：11 个旧碎片文件 → 统一 settings_prefs）。 */
+    @Inject
+    lateinit var settingsDataStoreMigrator: com.R.codecore.feature.settings.data.repository.SettingsDataStoreMigrator
+
+    /** workspace DataStore 收敛搬迁器（数据层重构 T2：ftp_server_prefs → 统一 workspace_prefs）。 */
+    @Inject
+    lateinit var workspaceDataStoreMigrator: com.R.codecore.feature.workspace.data.repository.WorkspaceDataStoreMigrator
 
     /**
      * 数据保全通知器：启动即跑哨兵（D4）+ 升级前双保险自动备份（D5），并把判定结果发布给
@@ -134,6 +159,13 @@ class AIEditorApp : Application() {
         super.onCreate()
         registerBouncyCastle()
         createNotificationChannels()
+        // 数据层重构 T2：settings 11 个碎片 DataStore → 统一 settings_prefs；workspace 2 个碎片 → 统一 workspace_prefs。
+        // 在 super 后同步执行（runBlocking），保证任何 repository 首次读之前旧值已搬迁到位，
+        // 消除「搬迁与首次读/写并发」的竞态；内部 runCatching 兜底，失败下次启动自动重试。
+        runBlocking {
+            settingsDataStoreMigrator.migrateIfNeeded()
+            workspaceDataStoreMigrator.migrateIfNeeded()
+        }
         // 主线程启动凭据请求监听（FileObserver 必须主线程创建与 startWatching），
         // 监听容器内 credential helper 写来的 cred-req-* → 全局弹窗回填 → 回喂 git 续跑。
         credentialRequestBridge.start()
@@ -394,19 +426,33 @@ class AIEditorApp : Application() {
      * 数据库完整性检查：损坏的 DB 会让 SQLite 在写入时原生崩溃（SIGABRT），绕过 Java 崩溃处理器，
      * 是「模型输出落库时闪退且看不到日志」的高概率根因之一。启动期后台执行，把结果写日志；
      * 一旦发现损坏，至少让下次崩溃有据可查（崩溃快照会一并导出）。
+     * 数据层重构后覆盖全部 5 个域库。
      */
     private fun checkDatabaseIntegrity() {
-        val db = agentDatabase.openHelper.writableDatabase
-        val cursor = db.query("PRAGMA integrity_check")
-        val result = runCatching {
-            cursor.moveToFirst()
-            cursor.getString(0)
-        }.getOrDefault("error")
-        cursor.close()
-        if (result == "ok") {
-            FileLogger.d("DBIntegrity", "数据库完整性检查通过")
-        } else {
-            FileLogger.e("DBIntegrity", "数据库完整性检查失败: $result（写入时可能触发 SQLite 原生崩溃，建议恢复备份或清理重建）")
+        val databases = mapOf(
+            "agent" to agentDatabase,
+            "settings" to settingsDatabase,
+            "credentials" to credentialsDatabase,
+            "workspace" to workspaceDatabase,
+            "t2i" to t2iDatabase
+        )
+        var allOk = true
+        for ((name, db) in databases) {
+            val result = runCatching {
+                db.openHelper.writableDatabase.query("PRAGMA integrity_check").use { cursor ->
+                    cursor.moveToFirst()
+                    cursor.getString(0)
+                }
+            }.getOrDefault("error")
+            if (result == "ok") {
+                FileLogger.d("DBIntegrity", "[$name] 数据库完整性检查通过")
+            } else {
+                allOk = false
+                FileLogger.e("DBIntegrity", "[$name] 数据库完整性检查失败: $result（写入时可能触发 SQLite 原生崩溃，建议恢复备份或清理重建）")
+            }
+        }
+        if (allOk) {
+            FileLogger.d("DBIntegrity", "全部 5 个域库完整性检查通过")
         }
     }
 }

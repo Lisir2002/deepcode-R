@@ -3,7 +3,6 @@ package com.R.codecore.feature.settings.data.repository
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.R.codecore.core.util.LogLevel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -11,8 +10,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private val Context.logDataStore by preferencesDataStore(name = "log_prefs")
 
 /**
  * 持久化「日志最低记录等级」。等级以枚举名（字符串）存取，默认 [LogLevel.VERBOSE]（开发期全量）。
@@ -30,13 +27,13 @@ class LogSettingsRepository @Inject constructor(
     }
 
     /** 当前持久化的日志等级流；解析失败/未设置时回退到默认值。 */
-    val levelFlow: Flow<LogLevel> = context.logDataStore.data.map { prefs ->
+    val levelFlow: Flow<LogLevel> = context.settingsDataStore.data.map { prefs ->
         prefs[LEVEL_KEY]?.let { runCatching { LogLevel.valueOf(it) }.getOrNull() } ?: DEFAULT_LEVEL
     }
 
     /** 写入新的日志等级。 */
     suspend fun setLevel(level: LogLevel) {
-        context.logDataStore.edit { it[LEVEL_KEY] = level.name }
+        context.settingsDataStore.edit { it[LEVEL_KEY] = level.name }
     }
 
     /** 备份快照：当前日志等级名。 */

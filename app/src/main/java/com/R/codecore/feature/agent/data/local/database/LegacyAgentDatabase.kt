@@ -2,6 +2,7 @@ package com.R.codecore.feature.agent.data.local.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import com.R.codecore.core.db.entity.CredentialEncryptionStateEntity
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.data.local.dao.CheckpointDao
@@ -36,26 +37,47 @@ import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
 import com.R.codecore.feature.agent.data.local.entity.UserConfirmedSentinelEntity
 import com.R.codecore.feature.agent.data.local.entity.WakeItemEntity
 import com.R.codecore.feature.agent.data.local.entity.ZthTelemetryEventEntity
+import com.R.codecore.feature.credentials.data.local.dao.GitCredentialDao
+import com.R.codecore.feature.credentials.data.local.entity.GitCredentialEntity
+import com.R.codecore.feature.settings.data.local.dao.AIProviderDao
+import com.R.codecore.feature.settings.data.local.entity.AIProviderEntity
+import com.R.codecore.feature.workspace.data.local.dao.CredentialEncryptionStateDao
+import com.R.codecore.feature.workspace.data.local.dao.RemoteAuditLogDao
+import com.R.codecore.feature.workspace.data.local.dao.RemoteConnectionDao
+import com.R.codecore.feature.workspace.data.local.dao.RemoteMountDao
+import com.R.codecore.feature.workspace.data.local.entity.RemoteAuditLogEntity
+import com.R.codecore.feature.workspace.data.local.entity.RemoteConnectionEntity
+import com.R.codecore.feature.workspace.data.local.entity.RemoteMountEntity
+import com.R.codecore.feature.t2i.data.local.dao.T2IProviderDao
+import com.R.codecore.feature.t2i.data.local.dao.T2IProviderModelDao
+import com.R.codecore.feature.t2i.data.local.dao.T2ITaskDao
+import com.R.codecore.feature.t2i.data.local.entity.T2IProviderEntity
+import com.R.codecore.feature.t2i.data.local.entity.T2IProviderModelEntity
+import com.R.codecore.feature.t2i.data.local.entity.T2ITaskEntity
 
 /**
- * 数据层重构（新写法）后的 agent 域独立库（v1 全新）。
+ * 数据层重构（新写法）前的旧单巨库（v49，保留全量 26 实体）。
  *
- * 拆分自旧单巨库 [LegacyAgentDatabase]（v49，见 T1a）。仅承载 agent 域
- * （消息/会话/todo/checkpoint/skill/wake/zth 等 17 实体），与其他 4 个域库
- * （settings / credentials / workspace / t2i）完全解耦，任何 feature 改表
- * 不再挤进同一条迁移链。
+ * 仅用于「一次性数据移植」：打开旧库文件 `rcodecore_agent_db`（含全部历史迁移链），
+ * 把数据逐表拷贝到新的 5 个域库，随后旧文件被改名留底（rcodecore_agent_db.migrated.v49）。
  *
- * 新库为全新 v1，无历史迁移链；旧库数据由 [LegacyAgentDatabase] 一次性移植。
+ * 该库不参与新业务读写，只读旧数据；移植完成后不再被打开。
  */
 @Database(
     entities = [
         AgentMessageEntity::class,
         ChatSessionEntity::class,
+        AIProviderEntity::class,
+        RemoteConnectionEntity::class,
+        RemoteMountEntity::class,
         TodoItemEntity::class,
+        GitCredentialEntity::class,
         CheckpointEntity::class,
         CheckpointFileSnapshotEntity::class,
         FileEditHunkEntity::class,
         ModeSwitchHistoryEntity::class,
+        CredentialEncryptionStateEntity::class,
+        RemoteAuditLogEntity::class,
         ModelCapabilityOverrideEntity::class,
         UserConfirmedSentinelEntity::class,
         HallucinationFuseEntity::class,
@@ -63,21 +85,30 @@ import com.R.codecore.feature.agent.data.local.entity.ZthTelemetryEventEntity
         HardConstraintDeleteAuditEntity::class,
         L0SoftCompactRestoreLogEntity::class,
         ZthTelemetryEventEntity::class,
+        T2IProviderEntity::class,
+        T2IProviderModelEntity::class,
+        T2ITaskEntity::class,
         SkillConversationStateEntity::class,
         SkillStateEntity::class,
         WakeItemEntity::class
     ],
-    version = 1,
-    exportSchema = true
+    version = 49,
+    exportSchema = false
 )
-abstract class AgentDatabase : RoomDatabase() {
+abstract class LegacyAgentDatabase : RoomDatabase() {
     abstract fun agentMessageDao(): AgentMessageDao
     abstract fun chatSessionDao(): ChatSessionDao
+    abstract fun aiProviderDao(): AIProviderDao
+    abstract fun remoteConnectionDao(): RemoteConnectionDao
+    abstract fun remoteMountDao(): RemoteMountDao
     abstract fun todoItemDao(): TodoItemDao
+    abstract fun gitCredentialDao(): GitCredentialDao
     abstract fun checkpointDao(): CheckpointDao
     abstract fun checkpointFileSnapshotDao(): CheckpointFileSnapshotDao
     abstract fun fileEditHunkDao(): FileEditHunkDao
     abstract fun modeSwitchHistoryDao(): ModeSwitchHistoryDao
+    abstract fun credentialEncryptionStateDao(): CredentialEncryptionStateDao
+    abstract fun remoteAuditLogDao(): RemoteAuditLogDao
     abstract fun modelCapabilityOverrideDao(): ModelCapabilityOverrideDao
     abstract fun userConfirmedSentinelDao(): UserConfirmedSentinelDao
     abstract fun hallucinationFuseDao(): HallucinationFuseDao
@@ -85,11 +116,14 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun hardConstraintDeleteAuditDao(): HardConstraintDeleteAuditDao
     abstract fun l0SoftCompactRestoreLogDao(): L0SoftCompactRestoreLogDao
     abstract fun zthTelemetryEventDao(): ZthTelemetryEventDao
+    abstract fun t2iProviderDao(): T2IProviderDao
+    abstract fun t2iProviderModelDao(): T2IProviderModelDao
+    abstract fun t2iTaskDao(): T2ITaskDao
     abstract fun skillConversationStateDao(): SkillConversationStateDao
     abstract fun skillStateDao(): SkillStateDao
     abstract fun wakeQueueDao(): WakeQueueDao
 
     companion object {
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 49
     }
 }
