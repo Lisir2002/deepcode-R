@@ -36,13 +36,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.R.codecore.R
-import com.R.codecore.core.theme.MessageAccent
 import com.R.codecore.core.theme.Spacing
-import com.R.codecore.core.theme.resolveLine
 import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import com.R.codecore.feature.agent.presentation.EnvironmentSnapshot
 import com.R.codecore.feature.agent.presentation.hasVisibleContent
 import com.R.codecore.feature.agent.presentation.MessageRole
+import com.R.codecore.feature.chatrender.BubbleStyleProvider
+import com.R.codecore.feature.chatrender.LocalBubbleStyle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Check
