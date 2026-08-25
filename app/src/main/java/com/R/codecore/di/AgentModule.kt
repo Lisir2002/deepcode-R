@@ -36,6 +36,11 @@ import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ToolRegistry
 import com.R.codecore.feature.agent.domain.tool.intent.IntentAnalyzeTool
 import com.R.codecore.feature.agent.domain.tool.ToolOutputStore
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import com.R.codecore.feature.settings.data.remote.ModelMetadataService
 import com.R.codecore.feature.terminal.domain.DelegatingTerminalSessionProvider
 import com.R.codecore.feature.terminal.domain.RemoteTerminalSessionManager
@@ -204,6 +209,8 @@ object AgentModule {
         searchCodeTool: SearchCodeTool,
         loadSkillTool: LoadSkillTool,
         runSkillScriptTool: com.R.codecore.feature.agent.domain.tool.skill.RunSkillScriptTool,
+        loadRuleTool: com.R.codecore.feature.agent.domain.tool.rule.LoadRuleTool,
+        loadSopTool: com.R.codecore.feature.agent.domain.tool.sop.LoadSopTool,
         askUserQuestionTool: AskUserQuestionTool,
         manageMcpTool: com.R.codecore.feature.agent.domain.tool.mcp.ManageMcpTool,
         webSearchTool: com.R.codecore.feature.agent.domain.tool.search.WebSearchTool,
@@ -256,6 +263,10 @@ object AgentModule {
             registerTool("search", searchCodeTool)
             registerTool("loadSkill", loadSkillTool)
             registerTool("runSkillScript", runSkillScriptTool)
+            // ══ 分层规则正文按需加载（D3-3）：load_rule(rule_name) 取完整正文（摘要/正文两级形态）
+            registerTool("load_rule", loadRuleTool)
+            // ══ SOP 标准作业正文按需加载（D4-4）：loadSop(sop_name) 取完整编号步骤（摘要常驻 + 按需取正文）
+            registerTool("loadSop", loadSopTool)
             registerTool("askUserQuestion", askUserQuestionTool)
             registerTool("manageMcp", manageMcpTool)
             registerTool("websearch", webSearchTool)
@@ -284,6 +295,50 @@ object AgentModule {
             registerTool("plan", planTool)
             // ══ 用户意图判定平台（D0）：规则预分类五形态 + behaviorMode，Parser 门控（task/command）建议调用
             registerTool("intent_analyze", intentAnalyzeTool)
+
+            // ══ D2-3 轨迹摘要提取器登记（norm-chain §3.8.2：规则表挂 ToolResultTypeRegistry，
+            //    仅少数工具定制，其余走通用截断）。提取器签名 (args, resultData) → 一行摘要。
+            fun argText(args: Map<String, JsonElement>, key: String): String =
+                (args[key] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+            fun firstText(obj: JsonObject, vararg keys: String): String {
+                for (key in keys) {
+                    (obj[key] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+                }
+                return ""
+            }
+            // readFile：路径（来自 args）+ 行数（来自结果 total_lines/read_lines）。
+            resultTypeRegistry.registerTrajectorySummarizer("readFile") { args, data ->
+                val obj = data as? JsonObject
+                val lines = obj?.get("read_lines")?.jsonPrimitive?.contentOrNull
+                    ?: obj?.get("total_lines")?.jsonPrimitive?.contentOrNull
+                    ?: "-"
+                val truncated = obj?.get("truncated")?.jsonPrimitive?.contentOrNull == "true"
+                "readFile(${argText(args, "path")}) lines=$lines${if (truncated) " [truncated]" else ""}"
+            }
+            // writeFile：目标文件 + 是否新建/覆盖（路径来自 args，结果 path 展示路径）。
+            resultTypeRegistry.registerTrajectorySummarizer("writeFile") { args, data ->
+                val path = argText(args, "path").ifBlank { firstText(data as? JsonObject ?: JsonObject(emptyMap()), "path") }
+                "writeFile($path) 已写入"
+            }
+            // editFile：目标文件 + 变更状态（结果 status/path）。
+            resultTypeRegistry.registerTrajectorySummarizer("editFile") { args, data ->
+                val obj = data as? JsonObject ?: JsonObject(emptyMap())
+                val path = argText(args, "path").ifBlank { firstText(obj, "path") }
+                val status = firstText(obj, "status").ifBlank { "done" }
+                "editFile($path) status=$status"
+            }
+            // run_code：exit code + stdout 尾部。
+            resultTypeRegistry.registerTrajectorySummarizer("run_code") { _, data ->
+                val obj = data as? JsonObject ?: JsonObject(emptyMap())
+                val exit = obj["exitCode"]?.jsonPrimitive?.contentOrNull ?: "?"
+                val tail = (obj["stdout"]?.jsonPrimitive?.contentOrNull ?: "").takeLast(80).replace('\n', ' ')
+                "run_code exit=$exit stdout≈$tail"
+            }
+            // Bash：输出尾部（纯文本结果走通用截断，此处仅标注命令执行）。
+            resultTypeRegistry.registerTrajectorySummarizer("Bash") { args, data ->
+                val cmd = argText(args, "command").take(60)
+                "Bash($cmd)"
+            }
         }
     }
 
@@ -351,7 +406,8 @@ object AgentModule {
         planService: com.R.codecore.feature.agent.domain.plan.PlanService,
         toolGuards: Set<@JvmSuppressWildcards com.R.codecore.feature.agent.domain.guard.ToolGuard>,
         fileObservationGuard: com.R.codecore.feature.agent.domain.guard.FileObservationGuard,
-        normFlowSettingsRepository: com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository
+        normFlowSettingsRepository: com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository,
+        trajectoryService: com.R.codecore.feature.agent.domain.trajectory.TrajectoryService
     ): AgentWorkflow {
         return com.R.codecore.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -385,7 +441,8 @@ object AgentModule {
             planService,
             toolGuards,
             fileObservationGuard,
-            normFlowSettingsRepository
+            normFlowSettingsRepository,
+            trajectoryService
         )
     }
 }

@@ -33,6 +33,28 @@ class ContainerInstaller @Inject constructor(
         private const val TAG = "ContainerInstaller"
         @Volatile private var docsExtractedSession = false
 
+        /** 从 assets 提取 SOP 标准作业到 ~/.rcodecore/sop/（D4-1，内置默认副本，每次启动全量覆盖）。 */
+        @Volatile private var sopExtractedSession = false
+
+        /** 从 assets 提取 SOP 标准作业资产到 ~/.rcodecore/sop/，使 App 升级后 SOP 随之更新。 */
+        fun extractSop(context: Context) {
+            if (sopExtractedSession) return
+            val destDir = File(File(context.filesDir, "rcodecore"), "sop")
+            destDir.mkdirs()
+            runCatching {
+                val sop = context.assets.list("sop") ?: return
+                for (item in sop) {
+                    val destFile = File(destDir, item)
+                    context.assets.open("sop/$item").use { input ->
+                        destFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+                sopExtractedSession = true
+            }.onFailure {
+                FileLogger.w(TAG, "提取内置 SOP 失败: ${it.message}", it)
+            }
+        }
+
         /** 从 assets 提取文档到 ~/.rcodecore/docs (内置使用指导) */
         fun extractDocs(context: Context) {
             if (docsExtractedSession) return
@@ -420,12 +442,16 @@ class ContainerInstaller @Inject constructor(
     init {
         CoroutineScope(Dispatchers.IO).launch {
             extractDocs(context)
+            extractSop(context)
             extractCredentialHelper(context)
         }
     }
 
     /** 从 assets 提取文档到 ~/.rcodecore/docs (内置使用指导) */
     fun extractDocs() = extractDocs(context)
+
+    /** 从 assets 提取 SOP 标准作业资产到 ~/.rcodecore/sop/（D4-1）。 */
+    fun extractSop() = extractSop(context)
 
     /** 从 assets 提取 git credential helper 到 ~/.rcodecore/git-credential-rcodecore 并赋可执行位。 */
     fun extractCredentialHelper() = extractCredentialHelper(context)

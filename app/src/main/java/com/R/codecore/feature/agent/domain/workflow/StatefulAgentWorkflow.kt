@@ -53,6 +53,8 @@ import com.R.codecore.feature.agent.domain.tool.RetryPolicy
 import com.R.codecore.feature.agent.domain.tool.classifyError
 import com.R.codecore.feature.agent.domain.tool.ToolStreamEvent
 import com.R.codecore.feature.agent.domain.tool.toTransportString
+import com.R.codecore.feature.agent.domain.tool.toToolResult
+import com.R.codecore.feature.agent.domain.trajectory.TrajectoryService
 import com.R.codecore.feature.agent.data.local.entity.WakeItemEntity
 import com.R.codecore.feature.agent.domain.hook.HookDispatcher
 import com.R.codecore.feature.agent.domain.hook.HookOutcome
@@ -152,7 +154,9 @@ class StatefulAgentWorkflow @Inject constructor(
     /** D1-4 文件观察护栏：guard 链成员（拦截 editFile）+ post-execute 更新观察版本。 */
     private val fileObservationGuard: FileObservationGuard,
     /** D1-7 规范流程统一开关：总开关 norm_flow_enabled + 子开关 step_inject / tool_guard（对齐 norm-chain §3.5）。 */
-    private val normFlowSettingsRepository: com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository
+    private val normFlowSettingsRepository: com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository,
+    /** D2-3/5 运行轨迹服务：工具执行完成追加 tool 轨迹、turn 边界轻量标记；空转收敛/阶段总结/审计的数据源。 */
+    private val trajectoryService: TrajectoryService
 ) : AgentWorkflow {
 
     init {
@@ -190,6 +194,22 @@ class StatefulAgentWorkflow @Inject constructor(
          * 达到该轮次仍未结束则强制收尾并报错，避免只能靠用户手动停止。
          */
         const val MAX_ITERATIONS = 50
+
+        /**
+         * D2-1 空转软收敛：连续 N 轮无实质产出（文件写 / 命令执行 / run_code / 产出性读动作）后
+         * 强制结束回合（对齐 norm-chain §3.7.1）。区别于 LoopGuardTracker 的 3/5/8 advisory：
+         * 空转收敛不提醒、直接结束，把已做动作摘要 + 结束原因返回用户。
+         * 与 MAX_ITERATIONS（50 硬上限）、LoopGuardTracker（3/5/8 advisory）三级防线并存。
+         */
+        const val IDLE_CONVERGE_ROUNDS = 6
+
+        /**
+         * D2-1 实质产出工具集合：命中即清零空转计数器。
+         * - 文件写：editFile / writeFile（对齐 D1-4 FILE_OBSERVED_TOOLS 的文件工具链）；
+         * - 命令执行：Bash（ExecuteCommandTool）/ run_code（RunCodeTool）。
+         * 产出性读动作（readFile 读到新文件）由 [readPaths] 判定单独清零。
+         */
+        val SUBSTANTIAL_TOOLS = setOf("editFile", "writeFile", "Bash", "run_code")
 
         /**
          * 上游模型 API 返回「不支持多模态（image / image_url）」的特征关键字列表。
@@ -266,7 +286,9 @@ class StatefulAgentWorkflow @Inject constructor(
         /** 仅 sendFile 等展示型工具：随结果附带的文件卡片元数据，供 UI 渲染，不回放进模型上下文。 */
         val attachments: List<com.R.codecore.feature.agent.presentation.AgentAttachment> = emptyList(),
         /** L3 错误分类：成功为 null，失败按 [classifyError] 推断，供 L4 调度器判定是否重试。 */
-        val errorClass: ToolErrorClass? = null
+        val errorClass: ToolErrorClass? = null,
+        /** D2-3 执行耗时毫秒（含重试累计），供轨迹表 / 用量卡片「本回合耗时」聚合。 */
+        val durationMs: Long = 0
     )
 
     /** 批量工具执行结果：携带 toolCall 元信息，供最后按原始顺序组装 ToolResultMessage。 */
@@ -576,6 +598,14 @@ class StatefulAgentWorkflow @Inject constructor(
         var currentContext = context
         var state = AgentSessionState()
         var currentTools = tools
+        // D2-3/5 轨迹分组：一次用户请求（一次 executeEvents）产出的轨迹共享同一 taskId，
+        // 用量卡片「本回合增量」按 taskId 分组聚合（对齐 norm-chain §3.8.1）。
+        val taskId = "task_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().replace("-", "").take(8)}"
+        // D2-1 空转软收敛：连续 N 轮无实质产出的累计轮数（实质产出命中即清零）；见 IDLE_CONVERGE_ROUNDS。
+        var idleRounds = 0
+        // D2-1 产出性读判定：本任务已读过的文件路径集合——readFile 读到未读新文件计为实质产出（清零），
+        // 反复重读同类文件才累计空转（对齐 norm-chain §3.7.1「仅反复重复读同类文件才累计空转」）。
+        val readPaths = mutableSetOf<String>()
         // 循环级 guard：统计连续「相同工具 + 相同参数」调用，达阈值在下一轮 CallLlm 注入提醒。
         val loopGuardTracker = LoopGuardTracker()
         // D1-1 step 前注入接线：把当次执行的循环追踪器挂到注入链（LoopAdvisorySource，P2）。
@@ -699,7 +729,7 @@ class StatefulAgentWorkflow @Inject constructor(
         // 都兜底清理本会话残留的「未决工具权限请求」，避免对话结束后确认卡一直挂着。
         // 正常路径下 awaitApproval 的 finally 已清 _pendingRequest，此处为空操作；取消/异常
         // 路径下把挂起的 awaitApproval 以 REJECT 唤醒，工具收到「用户拒绝执行」而非永久挂起。
-        try { while (!state.isFinished && actionQueue.isNotEmpty() && state.iterations < MAX_ITERATIONS) {
+        try { mainLoop@ while (!state.isFinished && actionQueue.isNotEmpty() && state.iterations < MAX_ITERATIONS) {
             val action = actionQueue.removeFirst()
             val (newState, effects) = reduce(state, action)
             state = newState
@@ -707,6 +737,44 @@ class StatefulAgentWorkflow @Inject constructor(
             for (effect in effects) {
                 when (effect) {
                     is AgentSideEffect.CallLlm -> {
+                        // D2-1 空转软收敛：连续 IDLE_CONVERGE_ROUNDS 轮无实质产出（文件写 / 命令执行 /
+                        // run_code / 产出性读动作均未命中）→ 强制结束回合，不再调用 LLM，把已做动作摘要
+                        // + 结束原因返回用户（对齐 norm-chain §3.7.1；区别于 LoopGuard 的 advisory）。
+                        if (idleRounds >= IDLE_CONVERGE_ROUNDS) {
+                            val actionSummary = try {
+                                trajectoryService.buildActionSummary(currentContext.sessionId)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                FileLogger.w(TAG, "构建已做动作摘要失败，跳过摘要", e)
+                                ""
+                            }
+                            val reason = "连续 $idleRounds 轮未取得实质进展（未写文件、未执行命令、未读到新信息），已自动收敛本轮任务。"
+                            state = state.copy(
+                                isFinished = true,
+                                error = buildString {
+                                    append(reason)
+                                    if (actionSummary.isNotBlank()) {
+                                        append("\n\n已做动作：\n").append(actionSummary)
+                                    }
+                                    append("\n\n如需继续，请补充说明下一步目标。")
+                                }
+                            )
+                            try {
+                                trajectoryService.recordMark(
+                                    sessionId = currentContext.sessionId,
+                                    taskId = taskId,
+                                    turnIndex = state.iterations,
+                                    kind = "converge",
+                                    summary = "空转收敛：连续 ${idleRounds} 轮无实质产出，强制结束回合"
+                                )
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                FileLogger.w(TAG, "记录空转收敛轨迹标记失败，跳过", e)
+                            }
+                            break@mainLoop
+                        }
                         // 会话任务目标注入：每轮 step 前读取当前 ACTIVE 目标，喂入 step 前注入链
                         // （GoalHintSource，P0），使目标可追溯、可修订、可归因（DSH goal；失败静默降级）。
                         val activeGoal = try {
@@ -747,6 +815,14 @@ class StatefulAgentWorkflow @Inject constructor(
                         // 注入块（对齐 norm-chain §3.5，默认开启；关闭即 step 前注入纪律不生效）。
                         val stepInjection = if (normFlowSettingsRepository.isStepInjectActive()) {
                             promptProvider.buildStepInjections(currentContext)
+                        } else {
+                            null
+                        }
+                        // D2-2 推理预算：总开关 / reasoning_budget 子开关开启时，把每会话思考强度
+                        // （reasoningEffort，默认 MEDIUM）透传给 provider；关闭则禁用推理参数
+                        // （对齐 norm-chain §3.7.2「新增推理预算配置，开启后按 provider 能力传 reasoning 参数」）。
+                        val reasoningEffortForRound = if (normFlowSettingsRepository.isReasoningBudgetActive()) {
+                            currentContext.reasoningEffort
                         } else {
                             null
                         }
@@ -800,7 +876,7 @@ class StatefulAgentWorkflow @Inject constructor(
                             // 是为了避免把 source=INFERRED 的自定义多模态模型误当成纯文本模型，
                             // 发送前剥离图片导致模型「图都收不到还怎么识别」。
                             val messagesToSend = sanitizeImagesForModel(compactedMessages, sendImages)
-                            providerInUse.completeStream(effectiveSystemPrompt, messagesToSend, currentTools, currentContext.reasoningEffort).collect { chunk ->
+                            providerInUse.completeStream(effectiveSystemPrompt, messagesToSend, currentTools, reasoningEffortForRound).collect { chunk ->
                                 when (chunk) {
                                     is AIStreamChunk.TextDelta -> {
                                         acc.accept(chunk.text)
@@ -828,6 +904,24 @@ class StatefulAgentWorkflow @Inject constructor(
 
                             if (aiResponse.content.isNotBlank() || aiResponse.toolCalls.isNotEmpty()) {
                                 send(AgentEvent.AssistantText(aiResponse.content, aiResponse.toolCalls, reasoningAcc.text, aiResponse.signature ?: "", aiResponse.inputTokens, aiResponse.outputTokens))
+                            }
+                            // D2-3/5 turn 边界标记：一次 LLM 响应结束 = 一个 turn 边界，携带本轮 token 用量
+                            // （D2-4 用量卡片「本回合增量」的聚合源；append-only 不受上下文压缩影响）。
+                            // 失败/异常静默降级不阻断主流程。
+                            try {
+                                trajectoryService.recordMark(
+                                    sessionId = currentContext.sessionId,
+                                    taskId = taskId,
+                                    turnIndex = state.iterations,
+                                    kind = "turn",
+                                    summary = if (reasoningAcc.text.isNotEmpty()) "推理+回答" else "回答",
+                                    tokensIn = aiResponse.inputTokens,
+                                    tokensOut = aiResponse.outputTokens
+                                )
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                FileLogger.w(TAG, "记录回合标记失败，跳过", e)
                             }
                             actionQueue.addLast(AgentAction.LlmResponse(responseWithReasoning))
                         } catch (e: CancellationException) {
@@ -917,7 +1011,7 @@ class StatefulAgentWorkflow @Inject constructor(
                                 val acc2 = DeltaAccumulator()
                                 val reasoning2 = DeltaAccumulator()
                                 var final2: AIResponse? = null
-                                providerInUse.completeStream(effectiveSystemPrompt, textOnlyMessages, currentTools, currentContext.reasoningEffort).collect { chunk ->
+                                providerInUse.completeStream(effectiveSystemPrompt, textOnlyMessages, currentTools, reasoningEffortForRound).collect { chunk ->
                                     when (chunk) {
                                         is AIStreamChunk.TextDelta -> {
                                             acc2.accept(chunk.text)
@@ -1057,6 +1151,8 @@ class StatefulAgentWorkflow @Inject constructor(
                                             async {
                                                 val tool = toolRegistry.getTool(call.name)
                                                 val policy = tool?.retryPolicy ?: RetryPolicy()
+                                                // D2-3 耗时采集：单工具执行（含自动重试）的墙钟耗时，供轨迹/用量卡片聚合。
+                                                val startMs = System.currentTimeMillis()
                                                 val result = dependencyScheduler.runWithRetry(
                                                     tool, call,
                                                     execute = { t, c ->
@@ -1070,7 +1166,7 @@ class StatefulAgentWorkflow @Inject constructor(
                                                         r.isError && r.errorClass?.let { it in policy.retryable } == true
                                                     }
                                                 )
-                                                resultsById[call.id] = result
+                                                resultsById[call.id] = result.copy(durationMs = (System.currentTimeMillis() - startMs).coerceAtLeast(0))
                                             }
                                         }.awaitAll()
                                     }
@@ -1137,6 +1233,41 @@ class StatefulAgentWorkflow @Inject constructor(
                                 }
                             }
                             batchResults.add(ToolBatchResult(toolCall.id, toolCall.name, rawResult, isError, runResult.images, runResult.attachments))
+                            // D2-3/5 轨迹记录：每次工具执行完成追加 tool 轨迹（append-only，不受上下文压缩影响），
+                            // 供已做动作摘要 / 用量卡片 / 审计回放作为单一数据源；失败/异常静默降级不阻断主流程。
+                            val trajectoryResult = runResult.raw.toToolResult()
+                            try {
+                                trajectoryService.recordTool(
+                                    sessionId = currentContext.sessionId,
+                                    taskId = taskId,
+                                    turnIndex = state.iterations,
+                                    toolName = toolCall.name,
+                                    args = toolCall.arguments,
+                                    result = trajectoryResult,
+                                    isError = runResult.isError,
+                                    durationMs = runResult.durationMs,
+                                    tokensIn = 0,
+                                    tokensOut = 0
+                                )
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                FileLogger.w(TAG, "记录工具轨迹失败，跳过", e)
+                            }
+                            // D2-1 空转检测：本轮是否有实质产出（文件写 / 命令执行 / run_code / 产出性读动作）。
+                            // 有实质产出 → 清零空转计数；无 → 累计空转轮数（连续 N 轮由 CallLlm 侧强制收敛）。
+                            if (toolCall.name in SUBSTANTIAL_TOOLS) {
+                                idleRounds = 0
+                            } else if (toolCall.name == "readFile") {
+                                val path = (toolCall.arguments["path"] as? JsonPrimitive)?.contentOrNull
+                                if (path != null && readPaths.add(path)) {
+                                    idleRounds = 0 // 读到新文件 = 产出性读动作，清零
+                                } else {
+                                    idleRounds++ // 反复重读同类文件才累计空转
+                                }
+                            } else {
+                                idleRounds++
+                            }
                         }
 
                         // Hook：PostToolUse（挂点 C：复用 ZTH postTool 挂点，逐条工具结果）
@@ -1196,6 +1327,22 @@ class StatefulAgentWorkflow @Inject constructor(
         }
 
         state.error?.let { send(AgentEvent.Failed(it)) }
+        // D2-4 用量卡片：回合（一次 executeEvents = 一个 taskId 分组）结束时，从轨迹表聚合
+        // 「本回合增量 + 会话累计」（仅 token 不估成本，对齐 norm-chain §3.8.4）；
+        // 开关关闭 / 无会话 / 聚合失败时静默跳过，不阻断主流程。
+        try {
+            if (normFlowSettingsRepository.isUsageCardActive() && currentContext.sessionId != null) {
+                val turnUsage = trajectoryService.turnUsage(currentContext.sessionId, taskId)
+                if (turnUsage.totalTokens > 0 || turnUsage.toolCalls > 0) {
+                    val sessionUsage = trajectoryService.sessionUsage(currentContext.sessionId)
+                    send(AgentEvent.TurnUsage(taskId, turnUsage, sessionUsage))
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "推送用量卡片失败，跳过", e)
+        }
         send(AgentEvent.Completed)
     }
 

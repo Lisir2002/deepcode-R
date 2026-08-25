@@ -6,8 +6,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.FactCheck
 import androidx.compose.material.icons.rounded.Input
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -21,17 +24,24 @@ import com.R.codecore.core.theme.Spacing
 /**
  * 「规范流程」二级页（D1-7，对齐 norm-chain-design.md §3.5）：
  * 总开关 [normFlowEnabled]（关闭即 step 前注入 / guard 链整体停用）
- * + 子开关 [stepInjectEnabled]（step 前注入纪律）/ [toolGuardEnabled]（guard 链 + 文件观察）。
- * 默认全开；SOP 摘要 / Playbook 自动触发子开关随 D4/D5 批次追加。
+ * + 子开关 [stepInjectEnabled]（step 前注入纪律）/ [toolGuardEnabled]（guard 链 + 文件观察）/
+ * [reasoningBudgetEnabled]（推理预算，D2-2）/ [usageCardEnabled]（用量卡片，D2-4）/
+ * [sopSummaryEnabled]（SOP 清单摘要，D4-3）。默认全开。
  */
 @Composable
 internal fun NormFlowSection(
     normFlowEnabled: Boolean,
     stepInjectEnabled: Boolean,
     toolGuardEnabled: Boolean,
+    reasoningBudgetEnabled: Boolean,
+    usageCardEnabled: Boolean,
+    sopSummaryEnabled: Boolean,
     onToggleNormFlow: (Boolean) -> Unit,
     onToggleStepInject: (Boolean) -> Unit,
-    onToggleToolGuard: (Boolean) -> Unit
+    onToggleToolGuard: (Boolean) -> Unit,
+    onToggleReasoningBudget: (Boolean) -> Unit,
+    onToggleUsageCard: (Boolean) -> Unit,
+    onToggleSopSummary: (Boolean) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -60,6 +70,20 @@ internal fun NormFlowSection(
                     subtitle = stringResource(R.string.settings_norm_flow_tool_guard_desc),
                     checked = toolGuardEnabled,
                     onCheckedChange = onToggleToolGuard
+                )
+                GroupSwitchRow(
+                    icon = Icons.Rounded.Memory,
+                    title = stringResource(R.string.settings_norm_flow_reasoning_budget),
+                    subtitle = stringResource(R.string.settings_norm_flow_reasoning_budget_desc),
+                    checked = reasoningBudgetEnabled,
+                    onCheckedChange = onToggleReasoningBudget
+                )
+                GroupSwitchRow(
+                    icon = Icons.Rounded.BarChart,
+                    title = stringResource(R.string.settings_norm_flow_usage_card),
+                    subtitle = stringResource(R.string.settings_norm_flow_usage_card_desc),
+                    checked = usageCardEnabled,
+                    onCheckedChange = onToggleUsageCard
                 )
             }
             Spacer(Modifier.height(Spacing.md))

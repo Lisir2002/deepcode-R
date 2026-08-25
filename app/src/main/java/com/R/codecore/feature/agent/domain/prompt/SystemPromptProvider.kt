@@ -12,9 +12,14 @@ import com.R.codecore.feature.agent.domain.memory.MemoryRepository
 import com.R.codecore.feature.agent.domain.memory.MemoryScope
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.model.AgentMode
+import com.R.codecore.feature.agent.domain.rule.RuleAsset
+import com.R.codecore.feature.agent.domain.rule.RuleLayer
+import com.R.codecore.feature.agent.domain.rule.RuleRegistry
 import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
 import com.R.codecore.feature.agent.domain.skill.SkillType
+import com.R.codecore.feature.agent.domain.sop.SopRegistry
 import com.R.codecore.feature.agent.domain.workflow.LoopGuardTracker
+import com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -42,7 +47,13 @@ class SystemPromptProvider @Inject constructor(
     private val playbookStageSource: PlaybookStageSource,
     private val goalAdjustEventSource: GoalAdjustEventSource,
     private val goalStaleSource: GoalStaleSource,
-    private val loopAdvisorySource: LoopAdvisorySource
+    private val loopAdvisorySource: LoopAdvisorySource,
+    // D3-2：分层规则注册表（四级规则：全局/项目/工作区/模块；模块级按文件观察命中路径按需注入）
+    private val ruleRegistry: RuleRegistry,
+    // D4-3：SOP 标准作业注册表（assets/sop/，摘要常驻注入 + loadSop 按需取正文）
+    private val sopRegistry: SopRegistry,
+    // D1-7/D4-3：规范流程统一开关（sop_summary 子开关控制 SOP 摘要常驻注入，逐项可关）
+    private val normFlowSettingsRepository: NormFlowSettingsRepository
 ) {
     // 抽象独立的 Source
     interface PromptSource {
@@ -175,6 +186,63 @@ class SystemPromptProvider @Inject constructor(
         }
     }
 
+    /**
+     * 分层规则摘要注入（D3-2，importance=P1 常规，对齐 norm-chain-design.md §3.9.3）：
+     *
+     * 三级常驻（全局/项目/工作区）+ 命中的模块级规则（本会话/任务触碰过 `feature/<module>/` 文件），
+     * 按 priority 降序拼接「名称 + 层级 + 摘要」清单，走 3.1.2 注入预算裁剪（超预算先裁 P2 → P1）。
+     * 摘要/正文两级形态（D3-3）：常驻只注入摘要（少量 token），完整正文经 `/rules` 命令或
+     * `load_rule` 工具显式加载（不依赖 D4 SOP 实现，仅共享形态约定）。
+     */
+    private inner class RulesSource : PromptSource {
+        override fun build(ctx: AgentContext): String? {
+            if (ctx.projectRoot.isBlank()) return null
+            val all = runCatching {
+                ruleRegistry.resident(ctx.projectRoot) + ruleRegistry.moduleRules(ctx.projectRoot)
+            }.getOrNull() ?: return null
+            val sorted = all.sortedByDescending { it.priority }
+            if (sorted.isEmpty()) return null
+            return buildString {
+                append("【分层规则摘要】\n```\n")
+                sorted.forEachIndexed { index, rule ->
+                    if (index > 0) append('\n')
+                    append("- ${rule.name}（${rule.layer.name}）: ${rule.summary}")
+                }
+                append("\n```\n完整规则正文用 /rules 命令或 load_rule 工具显式加载。")
+            }
+        }
+    }
+
+    /**
+     * SOP 清单摘要注入（D4-3，importance=P1 常规，对齐 norm-chain-design.md §3.2）：
+     *
+     * 全量常驻注入 SOP 清单摘要（名称 + whenToUse 一句话，不做 mode 过滤，6 条摘要很短），
+     * 走 3.1.2 注入预算裁剪（超预算先裁 P2 → P1）。摘要/正文两级形态（D4-4）：
+     * 常驻只注入摘要，完整编号步骤正文经 `loadSop` 工具显式加载。
+     */
+    private inner class SopSource : PromptSource {
+        /** sop_summary 子开关（D4-3，默认开）：buildStepInjections 每轮按开关设置后 build。 */
+        @Volatile private var summaryEnabled = true
+
+        fun setSummaryEnabled(enabled: Boolean) {
+            summaryEnabled = enabled
+        }
+
+        override fun build(ctx: AgentContext): String? {
+            if (!summaryEnabled) return null
+            val all = runCatching { sopRegistry.all() }.getOrNull() ?: return null
+            if (all.isEmpty()) return null
+            return buildString {
+                append("【SOP 清单】\n```\n")
+                all.forEachIndexed { index, sop ->
+                    if (index > 0) append('\n')
+                    append("- ${sop.name}: ${sop.whenToUse}")
+                }
+                append("\n```\n完整编号步骤用 loadSop 工具显式加载。")
+            }
+        }
+    }
+
     // 会话级别的快照缓存 (Baseline & Snapshot)
     data class SessionSnapshot(
         val lastWorkspaceContext: String = ""
@@ -216,6 +284,8 @@ class SystemPromptProvider @Inject constructor(
     private val projectRuleSource = ProjectRuleSource()
     private val workspaceSource = WorkspaceSource()
     private val currentTimeSource = CurrentTimeSource()
+    private val rulesSource = RulesSource()
+    private val sopSource = SopSource()
 
     fun build(agentContext: AgentContext): String {
         // 1. 获取各个 Source 的基线快照。
@@ -285,9 +355,12 @@ class SystemPromptProvider @Inject constructor(
     private val stepAssembler = StepInjectionAssembler()
 
     /**
-     * step 前注入 8 Source 一次登记（D1-1）：
+     * step 前注入 Source 一次登记（D1-1 + D3-2 追加分层规则摘要 + D4-3 追加 SOP 清单摘要）：
      * 顺序（审计定稿，理解优先）：goal(P0) → 问判注入(P1) → 行为模式(P1) → plan-pending(P1)
-     * → playbook-stage(P1) → GoalAdjustEvent(P1) → GoalStale(P2) → loop-advisory(P2)。
+     * → playbook-stage(P1) → GoalAdjustEvent(P1) → 分层规则摘要(P1) → SOP 清单摘要(P1)
+     * → GoalStale(P2) → loop-advisory(P2)。
+     * 分层规则摘要插在 P1 组末尾（order 6）、SOP 清单摘要紧随其后（order 7），
+     * 不扰动既有八源排序；预算裁剪仍先裁 P2 → 再裁 P1。
      */
     private val stepSources: List<StepSource> = listOf(
         StepSource(goalHintSource, StepInjectionAssembler.Importance.P0, 0),
@@ -296,8 +369,10 @@ class SystemPromptProvider @Inject constructor(
         StepSource(planPendingHintSource, StepInjectionAssembler.Importance.P1, 3),
         StepSource(playbookStageSource, StepInjectionAssembler.Importance.P1, 4),
         StepSource(goalAdjustEventSource, StepInjectionAssembler.Importance.P1, 5),
-        StepSource(goalStaleSource, StepInjectionAssembler.Importance.P2, 6),
-        StepSource(loopAdvisorySource, StepInjectionAssembler.Importance.P2, 7)
+        StepSource(rulesSource, StepInjectionAssembler.Importance.P1, 6),
+        StepSource(sopSource, StepInjectionAssembler.Importance.P1, 7),
+        StepSource(goalStaleSource, StepInjectionAssembler.Importance.P2, 8),
+        StepSource(loopAdvisorySource, StepInjectionAssembler.Importance.P2, 9)
     ).sortedBy { it.order }
 
     /** 喂入当前任务目标（workflow 每轮 CallLlm 前调用；null 清除）。 */
@@ -328,8 +403,12 @@ class SystemPromptProvider @Inject constructor(
      * 组装 step 前注入块（D1-1/2）：依次 build 8 个已登记 Source → 交给 [StepInjectionAssembler]
      * 做八源排序 + 预算裁剪 → 拼接。无可注入内容时返回 null（调用方跳过追加）。
      * 单个 Source build 异常静默降级（返回 null，不阻断注入链）。
+     *
+     * D4-3：每轮先按 sop_summary 子开关（总开关 && 子开关）设置 SOP 摘要注入开关；
+     * 该子开关只影响 SOP 摘要注入，loadSop 工具取正文不受影响。
      */
-    fun buildStepInjections(ctx: AgentContext): String? {
+    suspend fun buildStepInjections(ctx: AgentContext): String? {
+        sopSource.setSummaryEnabled(normFlowSettingsRepository.isSopSummaryActive())
         val entries = stepSources.mapNotNull { step ->
             val text = try {
                 step.source.build(ctx)

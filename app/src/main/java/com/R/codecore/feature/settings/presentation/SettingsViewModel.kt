@@ -209,6 +209,13 @@ class SettingsViewModel @Inject constructor(
     private val _toolGuardEnabled = MutableStateFlow(true)
     val toolGuardEnabled: StateFlow<Boolean> = _toolGuardEnabled.asStateFlow()
 
+    // D2-2/D2-4 规范流程子开关：推理预算 / 用量卡片（默认开，保持现有行为）。
+    private val _reasoningBudgetEnabled = MutableStateFlow(true)
+    val reasoningBudgetEnabled: StateFlow<Boolean> = _reasoningBudgetEnabled.asStateFlow()
+
+    private val _usageCardEnabled = MutableStateFlow(true)
+    val usageCardEnabled: StateFlow<Boolean> = _usageCardEnabled.asStateFlow()
+
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
@@ -415,6 +422,18 @@ class SettingsViewModel @Inject constructor(
             launch {
                 normFlowSettingsRepository.toolGuardEnabledFlow.collectLatest {
                     _toolGuardEnabled.value = it
+                }
+            }
+
+            launch {
+                normFlowSettingsRepository.reasoningBudgetEnabledFlow.collectLatest {
+                    _reasoningBudgetEnabled.value = it
+                }
+            }
+
+            launch {
+                normFlowSettingsRepository.usageCardEnabledFlow.collectLatest {
+                    _usageCardEnabled.value = it
                 }
             }
 
@@ -914,6 +933,19 @@ class SettingsViewModel @Inject constructor(
     fun setToolGuardEnabled(enabled: Boolean) {
         viewModelScope.launch {
             normFlowSettingsRepository.setToolGuardEnabled(enabled)
+        }
+    }
+
+    // D2-2/D2-4 规范流程子开关持久化（workflow 运行期读同一 repository）。
+    fun setReasoningBudgetEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            normFlowSettingsRepository.setReasoningBudgetEnabled(enabled)
+        }
+    }
+
+    fun setUsageCardEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            normFlowSettingsRepository.setUsageCardEnabled(enabled)
         }
     }
 

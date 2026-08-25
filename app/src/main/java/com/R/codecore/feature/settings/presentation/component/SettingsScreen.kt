@@ -162,6 +162,9 @@ fun SettingsScreen(
     val normFlowEnabled by viewModel.normFlowEnabled.collectAsStateWithLifecycle()
     val stepInjectEnabled by viewModel.stepInjectEnabled.collectAsStateWithLifecycle()
     val toolGuardEnabled by viewModel.toolGuardEnabled.collectAsStateWithLifecycle()
+    // D2-2/D2-4 规范流程子开关：推理预算 / 用量卡片。
+    val reasoningBudgetEnabled by viewModel.reasoningBudgetEnabled.collectAsStateWithLifecycle()
+    val usageCardEnabled by viewModel.usageCardEnabled.collectAsStateWithLifecycle()
 
     var section by remember { mutableStateOf(SettingsSection.Menu) }
     var logReturnSection by remember { mutableStateOf(SettingsSection.Menu) }
@@ -396,9 +399,13 @@ fun SettingsScreen(
                     normFlowEnabled = normFlowEnabled,
                     stepInjectEnabled = stepInjectEnabled,
                     toolGuardEnabled = toolGuardEnabled,
+                    reasoningBudgetEnabled = reasoningBudgetEnabled,
+                    usageCardEnabled = usageCardEnabled,
                     onToggleNormFlow = { viewModel.setNormFlowEnabled(it) },
                     onToggleStepInject = { viewModel.setStepInjectEnabled(it) },
-                    onToggleToolGuard = { viewModel.setToolGuardEnabled(it) }
+                    onToggleToolGuard = { viewModel.setToolGuardEnabled(it) },
+                    onToggleReasoningBudget = { viewModel.setReasoningBudgetEnabled(it) },
+                    onToggleUsageCard = { viewModel.setUsageCardEnabled(it) }
                 )
                 SettingsSection.Backup -> {
                     val backupViewModel: com.R.codecore.feature.backup.presentation.BackupViewModel =

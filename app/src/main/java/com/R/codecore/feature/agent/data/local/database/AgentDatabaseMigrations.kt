@@ -4,9 +4,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * agent 域库 v1→v2 迁移（任务编排层新表）。
+ * agent 域库结构演进迁移（v1→v2 任务编排层新表；v2→v3 运行轨迹表）。
  *
- * 任务编排层（Goal/Plan/Job/Schedule 四表）是 v1 全新库后的第一次结构演进，
  * 全部为**新增表**（无列变更/无数据搬迁），迁移 SQL 与 Entity 定义逐列对齐，
  * 保证 Room TableInfo 校验通过（Migration didn't properly handle 防御）。
  *
@@ -106,6 +105,42 @@ object AgentDatabaseMigrations {
             )
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS `index_agent_schedules_enabled` ON `agent_schedules` (`enabled`)"
+            )
+        }
+    }
+
+    /**
+     * v2 → v3：新增 agent_trajectories 运行轨迹表（D2-3，对齐 norm-chain-design.md §3.8）。
+     *
+     * append-only 轨迹表：字段与 [com.R.codecore.feature.agent.data.local.entity.TrajectoryEntity]
+     * 逐列对齐（Room TableInfo 校验），索引仅 sessionId / taskId（查询走会话/任务分组，
+     * turnIndex 随 taskId 过滤，不单独建索引）。
+     */
+    val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // ── agent_trajectories（运行轨迹，append-only）──
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `agent_trajectories` (" +
+                        "`trajectoryId` TEXT NOT NULL, " +
+                        "`sessionId` TEXT NOT NULL, " +
+                        "`taskId` TEXT NOT NULL DEFAULT '', " +
+                        "`turnIndex` INTEGER NOT NULL DEFAULT 0, " +
+                        "`kind` TEXT NOT NULL, " +
+                        "`toolName` TEXT NOT NULL DEFAULT '', " +
+                        "`argsHash` TEXT NOT NULL DEFAULT '', " +
+                        "`resultSummary` TEXT NOT NULL DEFAULT '', " +
+                        "`isError` INTEGER NOT NULL DEFAULT 0, " +
+                        "`durationMs` INTEGER NOT NULL DEFAULT 0, " +
+                        "`tokensIn` INTEGER NOT NULL DEFAULT 0, " +
+                        "`tokensOut` INTEGER NOT NULL DEFAULT 0, " +
+                        "`ts` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`trajectoryId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_trajectories_sessionId` ON `agent_trajectories` (`sessionId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_trajectories_taskId` ON `agent_trajectories` (`taskId`)"
             )
         }
     }

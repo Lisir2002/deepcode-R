@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# pre-commit hook：校验「功能模块 ↔ 模块文档」一一对应（docs/modules 同步纪律）。
-# 任一 feature/<module> 缺少 docs/modules/<module>.md，或存在无对应模块的孤儿文档，
-# 都会打印提示并阻断提交；可用 `git commit --no-verify` 跳过。
+# pre-commit hook：校验「功能模块 ↔ 模块文档」一一对应（docs/modules 同步纪律）+ Spec 规范驱动预检。
+# 1) docs/modules 同步：任一 feature/<module> 缺少 docs/modules/<module>.md，或存在无对应模块的孤儿文档，
+#    都会打印提示并阻断提交；可用 `git commit --no-verify` 跳过。
+# 2) Spec 预检：委托 .githooks/spec-check.sh（配套性触发 + 评审状态行校验 + SOP 同步提示）。
 #
 # 启用：仓库根执行 `git config core.hooksPath .githooks`
 # 关闭：`git config --unset core.hooksPath`
@@ -44,12 +45,20 @@ if [[ -d "$DOCS_DIR" ]]; then
   done
 fi
 
+# 3) Spec 规范驱动预检（配套性 + 评审状态行 + SOP 同步提示，委托 spec-check.sh）
+if [[ -x "$ROOT/.githooks/spec-check.sh" ]]; then
+  "$ROOT/.githooks/spec-check.sh" || errors=$((errors+1))
+else
+  echo "⚠️  spec-check.sh 缺失或不可执行：.githooks/spec-check.sh（Spec 预检未运行）" >&2
+fi
+
 if (( errors > 0 )); then
   cat >&2 <<EOF
 
-模块文档同步纪律（见 AGENTS.md「资产同步纪律」）：
+模块文档同步纪律 + Spec 规范驱动（见 AGENTS.md「资产同步纪律」）：
   - 功能模块代码变更 → 同步更新 docs/modules/<module>.md
   - 新增 feature 模块 → 实时新建 docs/modules/<module>.md
+  - 新增源码/模块 → 先出设计文档 docs/plan-docs/*-design.md 并标记评审状态
 
 跳过校验（紧急情况）：git commit --no-verify ...
 EOF

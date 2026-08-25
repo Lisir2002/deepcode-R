@@ -66,8 +66,8 @@ class SessionUseCase @Inject constructor(
      * DB 侧单事务原子执行：删消息 + 级联清理全部带 sessionId 的关联表 + 删会话，
      * 中途失败整体回滚，不留孤儿数据。
      *
-     * 级联清理覆盖 9 张关联表（设计文档 chat-session-list-refactor-design C2）：
-     * todo / hunk / 模式切换历史 / 技能会话态 / 唤醒队列(该会话行) / 任务编排 4 表。
+     * 级联清理覆盖 10 张关联表（设计文档 chat-session-list-refactor-design C2 + D2-3 轨迹表）：
+     * todo / hunk / 模式切换历史 / 技能会话态 / 唤醒队列(该会话行) / 任务编排 4 表 / 运行轨迹表。
      * 审计类（zth_*、hallucination_fuses）与全局项（wake_queue 空 session）明确保留。
      */
     suspend fun deleteSession(id: String): String {
@@ -82,6 +82,7 @@ class SessionUseCase @Inject constructor(
             agentDatabase.planDao().deleteBySession(id)
             agentDatabase.jobDao().deleteBySession(id)
             agentDatabase.scheduleDao().deleteBySession(id)
+            agentDatabase.trajectoryDao().deleteBySession(id)
             chatSessionDao.delete(id)
         }
         return id

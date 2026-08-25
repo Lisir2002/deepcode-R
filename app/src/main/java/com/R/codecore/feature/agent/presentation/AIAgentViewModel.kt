@@ -52,6 +52,7 @@ import com.R.codecore.feature.agent.domain.command.SlashCommandRegistry
 import com.R.codecore.feature.agent.domain.command.SlashCommandHandler
 import com.R.codecore.feature.agent.domain.input.BehaviorModeManager
 import com.R.codecore.feature.agent.domain.prompt.AgentAssetRegistry
+import com.R.codecore.feature.agent.domain.rule.RuleRegistry
 import com.R.codecore.feature.agent.presentation.AgentAttachment
 import com.R.codecore.feature.agent.presentation.component.formatTokenCount
 import com.R.codecore.feature.agent.presentation.component.parseEnvironmentComponents
@@ -106,6 +107,8 @@ class AIAgentViewModel @Inject constructor(
     private val agentAssetRegistry: AgentAssetRegistry,
     /** 行为模式会话级状态（D0-6）：/mode 命令切换/解除会话级锁定。 */
     private val behaviorModeManager: BehaviorModeManager,
+    /** 分层规则注册表（D3-1）：/rules 命令列出/加载四级规则资产。 */
+    private val ruleRegistry: RuleRegistry,
     /** 定时提醒调度循环：会话创建后注册到点投递回调（DSH schedule）。 */
     private val scheduleScheduler: com.R.codecore.feature.agent.domain.schedule.ScheduleScheduler,
     @param:ApplicationContext private val context: Context
@@ -1056,6 +1059,36 @@ class AIAgentViewModel @Inject constructor(
                         // 定时提醒到点由调度循环经 enqueueAgentRequest 直接注入会话（不走 workflow 事件流），
                         // 本分支仅作穷举兜底（workflow 不产出该事件）。
                     }
+                    is AgentEvent.TurnUsage -> {
+                        // 用量卡片（D2-4）：回合结束展示本回合增量 + 会话累计，仅 token 不估成本。
+                        // 落库为轻量工具卡片（toolName=usage），Room Flow 自动驱动 UI 渲染。
+                        setStreamingText(sessionId, null)
+                        setStreamingReasoning(sessionId, null)
+                        val msgId = "usage_${event.taskId}_${System.nanoTime()}"
+                        val turnText = context.getString(
+                            R.string.agent_usage_turn,
+                            event.turn.tokensIn,
+                            event.turn.tokensOut,
+                            event.turn.totalTokens,
+                            event.turn.toolCalls,
+                            event.turn.durationMs
+                        )
+                        val sessionText = context.getString(
+                            R.string.agent_usage_session,
+                            event.session.tokensIn + event.session.tokensOut,
+                            event.session.count
+                        )
+                        messagePersistenceUseCase.persist(
+                            sessionId,
+                            MessageRole.TOOL,
+                            turnText,
+                            id = msgId,
+                            taskId = taskId,
+                            toolName = "usage",
+                            toolArgs = sessionText,
+                            isError = false
+                        )
+                    }
                 }
             }
 
@@ -1355,6 +1388,53 @@ class AIAgentViewModel @Inject constructor(
         viewModelScope.launch {
             sessionUseCase.touch(sid, messagePersistenceUseCase.nextTimestamp())
             messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, table.trimEnd(), isCompacted = true)
+        }
+    }
+
+    /** /rules —— 列出全部分层规则（D3-3）：名称 + 层级 + 摘要清单，结果以 AI 气泡输出。 */
+    override fun showRules() {
+        val sid = _currentSessionId.value ?: return
+        val projectRoot = _currentWorkspace.value
+        val rules = if (projectRoot.isBlank()) emptyList() else ruleRegistry.all(projectRoot)
+        val headerName = context.getString(R.string.agent_rules_header_col_name)
+        val headerLayer = context.getString(R.string.agent_rules_header_col_layer)
+        val headerSummary = context.getString(R.string.agent_rules_header_col_summary)
+        val table = buildString {
+            appendLine("| $headerName | $headerLayer | $headerSummary |")
+            appendLine("|---|---|---|")
+            if (rules.isEmpty()) {
+                appendLine(context.getString(R.string.agent_rules_empty))
+            } else {
+                rules.sortedByDescending { it.priority }.forEach { rule ->
+                    appendLine("| ${escapeMd(rule.name)} | ${rule.layer.name} | ${escapeMd(rule.summary)} |")
+                }
+            }
+            appendLine("")
+            appendLine(context.getString(R.string.agent_rules_usage))
+        }
+        viewModelScope.launch {
+            sessionUseCase.touch(sid, messagePersistenceUseCase.nextTimestamp())
+            messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, table.trimEnd(), isCompacted = true)
+        }
+    }
+
+    /** /rules <name> —— 加载指定分层规则的完整正文（D3-3）：找不到时给出可用的规则清单。 */
+    override fun showRule(name: String) {
+        val sid = _currentSessionId.value ?: return
+        val projectRoot = _currentWorkspace.value
+        val message = if (projectRoot.isBlank()) {
+            context.getString(R.string.agent_rules_not_found, name)
+        } else {
+            val rule = ruleRegistry.findByName(projectRoot, name)
+            if (rule != null) {
+                "【规则：${rule.name}（${rule.layer.name}）】\n${rule.body}"
+            } else {
+                context.getString(R.string.agent_rules_not_found, name)
+            }
+        }
+        viewModelScope.launch {
+            sessionUseCase.touch(sid, messagePersistenceUseCase.nextTimestamp())
+            messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, message, isCompacted = true)
         }
     }
 

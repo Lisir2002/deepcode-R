@@ -23,6 +23,7 @@ import com.R.codecore.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
 import com.R.codecore.feature.agent.data.local.dao.SkillConversationStateDao
 import com.R.codecore.feature.agent.data.local.dao.SkillStateDao
 import com.R.codecore.feature.agent.data.local.dao.TodoItemDao
+import com.R.codecore.feature.agent.data.local.dao.TrajectoryDao
 import com.R.codecore.feature.agent.data.local.dao.UserConfirmedSentinelDao
 import com.R.codecore.feature.agent.data.local.dao.WakeQueueDao
 import com.R.codecore.feature.agent.data.local.dao.ZthTelemetryEventDao
@@ -80,7 +81,8 @@ object DatabaseModule {
             context,
             AgentDatabase::class.java,
             AGENT_DB_NAME,
-            AgentDatabaseMigrations.MIGRATION_1_2
+            AgentDatabaseMigrations.MIGRATION_1_2,
+            AgentDatabaseMigrations.MIGRATION_2_3
         )
     }
 
@@ -239,6 +241,11 @@ object DatabaseModule {
     @Singleton
     fun provideScheduleDao(database: AgentDatabase): ScheduleDao =
         database.scheduleDao()
+
+    @Provides
+    @Singleton
+    fun provideTrajectoryDao(database: AgentDatabase): TrajectoryDao =
+        database.trajectoryDao()
 
     // ══════════════════════════ settings 域 DAO ══════════════════════════
 

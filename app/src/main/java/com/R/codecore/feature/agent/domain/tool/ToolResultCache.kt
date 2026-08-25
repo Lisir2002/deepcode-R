@@ -72,6 +72,12 @@ class ToolResultCache {
     /** 读取已记录的文件 mtime（D1-4 文件观察纪律：null = 未观察过，需先 readFile）。 */
     fun fileMtime(path: String): Long? = fileMtimes[path]
 
+    /**
+     * 已触碰文件路径集合（D3-2 模块命中判断）：文件观察纪律记录的 path → mtime 键集，
+     * 供分层规则注册表推导「本会话/任务是否涉及某 feature/<module>/ 目录」。
+     */
+    fun touchedPaths(): Set<String> = fileMtimes.keys
+
     // ---------- 键构造 ----------
 
     /**

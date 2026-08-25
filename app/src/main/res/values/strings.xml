@@ -92,6 +92,10 @@
     <string name="settings_norm_flow_step_inject_desc">每轮进入模型前的上下文注入纪律</string>
     <string name="settings_norm_flow_tool_guard">工具护栏</string>
     <string name="settings_norm_flow_tool_guard_desc">工具执行护栏链与文件观察纪律</string>
+    <string name="settings_norm_flow_reasoning_budget">推理预算</string>
+    <string name="settings_norm_flow_reasoning_budget_desc">开启后透传每会话思考强度给模型，保持思维链连续</string>
+    <string name="settings_norm_flow_usage_card">用量卡片</string>
+    <string name="settings_norm_flow_usage_card_desc">每回合结束展示本回合增量与会话累计（仅 token）</string>
     <string name="settings_backup_subtitle">加密导出/导入配置、聊天历史与凭据</string>
     <string name="settings_about_subtitle">核心组件 · 使用统计 · 版本检查</string>
 
@@ -247,6 +251,8 @@
     <string name="agent_goal_status_active">目标进行中</string>
     <string name="agent_goal_status_done">目标已完成</string>
     <string name="agent_goal_status_abandoned">目标已放弃</string>
+    <string name="agent_usage_turn">本回合：输入 %1$d / 输出 %2$d / 合计 %3$d tokens · %4$d 次工具调用 · %5$d ms</string>
+    <string name="agent_usage_session">会话累计：%1$d tokens（%2$d 条轨迹）· 实际费用依账单为准</string>
     <string name="agent_schedule_fired_prefix">【定时提醒】</string>
     <string name="agent_context_compacted">上下文已压缩</string>
     <string name="agent_context_no_compaction">当前上下文无需压缩（消息过少）</string>
@@ -266,6 +272,12 @@
     <string name="agent_mode_ok">已切换行为模式：%1$s（锁定至再次切换或 /mode default）</string>
     <string name="agent_mode_reset">已恢复默认行为模式（按输入自动判定）</string>
     <string name="agent_mode_invalid">无效行为模式：%1$s（可选 design / execute / research / chat / default）</string>
+    <string name="agent_rules_header_col_name">规则名称</string>
+    <string name="agent_rules_header_col_layer">层级</string>
+    <string name="agent_rules_header_col_summary">摘要</string>
+    <string name="agent_rules_empty">| （无） | 暂无分层规则资产，请确认 global-rules.md / workspace-AGENTS.md / feature 模块 AGENTS.md 是否存在 |</string>
+    <string name="agent_rules_usage">用法：发送 /rules &lt;name&gt; 加载该规则完整正文</string>
+    <string name="agent_rules_not_found">未找到规则「%1$s」，可用 /rules 查看全部规则清单</string>
 
     <!-- About -->
     <string name="about_version">版本</string>

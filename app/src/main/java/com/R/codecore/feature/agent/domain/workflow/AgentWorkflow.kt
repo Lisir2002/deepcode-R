@@ -88,6 +88,14 @@ sealed class AgentEvent {
         val prompt: String,
         val sessionId: String?
     ) : AgentEvent()
+
+    /** 用量卡片（D2-4，对齐 norm-chain-design.md §3.8.4）：本回合（taskId 分组）增量 + 会话累计，
+     *  仅展示 token 不估成本。由 workflow 在回合结束时从轨迹表聚合推送；[taskId] 供 UI 定位所属任务组。 */
+    data class TurnUsage(
+        val taskId: String,
+        val turn: com.R.codecore.feature.agent.domain.trajectory.TurnUsage,
+        val session: com.R.codecore.feature.agent.domain.trajectory.SessionUsage
+    ) : AgentEvent()
 }
 
 interface AgentWorkflow {

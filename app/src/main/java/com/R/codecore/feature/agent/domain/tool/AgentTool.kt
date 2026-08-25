@@ -32,6 +32,16 @@ fun ToolResult.toTransportString(): String {
 }
 
 /**
+ * D2-3 轨迹消费辅助：把 [toTransportString] 序列化的传输串解析回 [ToolResult]，
+ * 供 workflow 在工具执行完成时把结果喂给轨迹摘要提取器（同一 Json 配置往返，保证解析一致）。
+ * 解析失败兜底为 Error（轨迹仍可记录失败标记，不阻断主流程）。
+ */
+fun String.toToolResult(): ToolResult {
+    return runCatching { ToolResultTransportJson.decodeFromString<ToolResult>(this) }
+        .getOrElse { ToolResult.Error("轨迹摘要解析失败: ${take(80)}", "TRAJECTORY_PARSE_FAILED") }
+}
+
+/**
  * L3 错误分类：驱动调度器自动重试与用户介入决策。
  * 现有错误码按前缀推断归类（MISSING_*→INVALID_ARGS、FILE_NOT_FOUND→NOT_FOUND 等），
  * 工具也可在 [ToolResult.Error] 中显式声明 errorClass。

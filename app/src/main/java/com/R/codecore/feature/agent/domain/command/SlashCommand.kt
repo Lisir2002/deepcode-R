@@ -56,6 +56,16 @@ interface SlashCommandContext {
     fun switchBehaviorMode(mode: String)
 
     /**
+     * 列出全部分层规则（`/rules`，D3-3）：名称 + 层级 + 摘要清单，结果以 AI 气泡输出。
+     */
+    fun showRules()
+
+    /**
+     * 加载指定分层规则的完整正文（`/rules <name>`，D3-3）：找不到时给出可用的规则清单。
+     */
+    fun showRule(name: String)
+
+    /**
      * 把一段文本作为用户消息送入 Agent workflow（声明式命令展开用，方向 B1）。
      * 由 [com.R.codecore.feature.agent.domain.ext.ExtensionCommand] 渲染正文后调用：
      * 落库为用户消息 → 驱动一轮 Agent 循环，等价于用户在输入框直接发送该文本。

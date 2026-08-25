@@ -31,4 +31,8 @@ abstract class SlashCommandModule {
     @Binds
     @IntoSet
     abstract fun bindModeCommandHandler(handler: ModeCommandHandler): SlashCommandHandler
+
+    @Binds
+    @IntoSet
+    abstract fun bindRulesCommandHandler(handler: RulesCommandHandler): SlashCommandHandler
 }
