@@ -244,14 +244,30 @@
    - **失配检测粒度**：语义相似度——规则层先轻量筛"疑似失配"（goal 关键词不命中且非澄清），仅在疑似时调 LLM 判相关度（输出 0-1 / yes-no），控制成本（复用现有 provider LLM 调用；项目无 embedding，不做向量）。
    - **提醒通道**：新建 `GoalStaleSource`（importance=P2 可裁剪，独立开关），step 前注入"当前目标可能已过期"提醒；连续 N 轮（**默认 2，可配置**）触发，排除澄清轮。
    - **准则载体**：`should_update_goal` 判定准则写入 `assets/prompts/`（"用户输入与当前目标冲突 / 扩展 / 缩小 / 任务完成 → 应更新 / 新建 / 完成目标"），**资产 + 代码兜底**（资产缺失时用代码内置常量）。
-   - **反馈深度**：完整事件闭环（深入讨论定稿，六决策点）——
-     - **触发范围**：关键工具白名单（build/test/run_code/execute 等有明确成败的长任务类工具），失败/异常结果优先触发；成功结果仅在"任务完成迹象"时触发。
-     - **事件模型**：丰富字段集 `GoalAdjustEvent`——`eventType` + `toolName` + `resultState`（SUCCESS/FAILED/PARTIAL）+ `candidateAction`（CONTINUE/UPDATE/COMPLETE/ABANDON）+ `goalId` + `confidence` + `source`。
-     - **注入链路**：事件入队列，step 前统一注入（新事件优先、未消费保留），importance=**P1**（执行反馈高于失配提醒 P2），受注入预算裁剪。
-     - **双信号协调**：事件提醒（执行反馈，P1）与 `GoalStaleSource` 失配提醒（输入失配，P2）**独立并存 + 语义分工**（一来自工具结果、一来自用户输入），不冲突；预算裁剪先裁 P2。
-     - **防重复**：队列去重 + 消费标记（同 goalId+eventType+candidateAction 同源事件已注入未消费则不重复注入）+ 模型调 GoalService 变更目标后清空队列。
-     - **终止条件**：目标状态到终态（COMPLETED/ABANDONED）或切换新目标时，清空事件队列并停止产生。
-     - 状态机保持现状三态（不引入 NEEDS_UPDATE），迁移仍由模型按准则通过既有 `GoalService`/`PlanService` 完成。
+   - **反馈深度**：完整事件闭环，详见下文独立小节「持续意图维护闭环（`GoalAdjustEvent`）完整设计」。
+**持续意图维护闭环（`GoalAdjustEvent`）完整设计**（增量 6 的闭环展开，深入讨论定稿）：
+
+- **闭环全链路**：`判定 → 执行 → 工具结果 → GoalAdjustEvent 入队 → step 前注入（P1）→ 模型按 should_update_goal 准则 → GoalService 迁移 → 终态/切换清空`。
+- **`GoalAdjustEvent` 定义**（丰富字段集）：`eventType`（事件类型，如 GOAL_ADJUST_HINT / GOAL_COMPLETE_HINT）+ `toolName`（来源工具）+ `resultState`（SUCCESS / FAILED / PARTIAL）+ `candidateAction`（CONTINUE / UPDATE / COMPLETE / ABANDON）+ `goalId` + `confidence`（0-1）+ `source`（来源分类：关键工具 / 成功迹象）。
+- **六决策点**：
+  1. **触发范围**：关键工具白名单（build/test/run_code/execute 等有明确成败的长任务类工具），失败/异常结果优先触发；成功结果仅在"任务完成迹象"时触发。
+  2. **注入链路**：事件入队列，step 前统一注入（新事件优先、未消费保留），importance=**P1**（执行反馈高于失配提醒 P2），受 3.1.2 注入预算裁剪。
+  3. **双信号协调**：事件提醒（执行反馈，P1）与 `GoalStaleSource` 失配提醒（输入失配，P2）独立并存 + 语义分工（一来自工具结果、一来自用户输入），不冲突；预算裁剪先裁 P2。
+  4. **防重复**：队列去重 + 消费标记（同 goalId+eventType+candidateAction 同源事件已注入未消费则不重复注入）+ 模型调 GoalService 变更目标后清空队列。
+  5. **终止条件**：目标状态到终态（COMPLETED/ABANDONED）或切换新目标时，清空事件队列并停止产生。
+  6. **状态机约束**：保持现状三态（ACTIVE/COMPLETED/ABANDONED，不引入 NEEDS_UPDATE），迁移仍由模型按 `should_update_goal` 准则通过既有 `GoalService`/`PlanService` 完成。
+- **与既有机制集成点**：
+  - 事件产生挂在六段式工具流水线 post-execute 段（3.1.3），仅对白名单工具生成；
+  - 事件注入并入 3.1.2 step 前注入体系（作为 Source，P1）；
+  - 与 `GoalStaleSource`（P2，输入失配）互补，共同构成"目标维护双信号"；
+  - 目标迁移复用既有 `GoalService`（三态），无新状态、无新表。
+- **时序示例**（build 失败 → 目标更新）：
+  1. 模型执行 `executeCommand("gradlew :app:assembleDebug")` → 返回失败；
+  2. post-execute 段命中白名单 → 生成 `GoalAdjustEvent(eventType=GOAL_ADJUST_HINT, toolName=executeCommand, resultState=FAILED, candidateAction=UPDATE, goalId=…, confidence=0.8, source=build_failure)` 入队；
+  3. 下一轮 step 前，注入块含该事件（P1，"编译失败，当前目标是否需调整"）；
+  4. 模型按 `should_update_goal` 准则，调 `GoalService` 更新目标（如拆解子目标或修正路径）；
+  5. 目标变更 → 清空事件队列；继续执行新目标直至 COMPLETED/ABANDONED → 队列终止。
+
 7. **`!` 优先级 + `?` 咨询标记**（对齐 CC `!` 优先级标记，实现最轻）
    - `UserInputParser` 识别首 token `!`/`?` 标记：`marker ∈ FORCE / CONSULT / NONE`（`!`/`?` 后跟空格或直接接文本，前缀匹配，无歧义；有歧义按普通文本）。
    - `!`（立即执行）：注入"用户要求立即执行"纪律行，跳过**流程级**确认（如 plan 批准前奏）；**不绕过权限系统**（危险操作仍走权限审批）。
@@ -269,7 +285,7 @@
 
 | 批次 | 内容 | 验收 |
 |---|---|---|
-| 第一批 | 3.10 用户意图拆解（`UserInputParser` 解析 + 意图分类 + marker；问判注入；`intent_analyze` 判定平台五形态 + behaviorMode 路由；行为模式纪律行；`GoalStaleSource` 失配提醒；结构化澄清模板）⑨ 3.1 Agentic Workflow：① step 前上下文纪律（3 个 Source + 预算裁剪 + 四源排序）② 六段式流水线 guard 链（ToolGuard 接口 multibinding + FileObservationGuard + 文件观察硬拦截）③ 闭环核对（goal 注入 + TOOL_TIMEOUT 提示）④ 3.7 思维链路（空转软收敛 + reasoning_budget + 推理面板）⑤ 3.8 Trajectory 轨迹表（工具+轮次标记、全工具定制提取、消耗方聚合）⑥ 3.8 用量卡片（每回合 + 会话累计、仅 token）⑦ 3.9 分层规则纪律（四级拼接 + priority + 模块按需注入 + 摘要常驻/正文显式加载）⑧ 3.5 开关基础（总开关 + step_inject/tool_guard 子开关） | JVM 单测（注入/预算裁剪/排序/FS_NOT_OBSERVED/FS_STALE/豁免/空转收敛/推理参数/轨迹提取与聚合/用量一致性/规则分层与优先级/意图解析与判定路由/marker/行为模式/失配提醒/问判注入）、构建绿 |
+| 第一批 | 3.10 用户意图拆解（`UserInputParser` 解析 + 意图分类 + marker；问判注入；`intent_analyze` 判定平台五形态 + behaviorMode 路由；行为模式纪律行 + `/mode` 命令；`GoalStaleSource` 失配提醒 + `GoalAdjustEvent` 闭环；结构化澄清模板）⑨ 3.1 Agentic Workflow：① step 前上下文纪律（3 个 Source + 预算裁剪 + 四源排序）② 六段式流水线 guard 链（ToolGuard 接口 multibinding + FileObservationGuard + 文件观察硬拦截）③ 闭环核对（goal 注入 + TOOL_TIMEOUT 提示）④ 3.7 思维链路（空转软收敛 + reasoning_budget + 推理面板）⑤ 3.8 Trajectory 轨迹表（工具+轮次标记、全工具定制提取、消耗方聚合）⑥ 3.8 用量卡片（每回合 + 会话累计、仅 token）⑦ 3.9 分层规则纪律（四级拼接 + priority + 模块按需注入 + 摘要常驻/正文显式加载）⑧ 3.5 开关基础（总开关 + step_inject/tool_guard 子开关） | JVM 单测（注入/预算裁剪/排序/FS_NOT_OBSERVED/FS_STALE/豁免/空转收敛/推理参数/轨迹提取与聚合/用量一致性/规则分层与优先级/意图解析与判定路由/marker/行为模式/失配提醒/事件闭环/问判注入）、构建绿 |
 | 第二批 | 3.2 SOP（独立 `SopAsset` + `SopRegistry` + `loadSop` 工具 + 6 份资产 + 全量摘要注入 + sop_summary 子开关，与 3.9 摘要/正文两级形态共享） | 摘要注入/loadSop 取正文/单测解析 |
 | 第三批 | 3.3 Playbook + 3.6 子代理机制（kind + `PlaybookExecutor` + `SubAgentRunner` + `PlaybookRunEntity` + 4 工具 + 双入口 + 3 剧本 + 三档权限过滤 + spawn/fork 双 seed + 并行聚合 + 结论回写 + 阶段内写串行化 + 产物清单幂等 + async 后台 + playbook_auto 子开关） | 剧本推进/审批/中断/恢复/失败重试/ABORTED/子代理隔离与聚合/Fork 继承与回写/写串行化/重入幂等 |
 | 第四批 | 3.4 Spec（pre-commit 提示扩展：配套性 + 状态行校验 + SOP 同步提示 + README + prompts） | 提示生效、无误报 |
