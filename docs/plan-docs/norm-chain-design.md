@@ -92,6 +92,7 @@
 2. **触达方式**：摘要注入 + loadSop 按需取。`SystemPromptProvider` 全量常驻注入 SOP 清单摘要（名称 + whenToUse 一句话，**不做 mode 过滤**，6 条摘要很短）；新增轻量 `loadSop` 工具让模型按需取完整正文（复用 skill 的「清单 + loadSkill」模式）。
 3. **正文契约**：结构化编号步骤，每步含「操作 + 判定 + 产出/出错处理」，保证模型照做不跳步。
 4. **权威源与同步**：双权威源——10-50 对齐 `AGENTS.md`、60-ai-conduct 对齐 `prompts/`；每份 sop 头部注明来源文件；pre-commit 提示（warning 级、不阻断）：改 `AGENTS.md` → 提示检查 `sop/10-50` 同步；改 `prompts/` 下行为规则文件（精确映射表：15-project-rules、40-approach）→ 提示检查 `sop/60-ai-conduct` 同步，复用 3.4 批次的 spec-check.sh。
+5. **与 Skill 边界（审计定稿，双判据）**——主判据按**适用范围**：SOP = 仓库内固定操作流程（发版/迁移/提交等，绑项目语义，摘要常驻注入）；Skill = 通用可复用技能（用户可增删的技能中心）。辅助判据按**步骤化程度**：SOP 严格编号步骤（操作 + 判定 + 产出）；Skill 可非步骤化（知识/能力类）。双判据同时满足才归 SOP；prompts 加一句区分指引，避免与技能中心混淆。
 
 **改动面**：新增 `SopRegistry.kt` + `loadSop` 工具 + 6 份资产 + `SystemPromptProvider` 摘要注入 + `ContainerInstaller` 释放。
 **验收**：6 份 SOP 可加载注入摘要；JVM 单测解析 frontmatter（whenToUse/order/步骤编号）；loadSop 返回结构化正文。
@@ -109,7 +110,7 @@
 4. **状态机**：阶段 + 运行双状态机——运行级 `RUNNING/COMPLETED/ABORTED`；阶段级 `PENDING/ACTIVE/DONE/FAILED`。推进时当前 DONE→下一阶段 ACTIVE；失败当前 FAILED→运行 ABORTED；审批阻塞不改变阶段状态（awaitApproval 阻塞执行流）。
 5. **工具签名**：`playbook_start(name, context?)` 创建运行并返回首阶段描述；`playbook_advance(action=done|fail)` 默认作用于当前会话最近一次 RUNNING 运行（不传 runId），done 推进、fail 置失败中止；`playbook_resume` 恢复本会话最近一次 `INTERRUPTED` 运行并返回当前阶段；`playbook_retry` 从本会话最近一次 `ABORTED` 运行的 FAILED 阶段恢复（该阶段置回 ACTIVE、已完成阶段保留）；均返回下一阶段描述或完成提示。模型无需管理 runId。
 6. **持久化**：新增独立 `PlaybookRunEntity` 表（**结构定稿**：`playbookRunId`(PK) / `sessionId`(索引) / `playbookName` / `currentStageIndex` / `stageStatuses`(JSON) / `status` / `createdAtMs` / `updatedAtMs`，对齐 PlanEntity 风格），agent 库新增 v 迁移；`DataRegistry` 同步登记（备份自动覆盖）。**中断/恢复**：对齐 `JobEntity`——SessionStop hook 把该会话 RUNNING 运行置 `INTERRUPTED`；新会话需显式 `playbook_resume` 继续，`playbook_start` 覆盖旧运行。
-7. **触发入口**：斜杠命令 + 工具双入口——声明式 `/playbook <name> <描述>` 命令（复用 ExtensionCommand）供用户显式启动；`playbook_start` 工具供模型自主识别任务匹配时启动；两入口走同一 `PlaybookExecutor`。
+7. **触发入口**：斜杠命令 + 工具双入口——声明式 `/playbook <name> <描述>` 命令（复用 ExtensionCommand）供用户显式启动；`playbook_start` 工具供模型自主识别任务匹配时启动；两入口走同一 `PlaybookExecutor`。**匹配机制**（审计定稿）：playbook 名称 + 简介清单注入（或写入 `playbook_start` 工具描述），模型按名称**精确选择**；未命中回退 plan/goal（不猜着起剧本）。
 8. **失败处理**：阶段失败（模型声明失败 / 审批拒绝）→ PlaybookRun 置 `ABORTED`，向模型与用户反馈失败阶段 + 原因；**恢复双路径**（定稿）：模型可 `playbook_start` 从头重跑（覆盖旧 ABORTED 运行）或 `playbook_retry` 从 FAILED 阶段恢复（该阶段置回 ACTIVE、已完成阶段保留），或放弃。
 9. 内置 3 条剧本（贴项目语义）：`feature-dev`（发现→设计文档[联动Spec]→分支→实施→冒烟→单测→提交→合入）、`code-review`（diff→按类型派专项agent→聚合分级）、`bug-fix`（复现→根因→修复→回归→提交）。
 
@@ -173,7 +174,7 @@
 **背景**：对齐 Claude Code 查询循环（消息压缩/续轮判断/推理呈现）与 DSH（结构化超时/错误分类/循环 guard）。核实现状：压缩（`ContextCompactor` 锚定摘要 + 预取 + 独立压缩模型）与截断续写上限已成熟，**无需大改**；缺口在"空转检测软收敛"与"推理过程预算与呈现"。
 
 **设计**（深入讨论定稿）：
-1. **软性收敛：空转检测强制结束**——新增空转计数器：每轮统计"实质产出"（文件写 / 命令执行 / run_code 任一命中即清零）。连续 N 轮（默认 6）无实质产出 → 不再 advisory（区别于 LoopGuard），**强制结束回合**，把已做动作摘要 + 结束原因返回用户。位置：主循环 reduce 后、下一轮 CallLlm 前检查。与 `MAX_ITERATIONS`（50 硬上限）、`LoopGuardTracker`（3/5/8 advisory）三级防线并存——LoopGuard 提醒最早、空转收敛次之、MAX_ITERATIONS 兜底。与 3.1.3 文件观察联动：文件写动作（Edit/Write 命中）计为实质产出；纯读（readFile/search/list）不计。
+1. **软性收敛：空转检测强制结束**——新增空转计数器：每轮统计"实质产出"（文件写 / 命令执行 / run_code 任一命中即清零）。连续 N 轮（默认 6）无实质产出 → 不再 advisory（区别于 LoopGuard），**强制结束回合**，把已做动作摘要 + 结束原因返回用户。位置：主循环 reduce 后、下一轮 CallLlm 前检查。与 `MAX_ITERATIONS`（50 硬上限）、`LoopGuardTracker`（3/5/8 advisory）三级防线并存——LoopGuard 提醒最早、空转收敛次之、MAX_ITERATIONS 兜底。与 3.1.3 文件观察联动：文件写动作（Edit/Write 命中）计为实质产出；**产出性读动作也清零**（审计定稿——search→readFile 链式推进、拿到新信息的读算实质产出，仅反复重复读同类文件才累计空转），避免误伤合法只读调研。
 2. **推理过程：预算 + 流式呈现**——新增推理预算配置（`reasoning_budget`，默认 off；开启后按 provider 能力传 reasoning 参数）。呈现：模型返回 reasoning 时逐段**流式呈现**给用户（可折叠面板，复用现有 AssistantText reasoningAcc 通道增强），保持思维链可见。上下文：reasoning 累积进后续轮次（保持思维链连续），压缩时随 AssistantMessage 一并处理（`estimateTokens` 已计入 reasoning 长度）。对齐：Claude extended thinking 的 budget 控制；DeepSeek reasoning_content 的流式返回。
 3. **续轮判断（核对）**——现有"有工具调用则续轮、无则结束"符合查询循环语义，不新增状态机；仅把空转收敛（上）纳入续轮终止条件。
 
@@ -226,6 +227,7 @@
    - 模型每轮开始内省核对；**低置信（理解不确定 / 形态不确定）时主动调 `AskUserQuestion` 澄清**，不猜着做。问判注入作为 3.1.2 的一个 Source（importance=P1 常规，可被预算裁剪）。
 3. **语义层：`intent_analyze` 判定平台（五形态路由）**
    - 新增 `intent_analyze` 工具作为**意图判定平台**：模型在拆解前调用，工具内部跑通判定全流程后输出结构化结果（形态 + 参数 + 置信度），模型据其执行下一步。
+   - **调用门控与频控**（审计定稿）：仅 Parser 意图分类为 `task`/`command` 时建议模型调用 `intent_analyze`；`query`/`chat`/`file` 轻意图跳过（不调）；判定结果缓存至下一轮意图变化（同轮不重复调），控制成本。
    - 判定流程（三阶）：① **规则预分类**（代码层关键词/模式，如"每天/每周"→schedule、"后台跑/编译"→jobs、"修复 bug"→playbook 匹配、"多步骤大任务"→plan、"长期目标"→goal）② **判定准则核对**（prompts/ 资产写清五形态判定准则，模型据此确认/修正预分类）③ **模型兜底**（模型最终裁定形态；低置信回退 AskUserQuestion）。
    - 五形态路由输出：`goal`（建/更新 GoalService）、`plan`（起 PlanService + 批准流程）、`jobs`（JobTools 后台）、`schedule`（ScheduleTool 定时）、`playbook`（PlaybookExecutor 剧本，匹配 playbook 资产）、`none`（普通对话）。判定结果注入上下文，模型调对应形态的既有工具执行。
 4. **与既有机制关系**——不替代现有 goal/plan/jobs/schedule 工具，只在其上游加统一判定入口；`intent_analyze` 结果与 3.10.2 问判三问呼应（问判确认理解，判定平台定形态）。
@@ -241,7 +243,7 @@
    - **与 Spec（3.4）轻关联**：design 模式纪律行附带一句"若为新增/复杂改动，先出设计文档到 `docs/plan-docs/` 走 Spec 评审"，不强绑。
 6. **持续意图维护闭环**（对齐 DSH `determine_and_update_goal` + `should_update_goal` 准则，深入讨论定稿）
    - 判定不一次性：形态判定落 goal/plan 后，任务执行中**持续核对**"当前目标是否仍匹配用户意图"。
-   - **失配检测粒度**：语义相似度——规则层先轻量筛"疑似失配"（goal 关键词不命中且非澄清），仅在疑似时调 LLM 判相关度（输出 0-1 / yes-no），控制成本（复用现有 provider LLM 调用；项目无 embedding，不做向量）。
+   - **失配检测粒度**：语义相似度——规则层先轻量筛"疑似失配"（goal 关键词不命中且非澄清），仅在疑似时调 LLM 判相关度（输出 0-1 / yes-no），控制成本（复用现有 provider LLM 调用；项目无 embedding，不做向量）。**频控**（审计定稿）：同一 goal 的失配 LLM 确认每 N 轮（默认 10）最多 1 次。
    - **提醒通道**：新建 `GoalStaleSource`（importance=P2 可裁剪，独立开关），step 前注入"当前目标可能已过期"提醒；连续 N 轮（**默认 2，可配置**）触发，排除澄清轮。
    - **准则载体**：`should_update_goal` 判定准则写入 `assets/prompts/`（"用户输入与当前目标冲突 / 扩展 / 缩小 / 任务完成 → 应更新 / 新建 / 完成目标"），**资产 + 代码兜底**（资产缺失时用代码内置常量）。
    - **反馈深度**：完整事件闭环，详见下文独立小节「持续意图维护闭环（`GoalAdjustEvent`）完整设计」。
