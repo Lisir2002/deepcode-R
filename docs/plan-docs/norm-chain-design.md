@@ -160,8 +160,9 @@
 5. **防失控：预算感知 + 自动压缩**——子代理消耗计数对齐主 workflow 注入预算；接近预算时对子代理私有消息做**子代理级压缩**（复用 ContextCompactor 锚定摘要逻辑，适配纯内存上下文，不走 `agentMessageDao` 持久化）；实在不够才截断：强制结束子循环，已做动作摘要 + 截断原因返回主代理。
 6. **协调模式：多子代理并行**——阶段 `agents[]` 可声明多个子代理并行（如 code-review 同时派 review-agent + style-agent），各自独立循环，全部完成统一收结果（失败子代理标记 FAILED，不影响其它子代理）。并发调度：每子代理一个协程 `awaitAll` 聚合，结果按 agents 声明顺序稳定返回。
 7. **结果契约：结构化 JSON 聚合（canonical output）**——每个子代理结束，`PlaybookExecutor` 把动作摘要/产出物/结论/完成状态序列化为结构化 JSON 字段（对齐 DSH canonical output）；多子代理聚合为一个结果块返回主代理，主代理直接读结构化字段，无需二次解析。
+8. **Fork 变体：继承式子代理（深入讨论定稿）**——补齐"需要延续主上下文"的阶段场景。**seed 模式**：playbook frontmatter `agents[]` 每 agent 声明 `seed: spawn|fork`（缺省 spawn）；spawn=全新上下文（上 1-7 点），fork=阶段上下文继承。**Fork 继承范围**：主会话当前 goal/plan + 最近 N 条消息（约 20 条）+ 阶段目标与产物引用（文件路径清单），再叠加 agent 角色指令；避免把主会话全部历史/敏感内容带入。**结束语义**：与 spawn 同走统一回收（结构化 JSON 聚合），并额外把关键结论/产物引用写回 `PlaybookRun.stageStatuses`（如审查结论、修改文件清单），供后续阶段直接引用。
 
-**改动面**：`PlaybookExecutor` 内 `SubAgentRunner` + 子代理私有会话状态 + 三档权限过滤 + 子代理级压缩适配 + 后台投递；`AgentAsset` frontmatter `gates` 增权限档位。
+**改动面**：`PlaybookExecutor` 内 `SubAgentRunner` + 子代理私有会话状态 + 三档权限过滤 + 子代理级压缩适配 + 后台投递；`AgentAsset` frontmatter `gates` 增权限档位 + `seed` 字段（spawn|fork）。
 **验收**：code-review 剧本 review-agent 在 READ_ONLY 下只能读；多子代理并行结果稳定聚合；async 子代理可后台执行并投递结果；子代理上下文不污染主上下文（压缩/截断后主上下文无残留）。
 
 ### 3.7 思维链路：单轮循环推理纪律（深入设计）
@@ -178,13 +179,29 @@
 **改动面**：workflow 空转计数器 + 收敛注入；settings 新增 `reasoning_budget` 开关；provider 调用层传 reasoning 参数；UI 推理面板流式呈现。
 **验收**：JVM 单测——连续 6 轮纯读后强制收敛返回摘要；有写动作清零计数；reasoning 开启后模型响应含推理且累积进后续轮；默认 off 不改变现有行为。
 
+### 3.8 步骤结果汇总：Trajectory 运行轨迹 + 用量卡片（深入设计）
+
+**作用位置**：跨会话/任务的数据基建（对齐 DSH 全链路可观测 append-only 轨迹；Claude Code cost-tracker / `/usage` 用量展示）。
+
+**背景**：现有关键信息分散——`AgentMessageEntity`（消息级，含 toolName/toolArgs/isError/tokens，但缺结果摘要/耗时且压缩后 isCompacted 细节丢失）、`FileLogger`（日志级）、`zth_telemetry_events`（append-only 但语义绑定 zth 模块）。缺少一个**统一运行轨迹**作为"步骤结果汇总"的根基。
+
+**设计**（深入讨论定稿）：
+1. **独立轨迹表 `TrajectoryEntity`**（append-only）：`trajectoryId`(PK) / `sessionId`(索引) / `taskId` / `turnIndex` / `kind`(tool|turn|compaction|inject|error|timeout) / `toolName` / `argsHash` / `resultSummary` / `isError` / `durationMs` / `tokensIn` / `tokensOut` / `ts`。workflow 在每次工具执行完成时追加 tool 轨迹；在 turn 边界、压缩、goal/plan 注入、错误、超时时追加轻量标记（对齐 DSH 轨迹可回放完整"工作流"而不只"动作"）。**不受上下文压缩影响**（独立于 agent_messages，历史细节不丢失）。agent 库 v 迁移 + `DataRegistry` 登记（备份覆盖）。删除会话时级联清理。
+2. **结果摘要：全工具定制提取**——逐工具提取规则表：readFile 留路径+行数、run_code 留 stdout 尾部+exit code、git diff 留统计、Edit/Write 留目标文件+变更概要、其余通用截断（前 N 字符 + truncated 标记）。**规则表挂在 `ToolResultTypeRegistry`（L3 schema）上扩展**（新增"轨迹摘要提取器"），不另建第二套注册。
+3. **消费方**：① 3.7 强制收敛的"已做动作摘要"直接由轨迹聚合生成；② Playbook 阶段 DONE 时生成阶段轨迹总结（对齐 Fork 结论回写）；③ 审计回放（按 sessionId/taskId 查询完整轨迹）。
+4. **用量卡片（对齐 Claude Code `/usage` + cost-tracker）**——每回合结束在 UI 展示轻量用量卡片：主显**本回合增量**（输入/输出/总 token、耗时、工具调用数）+ 附一行**会话累计**；**仅展示 token 不估成本**（标"依账单为准"，避免本地估算误导）。数据源：轨迹表按 taskId/turnIndex 聚合（本回合）+ 按 sessionId 聚合（累计）。卡片可在设置关闭。
+5. **轨迹体积控制**——resultSummary 全工具截断控单条体积；`turn` 标记条数 ≤ 工具条数（轻量）；删除会话级联清理；可设保留条数上限（超出后仅删 turn 标记类）。
+
+**改动面**：新增 `TrajectoryEntity` + DAO + agent 库 v 迁移 + `DataRegistry` 登记；workflow 追加轨迹点（工具执行完成/轮次边界/压缩/注入/错误/超时）；`ToolResultTypeRegistry` 增轨迹摘要提取器；每回合用量卡片 UI + settings 开关。
+**验收**：JVM 单测——工具执行后轨迹有条目且 resultSummary 按规则提取；强制收敛摘要由轨迹聚合且含耗时/失败标记；用量卡片本回合+累计数字与轨迹聚合一致；删除会话级联清轨迹。
+
 ## 4. 集成与分期
 
 | 批次 | 内容 | 验收 |
 |---|---|---|
-| 第一批 | 3.1 Agentic Workflow：① step 前上下文纪律（3 个 Source + 预算裁剪 + 四源排序）② 六段式流水线 guard 链（ToolGuard 接口 multibinding + FileObservationGuard + 文件观察硬拦截）③ 闭环核对（goal 注入 + TOOL_TIMEOUT 提示）④ 3.7 思维链路（空转软收敛 + reasoning_budget + 推理面板）⑤ 3.5 开关基础（总开关 + step_inject/tool_guard 子开关） | JVM 单测（注入/预算裁剪/排序/FS_NOT_OBSERVED/FS_STALE/豁免/空转收敛/推理参数）、构建绿 |
+| 第一批 | 3.1 Agentic Workflow：① step 前上下文纪律（3 个 Source + 预算裁剪 + 四源排序）② 六段式流水线 guard 链（ToolGuard 接口 multibinding + FileObservationGuard + 文件观察硬拦截）③ 闭环核对（goal 注入 + TOOL_TIMEOUT 提示）④ 3.7 思维链路（空转软收敛 + reasoning_budget + 推理面板）⑤ 3.8 Trajectory 轨迹表（工具+轮次标记、全工具定制提取、消耗方聚合）⑥ 3.8 用量卡片（每回合 + 会话累计、仅 token）⑦ 3.5 开关基础（总开关 + step_inject/tool_guard 子开关） | JVM 单测（注入/预算裁剪/排序/FS_NOT_OBSERVED/FS_STALE/豁免/空转收敛/推理参数/轨迹提取与聚合/用量一致性）、构建绿 |
 | 第二批 | 3.2 SOP（独立 `SopAsset` + `SopRegistry` + `loadSop` 工具 + 6 份资产 + 全量摘要注入 + sop_summary 子开关） | 摘要注入/loadSop 取正文/单测解析 |
-| 第三批 | 3.3 Playbook + 3.6 子代理机制（kind + `PlaybookExecutor` + `SubAgentRunner` + `PlaybookRunEntity` + 4 工具 + 双入口 + 3 剧本 + 三档权限过滤 + 并行聚合 + async 后台 + playbook_auto 子开关） | 剧本推进/审批/中断/恢复/失败重试/ABORTED/子代理隔离与聚合 |
+| 第三批 | 3.3 Playbook + 3.6 子代理机制（kind + `PlaybookExecutor` + `SubAgentRunner` + `PlaybookRunEntity` + 4 工具 + 双入口 + 3 剧本 + 三档权限过滤 + spawn/fork 双 seed + 并行聚合 + 结论回写 + async 后台 + playbook_auto 子开关） | 剧本推进/审批/中断/恢复/失败重试/ABORTED/子代理隔离与聚合/Fork 继承与回写 |
 | 第四批 | 3.4 Spec（pre-commit 提示扩展：配套性 + 状态行校验 + SOP 同步提示 + README + prompts） | 提示生效、无误报 |
 
 编译型改动按 AGENTS.md 冒烟 `:app:assembleDebug`；push 前 `:app:testReleaseUnitTest`。
@@ -204,16 +221,20 @@
 | 多子代理并行结果冲突（同文件写） | WORKSPACE_WRITE/FULL 档位子代理对写操作加阶段内互斥（写锁），单测覆盖 |
 | 空转收敛误伤（模型在思考但未调工具） | 阈值 6 轮足够宽；收敛返回摘要可让用户续说，不丢已做动作 |
 | 推理预算增加 token 成本 | `reasoning_budget` 默认 off；开启时预算可调、可折叠呈现 |
+| 轨迹表随会话增长 | resultSummary 全工具截断；turn 标记轻量；删除会话级联清理；可设保留条数上限 |
+| 用量卡片每回合展示打扰 | 卡片轻量单行、可设置关闭；仅 token 不估成本无误导 |
+| Fork 子代理带入主上下文敏感信息 | 只继承 goal/plan + 最近 N 条 + 产物引用，不继承完整历史；缺省 spawn |
 | pre-commit 强制阻塞 | 提示 + `--no-verify` 逃生口，与 docs/modules 同策略 |
-| 新增表需备份覆盖 | `PlaybookRunEntity` 新增后 `DataRegistry` 同步登记（备份自动覆盖） |
+| 新增表需备份覆盖 | `PlaybookRunEntity`/`TrajectoryEntity` 新增后 `DataRegistry` 同步登记（备份自动覆盖） |
 
 ## 6. 核心判断
 
 四类规范流程分别作用在**对话循环 / 固定步骤 / 多阶段任务 / 变更治理**四个不同环节，各司其职、可独立落地、互不耦合。经逐机制深入讨论后，各自作用点已收敛为：
 
 - **Agentic Workflow**：① step 前上下文纪律（统一 Source + 混合标记 + 3 级 importance + 完整预算裁剪）② 六段式工具流水线（契约化六段 + 真实 ToolGuard 链，核心是文件观察硬拦截：mtime 版本 CAS + 新建豁免 + 仅 agent 文件工具链）③ 思维链路（空转软收敛三级防线 + 推理预算流式呈现）。
+- **步骤结果汇总**：Trajectory 轨迹表（工具+轮次标记、全工具定制提取、append-only 不受压缩影响）作为"已做动作摘要/阶段总结/审计"的单一数据源；每回合用量卡片（本回合增量 + 会话累计、仅 token）。
 - **SOP**：摘要常驻 + loadSop 按需取正文；结构化编号步骤；5 流程 + 60-ai-conduct；双权威源 + pre-commit 同步提示。
-- **Playbook**：模型声明完成 + `playbook_advance` 推进；独立 `PlaybookRunEntity` 持久化；斜杠命令 + 工具双入口；复用 `PlanApprovalManager` 审批；失败 ABORTED。阶段专项 agent 以**真子代理隔离上下文**执行——独立子循环、三档降权、预算感知压缩、多子代理并行、结构化 JSON 聚合。
+- **Playbook**：模型声明完成 + `playbook_advance` 推进；独立 `PlaybookRunEntity` 持久化；斜杠命令 + 工具双入口；复用 `PlanApprovalManager` 审批；失败 ABORTED。阶段专项 agent 以**真子代理隔离上下文**执行——独立子循环、三档降权、预算感知压缩、多子代理并行、结构化 JSON 聚合；`seed: spawn|fork` 双模式（fork 阶段上下文继承 + 结论回写 stageStatuses）。
 - **Spec**：pre-commit 提示（提示 + 逃生口）；配套性仅编译型改动触发；状态行存在 + 合法值校验。
 
-全部复用现有组件（`SystemPromptProvider` Source / `HookDispatcher` multibinding / `PlanApprovalManager` / `ExtensionCommand` / `DataRegistry`），无重框架、无破坏性重构。
+全部复用现有组件（`SystemPromptProvider` Source / `HookDispatcher` multibinding / `PlanApprovalManager` / `ExtensionCommand` / `DataRegistry` / `ToolResultTypeRegistry`），无重框架、无破坏性重构。
