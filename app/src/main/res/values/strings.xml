@@ -253,6 +253,9 @@
     <string name="agent_list_current">当前：%1$s</string>
     <string name="agent_list_current_main">主 agent（默认）</string>
     <string name="agent_list_usage">用法：发送 /agent &lt;name&gt; 切换；再次发送同一 name 恢复主 agent</string>
+    <string name="agent_mode_ok">已切换行为模式：%1$s（锁定至再次切换或 /mode default）</string>
+    <string name="agent_mode_reset">已恢复默认行为模式（按输入自动判定）</string>
+    <string name="agent_mode_invalid">无效行为模式：%1$s（可选 design / execute / research / chat / default）</string>
 
     <!-- About -->
     <string name="about_version">版本</string>

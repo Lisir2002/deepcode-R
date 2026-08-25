@@ -27,4 +27,8 @@ abstract class SlashCommandModule {
     @Binds
     @IntoSet
     abstract fun bindAgentCommandHandler(handler: AgentCommandHandler): SlashCommandHandler
+
+    @Binds
+    @IntoSet
+    abstract fun bindModeCommandHandler(handler: ModeCommandHandler): SlashCommandHandler
 }

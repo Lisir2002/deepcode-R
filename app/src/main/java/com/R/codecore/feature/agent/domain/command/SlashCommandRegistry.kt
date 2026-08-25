@@ -37,7 +37,37 @@ class SlashCommandRegistry @Inject constructor(
         return all.filter { it.trigger.startsWith(input) }
     }
 
+/**
+ * 命令匹配结果：前缀命中的命令 + 解析出的参数（D0 前缀 + 参数匹配）。
+ * 命令内部仍可用 [SlashCommandHandler.executeWithInput] 拿到原始输入自行解析。
+ */
+data class SlashCommandMatch(
+    val command: SlashCommandHandler,
+    /** 命令后第一个非空参数 token；无则空串。 */
+    val args: String,
+    /** 命令后的完整剩余文本（已 trim）。 */
+    val text: String
+)
+
     /** 完全匹配查找：发送时调用，命中返回对应 handler，否则 null。 */
     fun findExact(input: String): SlashCommandHandler? =
         all.firstOrNull { it.matches(input) }
+
+    /**
+     * 前缀 + 参数匹配：发送时解析斜杠命令（如 `/playbook start release`）。
+     *
+     * - 输入首个 token 恰等于某命令 [SlashCommandHandler.trigger] 即命中（兼容 [findExact]
+     *   的完全相等语义；无参数时 behavior 一致，args 为空串）；
+     * - 命中后剩余部分作为参数（args = 第一个 token，text = 完整剩余）。
+     * 无命令命中返回 null。
+     */
+    fun parseCommand(input: String): SlashCommandMatch? {
+        val trimmed = input.trim()
+        if (!trimmed.startsWith("/")) return null
+        val head = trimmed.substringBefore(' ').substringBefore('\n')
+        val command = all.firstOrNull { it.trigger == head } ?: return null
+        val rest = trimmed.removePrefix(head).trim()
+        val args = rest.substringBefore(' ').substringBefore('\n').takeIf { it.isNotEmpty() } ?: ""
+        return SlashCommandMatch(command, args, rest)
+    }
 }

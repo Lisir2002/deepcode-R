@@ -34,6 +34,7 @@ import com.R.codecore.feature.agent.domain.tool.ToolPermissionManager
 import com.R.codecore.feature.agent.domain.permission.ToolPermissionPolicyEngine
 import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ToolRegistry
+import com.R.codecore.feature.agent.domain.tool.intent.IntentAnalyzeTool
 import com.R.codecore.feature.agent.domain.tool.ToolOutputStore
 import com.R.codecore.feature.settings.data.remote.ModelMetadataService
 import com.R.codecore.feature.terminal.domain.DelegatingTerminalSessionProvider
@@ -221,6 +222,7 @@ object AgentModule {
         jobLogTool: com.R.codecore.feature.agent.domain.tool.job.JobLogTool,
         scheduleTool: com.R.codecore.feature.agent.domain.tool.schedule.ScheduleTool,
         planTool: com.R.codecore.feature.agent.domain.tool.plan.PlanTool,
+        intentAnalyzeTool: IntentAnalyzeTool,
         resultTypeRegistry: com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
     ): ToolRegistry {
         return ToolRegistry().apply {
@@ -280,6 +282,8 @@ object AgentModule {
             registerTool("schedule", scheduleTool)
             // ══ 计划协作（DSH plan + Claude Code Plan/Spec）：propose/get/approve/abandon + 每轮注入 pendingSelection
             registerTool("plan", planTool)
+            // ══ 用户意图判定平台（D0）：规则预分类五形态 + behaviorMode，Parser 门控（task/command）建议调用
+            registerTool("intent_analyze", intentAnalyzeTool)
         }
     }
 

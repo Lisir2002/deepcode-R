@@ -50,6 +50,12 @@ interface SlashCommandContext {
     fun switchAgent(name: String)
 
     /**
+     * 切换/解除行为模式（`/mode <design|execute|research|chat|default>`，D0-6）。
+     * `default` 解除会话级锁定，恢复按输入重判；结果以 AI 气泡输出。
+     */
+    fun switchBehaviorMode(mode: String)
+
+    /**
      * 把一段文本作为用户消息送入 Agent workflow（声明式命令展开用，方向 B1）。
      * 由 [com.R.codecore.feature.agent.domain.ext.ExtensionCommand] 渲染正文后调用：
      * 落库为用户消息 → 驱动一轮 Agent 循环，等价于用户在输入框直接发送该文本。

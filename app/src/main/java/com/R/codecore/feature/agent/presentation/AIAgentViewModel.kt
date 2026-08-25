@@ -50,6 +50,7 @@ import com.R.codecore.feature.backup.domain.BackupManager
 import com.R.codecore.feature.agent.domain.command.SlashCommandContext
 import com.R.codecore.feature.agent.domain.command.SlashCommandRegistry
 import com.R.codecore.feature.agent.domain.command.SlashCommandHandler
+import com.R.codecore.feature.agent.domain.input.BehaviorModeManager
 import com.R.codecore.feature.agent.domain.prompt.AgentAssetRegistry
 import com.R.codecore.feature.agent.presentation.AgentAttachment
 import com.R.codecore.feature.agent.presentation.component.formatTokenCount
@@ -103,6 +104,8 @@ class AIAgentViewModel @Inject constructor(
     private val backupManager: BackupManager,
     private val checkEnvironmentTool: CheckEnvironmentTool,
     private val agentAssetRegistry: AgentAssetRegistry,
+    /** 行为模式会话级状态（D0-6）：/mode 命令切换/解除会话级锁定。 */
+    private val behaviorModeManager: BehaviorModeManager,
     /** 定时提醒调度循环：会话创建后注册到点投递回调（DSH schedule）。 */
     private val scheduleScheduler: com.R.codecore.feature.agent.domain.schedule.ScheduleScheduler,
     @param:ApplicationContext private val context: Context
@@ -832,8 +835,9 @@ class AIAgentViewModel @Inject constructor(
         // skipCommandDispatch：声明式命令展开（sendAgentRequest）复用本方法时置位，
         // 跳过命令分流，避免展开正文再次命中命令导致递归。
         if (!skipCommandDispatch) {
-            slashCommandRegistry.findExact(request)?.let { command ->
-                runSlashCommand(command, request, sessionId)
+            // D0 前缀 + 参数匹配："/playbook start" 这类带参命令也能命中（命令内部自行解析参数）。
+            slashCommandRegistry.parseCommand(request)?.let { match ->
+                runSlashCommand(match.command, request, sessionId)
                 return@launch
             }
         }
@@ -1437,6 +1441,27 @@ class AIAgentViewModel @Inject constructor(
                     currentAgentIds[sid] = name
                     context.getString(R.string.agent_switch_ok, asset.name, asset.description)
                 }
+            }
+            messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, msg, isCompacted = true)
+        }
+    }
+
+    /**
+     * /mode <design|execute|research|chat|default> —— 切换/解除行为模式（D0-6）。
+     * 显式模式锁定到会话级覆盖；`default`/非法值解除锁定恢复按输入重判。结果以 AI 气泡输出。
+     */
+    override fun switchBehaviorMode(mode: String) {
+        val sid = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            val msg = when {
+                mode == BehaviorModeManager.MODE_DEFAULT ->
+                    context.getString(R.string.agent_mode_reset)
+                BehaviorModeManager.isValidMode(mode) -> {
+                    behaviorModeManager.setOverride(sid, mode)
+                    context.getString(R.string.agent_mode_ok, mode)
+                }
+                else ->
+                    context.getString(R.string.agent_mode_invalid, mode)
             }
             messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, msg, isCompacted = true)
         }

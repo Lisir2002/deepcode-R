@@ -7,23 +7,23 @@
 ## 1. 当前主线
 
 - **主设计域（D0–D6）设计已全部收敛**（含深度审计 13 项修订），任务已细化到**子任务级**（共 41 项，见 §2）。
-- 当前整体处于 📝 已设计待实施，尚未开始编码。
+- 当前整体处于 📝 已设计待实施，**D0（基座）已实施完成**，D1–D6 尚未开始编码。
 - 实施顺序：`D0 → D1 → D2 → D3 → D4 → D5 → D6`（D3 与 D4 互不依赖；D5 依赖 D2/D4 完成）。
 
 ## 2. 主设计域进度（子任务级）
 
-### D0 用户意图拆解（📝 | 前置：无（基座） | 后置：D1）
+### D0 用户意图拆解（✅ 已实施 | 前置：无（基座） | 后置：D1）
 
 | 子任务 | 内容（一行） | 章节 | 状态 |
 |---|---|---|---|
-| D0-1 | `UserInputParser`：结构化解析（command?/args/text）+ 意图分类（task/query/file/command/unknown）+ `!`/`?` marker 解析（FORCE/CONSULT/NONE） | §3.10 | ⬜ |
-| D0-2 | 斜杠命令改**前缀 + 参数匹配**（`/playbook start` 传参，复用 SlashCommandRegistry） | §3.10 | ⬜ |
-| D0-3 | `IntentAskSource`：意图问判三问注入（step 前 Source，P1，纳入 3.1.2 八源排序） | §3.10 / §3.1 | ⬜ |
-| D0-4 | 低置信**结构化澄清**：AskUserQuestion 选项化（自动触发+可跳过、动态 1-4 候选、已澄清防重复标记） | §3.10 | ⬜ |
-| D0-5 | `IntentAnalyzeTool` 判定平台：规则预分类 + 判定准则 + 模型兜底，输出五形态 + behaviorMode + 参数；**Parser 门控 + 频控**（task/command 才调、结果缓存） | §3.10 | ⬜ |
-| D0-6 | 行为模式切换：四档 behaviorMode + `BehaviorModeSource`（P1）+ guard 软提醒 + `/mode` 命令 + **plan 形态强制 design** | §3.10 | ⬜ |
-| D0-7 | 持续意图维护闭环：语义失配检测（规则疑似 + LLM 确认，同 goal 每 10 轮 ≤1 次）+ `GoalStaleSource`（P2）+ `should_update_goal` 准则 + `GoalAdjustEvent`（白名单+失败优先、丰富字段、step 前 P1 注入、去重消费、终态/切换清空） | §3.10 | ⬜ |
-| D0-8 | prompts/ 资产同步：五形态判定准则 + should_update_goal 准则 + 行为模式纪律 + `!`/`?` 说明 | §3.10 | ⬜ |
+| D0-1 | `UserInputParser`：结构化解析（command?/args/text）+ 意图分类（task/query/file/command/unknown）+ `!`/`?` marker 解析（FORCE/CONSULT/NONE） | §3.10 | ✅ |
+| D0-2 | 斜杠命令改**前缀 + 参数匹配**（`/playbook start` 传参，复用 SlashCommandRegistry） | §3.10 | ✅ |
+| D0-3 | `IntentAskSource`：意图问判三问注入（step 前 Source，P1，纳入 3.1.2 八源排序） | §3.10 / §3.1 | ✅ |
+| D0-4 | 低置信**结构化澄清**：AskUserQuestion 选项化（自动触发+可跳过、动态 1-4 候选、已澄清防重复标记） | §3.10 | ✅ |
+| D0-5 | `IntentAnalyzeTool` 判定平台：规则预分类 + 判定准则 + 模型兜底，输出五形态 + behaviorMode + 参数；**Parser 门控 + 频控**（task/command 才调、结果缓存） | §3.10 | ✅ |
+| D0-6 | 行为模式切换：四档 behaviorMode + `BehaviorModeSource`（P1）+ guard 软提醒 + `/mode` 命令 + **plan 形态强制 design** | §3.10 | ✅ |
+| D0-7 | 持续意图维护闭环：语义失配检测（规则疑似 + LLM 确认，同 goal 每 10 轮 ≤1 次）+ `GoalStaleSource`（P2）+ `should_update_goal` 准则 + `GoalAdjustEvent`（白名单+失败优先、丰富字段、step 前 P1 注入、去重消费、终态/切换清空） | §3.10 | ✅ |
+| D0-8 | prompts/ 资产同步：五形态判定准则 + should_update_goal 准则 + 行为模式纪律 + `!`/`?` 说明 | §3.10 | ✅ |
 
 ### D1 Agentic Workflow 基座（📝 | 前置：D0 | 后置：D2, D3, D4）
 
