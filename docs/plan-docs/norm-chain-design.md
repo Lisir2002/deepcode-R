@@ -48,7 +48,7 @@
 - **注入源统一抽象**：复用 `SystemPromptProvider` 内嵌的 `PromptSource` 接口，新增三类 Source：`GoalHintSource`（当前任务目标）、`PlanPendingHintSource`（待批准计划选择）、`LoopAdvisorySource`（循环提醒）。workflow 在 step 前调 `SystemPromptProvider` 组装注入块。
 - **面向模型格式**：**混合标记格式**——自然语言引导行 + 代码块包裹正文（如 `【当前任务目标】\n\`\`\`\n<text>\n\`\`\``），引导行保语义、代码块防格式污染。
 - **importance 3 级**：`P0 必须` / `P1 常规` / `P2 可裁剪`。默认归属：goal=**P0 必注入**、plan-pending=**P1 常规**、loop-advisory=**P2 可裁剪**。
-- **注入预算**：**完整预算策略**——每轮注入块总字符上限常量（默认值实施时可调，约 400~800 字符），超限按 importance 降级裁剪（先裁 P2 → 再裁 P1），P0 永不裁。
+- **注入预算**：**完整预算策略**——每轮注入块总字符上限常量（默认值实施时可调，约 400~800 字符），超限按 importance 降级裁剪（先裁 P2 → 再裁 P1），P0 永不裁。**排序与裁剪**（四源共存定稿）：注入顺序按 importance 降序 `goal(P0) → plan-pending(P1) → playbook-stage(P1) → loop-advisory(P2)`，同 P1 内固定 plan-pending 先于 playbook-stage；超预算从尾部 P2 裁起，同 importance 按注入顺序倒序裁（先裁 loop-advisory，再裁同 P1 的 playbook-stage → plan-pending），P0 永不裁。
 - **注册方式**：接入 `SystemPromptProvider` 现有 Source 聚合链，不新增第二套装配逻辑；每轮由 workflow 触发 `build(ctx)` 取注入块。
 
 **改动面**：新增 3 个 PromptSource；`StatefulAgentWorkflow` step 前统一走 `SystemPromptProvider` 组装注入块；预算常量。
@@ -61,7 +61,7 @@
 **主价值（讨论定稿）**：**guard 段 + 文件观察**。其余段现状已天然覆盖：`runToolSync` 现有「缓存门 → viewImage 守卫 → executeWithContext → 图片/附件剥离 → toolOutputStore.process → 写缓存/事件/增量索引」即为门/执行/处理/定型/观测的自然组合。本批不做破坏性重构，六段作为**契约写进文档与代码注释**，代码层只把缺失的 guard 段做成真实可插桩的链。
 
 **guard 段：统一 Guard 接口 + 链式注册**
-- 新增 `ToolGuard` 接口：`suspend fun guard(ctx): ToolGuardResult`，三态 `PASS / BLOCK(error) / ADVISORY(warning)`；首 BLOCK 短路、ADVISORY 进提醒队列（对齐 `HookDispatcher` 的 multibinding 汇集模式）。
+- 新增 `ToolGuard` 接口：`suspend fun guard(ctx): ToolGuardResult`，三态 `PASS / BLOCK(error) / ADVISORY(warning)`；首 BLOCK 短路、ADVISORY 进提醒队列（Dagger multibinding `Set<ToolGuard>` 汇集，新增护栏仅 `@IntoSet` 注册，对齐 `HookDispatcher` 现有模式）。
 - 链上护栏与执行顺序：**权限检查 → 文件观察 → 危险命令 → 超时钳制**；循环 guard（`LoopGuardTracker`）保留在结果收集后（既有位置不动）。
 - 现有护栏归属：权限（workflow 层）、危险命令/超时钳制（`ExecuteCommandTool` 工具层）保持原位，通过 guard 链的判定契约对齐，不迁移不重构。
 
@@ -86,12 +86,12 @@
 **现状**：纪律散在 `AGENTS.md` 与 `prompts/15-project-rules.md`，非结构化、不可覆盖。`AgentAssetRegistry` 的 frontmatter+热加载可复用。
 
 **针对性设计**（深入讨论定稿）：
-1. 新增 `feature/agent/domain/sop/SopRegistry.kt`（复用 `AgentAssetCore` 解析，frontmatter 增 `whenToUse` + `order`），资产放 `assets/sop/`，共 6 份：
+1. 新增 `feature/agent/domain/sop/SopRegistry.kt` + **独立 `SopAsset` 结构**（字段定稿：`name` / `order` / `whenToUse` / `body`，与 `AgentAsset` 解耦，复用 `AgentAssetCore` 的 frontmatter 解析能力），资产放 `assets/sop/`，共 6 份：
    `10-release.md`（发版）· `20-migration.md`（迁移）· `30-asset-sync.md`（资产同步）· `40-git-commit.md`（提交）· `50-troubleshooting.md`（排障）· `60-ai-conduct.md`（agent 行为规则步骤化，来源 `prompts/` 行为纪律）。
    90-conduct（Always/Ask/Never）**不进 SOP**——已在 `AGENTS.md` 且运行时被 `SystemPromptProvider` 注入，无步骤性、重复无价值。
 2. **触达方式**：摘要注入 + loadSop 按需取。`SystemPromptProvider` 全量常驻注入 SOP 清单摘要（名称 + whenToUse 一句话，**不做 mode 过滤**，6 条摘要很短）；新增轻量 `loadSop` 工具让模型按需取完整正文（复用 skill 的「清单 + loadSkill」模式）。
 3. **正文契约**：结构化编号步骤，每步含「操作 + 判定 + 产出/出错处理」，保证模型照做不跳步。
-4. **权威源与同步**：双权威源——10-50 对齐 `AGENTS.md`、60-ai-conduct 对齐 `prompts/`；每份 sop 头部注明来源文件；pre-commit 提示（改了 `AGENTS.md` 或 `prompts/` 行为规则但未改对应 sop/ 时提示，不阻断，复用 3.4 批次的 pre-commit 扩展）。
+4. **权威源与同步**：双权威源——10-50 对齐 `AGENTS.md`、60-ai-conduct 对齐 `prompts/`；每份 sop 头部注明来源文件；pre-commit 提示（warning 级、不阻断）：改 `AGENTS.md` → 提示检查 `sop/10-50` 同步；改 `prompts/` 下行为规则文件（精确映射表：15-project-rules、40-approach）→ 提示检查 `sop/60-ai-conduct` 同步，复用 3.4 批次的 spec-check.sh。
 
 **改动面**：新增 `SopRegistry.kt` + `loadSop` 工具 + 6 份资产 + `SystemPromptProvider` 摘要注入 + `ContainerInstaller` 释放。
 **验收**：6 份 SOP 可加载注入摘要；JVM 单测解析 frontmatter（whenToUse/order/步骤编号）；loadSop 返回结构化正文。
@@ -103,14 +103,17 @@
 **现状**：运行时编排（goal/plan/jobs/schedule）已落地；`AgentAsset` 只有 `component/agent` 两 kind，**无声明式剧本资产与执行器**。
 
 **针对性设计**（深入讨论定稿）：
-1. `AgentAsset` 增 `kind` 字段（缺省 `component` 向后兼容）；playbook frontmatter：`kind: playbook / name / stages:[{name, agents[], sop[], gates(approval|auto), guards(timeout)}]`。
-2. **推进模型**：模型声明完成 + 显式推进工具。模型每轮可见当前阶段目标/步骤与 gates；阶段工作做完后调 `playbook_advance` 进入下一阶段；`gates=approval` 复用 `planApprovalManager.awaitApproval(reason, sessionId)` 阻塞等用户批准（与模式切换审批同链路）。
-3. **持久化**：新增独立 `PlaybookRunEntity` 表（playbookId / currentStage / stageStatuses(JSON) / gates），agent 库新增 v 迁移；`DataRegistry` 同步登记（备份自动覆盖）。
-4. **触发入口**：斜杠命令 + 工具双入口——声明式 `/playbook <name> <描述>` 命令（复用 ExtensionCommand）供用户显式启动；`playbook_start` 工具供模型自主识别任务匹配时启动；`playbook_advance` 推进。两入口走同一 `PlaybookExecutor`。
-5. **失败处理**：阶段失败（模型声明失败 / 审批拒绝）→ PlaybookRun 置 `ABORTED`，向模型与用户反馈失败阶段 + 原因；模型修复后重新启动或放弃。
-6. 内置 3 条剧本（贴项目语义）：`feature-dev`（发现→设计文档[联动Spec]→分支→实施→冒烟→单测→提交→合入）、`code-review`（diff→按类型派专项agent→聚合分级）、`bug-fix`（复现→根因→修复→回归→提交）。
+1. **资产契约**：`AgentAsset` 增 `kind` 字段（缺省 `component` 向后兼容）；playbook frontmatter 用 **YAML 列表 + 精简字段**——`kind: playbook / name / stages:[{name, description, agents[], sop[], gates(approval|auto), guards(timeout)}]`；`description` 即阶段目标（注入模型用）；`agents` 引用 `agent: true` 专项 agent 资产（阶段激活时把 body+model+tools 注入当前轮，主模型"切角色"执行该阶段，贴近现有 `/agent` 机制，无新执行框架）；`sop` 引用 `assets/sop/` 资产（阶段激活时作为步骤规则注入）；均解析时校验存在性。复用 `SkillParser` SnakeYAML 嵌套解析，资产可读性好。
+2. **阶段注入**：新增 `PlaybookStageSource`，step 前把「当前阶段：名称 + description + gates」注入统一注入块（importance 归 **P1 常规**，走预算裁剪），复用 3.1.2 的 step 前上下文纪律，不重复造轮子。**与 GoalService 完全独立**——不自动创建/覆盖 goal，阶段目标仅由本 Source 注入，避免双重目标源冲突与覆盖用户手动 goal。
+3. **推进模型**：模型声明完成 + 显式推进工具。阶段工作做完后调 `playbook_advance` 进入下一阶段；`gates=approval` 复用 `planApprovalManager.awaitApproval(reason, sessionId)` 阻塞等用户批准（与模式切换审批同链路）。**完成判定护栏**：advance(done) 前若连续 N 轮无实质工具动作（无文件写/无命令执行）就声明完成，则注入 advisory 提醒「确认阶段产出物」，防模型误报完成/跳步（复用 LoopGuard 思路）。
+4. **状态机**：阶段 + 运行双状态机——运行级 `RUNNING/COMPLETED/ABORTED`；阶段级 `PENDING/ACTIVE/DONE/FAILED`。推进时当前 DONE→下一阶段 ACTIVE；失败当前 FAILED→运行 ABORTED；审批阻塞不改变阶段状态（awaitApproval 阻塞执行流）。
+5. **工具签名**：`playbook_start(name, context?)` 创建运行并返回首阶段描述；`playbook_advance(action=done|fail)` 默认作用于当前会话最近一次 RUNNING 运行（不传 runId），done 推进、fail 置失败中止；`playbook_resume` 恢复本会话最近一次 `INTERRUPTED` 运行并返回当前阶段；`playbook_retry` 从本会话最近一次 `ABORTED` 运行的 FAILED 阶段恢复（该阶段置回 ACTIVE、已完成阶段保留）；均返回下一阶段描述或完成提示。模型无需管理 runId。
+6. **持久化**：新增独立 `PlaybookRunEntity` 表（**结构定稿**：`playbookRunId`(PK) / `sessionId`(索引) / `playbookName` / `currentStageIndex` / `stageStatuses`(JSON) / `status` / `createdAtMs` / `updatedAtMs`，对齐 PlanEntity 风格），agent 库新增 v 迁移；`DataRegistry` 同步登记（备份自动覆盖）。**中断/恢复**：对齐 `JobEntity`——SessionStop hook 把该会话 RUNNING 运行置 `INTERRUPTED`；新会话需显式 `playbook_resume` 继续，`playbook_start` 覆盖旧运行。
+7. **触发入口**：斜杠命令 + 工具双入口——声明式 `/playbook <name> <描述>` 命令（复用 ExtensionCommand）供用户显式启动；`playbook_start` 工具供模型自主识别任务匹配时启动；两入口走同一 `PlaybookExecutor`。
+8. **失败处理**：阶段失败（模型声明失败 / 审批拒绝）→ PlaybookRun 置 `ABORTED`，向模型与用户反馈失败阶段 + 原因；**恢复双路径**（定稿）：模型可 `playbook_start` 从头重跑（覆盖旧 ABORTED 运行）或 `playbook_retry` 从 FAILED 阶段恢复（该阶段置回 ACTIVE、已完成阶段保留），或放弃。
+9. 内置 3 条剧本（贴项目语义）：`feature-dev`（发现→设计文档[联动Spec]→分支→实施→冒烟→单测→提交→合入）、`code-review`（diff→按类型派专项agent→聚合分级）、`bug-fix`（复现→根因→修复→回归→提交）。
 
-**改动面**：`AgentAsset` + `AgentAssetCore` 解析 kind；新增 `PlaybookExecutor` + `PlaybookRunEntity` + `playbook_start/playbook_advance` 工具 + `/playbook` 命令；新增 `assets/playbooks/*.md` ×3。
+**改动面**：`AgentAsset` + `AgentAssetCore` 解析 kind；新增 `PlaybookExecutor` + `PlaybookRunEntity` + `PlaybookStageSource` + `playbook_start/playbook_advance` 工具 + `/playbook` 命令；新增 `assets/playbooks/*.md` ×3。
 **验收**：3 条剧本可触发顺序推进；approval gate 走现有确认弹窗；阶段状态可查询/中断/恢复；失败置 ABORTED。
 
 ### 3.4 Spec —— 作用在变更治理
@@ -120,22 +123,68 @@
 **现状**：`docs/plan-docs/` 评审状态是**约定**，无硬校验。
 
 **针对性设计**（深入讨论定稿）：
-1. 状态机沿用 `📝 草案 → ✅ 已评审 → 已实施`，`✅ 已评审` 附一句话评审结论。
-2. `.githooks/pre-commit` 扩展（与 docs/modules 校验并列，**提示 + `--no-verify` 逃生口，与现有同策略**）：
-   - **配套性触发范围**：仅提交含编译型改动（`.kt` / `.gradle.kts` / `AndroidManifest.xml`）→ 提示需配套 `docs/plan-docs/*-design.md`；资产/资源/纯文案改动不触发，低噪音。
+1. **状态行格式**：新文档固定文档头部 `> 评审状态：<状态>` 引用行，取值 `📝 草案 / ✅ 已评审 / 已实施`（纯值，不带括号注释/组合态）；`> 评审结论：<一句话>` 另起一行（`✅ 已评审` 时建议必填）。pre-commit 正则匹配两字段。**校验范围：只校验本次提交触碰的 `*-design.md`**（git diff 范围），存量 18 份不强制、不批量迁移——存量值带注释/组合态、两份用章节而非头部行，全量硬校验需先批量规整，噪音高。
+2. **实现形态**：新建独立 `spec-check.sh` 封装 Spec 校验（含 SOP 同步提示），`.githooks/pre-commit` 调用；沿用 **提示 + `--no-verify` 逃生口，与 docs/modules 同款**（阻断 + 逃生）。
+   - **SOP 同步提示**（warning 级、不阻断）：本次提交改 `AGENTS.md` → 提示检查 `sop/10-50` 同步；改 `prompts/` 行为规则文件（映射表：15-project-rules、40-approach）→ 提示检查 `sop/60-ai-conduct` 同步。
+   - **配套性触发规则**（口径定稿）：仅「新增 `feature/<module>` 目录 或 本次提交新增非 test 路径 `.kt`」→ 提示需配套 `docs/plan-docs/*-design.md`；实现：`git diff --cached --name-status --diff-filter=A` 扫描新增文件，`.kt` 且路径不含 `test/`/`androidTest/` 即命中；已有模块普通修改（修 bug、补单测、改资源）不触发，低噪音防「狼来了」。
    - **状态机校验粒度**：提交含 `*-design.md` → 校验头部评审状态行**存在 + 值合法**（`📝 草案 / ✅ 已评审 / 已实施`），缺失或非法则提示；**不校验**状态机顺序防回退（需读 git 历史、跨多次提交脆弱）。
-3. `prompts/40-approach.md` 追加"重大改动先出设计文档并标记状态"（联动 Playbook 的 feature-dev 剧本）。
+3. **联动 Playbook**：feature-dev 剧本的设计文档阶段产出物 = 新建 `docs/plan-docs/*-design.md` 且头部状态行 `📝 草案`；该阶段 `gates=approval`（用户评审后才进实施）；prompts 引导模型写完设计文档后确认状态行格式。不做事执行器级文件校验（避免执行器感知具体文件结构）。
+4. `prompts/40-approach.md` 追加"重大改动先出设计文档并标记状态"（联动 Playbook 的 feature-dev 剧本）。
 
-**改动面**：`.githooks/pre-commit` 扩展（提示项与 SOP 同步提示并列）+ `docs/plan-docs/README.md` 补充 + prompts 更新。
-**验收**：编译型改动提交被提示补 design 文档；状态行缺失/非法被提示；纯文案提交不误报。
+**改动面**：新增 `spec-check.sh` + `.githooks/pre-commit` 调用 + `docs/plan-docs/README.md` 补充 + prompts 更新。
+**验收**：新增模块/新增源文件提交被提示补 design 文档；状态行缺失/非法被提示；纯文案与普通修改不误报。
+
+### 3.5 统一开关控制（跨 App 运行时机制）
+
+**定位**：3.1-3.3 三类运行时机制的启用控制统一收敛到设置页，便于整体/逐项降风险；Spec 预检属仓库治理（`.githooks`），不进 App 设置。
+
+**设计**（深入讨论定稿）：设置页新增「规范流程」分组——
+- **总开关** `norm_flow_enabled`（默认开）：关闭即 3.1-3.3 三机制整体停用（step 前注入块、guard 链、SOP 摘要、Playbook 运行均不生效）。
+- **子开关**（默认开，逐项可关）：`step_inject`（step 前注入纪律）/ `tool_guard`（guard 链 + 文件观察）/ `sop_summary`（SOP 摘要常驻注入）/ `playbook_auto`（模型自主触发 `playbook_start`；`/playbook` 斜杠命令显式入口不受此开关影响）。
+- **读取位置**：workflow 组装注入块/挂 guard 链、`SopRegistry` 摘要注入、`PlaybookExecutor` 入口统一读开关（settings 设置库/DataStore）。
+
+**改动面**：settings 库新增开关字段 + 设置页 UI + 各机制读取点。
+**验收**：关闭总开关后注入/guard/SOP/playbook 均不生效；子开关单独关闭仅影响对应机制。
+
+### 3.6 编排流程：多代理子代理机制（深入设计）
+
+**作用位置**：Playbook 阶段内专项 agent 的激活执行模型（对齐 Claude Code 递归自生成代理架构：主代理生成子代理、独立上下文、多代理协调；对齐 DSH run_code 批量执行与 jobs 后台任务）。
+
+**背景**：3.3 Playbook 阶段 `agents[]` 引用专项 agent。经深入讨论，执行模型从"切角色"升级为**真子代理隔离上下文**。
+
+**设计**（深入讨论定稿）：
+1. **执行模型：真子代理隔离上下文**——每个子代理拥有独立消息历史、系统提示（= 专项 agent body）、工具集（白名单）、工作目录、中止控制器；跑完只回传结构化结果，不污染主上下文。生成入口：阶段激活时按 `agents[]` 声明自动生成（模型无需手动 spawn），`async` 与权限档位由 frontmatter 声明。
+2. **执行循环：独立子循环**——`PlaybookExecutor` 内 `SubAgentRunner`：`buildSubAgentRequest`（systemPrompt=agent body、messages=子代理私有 state、tools=白名单、maxRounds=预算）。**不触发主 workflow 的 goal/plan/loop-guard 注入**——子代理锚定在阶段目标（frontmatter `description` 注入子代理系统提示），避免主会话目标/循环提醒干扰子任务。事件流独立上报（UI 可区分展示"子代理执行中"）。
+3. **运行模式：同步 + 可选后台**——默认同步：主代理等待子代理完成拿到结果再继续（与 approval gate、事件流兼容）。阶段 `async: true`：子代理入后台 jobs 队列，`playbook_advance` 前主代理可查询子代理状态；结果就绪后投递回会话（对齐 JobEntity 的 INTERRUPTED 语义，进程回收标记）。
+4. **权限作用域：强制三档降权**——`READ_ONLY`（默认，只读文件/搜索/只读命令）→ `WORKSPACE_WRITE`（允许写工作区文件）→ `FULL`（含容器/终端/危险工具）。由阶段 `gates` 声明，**不继承主会话完整权限**；子代理内工具执行复用 `ToolPermissionManager` 审批链但按档位过滤。
+5. **防失控：预算感知 + 自动压缩**——子代理消耗计数对齐主 workflow 注入预算；接近预算时对子代理私有消息做**子代理级压缩**（复用 ContextCompactor 锚定摘要逻辑，适配纯内存上下文，不走 `agentMessageDao` 持久化）；实在不够才截断：强制结束子循环，已做动作摘要 + 截断原因返回主代理。
+6. **协调模式：多子代理并行**——阶段 `agents[]` 可声明多个子代理并行（如 code-review 同时派 review-agent + style-agent），各自独立循环，全部完成统一收结果（失败子代理标记 FAILED，不影响其它子代理）。并发调度：每子代理一个协程 `awaitAll` 聚合，结果按 agents 声明顺序稳定返回。
+7. **结果契约：结构化 JSON 聚合（canonical output）**——每个子代理结束，`PlaybookExecutor` 把动作摘要/产出物/结论/完成状态序列化为结构化 JSON 字段（对齐 DSH canonical output）；多子代理聚合为一个结果块返回主代理，主代理直接读结构化字段，无需二次解析。
+
+**改动面**：`PlaybookExecutor` 内 `SubAgentRunner` + 子代理私有会话状态 + 三档权限过滤 + 子代理级压缩适配 + 后台投递；`AgentAsset` frontmatter `gates` 增权限档位。
+**验收**：code-review 剧本 review-agent 在 READ_ONLY 下只能读；多子代理并行结果稳定聚合；async 子代理可后台执行并投递结果；子代理上下文不污染主上下文（压缩/截断后主上下文无残留）。
+
+### 3.7 思维链路：单轮循环推理纪律（深入设计）
+
+**作用位置**：`StatefulAgentWorkflow` 的单轮循环（turn 内多轮工具调用 + 推理过程的纪律）。
+
+**背景**：对齐 Claude Code 查询循环（消息压缩/续轮判断/推理呈现）与 DSH（结构化超时/错误分类/循环 guard）。核实现状：压缩（`ContextCompactor` 锚定摘要 + 预取 + 独立压缩模型）与截断续写上限已成熟，**无需大改**；缺口在"空转检测软收敛"与"推理过程预算与呈现"。
+
+**设计**（深入讨论定稿）：
+1. **软性收敛：空转检测强制结束**——新增空转计数器：每轮统计"实质产出"（文件写 / 命令执行 / run_code 任一命中即清零）。连续 N 轮（默认 6）无实质产出 → 不再 advisory（区别于 LoopGuard），**强制结束回合**，把已做动作摘要 + 结束原因返回用户。位置：主循环 reduce 后、下一轮 CallLlm 前检查。与 `MAX_ITERATIONS`（50 硬上限）、`LoopGuardTracker`（3/5/8 advisory）三级防线并存——LoopGuard 提醒最早、空转收敛次之、MAX_ITERATIONS 兜底。与 3.1.3 文件观察联动：文件写动作（Edit/Write 命中）计为实质产出；纯读（readFile/search/list）不计。
+2. **推理过程：预算 + 流式呈现**——新增推理预算配置（`reasoning_budget`，默认 off；开启后按 provider 能力传 reasoning 参数）。呈现：模型返回 reasoning 时逐段**流式呈现**给用户（可折叠面板，复用现有 AssistantText reasoningAcc 通道增强），保持思维链可见。上下文：reasoning 累积进后续轮次（保持思维链连续），压缩时随 AssistantMessage 一并处理（`estimateTokens` 已计入 reasoning 长度）。对齐：Claude extended thinking 的 budget 控制；DeepSeek reasoning_content 的流式返回。
+3. **续轮判断（核对）**——现有"有工具调用则续轮、无则结束"符合查询循环语义，不新增状态机；仅把空转收敛（上）纳入续轮终止条件。
+
+**改动面**：workflow 空转计数器 + 收敛注入；settings 新增 `reasoning_budget` 开关；provider 调用层传 reasoning 参数；UI 推理面板流式呈现。
+**验收**：JVM 单测——连续 6 轮纯读后强制收敛返回摘要；有写动作清零计数；reasoning 开启后模型响应含推理且累积进后续轮；默认 off 不改变现有行为。
 
 ## 4. 集成与分期
 
 | 批次 | 内容 | 验收 |
 |---|---|---|
-| 第一批 | 3.1 Agentic Workflow：① step 前上下文纪律（3 个 Source + 预算裁剪）② 六段式流水线 guard 链（ToolGuard 接口 + FileObservationGuard + 文件观察硬拦截）③ 闭环核对（goal 注入 + TOOL_TIMEOUT 提示） | JVM 单测（注入/预算/FS_NOT_OBSERVED/FS_STALE/豁免）、构建绿 |
-| 第二批 | 3.2 SOP（`SopRegistry` + `loadSop` 工具 + 6 份资产 + 全量摘要注入） | 摘要注入/loadSop 取正文/单测解析 |
-| 第三批 | 3.3 Playbook（kind + `PlaybookExecutor` + `PlaybookRunEntity` + 双入口 + 3 剧本） | 剧本推进/审批/中断/恢复/ABORTED |
+| 第一批 | 3.1 Agentic Workflow：① step 前上下文纪律（3 个 Source + 预算裁剪 + 四源排序）② 六段式流水线 guard 链（ToolGuard 接口 multibinding + FileObservationGuard + 文件观察硬拦截）③ 闭环核对（goal 注入 + TOOL_TIMEOUT 提示）④ 3.7 思维链路（空转软收敛 + reasoning_budget + 推理面板）⑤ 3.5 开关基础（总开关 + step_inject/tool_guard 子开关） | JVM 单测（注入/预算裁剪/排序/FS_NOT_OBSERVED/FS_STALE/豁免/空转收敛/推理参数）、构建绿 |
+| 第二批 | 3.2 SOP（独立 `SopAsset` + `SopRegistry` + `loadSop` 工具 + 6 份资产 + 全量摘要注入 + sop_summary 子开关） | 摘要注入/loadSop 取正文/单测解析 |
+| 第三批 | 3.3 Playbook + 3.6 子代理机制（kind + `PlaybookExecutor` + `SubAgentRunner` + `PlaybookRunEntity` + 4 工具 + 双入口 + 3 剧本 + 三档权限过滤 + 并行聚合 + async 后台 + playbook_auto 子开关） | 剧本推进/审批/中断/恢复/失败重试/ABORTED/子代理隔离与聚合 |
 | 第四批 | 3.4 Spec（pre-commit 提示扩展：配套性 + 状态行校验 + SOP 同步提示 + README + prompts） | 提示生效、无误报 |
 
 编译型改动按 AGENTS.md 冒烟 `:app:assembleDebug`；push 前 `:app:testReleaseUnitTest`。
@@ -151,6 +200,10 @@
 | 新增 guard 链影响既有工具执行 | 链默认 PASS 短路、按工具白名单激活（仅文件类），单测回归 |
 | SOP 与 AGENTS.md 双份漂移 | AGENTS.md 唯一权威，sop/ 单向副本 |
 | Playbook 编排复杂度 | 复用 goal/plan/approval，先 3 条剧本 |
+| 子代理隔离上下文增加内存/实现复杂度 | 独立会话状态 + 子代理级压缩适配；先 READ_ONLY 场景验证再开放写档 |
+| 多子代理并行结果冲突（同文件写） | WORKSPACE_WRITE/FULL 档位子代理对写操作加阶段内互斥（写锁），单测覆盖 |
+| 空转收敛误伤（模型在思考但未调工具） | 阈值 6 轮足够宽；收敛返回摘要可让用户续说，不丢已做动作 |
+| 推理预算增加 token 成本 | `reasoning_budget` 默认 off；开启时预算可调、可折叠呈现 |
 | pre-commit 强制阻塞 | 提示 + `--no-verify` 逃生口，与 docs/modules 同策略 |
 | 新增表需备份覆盖 | `PlaybookRunEntity` 新增后 `DataRegistry` 同步登记（备份自动覆盖） |
 
@@ -158,9 +211,9 @@
 
 四类规范流程分别作用在**对话循环 / 固定步骤 / 多阶段任务 / 变更治理**四个不同环节，各司其职、可独立落地、互不耦合。经逐机制深入讨论后，各自作用点已收敛为：
 
-- **Agentic Workflow**：① step 前上下文纪律（统一 Source + 混合标记 + 3 级 importance + 完整预算裁剪）② 六段式工具流水线（契约化六段 + 真实 ToolGuard 链，核心是文件观察硬拦截：mtime 版本 CAS + 新建豁免 + 仅 agent 文件工具链）。
+- **Agentic Workflow**：① step 前上下文纪律（统一 Source + 混合标记 + 3 级 importance + 完整预算裁剪）② 六段式工具流水线（契约化六段 + 真实 ToolGuard 链，核心是文件观察硬拦截：mtime 版本 CAS + 新建豁免 + 仅 agent 文件工具链）③ 思维链路（空转软收敛三级防线 + 推理预算流式呈现）。
 - **SOP**：摘要常驻 + loadSop 按需取正文；结构化编号步骤；5 流程 + 60-ai-conduct；双权威源 + pre-commit 同步提示。
-- **Playbook**：模型声明完成 + `playbook_advance` 推进；独立 `PlaybookRunEntity` 持久化；斜杠命令 + 工具双入口；复用 `PlanApprovalManager` 审批；失败 ABORTED。
+- **Playbook**：模型声明完成 + `playbook_advance` 推进；独立 `PlaybookRunEntity` 持久化；斜杠命令 + 工具双入口；复用 `PlanApprovalManager` 审批；失败 ABORTED。阶段专项 agent 以**真子代理隔离上下文**执行——独立子循环、三档降权、预算感知压缩、多子代理并行、结构化 JSON 聚合。
 - **Spec**：pre-commit 提示（提示 + 逃生口）；配套性仅编译型改动触发；状态行存在 + 合法值校验。
 
 全部复用现有组件（`SystemPromptProvider` Source / `HookDispatcher` multibinding / `PlanApprovalManager` / `ExtensionCommand` / `DataRegistry`），无重框架、无破坏性重构。
