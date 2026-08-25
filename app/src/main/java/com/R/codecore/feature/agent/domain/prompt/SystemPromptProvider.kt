@@ -1,11 +1,20 @@
 package com.R.codecore.feature.agent.domain.prompt
 
+import com.R.codecore.feature.agent.domain.input.BehaviorModeSource
+import com.R.codecore.feature.agent.domain.input.GoalAdjustEventSource
+import com.R.codecore.feature.agent.domain.input.GoalHintSource
+import com.R.codecore.feature.agent.domain.input.GoalStaleSource
+import com.R.codecore.feature.agent.domain.input.IntentAskSource
+import com.R.codecore.feature.agent.domain.input.LoopAdvisorySource
+import com.R.codecore.feature.agent.domain.input.PlanPendingHintSource
+import com.R.codecore.feature.agent.domain.input.PlaybookStageSource
 import com.R.codecore.feature.agent.domain.memory.MemoryRepository
 import com.R.codecore.feature.agent.domain.memory.MemoryScope
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.skill.SkillStateRepository
 import com.R.codecore.feature.agent.domain.skill.SkillType
+import com.R.codecore.feature.agent.domain.workflow.LoopGuardTracker
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -15,12 +24,25 @@ import javax.inject.Singleton
  * 阶段二优化：增量式提示词更新 (SystemContext 化)
  * 拆分为独立的 Source 模块，并且为每个 Source 维护缓存和快照。
  * 对于高频变化的 WorkspaceSource，提供增量 Diff 逻辑，最大化节省冗余 Token，提升大模型 KV Cache 命中率。
+ *
+ * step 前注入（D1-1/2）：另维护 8 个已登记 Source 的注入链（[buildStepInjections]），
+ * 由 workflow 每轮 CallLlm 前喂入动态数据（goal / plan-pending / loop tracker / stale / event）后调用，
+ * 经 [StepInjectionAssembler] 做八源排序 + 注入预算裁剪（P0 永不裁），对齐 norm-chain §3.1.2。
  */
 @Singleton
 class SystemPromptProvider @Inject constructor(
     private val skillStateRepository: SkillStateRepository,
     private val memoryRepository: MemoryRepository,
-    private val agentAssetRegistry: AgentAssetRegistry
+    private val agentAssetRegistry: AgentAssetRegistry,
+    // D1-1：step 前注入 8 Source 一次登记（D0 的 4 个 Source 一并纳入，含 D0-3 问判 / D0-6 行为模式 / D0-7 GoalStale + GoalAdjustEvent）
+    private val goalHintSource: GoalHintSource,
+    private val intentAskSource: IntentAskSource,
+    private val behaviorModeSource: BehaviorModeSource,
+    private val planPendingHintSource: PlanPendingHintSource,
+    private val playbookStageSource: PlaybookStageSource,
+    private val goalAdjustEventSource: GoalAdjustEventSource,
+    private val goalStaleSource: GoalStaleSource,
+    private val loopAdvisorySource: LoopAdvisorySource
 ) {
     // 抽象独立的 Source
     interface PromptSource {
@@ -243,6 +265,81 @@ class SystemPromptProvider @Inject constructor(
             append("\n\n")
             append(currentTimeSource.build(agentContext))
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // D1-1/2 step 前注入（对齐 norm-chain §3.1.2）：
+    // 8 Source 一次登记 → 每轮喂入动态数据 → buildStepInjections 组装注入块
+    // （八源排序 + 注入预算裁剪，P0 永不裁）。
+    // ════════════════════════════════════════════════════════════════════
+
+    /** step 前注入源条目（含 importance 分级 + 八源固定顺序）。 */
+    private data class StepSource(
+        val source: PromptSource,
+        val importance: StepInjectionAssembler.Importance,
+        /** 同 importance 内绝对注入顺序（八源排序，理解优先）。 */
+        val order: Int
+    )
+
+    /** 注入预算装配器：八源排序 + 预算裁剪（P0 永不裁）。 */
+    private val stepAssembler = StepInjectionAssembler()
+
+    /**
+     * step 前注入 8 Source 一次登记（D1-1）：
+     * 顺序（审计定稿，理解优先）：goal(P0) → 问判注入(P1) → 行为模式(P1) → plan-pending(P1)
+     * → playbook-stage(P1) → GoalAdjustEvent(P1) → GoalStale(P2) → loop-advisory(P2)。
+     */
+    private val stepSources: List<StepSource> = listOf(
+        StepSource(goalHintSource, StepInjectionAssembler.Importance.P0, 0),
+        StepSource(intentAskSource, StepInjectionAssembler.Importance.P1, 1),
+        StepSource(behaviorModeSource, StepInjectionAssembler.Importance.P1, 2),
+        StepSource(planPendingHintSource, StepInjectionAssembler.Importance.P1, 3),
+        StepSource(playbookStageSource, StepInjectionAssembler.Importance.P1, 4),
+        StepSource(goalAdjustEventSource, StepInjectionAssembler.Importance.P1, 5),
+        StepSource(goalStaleSource, StepInjectionAssembler.Importance.P2, 6),
+        StepSource(loopAdvisorySource, StepInjectionAssembler.Importance.P2, 7)
+    ).sortedBy { it.order }
+
+    /** 喂入当前任务目标（workflow 每轮 CallLlm 前调用；null 清除）。 */
+    fun feedGoal(sessionId: String, goalText: String?) {
+        goalHintSource.feed(sessionId, goalText)
+    }
+
+    /** 喂入待批准计划选择（workflow 每轮 CallLlm 前调用；null 清除）。 */
+    fun feedPlanPending(sessionId: String, pendingSelection: String?) {
+        planPendingHintSource.feed(sessionId, pendingSelection)
+    }
+
+    /** 设置当次执行的循环追踪器（workflow 每次 executeEvents 开始调用）。 */
+    fun setLoopTracker(tracker: LoopGuardTracker?) {
+        loopAdvisorySource.setTracker(tracker)
+    }
+
+    /** 喂入目标失配检测（workflow 每次用户新输入到达时调用一次）。 */
+    fun feedGoalStale(sessionId: String, goalText: String, recentUserInput: String) {
+        goalStaleSource.feed(sessionId, goalText, recentUserInput)
+    }
+
+    /** 入队目标调整事件（六段式流水线 post-execute 段为关键工具白名单生成后调用）。 */
+    fun enqueueGoalAdjustEvent(sessionId: String, event: com.R.codecore.feature.agent.domain.input.GoalAdjustEvent): Boolean =
+        goalAdjustEventSource.enqueue(sessionId, event)
+
+    /**
+     * 组装 step 前注入块（D1-1/2）：依次 build 8 个已登记 Source → 交给 [StepInjectionAssembler]
+     * 做八源排序 + 预算裁剪 → 拼接。无可注入内容时返回 null（调用方跳过追加）。
+     * 单个 Source build 异常静默降级（返回 null，不阻断注入链）。
+     */
+    fun buildStepInjections(ctx: AgentContext): String? {
+        val entries = stepSources.mapNotNull { step ->
+            val text = try {
+                step.source.build(ctx)
+            } catch (e: Exception) {
+                null
+            }?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            StepInjectionAssembler.Entry(step.importance, step.order, text)
+        }
+        return stepAssembler.assemble(entries)
     }
 
     private companion object {

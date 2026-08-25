@@ -7,7 +7,7 @@
 ## 1. 当前主线
 
 - **主设计域（D0–D6）设计已全部收敛**（含深度审计 13 项修订），任务已细化到**子任务级**（共 41 项，见 §2）。
-- 当前整体处于 📝 已设计待实施，**D0（基座）已实施完成**，D1–D6 尚未开始编码。
+- 当前整体处于 🔄 实施中，**D0（基座）与 D1（Agentic Workflow 基座）已实施完成**，D2–D6 尚未开始编码。
 - 实施顺序：`D0 → D1 → D2 → D3 → D4 → D5 → D6`（D3 与 D4 互不依赖；D5 依赖 D2/D4 完成）。
 
 ## 2. 主设计域进度（子任务级）
@@ -25,17 +25,17 @@
 | D0-7 | 持续意图维护闭环：语义失配检测（规则疑似 + LLM 确认，同 goal 每 10 轮 ≤1 次）+ `GoalStaleSource`（P2）+ `should_update_goal` 准则 + `GoalAdjustEvent`（白名单+失败优先、丰富字段、step 前 P1 注入、去重消费、终态/切换清空） | §3.10 | ✅ |
 | D0-8 | prompts/ 资产同步：五形态判定准则 + should_update_goal 准则 + 行为模式纪律 + `!`/`?` 说明 | §3.10 | ✅ |
 
-### D1 Agentic Workflow 基座（📝 | 前置：D0 | 后置：D2, D3, D4）
+### D1 Agentic Workflow 基座（✅ 已实施 | 前置：D0 | 后置：D2, D3, D4）
 
 | 子任务 | 内容（一行） | 章节 | 状态 |
 |---|---|---|---|
-| D1-1 | PromptSource 统一注入：8 Source 一次登记（含 D0 的问判/行为模式/GoalStale/GoalAdjustEvent 4 源）走 `SystemPromptProvider` 聚合链 | §3.1.2 | ⬜ |
-| D1-2 | 注入预算裁剪：预算常量 + importance 降级裁剪 + **八源排序（理解优先）**（P0 永不裁） | §3.1.2 | ⬜ |
-| D1-3 | `ToolGuard` 接口（PASS/BLOCK/ADVISORY）+ 链式注册，挂入六段式 guard 段 | §3.1.3 | ⬜ |
-| D1-4 | `FileObservationGuard`：编辑前必须先读（否则 FS_NOT_OBSERVED）+ mtime 版本 CAS 防并发覆盖 | §3.1.3 | ⬜ |
-| D1-5 | 六段式契约对齐：pre-execute → guard → execute → post-execute → finalizeContent → result 写进文档/注释（非破坏性重构） | §3.1.3 | ⬜ |
-| D1-6 | 闭环核对（3.1.1）：goal 注入 / 循环提醒 / TOOL_TIMEOUT 统一（既有能力核对接入完整性） | §3.1.1 | ⬜ |
-| D1-7 | 统一开关基础（3.5）：单轮闭环三项 + 收敛/轨迹消费的可控开关 | §3.5 | ⬜ |
+| D1-1 | PromptSource 统一注入：8 Source 一次登记（含 D0 的问判/行为模式/GoalStale/GoalAdjustEvent 4 源）走 `SystemPromptProvider` 聚合链 | §3.1.2 | ✅ |
+| D1-2 | 注入预算裁剪：预算常量 + importance 降级裁剪 + **八源排序（理解优先）**（P0 永不裁） | §3.1.2 | ✅ |
+| D1-3 | `ToolGuard` 接口（PASS/BLOCK/ADVISORY）+ 链式注册，挂入六段式 guard 段 | §3.1.3 | ✅ |
+| D1-4 | `FileObservationGuard`：编辑前必须先读（否则 FS_NOT_OBSERVED）+ mtime 版本 CAS 防并发覆盖 | §3.1.3 | ✅ |
+| D1-5 | 六段式契约对齐：pre-execute → guard → execute → post-execute → finalizeContent → result 写进文档/注释（非破坏性重构） | §3.1.3 | ✅ |
+| D1-6 | 闭环核对（3.1.1）：goal 注入 / 循环提醒 / TOOL_TIMEOUT 统一（既有能力核对接入完整性） | §3.1.1 | ✅ |
+| D1-7 | 统一开关基础（3.5）：单轮闭环三项 + 收敛/轨迹消费的可控开关 | §3.5 | ✅ |
 
 ### D2 思维链路 + 步骤结果汇总（📝 | 前置：D1 | 后置：D5）
 

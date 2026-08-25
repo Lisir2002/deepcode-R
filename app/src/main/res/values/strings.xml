@@ -82,6 +82,16 @@
     <string name="theme_light">浅色</string>
     <string name="settings_keepalive_title">后台运行保活</string>
     <string name="settings_keepalive_subtitle">显示前台通知，避免退到后台时系统杀进程</string>
+    <!-- 规范流程（D1-7，对齐 norm-chain-design.md §3.5） -->
+    <string name="settings_norm_flow">规范流程</string>
+    <string name="settings_norm_flow_subtitle">单轮注入纪律与工具护栏的统一开关</string>
+    <string name="settings_norm_flow_group">规范流程开关</string>
+    <string name="settings_norm_flow_master">总开关</string>
+    <string name="settings_norm_flow_master_desc">关闭后 step 前注入与工具护栏整体停用</string>
+    <string name="settings_norm_flow_step_inject">step 前注入</string>
+    <string name="settings_norm_flow_step_inject_desc">每轮进入模型前的上下文注入纪律</string>
+    <string name="settings_norm_flow_tool_guard">工具护栏</string>
+    <string name="settings_norm_flow_tool_guard_desc">工具执行护栏链与文件观察纪律</string>
     <string name="settings_backup_subtitle">加密导出/导入配置、聊天历史与凭据</string>
     <string name="settings_about_subtitle">核心组件 · 使用统计 · 版本检查</string>
 

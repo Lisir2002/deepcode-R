@@ -38,12 +38,12 @@
 | `domain/memory/` | 记忆系统：`Memory` 模型（GLOBAL/PROJECT 作用域）、`MemoryParser`、`MemorySource` + `GlobalMemorySource`/`ProjectMemorySource`、`MemoryRepository` |
 | `domain/model/` | 领域模型：`AgentMessage`（含 `AgentContext`：currentFile/selectedCode/projectRoot 等）、`ChatSession`（含 `AgentMode`：BUILD/PLAN/AUTO）、`CodeChange`、`ReasoningEffort`、`TodoItem` |
 | `domain/permission/` | 权限引擎：`ToolPermissionPolicyEngine`（ALLOW/DENY/ASK 判定）、`PermissionRulesRepository`、`ShellCommandParser`、`BuiltInSafeCommands`、`BuildCommandClassifier`、`PermissionModels`、`ZthFailureModels`、`DangerousCommandGuard`（危险命令静态守卫） |
-| `domain/prompt/SystemPromptProvider.kt` | 增量式系统提示词：按 `PromptSource` 组装静态规则（R04 起由 `AgentAssetRegistry` 按 mode 注入）、工作区上下文等片段，维护缓存与快照 |
+| `domain/prompt/SystemPromptProvider.kt` | 增量式系统提示词：按 `PromptSource` 组装静态规则（R04 起由 `AgentAssetRegistry` 按 mode 注入）、工作区上下文等片段，维护缓存与快照；**step 前注入（D1）**：`stepSources` 一次登记 8 个 `PromptSource`（含 D0 问判/行为模式/GoalStale/GoalAdjustEvent 4 源），经 `StepInjectionAssembler` 八源排序 + 预算裁剪后由 `buildStepInjections(ctx)` 产出注入块，工作流每轮 step 前拼进 system prompt |
 | `domain/provider/` | AI Provider 抽象：`AIProvider`（complete / completeStream，含 reasoning、signature、token 统计）、`OpenAIAdapter`、`AnthropicAdapter`、`GeminiAdapter`、`RetryPolicy`、`HttpErrorEnricher`（把 HTTP 错误体拼进 message）。**流式 SSE 解析（网络层优化 P1）**：三家 adapter 改用 Okio `readUtf8Line()` 逐行读取 + `core/network/SseFieldExtractor` 定点字段抽取（Gson `JsonReader` 流式不建整树），替换原 `JsonParser.parseString().asJsonObject` 每行整树解析 |
 | `domain/session/` | 会话用例：`SessionUseCase`（**删除事务化** `withTransaction` + 级联清理 9 张关联表[todo/hunk/模式切换历史/技能会话态/wake/任务编排 4 表]、重命名长度截断 `TITLE_MAX`、删当前会话后重选兜底 `getFirstSessionOfWorkspace`→`getFirstUnboundSession`→`getMostRecentSession`）、`MessagePersistenceUseCase` |
 | `domain/skill/` | 技能系统：`Skill` 模型（PROMPT/SCRIPT/MCP 三形态、BUILTIN/LOCAL 来源）、`SkillParser`、`SkillRepository`、`SkillExecutor`、`SkillSource` + `LocalDirectorySkillSource`、`BuiltinSkillSeeder`（首启引导内置技能）、`SkillStateRepository`（Room 持久化启用状态） |
 | `domain/tool/` | 工具系统（详见 2.3） |
-| `domain/workflow/` | Agent 工作流：`AgentWorkflow`（接口 + `AgentEvent` 事件集）、`StatefulAgentWorkflow`（MVI 状态机实现）、`ContextCompactor`（上下文压缩） |
+| `domain/workflow/` | Agent 工作流：`AgentWorkflow`（接口 + `AgentEvent` 事件集）、`StatefulAgentWorkflow`（MVI 状态机实现）、`ContextCompactor`（上下文压缩）。**D1 六段式工具流水线契约**：runToolSync 内 pre-execute（门，L5 缓存/视图守卫）→ guard（护栏链）→ execute（执行）→ post-execute（可改写结果/媒体剥离/文件观察版本更新）→ finalizeContent（结果定型）→ result（只读观测）；每轮 step 前经 `NormFlowSettingsRepository.isStepInjectActive()` 判定注入 step 前注入块，guard 段经 `isToolGuardActive()` 判定挂载护栏链 |
 | `domain/zth/` | ZTH 零信任防护：`ZthGuardAggregateFacade`（聚合门面）、`ZthCircuitBreakerManager`、`ZthConfirmationCardManager` + `ZthConfirmationCardStateMachine`、`ZthPlanApprovalManagerWrapper`、`ZthContentReviewer`、`ZthToolOutputGuard`、`ZthCapabilityGuard`、`ZthFailureClassifier`、`ZthWorkflowHooks`、`ZthDomainModels`、`TerminalBundleMirrorRotator` |
 | `domain/ext/` | **声明式扩展生态**（Claude Code 形态）：`ExtensionLoader`（统一扫描内置 `assets/ext/` + 用户 `<rcodecore>/ext/` 的声明式命令，FileObserver 热加载）、`ExtensionCommand`（frontmatter 命令模型）、`ExtensionCommandCore`（无 Android 依赖的命令扫描核心，mtime 懒刷新）、`PluginManifest`/`PluginManager`（插件分发：内置/用户两级，zip 导入 + Zip Slip 防护，聚合插件命令与 hooks 内容源） |
 | `domain/goal/` | **会话任务目标状态机**（DSH goal）：`GoalService` 管理每会话唯一 ACTIVE 目标（activate/updateText/setStatus），`GoalEntity` 持久化；workflow 每轮 step 前把当前目标注入 system prompt |
@@ -51,6 +51,8 @@
 | `domain/job/` | **后台任务**（DSH jobs）：`JobService`/`JobExecutor` 管理长任务（编译/测试/构建）后台执行，状态落库（pending/running/success/failed/interrupted），支持 start/status/kill/log |
 | `domain/schedule/` | **定时提醒**（DSH schedule）：`ScheduleService`（AFTER/AT/EVERY 三规则 + isDue 判定）、`ScheduleScheduler`（轮询调度，到点经 WakeQueueManager 注入会话唤醒 Agent），跨重启持久化 |
 | `domain/hook/` | **声明式 hook 事件**（Claude Code hooks + DSH 工具流水线）：`HookDispatcher`（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart 挂点）、`HookConfigLoader`（合并内置/插件/用户 hooks.json）、`CommitDisciplineHook`（git commit/push 纪律检查示例） |
+| `domain/input/` | **用户意图拆解与持续意图维护源**（D0 + D1 step 前注入源）：`UserInputParser`（结构化解析 command?/args/text + 意图分类 + `!`/`?` marker）、`IntentAskSource`（意图问判三问，P1）、`BehaviorModeManager`/`BehaviorModeSource`（四档行为模式，P1）、`GoalStaleDetector`/`GoalStaleSource`（语义失配检测，P2）、`GoalAdjustEvent`/`GoalAdjustEventSource`（目标调整事件闭环，P1）、`GoalHintSource`（goal 注入，P0）、`PlanPendingHintSource`（plan pending 提示，P1）、`PlaybookStageSource`（剧本阶段注入，P1，D5 预留）、`LoopAdvisorySource`（空转循环提醒，P2） |
+| `domain/guard/` | **工具执行护栏链**（D1）：`ToolGuard` 接口（guard 三态 PASS/BLOCK/ADVISORY）+ `ToolGuardContext`（toolName/args/sessionId/projectRoot）+ `ToolGuardResult`（Pass/Block/Advisory）；`FileObservationGuard`（文件观察纪律：编辑前必须先读否则 `FS_NOT_OBSERVED`、mtime 版本 CAS 否则 `FS_STALE`，新建豁免、writeFile 即已知）；`GuardModule`（Dagger `@IntoSet` 汇集注册护栏到 `Set<ToolGuard>`，挂入六段式 guard 段，首个 BLOCK 短路） |
 
 ### 2.3 domain/tool 工具系统
 
@@ -58,7 +60,7 @@
 | --- | --- |
 | `tool/AgentTool.kt` | 工具基类：`ToolResult`（Success/Error/Partial）、`ToolParameter`、`ToolCapability`、`ToolPermissionPolicy`、`RetryPolicy`/`ToolErrorClass`（L3 错误分类）、`provides/consumes`（L3 结果协议）、`dependsOn`（L4 依赖）、`subscribedEvents`（L7 事件）、`buildPostExecutionEvent`（L7 事件自声明钩子，事件由工具自声取代工作流硬编码 mapping）、`StreamingAgentTool` 流式接口、`ToolCall` |
 | `tool/ToolRegistry.kt` | 单例工具注册表（`ConcurrentHashMap`），注册/查找/列出可用工具 |
-| `tool/ToolResultCache.kt` | L5 结果缓存：会话级 + TTL（默认 60s），文件类工具按 mtime 失效 |
+| `tool/ToolResultCache.kt` | L5 结果缓存：会话级 + TTL（默认 60s），文件类工具按 mtime 失效；**文件观察版本（D1-4）**：`recordFileMtime(path, mtime)` 记录观察版本、`fileMtime(path)` 供 `FileObservationGuard` 做 mtime CAS 判定 |
 | `tool/ToolResultTypeRegistry.kt` | L3 结构化结果类型登记 |
 | `tool/ToolDependencyScheduler.kt` | L4 依赖感知调度：按工具 `dependsOn` 构建依赖图调度执行 |
 | `tool/ToolEventBus.kt` + `ToolEvent.kt` | L7 事件总线：工具间声明式事件发布/订阅，驱动缓存失效等 |
@@ -283,6 +285,16 @@
   - `/agent <name>` → `switchAgent`：非法/不存在回「未找到」；与当前相同 → 恢复主 agent；否则切换并回「已切换」。结果经 `MessagePersistenceUseCase` 以 AI 气泡落库。
   - `tools`/`model` 仅建议语义（不切换 provider、不拦截工具），对齐 design 8.5。
 - **资产迁移**：11 个内置 `assets/prompts/*.md` 均添加 frontmatter（`00-identity`~`70-skills-and-mcp` 为 `mode:[default]` 组件；`80-plan-mode` 为 `mode:[plan]`；`81-auto-mode` 为 `mode:[auto]`），装配结果与原硬编码顺序一致。
+
+### 3.12 规范流程基座（norm-chain D1，见 `docs/plan-docs/norm-chain-design.md`）
+
+- **step 前注入纪律**（§3.1.2）：`SystemPromptProvider.stepSources` 一次登记 8 个 `PromptSource`（八源），每轮 step 前由 `buildStepInjections(ctx)` 走 `StepInjectionAssembler` 装配：
+  - **八源排序（理解优先）**：goal（P0 order 0）→ 问判 `IntentAskSource`（P1,1）→ 行为模式 `BehaviorModeSource`（P1,2）→ plan-pending `PlanPendingHintSource`（P1,3）→ playbook-stage `PlaybookStageSource`（P1,4，D5 预留）→ `GoalAdjustEventSource`（P1,5）→ `GoalStaleSource`（P2,6）→ `LoopAdvisorySource`（P2,7）。
+  - **预算裁剪**：注入块总字符默认上限 800，超限从注入顺序倒序迭代裁剪，先裁 P2（loop→stale）再裁 P1（adjust→playbook→plan-pending→行为→问判），**P0 永不裁**；全部被裁或空输入返回 null（不注入）。
+- **六段式工具流水线**（§3.1.3）：`StatefulAgentWorkflow.runToolSync` 按契约注释实现 pre-execute（门：L5 结果缓存短路、viewImage 守卫）→ guard（护栏链）→ execute（执行）→ post-execute（可改写结果：媒体剥离、文件观察版本更新）→ finalizeContent（结果定型：`toolOutputStore.process` canonical 化）→ result（只读观测）。
+- **guard 护栏链**（D1-3/4）：`Set<ToolGuard>` 经 `GuardModule` 的 Dagger `@IntoSet` 汇集注入，首个 `BLOCK` 短路（工具不执行直接返回错误）；`FileObservationGuard` 仅拦截 `editFile`：未观察已存在文件 → `FS_NOT_OBSERVED`（提示先 readFile）、观察后 mtime 变化 → `FS_STALE`（提示重读）、新建豁免、readFile 观察/writeFile 即已知（post-execute 段 `markObserved` 更新版本）；容器/终端内 shell 写不逐条拦截（靠 SOP/prompt 纪律约束）。
+- **统一开关基础**（§3.5）：总开关 `norm_flow_enabled` + 子开关 `step_inject_enabled`/`tool_guard_enabled`（`settings` 模块 `NormFlowSettingsRepository` 经 DataStore 持久化）；workflow 分别经 `isStepInjectActive()`/`isToolGuardActive()` 判定是否启用 step 前注入与 guard 链，设置页「规范流程」分区（`NormFlowSection`）提供开关 UI。
+- **闭环核对**（§3.1.1）：prompts 资产 `60-tools-and-paths.md` 补充文件观察纪律（`FS_NOT_OBSERVED`/`FS_STALE` 错误码）与 `TOOL_TIMEOUT` 结构化超时说明，与既有 goal 注入/循环提醒能力对齐接入。
 
 ## 4. 对外接口与集成点
 

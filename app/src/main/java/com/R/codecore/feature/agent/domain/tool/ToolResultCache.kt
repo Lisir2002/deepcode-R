@@ -69,6 +69,9 @@ class ToolResultCache {
         fileMtimes[path] = mtime
     }
 
+    /** 读取已记录的文件 mtime（D1-4 文件观察纪律：null = 未观察过，需先 readFile）。 */
+    fun fileMtime(path: String): Long? = fileMtimes[path]
+
     // ---------- 键构造 ----------
 
     /**

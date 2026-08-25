@@ -10,6 +10,10 @@ import com.R.codecore.feature.agent.domain.session.SessionUseCase
 import com.R.codecore.feature.agent.domain.session.MessagePersistenceUseCase
 import com.R.codecore.feature.agent.domain.checkpoint.CheckpointManager
 import com.R.codecore.feature.agent.domain.goal.GoalService
+import com.R.codecore.feature.agent.domain.guard.FileObservationGuard
+import com.R.codecore.feature.agent.domain.guard.ToolGuard
+import com.R.codecore.feature.agent.domain.guard.ToolGuardContext
+import com.R.codecore.feature.agent.domain.guard.ToolGuardResult
 import com.R.codecore.feature.agent.domain.permission.PermissionChoice
 import com.R.codecore.feature.agent.domain.permission.PermissionScope
 import com.R.codecore.feature.agent.domain.permission.ToolPermissionPolicyEngine
@@ -142,7 +146,13 @@ class StatefulAgentWorkflow @Inject constructor(
     /** 会话任务目标状态机：每轮 step 前把当前 ACTIVE 目标注入 system prompt（DSH goal）。 */
     private val goalService: GoalService,
     /** 会话计划协作状态：每轮 step 前把待定选择（pendingSelection）注入 system prompt（DSH plan）。 */
-    private val planService: com.R.codecore.feature.agent.domain.plan.PlanService
+    private val planService: com.R.codecore.feature.agent.domain.plan.PlanService,
+    /** D1-3 工具护栏链（guard 段）：multibinding 汇集，execute 前遍历，首个 BLOCK 短路。 */
+    private val toolGuards: Set<@JvmSuppressWildcards ToolGuard>,
+    /** D1-4 文件观察护栏：guard 链成员（拦截 editFile）+ post-execute 更新观察版本。 */
+    private val fileObservationGuard: FileObservationGuard,
+    /** D1-7 规范流程统一开关：总开关 norm_flow_enabled + 子开关 step_inject / tool_guard（对齐 norm-chain §3.5）。 */
+    private val normFlowSettingsRepository: com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository
 ) : AgentWorkflow {
 
     init {
@@ -165,6 +175,9 @@ class StatefulAgentWorkflow @Inject constructor(
         const val USER_REJECTED_CODE = "USER_REJECTED"
         /** L6 增量索引：动作摘要截断长度，避免大结果全量写入内存索引。 */
         const val SUMMARY_CHARS = 512
+
+        /** D1-4 文件观察纪律：仅 agent 文件工具链（readFile/writeFile/editFile）生效。 */
+        val FILE_OBSERVED_TOOLS = setOf("readFile", "writeFile", "editFile")
 
         /**
          * 截断续写上限：模型回复连续被 max_tokens/length 截断（isTruncated）时，最多续写几轮。
@@ -565,6 +578,22 @@ class StatefulAgentWorkflow @Inject constructor(
         var currentTools = tools
         // 循环级 guard：统计连续「相同工具 + 相同参数」调用，达阈值在下一轮 CallLlm 注入提醒。
         val loopGuardTracker = LoopGuardTracker()
+        // D1-1 step 前注入接线：把当次执行的循环追踪器挂到注入链（LoopAdvisorySource，P2）。
+        promptProvider.setLoopTracker(loopGuardTracker)
+        // D1-1 目标失配检测喂入（每次用户新输入到达喂一次，连续 N 轮失配才提醒）：
+        // 读取当前 ACTIVE 目标 + 本请求文本；失败静默降级，不阻断主流程。
+        try {
+            val goalAtTurnStart = withContext(Dispatchers.IO) {
+                currentContext.sessionId?.let { goalService.getActive(it) }
+            }
+            currentContext.sessionId?.let { sid ->
+                promptProvider.feedGoalStale(sid, goalAtTurnStart?.text ?: "", userRequest)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "目标失配检测喂入失败，跳过", e)
+        }
         // L2 共享会话状态：随会话创建，注入 currentContext 供所有工具共享读写。
         val sessionState = context.sessionId?.let { ToolSessionState(it) }
         if (sessionState != null) {
@@ -678,8 +707,8 @@ class StatefulAgentWorkflow @Inject constructor(
             for (effect in effects) {
                 when (effect) {
                     is AgentSideEffect.CallLlm -> {
-                        // 会话任务目标注入：每轮 step 前读取当前 ACTIVE 目标，拼到系统提示词末尾，
-                        // 使目标可追溯、可修订、可归因（DSH goal；读取失败静默降级，不阻断主流程）。
+                        // 会话任务目标注入：每轮 step 前读取当前 ACTIVE 目标，喂入 step 前注入链
+                        // （GoalHintSource，P0），使目标可追溯、可修订、可归因（DSH goal；失败静默降级）。
                         val activeGoal = try {
                             withContext(Dispatchers.IO) {
                                 currentContext.sessionId?.let { goalService.getActive(it) }
@@ -690,11 +719,11 @@ class StatefulAgentWorkflow @Inject constructor(
                             FileLogger.w(TAG, "读取当前任务目标失败，跳过目标注入", e)
                             null
                         }
-                        val goalHint = activeGoal?.text?.takeIf { it.isNotBlank() }
-                            ?.let { "【当前任务目标】$it" }
+                        currentContext.sessionId?.let { sid -> promptProvider.feedGoal(sid, activeGoal?.text) }
                         // 会话计划待定选择注入：每轮 step 前读取最近计划的 pendingSelection（非空 + 非终态），
-                        // 拼到系统提示词末尾，供模型在用户尚未拍板的方案间继续权衡（DSH plan；失败静默降级）。
-                        val planPendingHint = try {
+                        // 喂入 step 前注入链（PlanPendingHintSource，P1），供模型在用户尚未拍板的方案间
+                        // 继续权衡（DSH plan；失败静默降级）。
+                        val planPending = try {
                             withContext(Dispatchers.IO) {
                                 currentContext.sessionId?.let { sid ->
                                     planService.getLatest(sid)?.takeIf { plan ->
@@ -703,22 +732,29 @@ class StatefulAgentWorkflow @Inject constructor(
                                             plan.statusEnum() != com.R.codecore.feature.agent.data.local.entity.PlanStatus.ABANDONED
                                     }?.pendingSelection
                                 }
-                            }?.takeIf { it.isNotBlank() }?.let { "【待定选择（未批准）】$it" }
+                            }?.takeIf { it.isNotBlank() }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
                             FileLogger.w(TAG, "读取计划待定选择失败，跳过注入", e)
                             null
                         }
-                        // 循环级 guard：取本轮待注入的重复调用提醒（无则 null），拼到系统提示词末尾。
-                        // 不阻塞、不改写工具调用，仅作 advisory，决策留给模型。
-                        val loopAdvisory = loopGuardTracker.takeAdvisory()
-                        val effectiveSystemPrompt = buildString {
-                            systemPrompt?.let { append(it) }
-                            goalHint?.let { if (isNotEmpty()) append("\n\n"); append(it) }
-                            planPendingHint?.let { if (isNotEmpty()) append("\n\n"); append(it) }
-                            loopAdvisory?.let { if (isNotEmpty()) append("\n\n"); append(it) }
-                        }.takeIf { it.isNotBlank() } ?: systemPrompt
+                        currentContext.sessionId?.let { sid -> promptProvider.feedPlanPending(sid, planPending) }
+                        // D1-1/2 step 前上下文纪律：经 SystemPromptProvider 统一组装 8 Source 注入块
+                        // （八源排序 + 预算裁剪，含目标/问判/行为模式/待定选择/失配/事件/循环提醒），
+                        // 追加到系统提示词末尾。
+                        // D1-7 统一开关：总开关 norm_flow_enabled 或子开关 step_inject 关闭时跳过
+                        // 注入块（对齐 norm-chain §3.5，默认开启；关闭即 step 前注入纪律不生效）。
+                        val stepInjection = if (normFlowSettingsRepository.isStepInjectActive()) {
+                            promptProvider.buildStepInjections(currentContext)
+                        } else {
+                            null
+                        }
+                        val effectiveSystemPrompt = if (stepInjection.isNullOrBlank()) {
+                            systemPrompt
+                        } else {
+                            systemPrompt?.let { "$it\n\n$stepInjection" } ?: stepInjection
+                        }
                         // 识图轮：若当前聊天模型无 vision，使用独立识图模型发送
                         val visionProvider = if (state.pendingVisionRound) resolveVisionFallbackProvider(currentContext.sessionId) else null
                         val providerInUse = visionProvider ?: aiProvider
@@ -1426,8 +1462,11 @@ class StatefulAgentWorkflow @Inject constructor(
             return ToolRunResult(error.toTransportString(), true, errorClass = classifyError(error.code))
         }
         return try {
-            // L5 结果缓存：纯读工具（readFile/search/list）按 (toolName, argsHash) 键控，
-            // 命中则直接复用结果，避免同参数重复执行。文件类工具由 mtime + TTL 双机制失效。
+            // ── pre-execute 段（D1-5，六段式流水线契约：pre-execute → guard → execute →
+            //    post-execute → finalizeContent → result）：门——执行前可短路/变换的入口。
+            //    ① L5 结果缓存：纯读工具（readFile/search/list）按 (toolName, argsHash) 键控，
+            //    命中则直接复用结果（短路返回）；文件类工具由 mtime + TTL 双机制失效。
+            //    ② viewImage 守卫：当前模型不支持多模态时自动降级识图模型 / FAIL_FAST。
             val cacheKey = if (name in ToolResultCache.FILE_TOOLS) {
                 context.sessionId?.let { sid -> toolResultCache.buildKey(name, toolCall.arguments, sid) }
             } else {
@@ -1471,7 +1510,23 @@ class StatefulAgentWorkflow @Inject constructor(
                 recordSessionOutput(context, toolCall.id, name, processed)
                 return ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, emptyList())
             }
+            // ── guard 段（D1-3，六段式流水线契约）：execute 前遍历护栏链，首个 BLOCK 短路 ──
+            // 护栏链：权限检查（workflow 层既有）→ 文件观察（本批新增）→ 危险命令/超时钳制
+            // （ExecuteCommandTool 工具层既有，保持原位，经本判定契约对齐）。
+            // D1-7 统一开关：总开关 norm_flow_enabled 或子开关 tool_guard 关闭时跳过护栏链
+            // （对齐 norm-chain §3.5，默认开启；关闭即 guard 链 + 文件观察不生效）。
+            if (normFlowSettingsRepository.isToolGuardActive()) {
+                runToolGuards(name, toolCall, context)?.let { blocked ->
+                    recordSessionOutput(context, toolCall.id, name, blocked)
+                    recordIncrementalAction(name, blocked.toTransportString(), context)
+                    val errorClass = classifyError(blocked.code)
+                    return ToolRunResult(blocked.toTransportString(), true, errorClass = errorClass)
+                }
+            }
+            // ── execute 段：执行工具（含流式工具的聚合兜底） ──
             val result = tool.executeWithContext(toolCall.arguments, context)
+            // ── post-execute 段：可改写结果——媒体（图片/附件）从正文剥离走独立通道，
+            //    以 text 形态进入结果定型；文件观察版本更新（markObserved）亦在本段（见下）。
             val images = if (name == "viewImage") extractInlineImages(result) else emptyList()
             val attachments = if (name == "sendFile") extractAttachments(result) else emptyList()
             val transportResult = when {
@@ -1479,6 +1534,8 @@ class StatefulAgentWorkflow @Inject constructor(
                 attachments.isNotEmpty() -> stripAttachments(result)
                 else -> result
             }
+            // ── finalizeContent 段：结果定型——toolOutputStore.process 统一为 canonical 形态
+            //    （对齐 RunCodeTool 的 canonical JSON 输出语义），供下游只读消费。
             val processed = toolOutputStore.process(name, toolCall.id, transportResult)
             recordSessionOutput(context, toolCall.id, name, processed)
             // L5 写缓存：仅成功结果入缓存，失败不缓存（避免缓存错误）。
@@ -1486,9 +1543,16 @@ class StatefulAgentWorkflow @Inject constructor(
                 toolResultCache.put(cacheKey, processed)
             }
             // L7 事件发布：工具成功后广播对应事件，驱动缓存失效、上下文增量刷新等联动。
+            // ── post-execute 段：文件观察版本更新（D1-4，readFile/writeFile/editFile 成功后记录当前 mtime，
+            //    使「写入即已知」成立、避免「自己刚改过又被拦」；失败静默降级不阻断主流程）。
             if (processed is ToolResult.Success) {
+                if (name in FILE_OBSERVED_TOOLS) {
+                    (toolCall.arguments["path"] as? JsonPrimitive)?.contentOrNull?.let { fileObservationGuard.markObserved(it) }
+                }
                 publishToolEvent(name, toolCall, processed, context)
             }
+            // ── result 段：只读观测——写结果缓存（仅成功）、发布工具事件、记录增量索引，
+            //    均为不改变结果本体的只读副作用（side-effect），六段契约到此结束。
             // L6 增量索引：记录工具动作摘要（成功与失败均记录，作为状态变化）。
             // 复用下方 transportString，避免对完整结果重复序列化。
             val transportString = processed.toTransportString()
@@ -1502,6 +1566,46 @@ class StatefulAgentWorkflow @Inject constructor(
             recordSessionOutput(context, toolCall.id, name, error)
             ToolRunResult(error.toTransportString(), true, errorClass = classifyError(error.code))
         }
+    }
+
+    /**
+     * D1-3 guard 段：遍历护栏链，首个 [ToolGuardResult.Block] 短路（工具不执行）；
+     * [ToolGuardResult.Advisory] 不阻断，记录日志（提醒队列，供上层注入给模型）。
+     * 单个护栏异常静默按放行处理，不阻断主流程。
+     * @return 非 null = 被某护栏拦截，调用方直接以该错误返回模型。
+     */
+    private suspend fun runToolGuards(
+        name: String,
+        toolCall: ToolCall,
+        context: AgentContext
+    ): ToolResult.Error? {
+        for (guard in toolGuards) {
+            val verdict = try {
+                guard.guard(
+                    ToolGuardContext(
+                        toolName = name,
+                        args = toolCall.arguments,
+                        sessionId = context.sessionId,
+                        projectRoot = context.projectRoot
+                    )
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "护栏 ${guard.id} 判定异常，按放行处理", e)
+                continue
+            }
+            when (verdict) {
+                is ToolGuardResult.Block -> {
+                    FileLogger.w(TAG, "护栏 ${guard.id} 拦截 $name: ${verdict.code} ${verdict.message}")
+                    return ToolResult.Error(verdict.message, verdict.code)
+                }
+                is ToolGuardResult.Advisory ->
+                    FileLogger.w(TAG, "护栏 ${guard.id} 提醒 $name: ${verdict.code} ${verdict.message}")
+                ToolGuardResult.Pass -> Unit
+            }
+        }
+        return null
     }
 
     /**

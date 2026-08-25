@@ -31,6 +31,7 @@ import com.R.codecore.feature.settings.data.repository.CompactionModelSettingsRe
 import com.R.codecore.feature.settings.data.repository.ExecutionModeHolder
 import com.R.codecore.feature.settings.data.repository.ExecutionModeRepository
 import com.R.codecore.feature.settings.data.repository.KeepaliveSettingsRepository
+import com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository
 
 import com.R.codecore.core.util.LogLineParser
 import com.R.codecore.feature.settings.data.repository.LogFilterSettingsRepository
@@ -105,6 +106,8 @@ class SettingsViewModel @Inject constructor(
     private val logFilterSettingsRepository: LogFilterSettingsRepository,
     private val themeSettingsRepository: ThemeSettingsRepository,
     private val keepaliveSettingsRepository: KeepaliveSettingsRepository,
+    /** D1-7 规范流程统一开关（总开关 + step_inject/tool_guard 子开关，对齐 norm-chain §3.5）。 */
+    private val normFlowSettingsRepository: NormFlowSettingsRepository,
     private val mcpConfigRepository: McpConfigRepository,
     private val mcpManager: McpManager,
     private val mcpServerManager: McpServerManager,
@@ -195,6 +198,16 @@ class SettingsViewModel @Inject constructor(
 
     private val _keepaliveEnabled = MutableStateFlow(false)
     val keepaliveEnabled: StateFlow<Boolean> = _keepaliveEnabled.asStateFlow()
+
+    /** D1-7 规范流程统一开关：总开关 + step_inject/tool_guard 子开关（对齐 norm-chain §3.5）。 */
+    private val _normFlowEnabled = MutableStateFlow(true)
+    val normFlowEnabled: StateFlow<Boolean> = _normFlowEnabled.asStateFlow()
+
+    private val _stepInjectEnabled = MutableStateFlow(true)
+    val stepInjectEnabled: StateFlow<Boolean> = _stepInjectEnabled.asStateFlow()
+
+    private val _toolGuardEnabled = MutableStateFlow(true)
+    val toolGuardEnabled: StateFlow<Boolean> = _toolGuardEnabled.asStateFlow()
 
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
@@ -384,6 +397,24 @@ class SettingsViewModel @Inject constructor(
             launch {
                 keepaliveSettingsRepository.enabledFlow.collectLatest {
                     _keepaliveEnabled.value = it
+                }
+            }
+
+            launch {
+                normFlowSettingsRepository.normFlowEnabledFlow.collectLatest {
+                    _normFlowEnabled.value = it
+                }
+            }
+
+            launch {
+                normFlowSettingsRepository.stepInjectEnabledFlow.collectLatest {
+                    _stepInjectEnabled.value = it
+                }
+            }
+
+            launch {
+                normFlowSettingsRepository.toolGuardEnabledFlow.collectLatest {
+                    _toolGuardEnabled.value = it
                 }
             }
 
@@ -864,6 +895,25 @@ class SettingsViewModel @Inject constructor(
     fun setKeepaliveEnabled(enabled: Boolean) {
         viewModelScope.launch {
             keepaliveSettingsRepository.setEnabled(enabled)
+        }
+    }
+
+    // D1-7 规范流程统一开关：总开关/子开关持久化（workflow 运行期读同一 repository）。
+    fun setNormFlowEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            normFlowSettingsRepository.setNormFlowEnabled(enabled)
+        }
+    }
+
+    fun setStepInjectEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            normFlowSettingsRepository.setStepInjectEnabled(enabled)
+        }
+    }
+
+    fun setToolGuardEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            normFlowSettingsRepository.setToolGuardEnabled(enabled)
         }
     }
 

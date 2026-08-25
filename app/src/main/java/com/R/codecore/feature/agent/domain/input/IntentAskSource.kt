@@ -2,6 +2,7 @@ package com.R.codecore.feature.agent.domain.input
 
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.prompt.SystemPromptProvider
+import javax.inject.Inject
 
 /**
  * 意图问判注入（D0-3，对齐 norm-chain §3.10.2）：step 前注入「意图问判三问」，
@@ -11,7 +12,7 @@ import com.R.codecore.feature.agent.domain.prompt.SystemPromptProvider
  * importance=P1 常规（§3.1.2 八源排序中紧随 goal 之后），可被注入预算裁剪。
  * 无状态、纯文本，注入到统一 step 前注入块（StatefulAgentWorkflow CallLlm 段）。
  */
-class IntentAskSource : SystemPromptProvider.PromptSource {
+class IntentAskSource @Inject constructor() : SystemPromptProvider.PromptSource {
 
     override fun build(ctx: AgentContext): String? = BLOCK
 

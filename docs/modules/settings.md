@@ -30,6 +30,7 @@
 | `data/repository/CompatibilityPolicyRepository.kt` | 兼容端点策略：DefaultPolicy(STRICT/HEURISTIC/LAX/MANUAL)、发送失败自动降级、viewImage 守卫策略 |
 | `data/repository/ZthTierRepository.kt` | ZTH 档位 + 性能等级 + Swipe 开关（供安全设置与 ZthGuard 门禁） |
 | `data/repository/SyncSettingsRepository.kt` | 同步忽略模式/useGitignore/批次大小（SharedPreferences） |
+| `data/repository/NormFlowSettingsRepository.kt` | **规范流程统一开关**（norm-chain D1，DataStore）：总开关 `norm_flow_enabled` + 子开关 `step_inject_enabled`（step 前注入纪律）/`tool_guard_enabled`（guard 护栏链），Flow 暴露 + `isStepInjectActive()`/`isToolGuardActive()` 供 `StatefulAgentWorkflow` 判定 |
 | `data/repository/SshConfigResolver.kt` | `RemoteConnectionSettings.resolveSshConfigOrNull` 扩展：v2 占位配置 → 真实 `RemoteConnectionConfig` |
 | `domain/model/AIProviderConfig.kt` | 供应商领域模型 + `ProviderType`(OPENAI/ANTHROPIC/GEMINI) + 默认 API 路径 |
 | `domain/model/ModelMetadata.kt` | 模型元数据（上下文/输入输出 token、三能力）+ `Source`(MODELS_DEV/INFERRED) + `InferenceReason` 审计信息 |
@@ -37,13 +38,13 @@
 | `domain/repository/AIProviderRepository.kt` | AI 供应商仓储接口（流式 provider 列表 + 同步 active 读取 + `ensureActiveProvider`） |
 | `domain/SkillImporter.kt` | 技能导入管线：ZIP 压缩包 / 单 MD 文件 / 粘贴文本 / URL 下载四来源统一准备（预校验 + Zip Slip 防护 + 冲突检测）→ 确认落地 |
 | `domain/SkillExporter.kt` | 技能导出：LOCAL 技能目录 zip 打包（供分享/迁移） |
-| `presentation/SettingsViewModel.kt` | 设置页编排：所有 StateFlow、Provider CRUD/模型拉取/测试、MCP、权限、容器与执行模式、日志查看器（含 live tail） |
+| `presentation/SettingsViewModel.kt` | 设置页编排：所有 StateFlow、Provider CRUD/模型拉取/测试、MCP、权限、容器与执行模式、日志查看器（含 live tail）；**规范流程开关（D1）**：收集 `NormFlowSettingsRepository` 三开关 Flow → `normFlowEnabled/stepInjectEnabled/toolGuardEnabled` StateFlow + `setNormFlowEnabled/setStepInjectEnabled/setToolGuardEnabled` 操作方法 |
 | `presentation/SecuritySettingsViewModel.kt` | 安全设置：凭据加密状态/迁移/密钥轮换/重置 + ZTH 三字段合成 UI 状态 |
 | `presentation/SkillsViewModel.kt` | 技能中心：启用/禁用/卸载、作用域覆盖、统一导入管线（ZIP/MD/粘贴/URL 准备→确认）、导出与分享 |
 | `presentation/SkillDetailViewModel.kt` | 技能查看页：加载技能、构建目录树、文件内容读取/语法高亮分派 |
 | `presentation/SkillEditViewModel.kt` | 技能编辑器：frontmatter 表单解析/回填、正文编辑、新增/删除文件、另存为新技能 |
 | `presentation/AboutStatsViewModel.kt` | 关于页使用统计 |
-| `presentation/component/SettingsScreen.kt` | 设置主屏：`SettingsSection` 二级分区路由、顶栏、各 section 分发、跨屏 openSection 信号；首页 16 个菜单项用 Material Rounded 图标 + 每项专属日夜间彩色图标块（`iconBgLight`/`iconBgDark`，随 `LocalAppDarkMode` 切换，见 §5） |
+| `presentation/component/SettingsScreen.kt` | 设置主屏：`SettingsSection` 二级分区路由、顶栏、各 section 分发、跨屏 openSection 信号；首页 16 个菜单项用 Material Rounded 图标 + 每项专属日夜间彩色图标块（`iconBgLight`/`iconBgDark`，随 `LocalAppDarkMode` 切换，见 §5）；**规范流程分区（D1）**：新增 `NormFlow` 菜单项与 `NormFlowSection` 渲染分支（总开关 + 两个子开关，`GroupSwitchRow`） |
 | `presentation/component/ProvidersAndLogSection.kt` | 供应商列表 `ProvidersSection` + `ProviderItem`、空态 |
 | `presentation/component/ProviderEditorScreen.kt` | 供应商编辑页（Tab0 兼容端点策略 / Tab1 模型列表与三能力覆盖） |
 | `presentation/component/ProviderModelComponents.kt` | `ProviderModelRow`/`FetchModelRow`/`CapabilityOverrideSheet`/能力徽章 |

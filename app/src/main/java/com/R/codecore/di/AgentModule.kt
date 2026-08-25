@@ -348,7 +348,10 @@ object AgentModule {
         hookDispatcher: com.R.codecore.feature.agent.domain.hook.HookDispatcher,
         wakeQueueManager: com.R.codecore.feature.agent.domain.wake.WakeQueueManager,
         goalService: com.R.codecore.feature.agent.domain.goal.GoalService,
-        planService: com.R.codecore.feature.agent.domain.plan.PlanService
+        planService: com.R.codecore.feature.agent.domain.plan.PlanService,
+        toolGuards: Set<@JvmSuppressWildcards com.R.codecore.feature.agent.domain.guard.ToolGuard>,
+        fileObservationGuard: com.R.codecore.feature.agent.domain.guard.FileObservationGuard,
+        normFlowSettingsRepository: com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository
     ): AgentWorkflow {
         return com.R.codecore.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -379,7 +382,10 @@ object AgentModule {
             hookDispatcher,
             wakeQueueManager,
             goalService,
-            planService
+            planService,
+            toolGuards,
+            fileObservationGuard,
+            normFlowSettingsRepository
         )
     }
 }

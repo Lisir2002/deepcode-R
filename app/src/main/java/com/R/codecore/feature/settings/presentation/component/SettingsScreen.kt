@@ -85,6 +85,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.FactCheck
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -110,6 +111,7 @@ enum class SettingsSection(@param:StringRes val titleRes: Int) {
     Container(R.string.settings_container),
     Logs(R.string.settings_logs),
     Permissions(R.string.settings_permissions),
+    NormFlow(R.string.settings_norm_flow),
     RemoteServers(R.string.settings_remote_servers),
     Backup(R.string.settings_backup),
     Security(R.string.settings_security),
@@ -156,6 +158,10 @@ fun SettingsScreen(
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
     val remoteConnections by viewModel.remoteConnections.collectAsStateWithLifecycle()
     val storageShareEnabled by viewModel.storageShareEnabled.collectAsStateWithLifecycle()
+    // D1-7 规范流程统一开关（对齐 norm-chain §3.5：总开关 + step_inject/tool_guard 子开关）。
+    val normFlowEnabled by viewModel.normFlowEnabled.collectAsStateWithLifecycle()
+    val stepInjectEnabled by viewModel.stepInjectEnabled.collectAsStateWithLifecycle()
+    val toolGuardEnabled by viewModel.toolGuardEnabled.collectAsStateWithLifecycle()
 
     var section by remember { mutableStateOf(SettingsSection.Menu) }
     var logReturnSection by remember { mutableStateOf(SettingsSection.Menu) }
@@ -386,6 +392,14 @@ fun SettingsScreen(
                     onPromote = { viewModel.promoteRuleToGlobal(it) },
                     onDeleteGlobal = { viewModel.deleteGlobalRule(it) }
                 )
+                SettingsSection.NormFlow -> NormFlowSection(
+                    normFlowEnabled = normFlowEnabled,
+                    stepInjectEnabled = stepInjectEnabled,
+                    toolGuardEnabled = toolGuardEnabled,
+                    onToggleNormFlow = { viewModel.setNormFlowEnabled(it) },
+                    onToggleStepInject = { viewModel.setStepInjectEnabled(it) },
+                    onToggleToolGuard = { viewModel.setToolGuardEnabled(it) }
+                )
                 SettingsSection.Backup -> {
                     val backupViewModel: com.R.codecore.feature.backup.presentation.BackupViewModel =
                         androidx.hilt.navigation.compose.hiltViewModel()
@@ -592,6 +606,18 @@ internal fun SettingsMenu(
             iconBgDark = Color(0xFF9A5B1E),
             keywords = listOf("perm", stringResource(R.string.ui____98a315c0), stringResource(R.string.ui____b0fae043), "permission", "allow", stringResource(R.string.ui____20dce2c6_2), "tool"),
             action = { onOpen(SettingsSection.Permissions) }
+        ),
+        // D1-7 规范流程统一开关（对齐 norm-chain §3.5）：总开关 + step_inject/tool_guard 子开关。
+        MenuItem(
+            section = SettingsSection.NormFlow,
+            group = groupAI,
+            title = stringResource(SettingsSection.NormFlow.titleRes),
+            subtitle = stringResource(R.string.settings_norm_flow_subtitle),
+            icon = Icons.Rounded.FactCheck,
+            iconBgLight = Color(0xFF06B6D4),
+            iconBgDark = Color(0xFF155E75),
+            keywords = listOf("norm", "flow", "step", "inject", "guard", stringResource(R.string.settings_norm_flow)),
+            action = { onOpen(SettingsSection.NormFlow) }
         ),
         // 能力中心入口（自侧边栏移入设置）：技能管理、MCP 工具服务等，独立路由跳转，不走 section 切换。
         MenuItem(

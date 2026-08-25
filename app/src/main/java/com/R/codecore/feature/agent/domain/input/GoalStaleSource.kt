@@ -20,9 +20,15 @@ import javax.inject.Singleton
  * 不直接查 Room（build 同步调用，保持无 IO）。
  */
 @Singleton
-class GoalStaleSource @Inject constructor(
-    private val detectorFactory: (Int, Int) -> GoalStaleDetector = ::GoalStaleDetector
+class GoalStaleSource(
+    private val detectorFactory: (Int, Int) -> GoalStaleDetector
 ) : SystemPromptProvider.PromptSource {
+    /**
+     * Hilt 注入入口：默认检测参数（连续 2 轮、10 轮频控）。
+     * 主构造器保留 detectorFactory 供测试注入自定义 detector；Dagger 认 secondary @Inject 构造器，
+     * 避免「带默认参数的 @Inject 主构造器」被 Kotlin 生成两个注入构造器导致 Dagger 冲突。
+     */
+    @Inject constructor() : this({ consecutive, cap -> GoalStaleDetector(consecutive, cap) })
 
     /** 会话级跟踪状态：sessionId -> (detector, state)。 */
     private val sessions = ConcurrentHashMap<String, Entry>()
