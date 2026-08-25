@@ -1,5 +1,7 @@
 package com.R.codecore.feature.agent.domain.provider
 
+import com.R.codecore.core.network.DeltaAccumulator
+import com.R.codecore.core.network.DeltaAccumulator.Semantic
 import com.R.codecore.core.network.SseFieldExtractor
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.feature.agent.data.remote.openai.OpenAIApi
@@ -282,7 +284,7 @@ class OpenAIAdapter @Inject constructor(
                                                                 val acc = toolAccs.getOrPut(idx) { OpenAIToolAcc() }
                                                                 acc.id = id
                                                                 acc.name = name
-                                                                acc.args.append(args)
+                                                                acc.args.accept(args)
                                                             }
                                                         }
                                                     }
@@ -309,7 +311,7 @@ class OpenAIAdapter @Inject constructor(
 
                     val toolCalls = toolAccs.values
                         .filter { it.id.isNotEmpty() || it.name.isNotEmpty() }
-                        .map { acc -> ToolCall(id = acc.id, name = acc.name, arguments = parseArgs(acc.args.toString())) }
+                        .map { acc -> ToolCall(id = acc.id, name = acc.name, arguments = parseArgs(acc.args.text)) }
                     onProduced()
                     emit(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = finishReason, inputTokens = streamInputTokens, outputTokens = streamOutputTokens)))
                 },
@@ -426,7 +428,7 @@ class OpenAIAdapter @Inject constructor(
                                 // 仅在 id/name 非空时更新，避免增量 chunk 的空值覆盖首 chunk 的有效值
                                 m["$prefix.id"]?.takeIf { it.isNotEmpty() }?.let { acc.id = it }
                                 m["$prefix.function.name"]?.takeIf { it.isNotEmpty() }?.let { acc.name = it }
-                                m["$prefix.function.arguments"]?.let { acc.args.append(it) }
+                                m["$prefix.function.arguments"]?.let { acc.args.accept(it) }
                             }
                         } catch (e: CancellationException) {
                             throw e
@@ -443,7 +445,7 @@ class OpenAIAdapter @Inject constructor(
 
             val toolCalls = toolAccs.values
                 .filter { it.id.isNotEmpty() || it.name.isNotEmpty() }
-                .map { acc -> ToolCall(id = acc.id, name = acc.name, arguments = parseArgs(acc.args.toString())) }
+                .map { acc -> ToolCall(id = acc.id, name = acc.name, arguments = parseArgs(acc.args.text)) }
             onProduced()
             emit(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = finishReason, inputTokens = streamInputTokens, outputTokens = streamOutputTokens)))
             },
@@ -466,7 +468,8 @@ class OpenAIAdapter @Inject constructor(
     private class OpenAIToolAcc {
         var id = ""
         var name = ""
-        val args = StringBuilder()
+        /** 工具参数累积：增量片段语义（INCREMENTAL），带 base64 折叠与长度护栏，防止病态参数累积放大。 */
+        val args = DeltaAccumulator(Semantic.INCREMENTAL)
     }
 
     /** 把累积的工具入参 JSON 字符串解析为 JsonObject；为空或非法时回退为空对象。 */

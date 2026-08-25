@@ -1,5 +1,6 @@
 package com.R.codecore.feature.agent.domain.workflow
 
+import com.R.codecore.core.network.DeltaAccumulator
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.model.AgentImage
@@ -695,8 +696,13 @@ class StatefulAgentWorkflow @Inject constructor(
                             state = state.copy(messages = compactedMessages)
                         }
 
-                        val acc = StringBuilder()
-                        val reasoningAcc = StringBuilder()
+                        // 正文累积同样走流式归一化（AUTO_DETECT）：防御兼容网关全量重发 content 导致的
+                        // 正文线性放大，并附带裸 base64 折叠 + 200k 长度护栏。
+                        val acc = DeltaAccumulator()
+                        // reasoning 走流式归一化累积（AUTO_DETECT）：兼容网关常全量重发 reasoning_content，
+                        // 直接 append 会把"全量"当"增量"线性放大（base64 重复几百行 bug 根因）。
+                        // DeltaAccumulator 负责去重、裸 base64 折叠与 200k 长度护栏。
+                        val reasoningAcc = DeltaAccumulator()
                         var finalResponse: AIResponse? = null
 
                         // sendImages 提级到 try 外面：catch 块（备选方案②自动降级）需要访问它判断
@@ -713,36 +719,38 @@ class StatefulAgentWorkflow @Inject constructor(
                             providerInUse.completeStream(systemPrompt, messagesToSend, currentTools, currentContext.reasoningEffort).collect { chunk ->
                                 when (chunk) {
                                     is AIStreamChunk.TextDelta -> {
-                                        acc.append(chunk.text)
-                                        send(AgentEvent.AssistantDelta(acc.toString()))
+                                        acc.accept(chunk.text)
+                                        send(AgentEvent.AssistantDelta(acc.text))
                                     }
                                     is AIStreamChunk.ReasoningDelta -> {
-                                        reasoningAcc.append(chunk.text)
-                                        send(AgentEvent.ReasoningDelta(reasoningAcc.toString()))
+                                        reasoningAcc.accept(chunk.text)
+                                        send(AgentEvent.ReasoningDelta(reasoningAcc.text))
                                     }
                                     is AIStreamChunk.Retrying -> {
-                                        acc.setLength(0)
-                                        reasoningAcc.setLength(0)
+                                        acc.reset()
+                                        reasoningAcc.reset()
                                         send(AgentEvent.Retrying(chunk.attempt, chunk.maxRetries))
                                     }
                                     is AIStreamChunk.Final -> finalResponse = chunk.response
                                 }
                             }
-                            val aiResponse = finalResponse ?: AIResponse(content = acc.toString())
+                            val aiResponse = finalResponse ?: AIResponse(content = acc.text)
+                            // 归一化护栏可观测埋点：全量重发去重 / 截断 / base64 折叠触发时告警。
+                            logNormalizerGuardrails(currentContext.sessionId, providerInUse.model, acc, reasoningAcc)
                             // 将本轮 reasoning 附加到 AIResponse，以便 reduce 时存入 AssistantMessage 并在下一轮回传
-                            val responseWithReasoning = if (reasoningAcc.isNotEmpty()) {
-                                aiResponse.copy(reasoning = reasoningAcc.toString())
+                            val responseWithReasoning = if (reasoningAcc.text.isNotEmpty()) {
+                                aiResponse.copy(reasoning = reasoningAcc.text)
                             } else aiResponse
 
                             if (aiResponse.content.isNotBlank() || aiResponse.toolCalls.isNotEmpty()) {
-                                send(AgentEvent.AssistantText(aiResponse.content, aiResponse.toolCalls, reasoningAcc.toString(), aiResponse.signature ?: "", aiResponse.inputTokens, aiResponse.outputTokens))
+                                send(AgentEvent.AssistantText(aiResponse.content, aiResponse.toolCalls, reasoningAcc.text, aiResponse.signature ?: "", aiResponse.inputTokens, aiResponse.outputTokens))
                             }
                             actionQueue.addLast(AgentAction.LlmResponse(responseWithReasoning))
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            val partial = acc.toString()
-                            val reasoning = reasoningAcc.toString()
+                            val partial = acc.text
+                            val reasoning = reasoningAcc.text
                             val errorMessage = e.message.orEmpty()
 
                             // —— 备选方案②：自动降级兜底（上游明确拒绝 image / 多模态时触发） ——
@@ -822,32 +830,32 @@ class StatefulAgentWorkflow @Inject constructor(
                                     textOnlyMessages[firstUserIndex] = origin.copy(content = newContent)
                                 }
                                 // 正式走一次纯文本请求（不再包 try，失败就按原逻辑给 AgentEvent.Failed）
-                                val acc2 = StringBuilder()
-                                val reasoning2 = StringBuilder()
+                                val acc2 = DeltaAccumulator()
+                                val reasoning2 = DeltaAccumulator()
                                 var final2: AIResponse? = null
                                 providerInUse.completeStream(systemPrompt, textOnlyMessages, currentTools, currentContext.reasoningEffort).collect { chunk ->
                                     when (chunk) {
                                         is AIStreamChunk.TextDelta -> {
-                                            acc2.append(chunk.text)
-                                            send(AgentEvent.AssistantDelta(acc2.toString()))
+                                            acc2.accept(chunk.text)
+                                            send(AgentEvent.AssistantDelta(acc2.text))
                                         }
                                         is AIStreamChunk.ReasoningDelta -> {
-                                            reasoning2.append(chunk.text)
-                                            send(AgentEvent.ReasoningDelta(reasoning2.toString()))
+                                            reasoning2.accept(chunk.text)
+                                            send(AgentEvent.ReasoningDelta(reasoning2.text))
                                         }
                                         is AIStreamChunk.Retrying -> {
-                                            acc2.setLength(0)
-                                            reasoning2.setLength(0)
+                                            acc2.reset()
+                                            reasoning2.reset()
                                             send(AgentEvent.Retrying(chunk.attempt, chunk.maxRetries))
                                         }
                                         is AIStreamChunk.Final -> final2 = chunk.response
                                     }
                                 }
-                                val aiResp2 = (final2 ?: AIResponse(content = acc2.toString())).let {
-                                    if (reasoning2.isNotEmpty()) it.copy(reasoning = reasoning2.toString()) else it
+                                val aiResp2 = (final2 ?: AIResponse(content = acc2.text)).let {
+                                    if (reasoning2.text.isNotEmpty()) it.copy(reasoning = reasoning2.text) else it
                                 }
                                 if (aiResp2.content.isNotBlank() || aiResp2.toolCalls.isNotEmpty()) {
-                                    send(AgentEvent.AssistantText(aiResp2.content, aiResp2.toolCalls, reasoning2.toString(), aiResp2.signature ?: "", aiResp2.inputTokens, aiResp2.outputTokens))
+                                    send(AgentEvent.AssistantText(aiResp2.content, aiResp2.toolCalls, reasoning2.text, aiResp2.signature ?: "", aiResp2.inputTokens, aiResp2.outputTokens))
                                 }
                                 actionQueue.addLast(AgentAction.LlmResponse(aiResp2))
                             } else {
@@ -1100,6 +1108,30 @@ class StatefulAgentWorkflow @Inject constructor(
         outcomes.forEach { outcome ->
             outcome.error?.let { FileLogger.w(TAG, "Hook[${outcome.handlerId}] $kind 异常", it) }
         }
+    }
+
+    /**
+     * 流式归一化护栏可观测埋点：全量重发去重 / 超长截断 / base64 折叠触发时打 warn。
+     * 带 sessionId、model、去重次数、原始接收字节 vs 归一化后字节的放大比率，便于发现"异常放大上游"。
+     */
+    private fun logNormalizerGuardrails(
+        sessionId: String?,
+        model: String,
+        text: DeltaAccumulator,
+        reasoning: DeltaAccumulator
+    ) {
+        if (reasoning.duplicateCount == 0 && !reasoning.isTruncated && !text.isTruncated) return
+        val ratio = if (reasoning.rawCharsReceived > 0) {
+            "%.1fx".format(reasoning.rawCharsReceived.toDouble() / reasoning.text.length.coerceAtLeast(1))
+        } else "n/a"
+        FileLogger.w(
+            TAG,
+            "流式归一化护栏触发: session=$sessionId model=$model " +
+                "reasoningDuplicate=${reasoning.duplicateCount} " +
+                "reasoningTruncated=${reasoning.isTruncated} textTruncated=${text.isTruncated} " +
+                "reasoningRawChars=${reasoning.rawCharsReceived} reasoningNormalized=${reasoning.text.length} " +
+                "reasoningAmplification=$ratio"
+        )
     }
 
     /**

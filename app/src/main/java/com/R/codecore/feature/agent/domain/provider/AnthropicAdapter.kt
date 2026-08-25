@@ -6,6 +6,8 @@ import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicMessage
 import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicContentBlock
 import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicThinkingConfig
 import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicToolDefinition
+import com.R.codecore.core.network.DeltaAccumulator
+import com.R.codecore.core.network.DeltaAccumulator.Semantic
 import com.R.codecore.core.network.SseFieldExtractor
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.feature.agent.domain.model.AgentImage
@@ -247,7 +249,7 @@ class AnthropicAdapter @Inject constructor(
                                         }
                                         "input_json_delta" -> {
                                             val partial = m["delta.partial_json"] ?: ""
-                                            if (index != null) toolBlocks[index]?.args?.append(partial)
+                                            if (index != null) toolBlocks[index]?.args?.accept(partial)
                                         }
                                     }
                                 }
@@ -271,7 +273,7 @@ class AnthropicAdapter @Inject constructor(
             }
 
             val toolCalls = toolBlocks.values.map { acc ->
-                ToolCall(id = acc.id, name = acc.name, arguments = parseArgs(acc.args.toString()))
+                ToolCall(id = acc.id, name = acc.name, arguments = parseArgs(acc.args.text))
             }
             onProduced()
             emit(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = stopReason, signature = signature, inputTokens = streamInputTokens, outputTokens = streamOutputTokens)))
@@ -293,7 +295,8 @@ class AnthropicAdapter @Inject constructor(
 
     /** 流式过程中按 content block index 累积的 tool_use 状态。 */
     private class ToolBlockAcc(val id: String, val name: String) {
-        val args = StringBuilder()
+        /** 工具参数累积：增量片段语义（INCREMENTAL），带 base64 折叠与长度护栏。 */
+        val args = DeltaAccumulator(Semantic.INCREMENTAL)
     }
 
     /** 思考强度 → Anthropic thinking 预算。budget_tokens 最小 1024，且须小于 max_tokens(16384)。 */

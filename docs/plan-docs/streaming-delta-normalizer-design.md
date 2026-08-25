@@ -1,6 +1,6 @@
 # 流式增量语义归一化设计（预防"字段语义假设"类 bug）
 
-> 评审状态：📝 草案
+> 评审状态：✅ 已实施
 
 ## 背景
 
@@ -129,6 +129,13 @@ workflow 只消费 `Append`，UI 只渲染 `Append` 累积。放大在源头消�
 | P1 | reasoning 累积接入归一化器（修本次 bug）+ base64 折叠 + 长度护栏 | 低 |
 | P2 | text / tool arguments 累积接入（消除另两处同类隐患） | 中 |
 | P3 | 可观测埋点 + 放大比率日志 + 模块文档（agent.md）同步 | 低 |
+
+### 落地情况
+
+- P0：`core/network/DeltaAccumulator.kt`（AUTO_DETECT / INCREMENTAL / FULL_SNAPSHOT 三语义 + 去重 / 折叠 / 截断三护栏 + `rawCharsReceived` 观测指标）；`core/network/DeltaAccumulatorTest.kt` 14 条单测全绿。
+- P1：`StatefulAgentWorkflow` 主路径与 vision 降级路径的 `reasoningAcc`/`reasoning2` 由 `StringBuilder` 换为 `DeltaAccumulator()`。
+- P2：`StatefulAgentWorkflow` 正文 `acc`/`acc2` 接入 `DeltaAccumulator()`（AUTO_DETECT）；`OpenAIAdapter.OpenAIToolAcc.args`、`AnthropicAdapter.ToolBlockAcc.args` 接入 `DeltaAccumulator(INCREMENTAL)`（工具参数增量）。
+- P3：`StatefulAgentWorkflow.logNormalizerGuardrails` 在护栏触发时打 warn（sessionId / model / 去重次数 / 截断标记 / 放大比率）；设计文档本页 + `docs/modules/agent.md` §3.1 同步。
 
 ## 关联文档
 

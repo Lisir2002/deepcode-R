@@ -96,6 +96,7 @@
 3. 循环体：用 `AIProvider.completeStream`（SSE 流式）把 systemPrompt + 历史消息 + 工具定义发给模型 → 收到文字增量实时推送、收到 `tool_calls` 进入工具阶段 → 逐工具做权限评估 → 执行（流式工具走 `executeStream`，逐行 `ToolCallProgress`）→ 把 `ToolResult` 序列化回填上下文 → 再请求模型，直到模型不再调用工具或达到迭代上限。
 4. 工作流以不可变 `AgentSessionState` + reducer 的 MVI 方式管理状态，覆盖：批量工具调用（`batchToolCalls`）、待审批权限调用（`pendingPermissionCalls`）、被拒工具结果（`rejectedToolResults`）、视觉输入轮（`pendingVisionRound`/`visionFallbackRetried`）、上下文压缩等。
 5. 错误处理：网络首字节前失败自动重试（`Retrying` 事件）；`max_tokens`/`length` 截断自动续写；超过阈值自动 `ContextCompactor` 压缩；`/compress` 命令可手动触发 `compactSession`。
+6. **流式累积归一化**：正文（`acc`）与思考（`reasoningAcc`）的流式累积统一走 `core/network/DeltaAccumulator`（`AUTO_DETECT` 语义），不再裸 `StringBuilder.append`——兼容网关全量重发 `reasoning_content`/`content` 时自动去重（本次 base64 重复 bug 根因），并内置裸 base64 折叠与 200k 长度护栏；工具参数增量累积（OpenAI `tool_calls.arguments`、Anthropic `input_json_delta`）在 adapter 侧接入 `DeltaAccumulator(INCREMENTAL)`。护栏触发（全量重发/截断/折叠）经 `logNormalizerGuardrails` 打 warn（含 sessionId、model、放大比率）。详见 [docs/plan-docs/streaming-delta-normalizer-design.md](../../docs/plan-docs/streaming-delta-normalizer-design.md)。
 
 ### 3.2 工具系统（AgentTool / ToolRegistry）
 
