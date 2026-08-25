@@ -8,8 +8,9 @@ import com.R.codecore.core.util.FileLogger
 import com.R.codecore.core.util.toUserMessage
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.domain.checkpoint.CheckpointManager
-import com.R.codecore.feature.agent.data.local.dao.CheckpointDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
+import com.R.codecore.feature.agent.data.local.dao.ChatSessionWithCount
+import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
 import com.R.codecore.feature.agent.data.CodeChangeTracker
 import com.R.codecore.feature.agent.domain.container.ContainerInitState
@@ -209,6 +210,16 @@ class AIAgentViewModel @Inject constructor(
             else chatSessionDao.getAll().map { list ->
                 list.filter { it.workspacePath.isBlank() || it.workspacePath == path }
                     .map { it.toDomain() }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** 对话列表专用数据源：会话 + 消息条数聚合（保留工作台过滤，逻辑同 [sessions]）。 */
+    val sessionsWithCount: StateFlow<List<ChatSessionWithCount>> = _currentWorkspace
+        .flatMapLatest { path ->
+            if (path.isBlank()) flowOf(emptyList())
+            else chatSessionDao.getAllWithCount().map { list ->
+                list.filter { it.workspacePath.isBlank() || it.workspacePath == path }
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -1474,7 +1485,18 @@ class AIAgentViewModel @Inject constructor(
         lastProbeAt.clear()
     }
 
+    /**
+     * 最近一次删除的会话数据（会话 + 全部消息），用于 Snackbar「撤销」恢复。
+     * 单槽覆盖：仅保留最近一次删除；进程被杀/会话切走后缓存失效（撤销窗口短，低风险）。
+     */
+    private var lastDeletedSession: Pair<ChatSessionEntity, List<AgentMessageEntity>>? = null
+
     fun deleteSession(id: String) = viewModelScope.launch {
+        // 删除前缓存会话 + 消息，供 Snackbar「撤销」恢复（re-insert）
+        val entity = sessionUseCase.getSessionById(id)
+        val messages = if (entity != null) agentMessageDao.getMessagesBySessionOnce(id) else emptyList()
+        lastDeletedSession = entity?.let { it to messages }
+
         checkpointManager.clearSessionCheckpoints(id)
         sessionUseCase.deleteSession(id)
         // 删除会话时同步清理环境快照持久化
@@ -1495,12 +1517,25 @@ class AIAgentViewModel @Inject constructor(
             if (ws.isBlank()) {
                 _currentSessionId.value = null
             } else {
-                // 删除后选中该工作台最近会话；否则选最近未绑定会话；都没有则置空。
+                // 删除后选中该工作台最近会话；否则选最近未绑定会话（同工作台可见）；
+                // 再回退全局最近会话；都没有则置空。
                 val remaining = sessionUseCase.getFirstSessionOfWorkspace(ws)
                     ?: sessionUseCase.getFirstUnboundSession()
+                    ?: sessionUseCase.getMostRecentSession()
                 _currentSessionId.value = remaining?.id
             }
         }
+    }
+
+    /** 撤销最近一次删除：恢复会话 + 消息（re-insert），并选中被恢复的会话。 */
+    fun undoDeleteSession() = viewModelScope.launch {
+        val (entity, messages) = lastDeletedSession ?: return@launch
+        lastDeletedSession = null
+        sessionUseCase.upsertSession(entity)
+        if (messages.isNotEmpty()) {
+            agentMessageDao.insertAll(messages)
+        }
+        _currentSessionId.value = entity.id
     }
 
     /** 重命名会话标题。仅更新 title，不改 updatedAt，列表顺序保持不变。 */

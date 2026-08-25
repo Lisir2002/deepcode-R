@@ -1,8 +1,10 @@
 package com.R.codecore.feature.agent.domain.session
 
+import androidx.room.withTransaction
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
+import com.R.codecore.feature.agent.data.local.database.AgentDatabase
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
 import com.R.codecore.feature.agent.presentation.MessageRole
 import java.util.UUID
@@ -11,6 +13,7 @@ import javax.inject.Singleton
 
 @Singleton
 class SessionUseCase @Inject constructor(
+    private val agentDatabase: AgentDatabase,
     private val chatSessionDao: ChatSessionDao,
     private val agentMessageDao: AgentMessageDao
 ) {
@@ -57,10 +60,30 @@ class SessionUseCase @Inject constructor(
         else clean.take(TITLE_MAX) + "…"
     }
 
-    /** 删除会话，返回需要清理的状态 id 集合，由 ViewModel 执行状态清理。 */
+    /**
+     * 删除会话，返回需要清理的状态 id 集合，由 ViewModel 执行状态清理。
+     *
+     * DB 侧单事务原子执行：删消息 + 级联清理全部带 sessionId 的关联表 + 删会话，
+     * 中途失败整体回滚，不留孤儿数据。
+     *
+     * 级联清理覆盖 9 张关联表（设计文档 chat-session-list-refactor-design C2）：
+     * todo / hunk / 模式切换历史 / 技能会话态 / 唤醒队列(该会话行) / 任务编排 4 表。
+     * 审计类（zth_*、hallucination_fuses）与全局项（wake_queue 空 session）明确保留。
+     */
     suspend fun deleteSession(id: String): String {
-        agentMessageDao.deleteBySession(id)
-        chatSessionDao.delete(id)
+        agentDatabase.withTransaction {
+            agentMessageDao.deleteBySession(id)
+            agentDatabase.todoItemDao().deleteBySession(id)
+            agentDatabase.fileEditHunkDao().deleteBySession(id)
+            agentDatabase.modeSwitchHistoryDao().deleteBySession(id)
+            agentDatabase.skillConversationStateDao().deleteBySession(id)
+            agentDatabase.wakeQueueDao().deleteBySession(id)
+            agentDatabase.goalDao().deleteBySession(id)
+            agentDatabase.planDao().deleteBySession(id)
+            agentDatabase.jobDao().deleteBySession(id)
+            agentDatabase.scheduleDao().deleteBySession(id)
+            chatSessionDao.delete(id)
+        }
         return id
     }
 
@@ -68,9 +91,14 @@ class SessionUseCase @Inject constructor(
         return chatSessionDao.getAllSessionsByWorkspaceOnce(workspacePath).firstOrNull()
     }
 
-    /** 最近一条「未绑定工作台」的会话（工作台绑定在首条消息时自动发生，此前会话处于未绑定态）。 */
+    /** 最近一条「未绑定工作台」的会话（按更新时间降序，工作台绑定在首条消息时自动发生，此前会话处于未绑定态）。 */
     suspend fun getFirstUnboundSession(): ChatSessionEntity? {
-        return chatSessionDao.getAllOnce().firstOrNull { it.workspacePath.isBlank() }
+        return chatSessionDao.getUnboundSessionsOnce().firstOrNull()
+    }
+
+    /** 全局最近一条会话（任意工作台，删当前会话后重选兜底）。 */
+    suspend fun getMostRecentSession(): ChatSessionEntity? {
+        return chatSessionDao.getMostRecentOnce()
     }
 
     /** 绑定/解绑会话工作台路径。绑定即一次性的（会话中途不可切换工作台）：仅未绑定会话可绑定，已绑定则忽略。 */
@@ -85,8 +113,9 @@ class SessionUseCase @Inject constructor(
         chatSessionDao.upsert(entity)
     }
 
+    /** 重命名会话标题。仅更新 title，不改 updatedAt，列表顺序保持不变。长度兜底截断对齐 TITLE_MAX。 */
     suspend fun updateTitle(sessionId: String, title: String) {
-        chatSessionDao.updateTitle(sessionId, title)
+        chatSessionDao.updateTitle(sessionId, title.trim().take(TITLE_MAX))
     }
 
     suspend fun touch(sessionId: String, timestamp: Long) {

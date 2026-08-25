@@ -35,4 +35,8 @@ interface WakeQueueDao {
 
     @Query("DELETE FROM wake_queue WHERE wake_id IN (:ids)")
     suspend fun deleteByIds(ids: List<String>)
+
+    /** 会话删除时级联清理其唤醒项（全局项 session_id='' 不在此列，保留）。 */
+    @Query("DELETE FROM wake_queue WHERE session_id = :sessionId")
+    suspend fun deleteBySession(sessionId: String)
 }

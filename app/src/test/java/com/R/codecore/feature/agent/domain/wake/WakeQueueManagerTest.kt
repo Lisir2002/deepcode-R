@@ -30,6 +30,7 @@ class WakeQueueManagerTest {
             }
         }
         override suspend fun deleteByIds(ids: List<String>) { store.removeAll { it.wakeId in ids } }
+        override suspend fun deleteBySession(sessionId: String) { store.removeAll { it.sessionId == sessionId } }
     }
 
     // ---------- 写入 ----------

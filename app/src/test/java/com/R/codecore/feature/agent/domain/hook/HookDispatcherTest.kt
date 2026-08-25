@@ -32,6 +32,7 @@ class HookDispatcherTest {
             }
         }
         override suspend fun deleteByIds(ids: List<String>) { store.removeAll { it.wakeId in ids } }
+        override suspend fun deleteBySession(sessionId: String) { store.removeAll { it.sessionId == sessionId } }
     }
 
     private fun commitDisciplineHook(dao: WakeQueueDao = FakeWakeQueueDao()): CommitDisciplineHook =

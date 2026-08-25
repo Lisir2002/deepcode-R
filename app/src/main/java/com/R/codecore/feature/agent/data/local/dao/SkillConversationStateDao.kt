@@ -44,4 +44,8 @@ interface SkillConversationStateDao {
     /** 技能卸载时清理其全部对话绑定。 */
     @Query("DELETE FROM skill_conversation_state WHERE skill_id = :skillId")
     suspend fun deleteBySkill(skillId: String)
+
+    /** 会话删除时级联清理其全部技能会话态（按 session_id 精确删除）。 */
+    @Query("DELETE FROM skill_conversation_state WHERE session_id = :sessionId")
+    suspend fun deleteBySession(sessionId: String)
 }

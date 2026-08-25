@@ -371,12 +371,23 @@
     <string name="chat_settings">设置</string>
     <string name="chat_open_browser">内置浏览器</string>
     <string name="chat_delete_session">删除会话</string>
-    <string name="chat_delete_session_confirm">确定删除「%1$s」？该会话的所有消息都将被清除，且无法恢复。</string>
+    <string name="chat_delete_session_confirm">确定删除「%1$s」？该会话的所有消息都将被清除。</string>
+    <string name="chat_delete_session_running">该会话正在执行，删除将中断其任务</string>
     <string name="chat_rename_session">重命名会话</string>
     <string name="chat_session_name">会话名</string>
     <string name="chat_export_session">导出会话</string>
     <string name="chat_export_session_done">会话已导出</string>
     <string name="chat_export_session_failed">导出失败</string>
+    <string name="chat_session_today">今天</string>
+    <string name="chat_session_yesterday">昨天</string>
+    <string name="chat_session_within_7d">7天内</string>
+    <string name="chat_session_earlier">更早</string>
+    <string name="chat_session_days_ago">%1$d 天前</string>
+    <string name="chat_session_msg_count">%1$d 条消息</string>
+    <string name="chat_session_no_msg">暂无消息</string>
+    <string name="chat_session_meta">%1$s · %2$s</string>
+    <string name="chat_deleted_snackbar">已删除「%1$s」</string>
+    <string name="chat_undo">撤销</string>
 
     <!-- Browser -->
     <string name="browser_title">内置浏览器</string>

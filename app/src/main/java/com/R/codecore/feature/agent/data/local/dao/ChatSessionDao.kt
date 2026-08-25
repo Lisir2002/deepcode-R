@@ -21,8 +21,26 @@ interface ChatSessionDao {
     @Query("SELECT * FROM chat_sessions ORDER BY updatedAtMs DESC")
     fun getAll(): Flow<List<ChatSessionEntity>>
 
+    /** 会话 + 消息条数聚合（对话列表数据源，保留工作台过滤在 ViewModel 内存层做）。 */
+    @Query(
+        "SELECT cs.id, cs.title, cs.createdAtMs, cs.updatedAtMs, cs.workspacePath, cs.mode, " +
+            "COUNT(am.id) AS messageCount " +
+            "FROM chat_sessions cs LEFT JOIN agent_messages am ON am.sessionId = cs.id " +
+            "GROUP BY cs.id " +
+            "ORDER BY cs.updatedAtMs DESC"
+    )
+    fun getAllWithCount(): Flow<List<ChatSessionWithCount>>
+
     @Query("SELECT * FROM chat_sessions")
     suspend fun getAllOnce(): List<ChatSessionEntity>
+
+    /** 全局最近一条会话（按更新时间降序）。删当前会话后重选兜底用。 */
+    @Query("SELECT * FROM chat_sessions ORDER BY updatedAtMs DESC LIMIT 1")
+    suspend fun getMostRecentOnce(): ChatSessionEntity?
+
+    /** 未绑定工作台的会话（按更新时间降序）。未绑定会话在所有工作台侧边栏均可见。 */
+    @Query("SELECT * FROM chat_sessions WHERE workspacePath = '' ORDER BY updatedAtMs DESC")
+    suspend fun getUnboundSessionsOnce(): List<ChatSessionEntity>
 
     /** 会话总数。用于数据完整性哨兵（DataSentinel）区分「全新安装」与「数据丢失」。 */
     @Query("SELECT COUNT(*) FROM chat_sessions")

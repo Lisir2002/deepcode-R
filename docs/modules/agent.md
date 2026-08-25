@@ -40,7 +40,7 @@
 | `domain/permission/` | 权限引擎：`ToolPermissionPolicyEngine`（ALLOW/DENY/ASK 判定）、`PermissionRulesRepository`、`ShellCommandParser`、`BuiltInSafeCommands`、`BuildCommandClassifier`、`PermissionModels`、`ZthFailureModels`、`DangerousCommandGuard`（危险命令静态守卫） |
 | `domain/prompt/SystemPromptProvider.kt` | 增量式系统提示词：按 `PromptSource` 组装静态规则（R04 起由 `AgentAssetRegistry` 按 mode 注入）、工作区上下文等片段，维护缓存与快照 |
 | `domain/provider/` | AI Provider 抽象：`AIProvider`（complete / completeStream，含 reasoning、signature、token 统计）、`OpenAIAdapter`、`AnthropicAdapter`、`GeminiAdapter`、`RetryPolicy`、`HttpErrorEnricher`（把 HTTP 错误体拼进 message）。**流式 SSE 解析（网络层优化 P1）**：三家 adapter 改用 Okio `readUtf8Line()` 逐行读取 + `core/network/SseFieldExtractor` 定点字段抽取（Gson `JsonReader` 流式不建整树），替换原 `JsonParser.parseString().asJsonObject` 每行整树解析 |
-| `domain/session/` | 会话用例：`SessionUseCase`、`MessagePersistenceUseCase` |
+| `domain/session/` | 会话用例：`SessionUseCase`（**删除事务化** `withTransaction` + 级联清理 9 张关联表[todo/hunk/模式切换历史/技能会话态/wake/任务编排 4 表]、重命名长度截断 `TITLE_MAX`、删当前会话后重选兜底 `getFirstSessionOfWorkspace`→`getFirstUnboundSession`→`getMostRecentSession`）、`MessagePersistenceUseCase` |
 | `domain/skill/` | 技能系统：`Skill` 模型（PROMPT/SCRIPT/MCP 三形态、BUILTIN/LOCAL 来源）、`SkillParser`、`SkillRepository`、`SkillExecutor`、`SkillSource` + `LocalDirectorySkillSource`、`BuiltinSkillSeeder`（首启引导内置技能）、`SkillStateRepository`（Room 持久化启用状态） |
 | `domain/tool/` | 工具系统（详见 2.3） |
 | `domain/workflow/` | Agent 工作流：`AgentWorkflow`（接口 + `AgentEvent` 事件集）、`StatefulAgentWorkflow`（MVI 状态机实现）、`ContextCompactor`（上下文压缩） |
@@ -91,11 +91,12 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `presentation/AIAgentViewModel.kt` | Agent 主 ViewModel：`executeAgentRequestStream` 启动工作流、管理会话/工具权限/消息落库、实现 `SlashCommandContext` |
+| `presentation/AIAgentViewModel.kt` | Agent 主 ViewModel：`executeAgentRequestStream` 启动工作流、管理会话/工具权限/消息落库、实现 `SlashCommandContext`；**会话列表数据源 `sessionsWithCount`**（会话+消息条数聚合，保留工作台过滤）；**删除撤销**（缓存最近删除会话+消息，`undoDeleteSession` re-insert 恢复） |
 | `presentation/ZthConfirmationCardViewModel.kt` | ZTH 确认卡片 UI 状态 |
 | `presentation/AgentUiModels.kt` | UI 层模型（`AgentAttachment`、`AgentImage` 等） |
 | `presentation/EnvironmentSnapshotStore.kt` | 环境快照存储 |
-| `presentation/component/` | Compose 组件：`AIChatPanel`、`ChatInputBar`（编排入口，胶囊浮动条）、`ChatInputField`（输入框+附件预览）、`ChatInputToolbar`（工具栏+收纳菜单）、`ChatPanels`（权限审批/状态横幅/变更预览/计划审批面板）、`MessageBubbles`、`ToolMessageComponents`、`AskUserQuestionPanel`、`ZthConfirmationCardSheet`、`TaskAccordion`、`TodoCardComponents`、`WebSearchResultComponents`、`FileDiffSheet`、`ChatModelSheet`、`ChatSessionPicker`、`ChatDrawer`、`MarkdownContent`、`RichSegmenter`（`component/richsegment/` 富文本分段）等 |
+| `presentation/component/` | Compose 组件：`AIChatPanel`、`ChatInputBar`（编排入口，胶囊浮动条）、`ChatInputField`（输入框+附件预览）、`ChatInputToolbar`（工具栏+收纳菜单）、`ChatPanels`（权限审批/状态横幅/变更预览/计划审批面板）、`MessageBubbles`、`ToolMessageComponents`、`AskUserQuestionPanel`、`ZthConfirmationCardSheet`、`TaskAccordion`、`TodoCardComponents`、`WebSearchResultComponents`、`FileDiffSheet`、`ChatModelSheet`、`ChatSessionPicker`（`ChatSessionRow` 两行增强：标题+「时间·N 条消息」、选中高亮、执行中呼吸点）、`ChatDrawer`（对话列表四档吸顶分组 + `SwipeToDismissBox` 左滑删除 + Snackbar 撤销）、`MarkdownContent`、`RichSegmenter`（`component/richsegment/` 富文本分段）等 |
+| `presentation/component/SessionListFormat.kt` | 会话列表时间分档与格式化：`SessionBucket`（TODAY/YESTERDAY/WITHIN_7D/EARLIER 四档）、`sessionBucket`/`formatSessionClock`（今日时钟）/`formatSessionDate`（更早日期）/`sessionDaysAgo`（N 天前） |
 
 ## 3. 核心架构与主流程
 
@@ -302,6 +303,7 @@
 - **安全**：RcbBridge 绑定 127.0.0.1 随机端口（外网不可达）+ 首行令牌鉴权；`share` 能力默认不支持（防数据渗出）；`open_url` 默认不真正打开。`PLAN` 模式只读、工具权限最小化、MCP/Skill 加载能力受 ZTH 能力守卫管控。
 - **会话与工作区一对一绑定**：会话创建时把当时的当前工作区路径写入 `ChatSession.workspacePath`，之后**不可中途切换**（会话列表按工作区路径过滤，UI 无改绑入口）；一个工作区可被多个会话绑定。工作区重命名时由 `WorkspaceRepository.renameWorkspace` 经 `ChatSessionDao.updateWorkspacePath` 批量迁移绑定路径。侧边栏「所有工作台 → 查看对话绑定」经 `AIAgentViewModel.sessionsBoundToWorkspace(path)` 查询某工作区绑定的会话。
 - **侧边栏（ChatDrawer）**：顶部 tab 导航高 44dp 与全局标题栏一致；「对话列表」tab 不含新建按钮（新建入口在聊天页顶栏）；「工作目录」tab 文件树点击文件跳转独立阅读页（`MainActivity` 记录 `reopenDrawerAfterFileReader`，退出阅读页自动重开侧边栏并保留所在 tab）；工作区列表行点击弹出下拉菜单（切换/重命名/删除/查看对话绑定-手风琴）；底部按钮栏左侧为设置（图标+文字）、右侧为主题切换纯图标，两侧留边距。
+- **对话列表（会话列表）**：数据源 `AIAgentViewModel.sessionsWithCount`（`ChatSessionDao.getAllWithCount` LEFT JOIN 计数投影 `ChatSessionWithCount`，保留工作台过滤）。列表按 `updatedAtMs` 四档分组吸顶（今天/昨天/7天内/更早，`SessionListFormat.sessionBucket`），组头吸顶显示分档名+计数（`LazyColumn` stickyHeader）；列表项两行增强（标题 + 「时间 · N 条消息」：今日时钟/昨日「昨天」/7天内「N 天前」/更早日期），选中高亮（primaryContainer 0.45 alpha + 字色/字重）、执行中绿色呼吸点。**删除**：左滑（`SwipeToDismissBox` 仅 EndToStart、始终回弹上抛确认框）→ 确认框（执行中会话额外提示「删除将中断其任务」）→ `SessionUseCase.deleteSession` 事务化删除（级联清理 9 张关联表）→ Snackbar「已删除 · 撤销」（ViewModel 缓存最近删除会话+消息，`undoDeleteSession` re-insert 恢复）；长按菜单（重命名/导出/删除）路径保留。**重命名**：上限 20 字（`SessionUseCase.updateTitle` 截断对齐 `TITLE_MAX`），不更新 updatedAt、列表顺序不变。**删当前会话重选**：同工作台最近 → 最近未绑定 → 全局最近 → 置空。
 - **终端输出**：`BoundedOutput` 限制命令输出长度，避免超长回填污染上下文；进度类输出由 `progress/` 解析器聚合。
 
 ## 6. 维护与扩展指引

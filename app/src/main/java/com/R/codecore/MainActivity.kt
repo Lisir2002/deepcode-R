@@ -285,6 +285,7 @@ fun AppNavigation(
     }
 
     val sessions by agentViewModel.sessions.collectAsStateWithLifecycle()
+    val sessionsWithCount by agentViewModel.sessionsWithCount.collectAsStateWithLifecycle()
     val currentSessionId by agentViewModel.currentSessionId.collectAsStateWithLifecycle()
     val currentSession = sessions.find { it.id == currentSessionId }
     val agentStates by agentViewModel.agentStates.collectAsStateWithLifecycle()
@@ -329,7 +330,7 @@ fun AppNavigation(
                 modifier = Modifier.width(300.dp)
             ) {
                 ChatDrawerContent(
-                    sessions = sessions,
+                    sessionsWithCount = sessionsWithCount,
                     currentSessionId = currentSessionId,
                     agentStates = agentStates,
                     onSelect = {
@@ -343,6 +344,7 @@ fun AppNavigation(
                         val safeTitle = session.title.replace(Regex("[^\\w\\u4e00-\\u9fa5\\-]"), "_")
                         sessionExportLauncher.launch("rcodecore-session-$safeTitle-${System.currentTimeMillis()}.tar.gz")
                     },
+                    onUndoDelete = { agentViewModel.undoDeleteSession() },
                     onNavigateToSettings = {
                         scope.launch { drawerState.close() }
                         navController.navigate("settings")

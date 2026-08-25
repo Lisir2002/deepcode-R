@@ -1,5 +1,6 @@
 package com.R.codecore.feature.agent.presentation.component
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Article
@@ -61,15 +64,23 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,11 +91,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.R.codecore.core.theme.LocalAppDarkMode
 import com.R.codecore.core.theme.Radius
 import com.R.codecore.core.theme.Spacing
+import com.R.codecore.feature.agent.data.local.dao.ChatSessionWithCount
 import com.R.codecore.feature.agent.domain.model.ChatSession
 import com.R.codecore.feature.agent.presentation.AgentUIState
 import com.R.codecore.feature.settings.data.repository.AppThemeMode
@@ -95,6 +108,7 @@ import com.R.codecore.feature.workspace.domain.FileEntry
 import com.R.codecore.feature.workspace.domain.model.Workspace
 import com.R.codecore.feature.workspace.presentation.WorkspaceFileViewModel
 import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
+import kotlinx.coroutines.launch
 
 /**
  * 侧边栏内容：内部设有 tab 菜单（对话列表 / 工作目录 / 更多配置），
@@ -106,13 +120,14 @@ import com.R.codecore.feature.workspace.presentation.WorkspaceViewModel
  */
 @Composable
 fun ChatDrawerContent(
-    sessions: List<ChatSession>,
+    sessionsWithCount: List<ChatSessionWithCount>,
     currentSessionId: String?,
     agentStates: Map<String, AgentUIState>,
     onSelect: (ChatSession) -> Unit,
     onDelete: (ChatSession) -> Unit,
     onRename: (ChatSession, String) -> Unit,
     onExport: (ChatSession) -> Unit,
+    onUndoDelete: () -> Unit = {},
     onNavigateToSettings: () -> Unit,
     currentThemeMode: AppThemeMode,
     onCycleTheme: () -> Unit,
@@ -133,6 +148,8 @@ fun ChatDrawerContent(
     var pendingRename by remember { mutableStateOf<ChatSession?>(null) }
     var menuSession by remember { mutableStateOf<ChatSession?>(null) }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = modifier
@@ -173,11 +190,12 @@ fun ChatDrawerContent(
 
         when (selectedTab) {
             0 -> ChatSessionListPanel(
-                sessions = sessions,
+                sessions = sessionsWithCount,
                 currentSessionId = currentSessionId,
                 agentStates = agentStates,
                 onSelect = onSelect,
                 onLongPress = { menuSession = it },
+                onSwipeDelete = { pendingDelete = it.toDomain() },
                 modifier = Modifier.weight(1f)
             )
             1 -> if (workspaceViewModel != null && workspaceFileViewModel != null) {
@@ -236,17 +254,47 @@ fun ChatDrawerContent(
                 onClick = onCycleTheme
             )
         }
+
+        // 删除后的 Snackbar（含「撤销」动作），位于侧边栏底部导航下方。
+        SnackbarHost(hostState = snackbarHostState)
     }
 
     pendingDelete?.let { session ->
+        val isExecuting = agentStates[session.id] is AgentUIState.Loading ||
+            agentStates[session.id] is AgentUIState.Streaming
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text(stringResource(R.string.chat_delete_session)) },
-            text = { Text(stringResource(R.string.chat_delete_session_confirm, session.title)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.chat_delete_session_confirm, session.title))
+                    if (isExecuting) {
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text(
+                            text = stringResource(R.string.chat_delete_session_running),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
             confirmButton = {
+                val deletedMsg = stringResource(R.string.chat_deleted_snackbar, session.title)
+                val undoLabel = stringResource(R.string.chat_undo)
                 TextButton(onClick = {
                     onDelete(session)
                     pendingDelete = null
+                    // 删除成功后弹 Snackbar「已删除 · 撤销」；点「撤销」恢复会话+消息
+                    scope.launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = deletedMsg,
+                            actionLabel = undoLabel,
+                            duration = SnackbarDuration.Short
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            onUndoDelete()
+                        }
+                    }
                 }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
@@ -276,6 +324,7 @@ fun ChatDrawerContent(
 
     pendingRename?.let { session ->
         var renameText by remember(session.id) { mutableStateOf(session.title) }
+        val canSubmit = renameText.isNotBlank() && renameText.trim() != session.title
         AlertDialog(
             onDismissRequest = { pendingRename = null },
             title = { Text(stringResource(R.string.chat_rename_session)) },
@@ -285,6 +334,14 @@ fun ChatDrawerContent(
                     onValueChange = { renameText = it },
                     singleLine = true,
                     label = { Text(stringResource(R.string.chat_session_name)) },
+                    // C3：IME 回车 = 提交（与确认按钮等效）
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (canSubmit) {
+                            onRename(session, renameText)
+                            pendingRename = null
+                        }
+                    }),
                     modifier = Modifier.fillMaxWidth()
                 )
             },
@@ -294,7 +351,7 @@ fun ChatDrawerContent(
                         onRename(session, renameText)
                         pendingRename = null
                     },
-                    enabled = renameText.isNotBlank() && renameText != session.title
+                    enabled = canSubmit
                 ) { Text(stringResource(R.string.common_rename)) }
             },
             dismissButton = {
@@ -540,24 +597,145 @@ private fun DrawerTopTab(
     }
 }
 
+/** 对话列表的扁平条目：分组头 或 会话行（A3 四档吸顶分组用）。 */
+private sealed interface SessionListEntry {
+    data class Header(val bucket: SessionBucket, val count: Int) : SessionListEntry
+    data class Row(val session: ChatSessionWithCount) : SessionListEntry
+}
+
+/**
+ * 按 updatedAtMs 将会话分档（今天/昨天/7天内/更早），并按档序（今天→昨天→7天内→更早）
+ * 展平为 [SessionListEntry] 列表。组内保持输入顺序（数据源已按更新时间降序）。
+ */
+private fun buildSessionEntries(
+    sessions: List<ChatSessionWithCount>,
+    nowMs: Long
+): List<SessionListEntry> {
+    val grouped = sessions.groupBy { sessionBucket(it.updatedAtMs, nowMs) }
+    val order = listOf(
+        SessionBucket.TODAY,
+        SessionBucket.YESTERDAY,
+        SessionBucket.WITHIN_7D,
+        SessionBucket.EARLIER
+    )
+    return buildList {
+        for (bucket in order) {
+            val list = grouped[bucket].orEmpty()
+            if (list.isNotEmpty()) {
+                add(SessionListEntry.Header(bucket, list.size))
+                list.forEach { add(SessionListEntry.Row(it)) }
+            }
+        }
+    }
+}
+
+/** 分组头：分档名 + 右侧会话计数，作为 LazyColumn stickyHeader 吸顶。 */
+@Composable
+private fun SessionGroupHeader(bucket: SessionBucket, count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 吸顶时背景需不透明（surface），避免下方行内容透出
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = when (bucket) {
+                SessionBucket.TODAY -> stringResource(R.string.chat_session_today)
+                SessionBucket.YESTERDAY -> stringResource(R.string.chat_session_yesterday)
+                SessionBucket.WITHIN_7D -> stringResource(R.string.chat_session_within_7d)
+                SessionBucket.EARLIER -> stringResource(R.string.chat_session_earlier)
+            },
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * 左滑删除的会话行（B1）：外包 SwipeToDismissBox，仅允许 EndToStart（左滑）。
+ * 滑到阈值时只触发 [onSwipeDelete]（上抛确认框），本行始终回弹；确认删除后
+ * 行随数据源移除而消失，避免 LazyColumn key 复用串态。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableSessionRow(
+    session: ChatSessionWithCount,
+    selected: Boolean,
+    isExecuting: Boolean,
+    onSwipeDelete: () -> Unit,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onSwipeDelete()
+            }
+            false // 始终回弹；删除须经确认框，此处不真正移除
+        }
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(Radius.sm))
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = Spacing.md),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = stringResource(R.string.common_delete),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    ) {
+        ChatSessionRow(
+            session = session,
+            selected = selected,
+            isExecuting = isExecuting,
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
+    }
+}
+
 /**
  * 侧边栏「对话列表」tab：中部历史记录列表（新建会话入口在聊天页顶栏）。
- * 每次进入该 tab 会自动滚动到当前会话。
+ * 四档日期分组（今天/昨天/7天内/更早）吸顶；列表项两行增强；支持左滑删除。
+ * 每次进入该 tab 会自动滚动到当前会话（按分组后的全局下标换算）。
  */
 @Composable
 private fun ChatSessionListPanel(
-    sessions: List<ChatSession>,
+    sessions: List<ChatSessionWithCount>,
     currentSessionId: String?,
     agentStates: Map<String, AgentUIState>,
     onSelect: (ChatSession) -> Unit,
     onLongPress: (ChatSession) -> Unit,
+    onSwipeDelete: (ChatSessionWithCount) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
+    val entries = remember(sessions) { buildSessionEntries(sessions, System.currentTimeMillis()) }
 
-    LaunchedEffect(currentSessionId, sessions) {
-        if (sessions.isEmpty()) return@LaunchedEffect
-        val index = sessions.indexOfFirst { it.id == currentSessionId }
+    LaunchedEffect(currentSessionId, entries) {
+        if (entries.isEmpty()) return@LaunchedEffect
+        val index = entries.indexOfFirst {
+            it is SessionListEntry.Row && it.session.id == currentSessionId
+        }
         listState.scrollToItem(if (index >= 0) index else 0)
     }
 
@@ -583,16 +761,25 @@ private fun ChatSessionListPanel(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                 ) {
-                    items(sessions, key = { it.id }) { session ->
-                        val state = agentStates[session.id]
-                        val isExecuting = state is AgentUIState.Loading || state is AgentUIState.Streaming
-                        ChatSessionRow(
-                            session = session,
-                            selected = session.id == currentSessionId,
-                            isExecuting = isExecuting,
-                            onClick = { onSelect(session) },
-                            onLongClick = { onLongPress(session) }
-                        )
+                    entries.forEach { entry ->
+                        when (entry) {
+                            is SessionListEntry.Header -> stickyHeader(key = "header_${entry.bucket}") {
+                                SessionGroupHeader(bucket = entry.bucket, count = entry.count)
+                            }
+                            is SessionListEntry.Row -> item(key = entry.session.id) {
+                                val state = agentStates[entry.session.id]
+                                val isExecuting =
+                                    state is AgentUIState.Loading || state is AgentUIState.Streaming
+                                SwipeableSessionRow(
+                                    session = entry.session,
+                                    selected = entry.session.id == currentSessionId,
+                                    isExecuting = isExecuting,
+                                    onSwipeDelete = { onSwipeDelete(entry.session) },
+                                    onClick = { onSelect(entry.session.toDomain()) },
+                                    onLongClick = { onLongPress(entry.session.toDomain()) }
+                                )
+                            }
+                        }
                     }
                 }
             }
