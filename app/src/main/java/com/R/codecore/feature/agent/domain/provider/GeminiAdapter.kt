@@ -1,5 +1,6 @@
 package com.R.codecore.feature.agent.domain.provider
 
+import com.R.codecore.core.network.SseFieldExtractor
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.feature.agent.data.remote.gemini.GeminiApi
 import com.R.codecore.feature.agent.domain.model.AgentImage
@@ -20,6 +21,16 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import java.io.IOException
+
+/** P1 定点字段抽取路径：Gemini 流式所需标量字段（candidates[0].content.parts[0]，数组下标为路径段）。 */
+private val GEMINI_STREAM_PATHS: List<List<String>> = listOf(
+    listOf("usageMetadata", "promptTokenCount"),
+    listOf("usageMetadata", "candidatesTokenCount"),
+    listOf("candidates", "0", "finishReason"),
+    listOf("candidates", "0", "content", "parts", "0", "thought"),
+    listOf("candidates", "0", "content", "parts", "0", "text"),
+    listOf("candidates", "0", "content", "parts", "0", "functionCall", "name")
+)
 
 class GeminiAdapter @Inject constructor(
     private val api: GeminiApi
@@ -185,54 +196,55 @@ class GeminiAdapter @Inject constructor(
                         runCatching { rb.close() }
                     }
                     try {
-                        val reader = rb.charStream().buffered()
+                        val source = rb.source()
                         while (true) {
                             coroutineContext.ensureActive()
-                            val line = reader.readLine()
+                            val line = source.readUtf8Line()
                                 ?: throw IOException("SSE 流被中断（疑似网络断开）")
                             if (!line.startsWith("data:")) continue
                             val data = line.removePrefix("data:").trim()
                             if (data.isEmpty()) continue
                             rawSse.append(line).append('\n')
-                            val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
-                            
-                            try {
-                                obj.get("usageMetadata")?.takeIf { it.isJsonObject }?.asJsonObject?.let { um ->
-                                    streamInputTokens = um.get("promptTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: streamInputTokens
-                                    streamOutputTokens = um.get("candidatesTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: streamOutputTokens
-                                }
-                                val chunkCandidates = obj.getAsJsonArray("candidates")
-                                chunkCandidates?.firstOrNull()?.asJsonObject?.let { candidate ->
-                                    val reason = candidate.get("finishReason")?.takeIf { !it.isJsonNull }?.asString
-                                    if (reason != null && reason != "null") currentFinishReason = reason
+                            // P1 定点字段抽取：热路径（text/thought 增量）只取目标标量，不建整树。
+                            val m = runCatching { SseFieldExtractor.extract(data, GEMINI_STREAM_PATHS) }.getOrElse { emptyMap() }
 
-                                    val content = candidate.getAsJsonObject("content")
-                                    content?.getAsJsonArray("parts")?.forEach { partEl ->
-                                        val part = partEl.asJsonObject
-                                        val isThought = part.get("thought")?.asBoolean == true
-                                        if (part.has("text")) {
-                                            val text = part.get("text")?.asString ?: ""
-                                            if (text.isNotEmpty()) {
-                                                if (isThought) {
-                                                    // 思考增量：仅 UI 实时展示，不计入正文、不触发 onProduced（不落库可安全重试）
-                                                    if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
-                                                    emit(AIStreamChunk.ReasoningDelta(text))
-                                                } else {
-                                                    textBuilder.append(text)
-                                                    if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
-                                                    onProduced()
-                                                    emit(AIStreamChunk.TextDelta(text))
-                                                }
-                                            }
-                                        }
-                                        if (part.has("functionCall")) {
-                                            val fnCall = part.getAsJsonObject("functionCall")
-                                            val name = fnCall.get("name")?.asString ?: ""
-                                            val argsStr = fnCall.getAsJsonObject("args")?.toString() ?: "{}"
-                                            val argsJson = parseArgs(argsStr)
-                                            toolCalls.add(ToolCall(id = name, name = name, arguments = argsJson))
+                            try {
+                                m["usageMetadata.promptTokenCount"]?.toIntOrNull()?.let { streamInputTokens = it }
+                                m["usageMetadata.candidatesTokenCount"]?.toIntOrNull()?.let { streamOutputTokens = it }
+
+                                m["candidates.0.finishReason"]?.let { reason ->
+                                    if (reason != "null") currentFinishReason = reason
+                                }
+
+                                // 文本/思考增量：candidates[0].content.parts[0]（Gemini 流式每 chunk 单 part）
+                                val isThought = m["candidates.0.content.parts.0.thought"]?.toBoolean() == true
+                                m["candidates.0.content.parts.0.text"]?.let { text ->
+                                    if (text.isNotEmpty()) {
+                                        if (isThought) {
+                                            // 思考增量：仅 UI 实时展示，不计入正文、不触发 onProduced（不落库可安全重试）
+                                            if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
+                                            emit(AIStreamChunk.ReasoningDelta(text))
+                                        } else {
+                                            textBuilder.append(text)
+                                            if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
+                                            onProduced()
+                                            emit(AIStreamChunk.TextDelta(text))
                                         }
                                     }
+                                }
+                                // 工具调用（低频）：functionCall.name 命中说明存在 functionCall；
+                                // args 为任意对象，定点抽取无法整段取回，回退整树解析取原 JSON。
+                                if ("candidates.0.content.parts.0.functionCall.name" in m) {
+                                    val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull()
+                                    val fnCall = obj?.getAsJsonArray("candidates")
+                                        ?.firstOrNull()?.asJsonObject
+                                        ?.getAsJsonObject("content")
+                                        ?.getAsJsonArray("parts")
+                                        ?.firstOrNull()?.asJsonObject
+                                        ?.getAsJsonObject("functionCall")
+                                    val name = fnCall?.get("name")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                                    val argsStr = fnCall?.getAsJsonObject("args")?.toString() ?: "{}"
+                                    toolCalls.add(ToolCall(id = name, name = name, arguments = parseArgs(argsStr)))
                                 }
                                 if (currentFinishReason != null) break
                             } catch (e: CancellationException) {

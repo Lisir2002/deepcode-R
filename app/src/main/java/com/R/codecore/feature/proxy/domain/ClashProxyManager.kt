@@ -229,6 +229,12 @@ class ClashProxyManager @Inject constructor(
                 _state.update { it.copy(activeProfileId = id) }
             }
         }
+        // 网络层优化 C5：AI 接口直连/代理分流开关 → 同步给 App 网络层路由写位（默认关 = 全走代理）
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            repository.aiHostsDirectFlow.collect { direct ->
+                routeHolder.setAiHostsDirect(direct)
+            }
+        }
     }
 
     /** 供容器/上层读取的启用态（同步、非挂起）。 */

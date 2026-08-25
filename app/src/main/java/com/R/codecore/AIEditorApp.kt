@@ -109,6 +109,10 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var modelMetadataService: ModelMetadataService
 
+    /** 网络层优化 C1：三家 AI host 连接预热（启动后台预建 DNS+TCP+TLS+HTTP2，降低首字延迟）。 */
+    @Inject
+    lateinit var connectionPrewarmer: com.R.codecore.core.network.ConnectionPrewarmer
+
     /** 凭据加密器：后台异步预热，不阻塞首帧。 */
     @Inject
     lateinit var credentialEncryptor: CredentialEncryptor
@@ -196,6 +200,12 @@ class AIEditorApp : Application() {
         // 启动即异步刷新 models.dev 模型元数据（24h 缓存；失败静默，resolve 兜底内置 assets 数据）。
         appScope.launch {
             modelMetadataService.refreshFromNetworkIfStale()
+        }
+        // 网络层优化 C1：后台预热三家 AI host 连接（DNS+TCP+TLS+HTTP2 握手留在共享连接池），
+        // 正式请求复用后省掉 1~3 RTT 首字延迟；失败静默，绝不影响主链路与首帧。
+        appScope.launch {
+            runCatching { connectionPrewarmer.warmDefaults() }
+                .onFailure { FileLogger.w(TAG, "连接预热异常（忽略，不影响主链路）", it) }
         }
         // 启动即后台做数据库完整性检查：损坏的 DB 会触发 SQLite 原生崩溃（SIGSEGV/SIGABRT），
         // 完全绕过 Java CrashHandler，表现为「模型输出/写入时突然闪退、日志无报错」。

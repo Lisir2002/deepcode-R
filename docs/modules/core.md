@@ -14,6 +14,7 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 | `core/data/` | **数据注册表**（数据层重构「新写法」核心）：`DataRegistry`（备份/恢复/自动迁移的单一事实源）、`DataProvider`/`DataBlob`/`DataCategory`（数据域接口与载荷）、`TableDataProvider`（通用 Room 表转储）、`DataStoreDataProvider`（DataStore 目录转储）、`DataRegistryModule`（注册 5 域库 26 表 + DataStore） |
 | `core/db/` | 数据库基础：`DbSplitMigrator`（旧单库 → 新 5 域库一次性移植）、`MigrationLoader`（老库文件驱动迁移，仅 LegacyAgentDatabase 读取旧数据用）、`RobustMigration44`、`LightweightSchemaRescue`、`CredentialEncryptionStateEntity` |
 | `core/environment/` | **运行环境抽象**：`ExecutionEnvironment`（真机 / arm64 模拟器 / x86_64 模拟器 / 其它）+ `EnvironmentDetector`（宿主 ABI、模拟器探测、默认容器 profile 选择）——所有「真机绑定」适配的唯一入口（见 [emulator-support-design](../plan-docs/emulator-support-design.md)） |
+| `core/network/` | **网络层优化**（见 [network-layer-optimization-design](../plan-docs/network-layer-optimization-design.md)）：`SseFieldExtractor`（SSE 行定点字段抽取，Gson `JsonReader` 流式不建树，P1）、`CachingDns`（OkHttp 异步 DNS 缓存，短 TTL 60s，失败清条目回退系统解析，C3）、`ConnectionPrewarmer`（模型 host 连接预热：DNS+TCP+TLS 握手预建，C1） |
 | `core/security/` | 安全加密：`CredentialEncryptor`/`DEKManager`（数据加密密钥）、`HostKeyManager`（SSH host key）、`UserPasswordBackupCrypto`、`ZthSensitiveColumnCrypto`/`ZthSharedSyncKeyStore`、`CredentialEncryptionContract` |
 | `core/theme/` | 主题与组件：`AIEditorTheme`、`AppComponents`、`CyberComponents` |
 | `core/ui/` | UI 基础：`ImeInset`（软键盘 inset 处理） |
@@ -28,7 +29,8 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 - **数据注册表**：`DataRegistry` 枚举全应用数据域（Room 表 + DataStore 目录），提供 `snapshotAll/restoreAll/pack/unpack`；`TableDataProvider` 用 `PRAGMA table_info` 动态转储任意表（JSONL，BLOB 走 base64），新增表无需专用 DTO。备份/恢复/自动迁移统一经注册表全量覆盖（见 backup 模块文档）。
 - **运行环境抽象**：`EnvironmentDetector` 在启动/首次使用时探测宿主 ABI（`arm64-v8a` / `x86_64`）与模拟器信号（fingerprint/product/qemu），导出 `hostIsArm64` / `hostIsX86_64` / `containerRunnable` / `defaultProfileId()`；被 `ContainerSettingsRepository`（默认容器 profile）、`ContainerInstaller`（proot 架构）、`LinuxContainerEngine`（容器启动）统一消费。探测仅用于**适配与降级**，绝不用于授权/安全判断。
 - **安全体系**：凭据/敏感字段经 `CredentialEncryptor` 加密落库，密钥由 `DEKManager` 管理；ZTH 敏感列走 `ZthSensitiveColumnCrypto`。`HostKeyManager` 管理 SSH host key 校验。
-- **启动链路**：`AIEditorApp` 初始化 `FileLogger`、`TerminalKeepaliveService`、`McpManager` 等核心服务；`MainActivity` 承载 Compose 导航。
+- **启动链路**：`AIEditorApp` 初始化 `FileLogger`、`TerminalKeepaliveService`、`McpManager` 等核心服务；启动后调 `ConnectionPrewarmer.warmDefaults()` 后台预热三家模型默认 host（DNS+TCP+TLS，失败静默）；`MainActivity` 承载 Compose 导航。
+- **网络层优化**：共享 OkHttp 在 `di/AgentModule` 配 `ConnectionPool(8, 15min)`（C2）+ `CachingDns`（C3）；三家 provider 流式 SSE 解析改用 `SseFieldExtractor` 定点抽取（P1）。详见 `core/network/` 与设计文档。
 - **后台任务**：`core/worker` 的 WorkManager 任务负责审计日志清理、凭据轮换、V1→V2 迁移等周期/一次性工作。
 
 ## 4. 对外接口与集成点

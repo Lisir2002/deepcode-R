@@ -85,6 +85,10 @@ class ProxyViewModel @Inject constructor(
     val enabled: StateFlow<Boolean> = repository.proxyEnabledFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    /** 网络层优化 C5：AI 接口直连分流开关（默认关）。 */
+    val aiHostsDirect: StateFlow<Boolean> = repository.aiHostsDirectFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     /** 当前活跃 profile id。 */
     val activeProfileId: StateFlow<String?> = repository.activeProfileIdFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -128,6 +132,14 @@ class ProxyViewModel @Inject constructor(
             val result = manager.on(id, null)
             if (result == "ok") _events.send("代理已启用")
             else _events.send(result)
+        }
+    }
+
+    /** 网络层优化 C5：切换 AI 接口直连分流（持久化，ClashProxyManager 同步到网络路由）。 */
+    fun toggleAiHostsDirect(desired: Boolean) {
+        viewModelScope.launch {
+            repository.setAiHostsDirect(desired)
+            _events.send(if (desired) "模型接口将直连（跳过代理）" else "模型接口恢复走代理")
         }
     }
 

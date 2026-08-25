@@ -93,6 +93,11 @@ object AgentModule {
             // 网络代理（§4.2）：注入 ProxyRouteHolder 的路由选择器，启用时代理走 mihomo mixed-port，
             // 未启用直连；以 @Singleton 无依赖 Holder 避免与 ClashProxyManager 成环。
             .proxySelector(proxyRouteHolder.selector)
+            // 网络层优化 C2：连接池调优（默认 5 连接 / 5min 保活）。模型接口常往返复用，
+            // 放宽到 8 连接 / 15min 提升长连接复用率，降低首字节（TTFT）延迟。
+            .connectionPool(okhttp3.ConnectionPool(8, 15, TimeUnit.MINUTES))
+            // 网络层优化 C3：短 TTL DNS 缓存，避免每次连接走系统 DNS（弱网可省几十~几百 ms）。
+            .dns(com.R.codecore.core.network.CachingDns())
             .build()
     }
 
