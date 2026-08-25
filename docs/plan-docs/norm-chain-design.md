@@ -45,13 +45,13 @@
 
 **定位**：把「每轮 CallLlm 前注入哪些上下文」从散落的拼接逻辑收敛为统一规范，防止注入无纪律（格式漂移、无优先级、超预算膨胀）。
 
-- **注入源统一抽象**：复用 `SystemPromptProvider` 内嵌的 `PromptSource` 接口，新增三类 Source：`GoalHintSource`（当前任务目标）、`PlanPendingHintSource`（待批准计划选择）、`LoopAdvisorySource`（循环提醒）。workflow 在 step 前调 `SystemPromptProvider` 组装注入块。
+- **注入源统一抽象**：复用 `SystemPromptProvider` 内嵌的 `PromptSource` 接口。**Source 全集**（审计定稿，8 类，D1 实现时一次登记，D0 的 4 个 Source 一并纳入）：`GoalHintSource`（当前任务目标）、`IntentAskSource`（意图问判三问，D0）、`BehaviorModeSource`（行为模式纪律行，D0）、`PlanPendingHintSource`（待批准计划选择）、`PlaybookStageSource`（Playbook 当前阶段，3.3）、`GoalAdjustEventSource`（目标状态候选迁移事件，D0）、`GoalStaleSource`（目标失配提醒，D0）、`LoopAdvisorySource`（循环提醒）。workflow 在 step 前调 `SystemPromptProvider` 组装注入块。
 - **面向模型格式**：**混合标记格式**——自然语言引导行 + 代码块包裹正文（如 `【当前任务目标】\n\`\`\`\n<text>\n\`\`\``），引导行保语义、代码块防格式污染。
-- **importance 3 级**：`P0 必须` / `P1 常规` / `P2 可裁剪`。默认归属：goal=**P0 必注入**、plan-pending=**P1 常规**、loop-advisory=**P2 可裁剪**。
-- **注入预算**：**完整预算策略**——每轮注入块总字符上限常量（默认值实施时可调，约 400~800 字符），超限按 importance 降级裁剪（先裁 P2 → 再裁 P1），P0 永不裁。**排序与裁剪**（四源共存定稿）：注入顺序按 importance 降序 `goal(P0) → plan-pending(P1) → playbook-stage(P1) → loop-advisory(P2)`，同 P1 内固定 plan-pending 先于 playbook-stage；超预算从尾部 P2 裁起，同 importance 按注入顺序倒序裁（先裁 loop-advisory，再裁同 P1 的 playbook-stage → plan-pending），P0 永不裁。
+- **importance 3 级**：`P0 必须` / `P1 常规` / `P2 可裁剪`。默认归属（审计定稿，8 源）：goal=**P0 必注入**；问判注入 / 行为模式 / plan-pending / playbook-stage / GoalAdjustEvent=**P1 常规**；GoalStale / loop-advisory=**P2 可裁剪**。
+- **注入预算**：**完整预算策略**——每轮注入块总字符上限常量（默认值实施时可调，约 400~800 字符），超限按 importance 降级裁剪（先裁 P2 → 再裁 P1），P0 永不裁。**排序与裁剪**（八源共存定稿，理解优先）：注入顺序 `goal(P0) → 问判注入(P1) → 行为模式(P1) → plan-pending(P1) → playbook-stage(P1) → GoalAdjustEvent(P1) → GoalStale(P2) → loop-advisory(P2)`；同 P1 内固定 问判 → 行为模式 → plan-pending → playbook-stage → GoalAdjustEvent；超预算从尾部 P2 裁起（先裁 loop-advisory → GoalStale），再裁同 P1 按注入顺序倒序（GoalAdjustEvent → playbook-stage → plan-pending → 行为模式 → 问判），P0 永不裁。
 - **注册方式**：接入 `SystemPromptProvider` 现有 Source 聚合链，不新增第二套装配逻辑；每轮由 workflow 触发 `build(ctx)` 取注入块。
 
-**改动面**：新增 3 个 PromptSource；`StatefulAgentWorkflow` step 前统一走 `SystemPromptProvider` 组装注入块；预算常量。
+**改动面**：新增 8 个 PromptSource（含 D0 的问判注入 / 行为模式 / GoalStale / GoalAdjustEvent 4 个）；`StatefulAgentWorkflow` step 前统一走 `SystemPromptProvider` 组装注入块；预算常量。
 **验收**：JVM 单测——有 goal 时每轮注入块含目标头；注入总长超预算时 P2 先被裁剪、P0 保留；无 goal 时无目标注入块。
 
 #### 3.1.3 六段式工具流水线（深入设计）
@@ -103,9 +103,9 @@
 **现状**：运行时编排（goal/plan/jobs/schedule）已落地；`AgentAsset` 只有 `component/agent` 两 kind，**无声明式剧本资产与执行器**。
 
 **针对性设计**（深入讨论定稿）：
-1. **资产契约**：`AgentAsset` 增 `kind` 字段（缺省 `component` 向后兼容）；playbook frontmatter 用 **YAML 列表 + 精简字段**——`kind: playbook / name / stages:[{name, description, agents[], sop[], gates(approval|auto), guards(timeout)}]`；`description` 即阶段目标（注入模型用）；`agents` 引用 `agent: true` 专项 agent 资产（阶段激活时把 body+model+tools 注入当前轮，主模型"切角色"执行该阶段，贴近现有 `/agent` 机制，无新执行框架）；`sop` 引用 `assets/sop/` 资产（阶段激活时作为步骤规则注入）；均解析时校验存在性。复用 `SkillParser` SnakeYAML 嵌套解析，资产可读性好。
-2. **阶段注入**：新增 `PlaybookStageSource`，step 前把「当前阶段：名称 + description + gates」注入统一注入块（importance 归 **P1 常规**，走预算裁剪），复用 3.1.2 的 step 前上下文纪律，不重复造轮子。**与 GoalService 完全独立**——不自动创建/覆盖 goal，阶段目标仅由本 Source 注入，避免双重目标源冲突与覆盖用户手动 goal。
-3. **推进模型**：模型声明完成 + 显式推进工具。阶段工作做完后调 `playbook_advance` 进入下一阶段；`gates=approval` 复用 `planApprovalManager.awaitApproval(reason, sessionId)` 阻塞等用户批准（与模式切换审批同链路）。**完成判定护栏**：advance(done) 前若连续 N 轮无实质工具动作（无文件写/无命令执行）就声明完成，则注入 advisory 提醒「确认阶段产出物」，防模型误报完成/跳步（复用 LoopGuard 思路）。
+1. **资产契约**：playbook 资产放 `assets/playbooks/`，新增**独立 `PlaybookRegistry`** 扫描（与 `SopRegistry` 同构，复用 `AgentAssetCore` 的 frontmatter 解析 + 热加载；**不并入只扫 `prompts/` + `prompts.custom/` 的 `AgentAssetRegistry`**——审计定稿，避免目录/kind 混用）；frontmatter 用 **YAML 列表 + 精简字段**——`kind: playbook / name / stages:[{name, description, agents[], sop[], gates(approval|auto), guards(timeout)}]`；`description` 即阶段目标（注入模型用）；`agents` 引用 `agent: true` 专项 agent 资产（**执行模型为真子代理隔离上下文，见 3.6**——阶段激活时 `SubAgentRunner` 生成独立上下文的子代理执行，非主模型"切角色"）；`sop` 引用 `assets/sop/` 资产（阶段激活时作为步骤规则注入）；均解析时校验存在性。复用 `SkillParser` SnakeYAML 嵌套解析，资产可读性好。
+2. **阶段注入**：新增 `PlaybookStageSource`，step 前把「当前阶段：名称 + description + gates」注入统一注入块（importance 归 **P1 常规**，走预算裁剪），复用 3.1.2 的 step 前上下文纪律，不重复造轮子。**与 GoalService 完全独立**——不自动创建/覆盖 goal，阶段目标仅由本 Source 注入，避免双重目标源冲突与覆盖用户手动 goal；**运行期间挂起 goal 维护双信号**（`GoalStaleSource` 失配提醒 + `GoalAdjustEvent` 事件均不注入，审计定稿），避免 Playbook 阶段目标与 goal 维护信号互相干扰。
+3. **推进模型**：模型声明完成 + 显式推进工具。阶段工作做完后调 `playbook_advance` 进入下一阶段；`gates=approval` 复用 `planApprovalManager.awaitApproval(reason, sessionId)` 阻塞等用户批准（与模式切换审批同链路；**`!` 标记可跳过此 approval gate**——审计定稿，`!` 统一跳过流程级确认但永不绕过权限系统）。**完成判定护栏**：advance(done) 前若连续 N 轮无实质工具动作（无文件写/无命令执行）就声明完成，则注入 advisory 提醒「确认阶段产出物」，防模型误报完成/跳步（复用 LoopGuard 思路）。
 4. **状态机**：阶段 + 运行双状态机——运行级 `RUNNING/COMPLETED/ABORTED`；阶段级 `PENDING/ACTIVE/DONE/FAILED`。推进时当前 DONE→下一阶段 ACTIVE；失败当前 FAILED→运行 ABORTED；审批阻塞不改变阶段状态（awaitApproval 阻塞执行流）。
 5. **工具签名**：`playbook_start(name, context?)` 创建运行并返回首阶段描述；`playbook_advance(action=done|fail)` 默认作用于当前会话最近一次 RUNNING 运行（不传 runId），done 推进、fail 置失败中止；`playbook_resume` 恢复本会话最近一次 `INTERRUPTED` 运行并返回当前阶段；`playbook_retry` 从本会话最近一次 `ABORTED` 运行的 FAILED 阶段恢复（该阶段置回 ACTIVE、已完成阶段保留）；均返回下一阶段描述或完成提示。模型无需管理 runId。
 6. **持久化**：新增独立 `PlaybookRunEntity` 表（**结构定稿**：`playbookRunId`(PK) / `sessionId`(索引) / `playbookName` / `currentStageIndex` / `stageStatuses`(JSON) / `status` / `createdAtMs` / `updatedAtMs`，对齐 PlanEntity 风格），agent 库新增 v 迁移；`DataRegistry` 同步登记（备份自动覆盖）。**中断/恢复**：对齐 `JobEntity`——SessionStop hook 把该会话 RUNNING 运行置 `INTERRUPTED`；新会话需显式 `playbook_resume` 继续，`playbook_start` 覆盖旧运行。
@@ -113,7 +113,7 @@
 8. **失败处理**：阶段失败（模型声明失败 / 审批拒绝）→ PlaybookRun 置 `ABORTED`，向模型与用户反馈失败阶段 + 原因；**恢复双路径**（定稿）：模型可 `playbook_start` 从头重跑（覆盖旧 ABORTED 运行）或 `playbook_retry` 从 FAILED 阶段恢复（该阶段置回 ACTIVE、已完成阶段保留），或放弃。
 9. 内置 3 条剧本（贴项目语义）：`feature-dev`（发现→设计文档[联动Spec]→分支→实施→冒烟→单测→提交→合入）、`code-review`（diff→按类型派专项agent→聚合分级）、`bug-fix`（复现→根因→修复→回归→提交）。
 
-**改动面**：`AgentAsset` + `AgentAssetCore` 解析 kind；新增 `PlaybookExecutor` + `PlaybookRunEntity` + `PlaybookStageSource` + `playbook_start/playbook_advance` 工具 + `/playbook` 命令；新增 `assets/playbooks/*.md` ×3。
+**改动面**：新增独立 `PlaybookRegistry`（扫 `assets/playbooks/`，复用 `AgentAssetCore` frontmatter 解析 + 热加载）；新增 `PlaybookExecutor` + `PlaybookRunEntity` + `PlaybookStageSource` + `playbook_start/playbook_advance` 工具 + `/playbook` 命令；新增 `assets/playbooks/*.md` ×3。
 **验收**：3 条剧本可触发顺序推进；approval gate 走现有确认弹窗；阶段状态可查询/中断/恢复；失败置 ABORTED。
 
 ### 3.4 Spec —— 作用在变更治理
@@ -156,7 +156,7 @@
 1. **执行模型：真子代理隔离上下文**——每个子代理拥有独立消息历史、系统提示（= 专项 agent body）、工具集（白名单）、工作目录、中止控制器；跑完只回传结构化结果，不污染主上下文。生成入口：阶段激活时按 `agents[]` 声明自动生成（模型无需手动 spawn），`async` 与权限档位由 frontmatter 声明。
 2. **执行循环：独立子循环**——`PlaybookExecutor` 内 `SubAgentRunner`：`buildSubAgentRequest`（systemPrompt=agent body、messages=子代理私有 state、tools=白名单、maxRounds=预算）。**不触发主 workflow 的 goal/plan/loop-guard 注入**——子代理锚定在阶段目标（frontmatter `description` 注入子代理系统提示），避免主会话目标/循环提醒干扰子任务。事件流独立上报（UI 可区分展示"子代理执行中"）。
 3. **运行模式：同步 + 可选后台**——默认同步：主代理等待子代理完成拿到结果再继续（与 approval gate、事件流兼容）。阶段 `async: true`：子代理入后台 jobs 队列，`playbook_advance` 前主代理可查询子代理状态；结果就绪后投递回会话（对齐 JobEntity 的 INTERRUPTED 语义，进程回收标记）。
-4. **权限作用域：强制三档降权**——`READ_ONLY`（默认，只读文件/搜索/只读命令）→ `WORKSPACE_WRITE`（允许写工作区文件）→ `FULL`（含容器/终端/危险工具）。由阶段 `gates` 声明，**不继承主会话完整权限**；子代理内工具执行复用 `ToolPermissionManager` 审批链但按档位过滤。
+4. **权限作用域：强制三档降权**——复用既有 `SandboxMode` 三档（`READ_ONLY` 默认，只读文件/搜索/只读命令 → `WORKSPACE_WRITE` 允许写工作区文件 → `DANGER_FULL_ACCESS` 含容器/终端/危险工具；命名对齐代码，审计定稿）。由阶段 `gates` 声明，**不继承主会话完整权限**；子代理内工具执行复用 `ToolPermissionManager` 审批链但按档位过滤。
 5. **防失控：预算感知 + 自动压缩**——子代理消耗计数对齐主 workflow 注入预算；接近预算时对子代理私有消息做**子代理级压缩**（复用 ContextCompactor 锚定摘要逻辑，适配纯内存上下文，不走 `agentMessageDao` 持久化）；实在不够才截断：强制结束子循环，已做动作摘要 + 截断原因返回主代理。
 6. **协调模式：多子代理并行**——阶段 `agents[]` 可声明多个子代理并行（如 code-review 同时派 review-agent + style-agent），各自独立循环，全部完成统一收结果（失败子代理标记 FAILED，不影响其它子代理）。并发调度：每子代理一个协程 `awaitAll` 聚合，结果按 agents 声明顺序稳定返回。
 7. **结果契约：结构化 JSON 聚合（canonical output）**——每个子代理结束，`PlaybookExecutor` 把动作摘要/产出物/结论/完成状态序列化为结构化 JSON 字段（对齐 DSH canonical output）；多子代理聚合为一个结果块返回主代理，主代理直接读结构化字段，无需二次解析。
@@ -205,7 +205,7 @@
 **设计**（深入讨论定稿）：
 1. **分层级别（四级）**——① **全局**（用户设备级，`~/.rcodecore/global-rules.md`）② **项目**（`AGENTS.md`，已有，权威源）③ **工作区**（工作区根/容器内 `rcodecore` 目录的 `workspace-AGENTS.md`，对特定项目/工作区注入差异化规则）④ **模块**（`feature/<module>/AGENTS.md`，子目录级规则，仅对该模块相关任务生效）。
 2. **合并与优先级**——四级规则全量拼接进系统提示词；每份规则 frontmatter 可声明 `priority` 字段（数值大优先，缺省按层级 全局<项目<工作区<模块 递增）。冲突时按 priority 收敛，同 priority 靠后声明者优先。
-3. **生效边界（省 token 设计）**——**全局/项目/工作区三级常驻注入**，但走 3.1.2 注入预算裁剪（超预算按 importance/priority 降级裁剪）；**模块级规则仅当本会话/任务涉及该模块时注入**（如工具读写了该模块文件，复用 3.1.3 文件观察的命中路径判断）。**借鉴省 token**：常驻层只注入每份规则的摘要/核心条目（少量 token），完整正文通过显式加载取（`/rules` 斜杠命令或 `load_rule` 工具，对齐 3.2 SOP 的"摘要常驻 + loadSop 按需取正文"模式）。
+3. **生效边界（省 token 设计）**——**全局/项目/工作区三级常驻注入**，但走 3.1.2 注入预算裁剪（超预算按 importance/priority 降级裁剪）；**模块级规则仅当本会话/任务涉及该模块时注入**（如工具读写了该模块文件，复用 3.1.3 文件观察的命中路径判断）。**借鉴省 token**：常驻层只注入每份规则的摘要/核心条目（少量 token），完整正文通过显式加载取（`/rules` 斜杠命令或 `load_rule` 工具，对齐 3.2 SOP 的"摘要常驻 + loadSop 按需取正文"模式）。**审计定稿：摘要/正文两级形态 D3 独立自研，不依赖 D4（SOP）实现**，仅共享形态约定，避免 D3↔D4 顺序依赖。
 4. **热加载**——复用 `AgentAssetRegistry` 的 mtime/FileObserver 双机制（全局/工作区/模块规则文件增删改即失效缓存）。
 
 **改动面**：`SystemPromptProvider` 增规则 Source（全局/工作区/模块，带 priority 与摘要/正文两级形态）+ 模块命中判断；`AgentAsset` 增 `priority` 字段解析；`/rules` 命令或 `load_rule` 工具（完整正文按需加载）；prompts/ 同步说明。
@@ -237,7 +237,7 @@
    - **规则映射**：Parser 意图分类 `task`→execute、`query`+比较/了解/查资料类动词→research、设计/评审/方案类动词→design、无任务纯问答→chat；模型可改判，作为 intent_analyze 输出字段。
    - **生效方式**：提示级纪律行 + guard 软提醒——step 前注入"本轮行为模式"纪律行（如"当前为设计模式：只输出设计方案，不调用写文件类工具；如需写代码请先说明"）；guard 层对 design/research 模式下文件写类工具返回 advisory 软提醒（不阻断，模型可自主覆盖）。复用六段式流水线 guard 段。
    - **触发权**：规则预分类 → 模型改判 → 用户 `?` 标记强制咨询姿态（增量 7 联动）→ 新增 `/mode design|execute|research|chat` 斜杠命令手动切换（复用 `SlashCommandRegistry`）。
-   - **持久性**：默认每轮按新输入重判（意图变则模式自然变）；显式指令（`/mode` 切换、`?` 标记）锁定到下次显式解除；plan/design 形态在批准前持续 design。
+   - **持久性**：默认每轮按新输入重判（意图变则模式自然变）；显式指令（`/mode` 切换、`?` 标记）锁定到下次显式解除；**plan 形态强制 behaviorMode=design**（审计定稿——判定为 plan 形态时批准前强制 design、只出方案不改代码，批准后转 execute；design 阶段允许只读调研）。
    - **与 Spec（3.4）轻关联**：design 模式纪律行附带一句"若为新增/复杂改动，先出设计文档到 `docs/plan-docs/` 走 Spec 评审"，不强绑。
 6. **持续意图维护闭环**（对齐 DSH `determine_and_update_goal` + `should_update_goal` 准则，深入讨论定稿）
    - 判定不一次性：形态判定落 goal/plan 后，任务执行中**持续核对**"当前目标是否仍匹配用户意图"。
@@ -270,7 +270,7 @@
 
 7. **`!` 优先级 + `?` 咨询标记**（对齐 CC `!` 优先级标记，实现最轻）
    - `UserInputParser` 识别首 token `!`/`?` 标记：`marker ∈ FORCE / CONSULT / NONE`（`!`/`?` 后跟空格或直接接文本，前缀匹配，无歧义；有歧义按普通文本）。
-   - `!`（立即执行）：注入"用户要求立即执行"纪律行，跳过**流程级**确认（如 plan 批准前奏）；**不绕过权限系统**（危险操作仍走权限审批）。
+   - `!`（立即执行）：注入"用户要求立即执行"纪律行，跳过**流程级确认**（审计定稿：统一指 plan 批准 + playbook approval gate，见 3.3）；**不绕过权限系统**（危险操作仍走权限审批）。
    - `?`（仅咨询）：注入"仅咨询，不修改文件、不建任务"纪律行，天然对齐 chat/design 模式（与增量 5 触发权联动）。
 8. **结构化澄清问题**（对齐 CC AskUserQuestion 选项化，深入讨论定稿）
    - **触发时机**：intent_analyze 输出低置信（理解/形态任一不确定）时 workflow **自动触发**结构化澄清；**模型可跳过**（有足够信息时）。
