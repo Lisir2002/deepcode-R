@@ -15,8 +15,8 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `data/local/dao/` | Room DAO：`AgentMessageDao`、`ChatSessionDao`、`TodoItemDao`、`SkillStateDao`、`SkillConversationStateDao`、`ModeSwitchHistoryDao`、`ModelCapabilityOverrideDao`、Checkpoint 系列（`CheckpointDao`、`CheckpointFileSnapshotDao`、`FileEditHunkDao`）、ZTH 审计系列（`ZthTelemetryEventDao`、`UserConfirmedSentinelDao`、`HallucinationFuseDao`、`SentinelPlanRejectionAuditDao`、`HardConstraintDeleteAuditDao`、`L0SoftCompactRestoreLogDao`） |
-| `data/local/database/AgentDatabase.kt` | **agent 域独立库**（v1 全新，`exportSchema=true`），仅承载 agent 域 17 张表（消息/会话/todo/checkpoint/skill/wake/zth）；`LegacyAgentDatabase.kt` 为旧单巨库（v49）只读副本，供一次性移植 |
+| `data/local/dao/` | Room DAO：`AgentMessageDao`、`ChatSessionDao`、`TodoItemDao`、`SkillStateDao`、`SkillConversationStateDao`、`ModeSwitchHistoryDao`、`ModelCapabilityOverrideDao`、Checkpoint 系列（`CheckpointDao`、`CheckpointFileSnapshotDao`、`FileEditHunkDao`）、ZTH 审计系列（`ZthTelemetryEventDao`、`UserConfirmedSentinelDao`、`HallucinationFuseDao`、`SentinelPlanRejectionAuditDao`、`HardConstraintDeleteAuditDao`、`L0SoftCompactRestoreLogDao`）、任务编排层（`GoalDao`、`PlanDao`、`JobDao`、`ScheduleDao`）、`WakeQueueDao` |
+| `data/local/database/AgentDatabase.kt` | **agent 域独立库**（v2，`exportSchema=true`），仅承载 agent 域 21 张表（消息/会话/todo/checkpoint/skill/wake/zth + 任务编排层 Goal/Plan/Job/Schedule 4 表）；`v1→v2` 迁移见 `AgentDatabaseMigrations.MIGRATION_1_2`（DatabaseModule 注册）；`LegacyAgentDatabase.kt` 为旧单巨库（v49）只读副本，供一次性移植 |
 | `data/local/entity/` | 与 DAO 一一对应的实体类（`AgentMessageEntity`、`ChatSessionEntity`、`CheckpointEntity`、`SkillStateEntity`、`SkillConversationStateEntity`、`TodoItemEntity` 等） |
 | `data/remote/anthropic/` | Anthropic API 客户端（`AnthropicApi`、`AnthropicModels`），含 `@Streaming` SSE 流式接口 |
 | `data/remote/openai/` | OpenAI 兼容 API 客户端（`OpenAIApi`、`OpenAIModels`） |
@@ -45,6 +45,12 @@
 | `domain/tool/` | 工具系统（详见 2.3） |
 | `domain/workflow/` | Agent 工作流：`AgentWorkflow`（接口 + `AgentEvent` 事件集）、`StatefulAgentWorkflow`（MVI 状态机实现）、`ContextCompactor`（上下文压缩） |
 | `domain/zth/` | ZTH 零信任防护：`ZthGuardAggregateFacade`（聚合门面）、`ZthCircuitBreakerManager`、`ZthConfirmationCardManager` + `ZthConfirmationCardStateMachine`、`ZthPlanApprovalManagerWrapper`、`ZthContentReviewer`、`ZthToolOutputGuard`、`ZthCapabilityGuard`、`ZthFailureClassifier`、`ZthWorkflowHooks`、`ZthDomainModels`、`TerminalBundleMirrorRotator` |
+| `domain/ext/` | **声明式扩展生态**（Claude Code 形态）：`ExtensionLoader`（统一扫描内置 `assets/ext/` + 用户 `<rcodecore>/ext/` 的声明式命令，FileObserver 热加载）、`ExtensionCommand`（frontmatter 命令模型）、`ExtensionCommandCore`（无 Android 依赖的命令扫描核心，mtime 懒刷新）、`PluginManifest`/`PluginManager`（插件分发：内置/用户两级，zip 导入 + Zip Slip 防护，聚合插件命令与 hooks 内容源） |
+| `domain/goal/` | **会话任务目标状态机**（DSH goal）：`GoalService` 管理每会话唯一 ACTIVE 目标（activate/updateText/setStatus），`GoalEntity` 持久化；workflow 每轮 step 前把当前目标注入 system prompt |
+| `domain/plan/` | **计划协作状态**（DSH plan + Claude Code Plan/Spec）：`PlanService` 管理会话单计划（propose/getById/update/approve/abandon/setPendingSelection），`PlanEntity` 持久化；workflow 每轮 step 前把未获批的 `pendingSelection` 注入 system prompt |
+| `domain/job/` | **后台任务**（DSH jobs）：`JobService`/`JobExecutor` 管理长任务（编译/测试/构建）后台执行，状态落库（pending/running/success/failed/interrupted），支持 start/status/kill/log |
+| `domain/schedule/` | **定时提醒**（DSH schedule）：`ScheduleService`（AFTER/AT/EVERY 三规则 + isDue 判定）、`ScheduleScheduler`（轮询调度，到点经 WakeQueueManager 注入会话唤醒 Agent），跨重启持久化 |
+| `domain/hook/` | **声明式 hook 事件**（Claude Code hooks + DSH 工具流水线）：`HookDispatcher`（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart 挂点）、`HookConfigLoader`（合并内置/插件/用户 hooks.json）、`CommitDisciplineHook`（git commit/push 纪律检查示例） |
 
 ### 2.3 domain/tool 工具系统
 
@@ -76,6 +82,10 @@
 | `tool/storage/StorageTool.kt` | 设备（外部共享）存储读写，带安全护栏 |
 | `tool/todo/TodoTool.kt` | 管理 TODO 列表 |
 | `tool/AbstractContextualTool.kt` / `CodeSelection.kt` | 上下文工具基类与代码选区模型 |
+| `tool/goal/GoalTool.kt` | 会话任务目标工具（`goal`：set/get/update/done/abandon，变更经 `AgentEvent.GoalChanged` 联动） |
+| `tool/plan/PlanTool.kt` | 计划协作工具（`plan`：propose/get/update_steps/set_pending_selection/approve/abandon） |
+| `tool/job/JobTools.kt` | 后台任务工具（`job_start`/`job_status`/`job_kill`/`job_log`） |
+| `tool/schedule/ScheduleTool.kt` | 定时提醒工具（`schedule`：create(after/at/every)/list/cancel） |
 
 ### 2.4 presentation 层（UI 状态与组件）
 

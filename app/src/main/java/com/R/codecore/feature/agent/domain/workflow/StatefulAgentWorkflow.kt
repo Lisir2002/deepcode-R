@@ -140,7 +140,9 @@ class StatefulAgentWorkflow @Inject constructor(
     /** R02 统一唤醒队列：下轮开始前注入后台审查/耗时任务结果（对齐 design 11.3/16.2）。 */
     private val wakeQueueManager: WakeQueueManager,
     /** 会话任务目标状态机：每轮 step 前把当前 ACTIVE 目标注入 system prompt（DSH goal）。 */
-    private val goalService: GoalService
+    private val goalService: GoalService,
+    /** 会话计划协作状态：每轮 step 前把待定选择（pendingSelection）注入 system prompt（DSH plan）。 */
+    private val planService: com.R.codecore.feature.agent.domain.plan.PlanService
 ) : AgentWorkflow {
 
     init {
@@ -690,12 +692,31 @@ class StatefulAgentWorkflow @Inject constructor(
                         }
                         val goalHint = activeGoal?.text?.takeIf { it.isNotBlank() }
                             ?.let { "【当前任务目标】$it" }
+                        // 会话计划待定选择注入：每轮 step 前读取最近计划的 pendingSelection（非空 + 非终态），
+                        // 拼到系统提示词末尾，供模型在用户尚未拍板的方案间继续权衡（DSH plan；失败静默降级）。
+                        val planPendingHint = try {
+                            withContext(Dispatchers.IO) {
+                                currentContext.sessionId?.let { sid ->
+                                    planService.getLatest(sid)?.takeIf { plan ->
+                                        plan.pendingSelection.isNotBlank() &&
+                                            plan.statusEnum() != com.R.codecore.feature.agent.data.local.entity.PlanStatus.COMPLETED &&
+                                            plan.statusEnum() != com.R.codecore.feature.agent.data.local.entity.PlanStatus.ABANDONED
+                                    }?.pendingSelection
+                                }
+                            }?.takeIf { it.isNotBlank() }?.let { "【待定选择（未批准）】$it" }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            FileLogger.w(TAG, "读取计划待定选择失败，跳过注入", e)
+                            null
+                        }
                         // 循环级 guard：取本轮待注入的重复调用提醒（无则 null），拼到系统提示词末尾。
                         // 不阻塞、不改写工具调用，仅作 advisory，决策留给模型。
                         val loopAdvisory = loopGuardTracker.takeAdvisory()
                         val effectiveSystemPrompt = buildString {
                             systemPrompt?.let { append(it) }
                             goalHint?.let { if (isNotEmpty()) append("\n\n"); append(it) }
+                            planPendingHint?.let { if (isNotEmpty()) append("\n\n"); append(it) }
                             loopAdvisory?.let { if (isNotEmpty()) append("\n\n"); append(it) }
                         }.takeIf { it.isNotBlank() } ?: systemPrompt
                         // 识图轮：若当前聊天模型无 vision，使用独立识图模型发送

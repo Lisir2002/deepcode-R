@@ -18,7 +18,9 @@ import javax.inject.Singleton
  */
 @Singleton
 class HookDispatcher @Inject constructor(
-    handlers: Set<@JvmSuppressWildcards HookHandler>
+    handlers: Set<@JvmSuppressWildcards HookHandler>,
+    /** 声明式 hooks.json 产出的 handler（[HookConfigLoader.load]），与代码级 multibinding 并存。 */
+    declarativeHooks: List<@JvmSuppressWildcards HookHandler> = emptyList()
 ) {
     private val preToolUseHooks: List<PreToolUseHook>
     private val postToolUseHooks: List<PostToolUseHook>
@@ -27,9 +29,10 @@ class HookDispatcher @Inject constructor(
     private val sessionStartHooks: List<SessionStartHook>
 
     init {
-        // 按事件类型分组 + 按 id 去重，保证同一 hook 不重复注册。
+        // 代码级 + 声明式合并，按事件类型分组 + 按 id 去重（声明式同名覆盖代码级）。
+        val all = (handlers + declarativeHooks).distinctBy { it.id }
         fun <T : HookHandler> collect(clazz: Class<T>): List<T> =
-            handlers.filterIsInstance(clazz).distinctBy { it.id }
+            all.filterIsInstance(clazz).distinctBy { it.id }
         preToolUseHooks = collect(PreToolUseHook::class.java)
         postToolUseHooks = collect(PostToolUseHook::class.java)
         userPromptSubmitHooks = collect(UserPromptSubmitHook::class.java)

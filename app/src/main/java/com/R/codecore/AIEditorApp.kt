@@ -117,6 +117,10 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var credentialEncryptor: CredentialEncryptor
 
+    /** 定时提醒调度循环：启动即轮询扫描到点的 schedule 项，投递给对应会话（DSH schedule）。 */
+    @Inject
+    lateinit var scheduleScheduler: com.R.codecore.feature.agent.domain.schedule.ScheduleScheduler
+
     /** Room 数据库（数据层重构后为 5 个域库）：启动期后台做完整性检查，提前暴露损坏
      * （损坏的 DB 会触发 SQLite 原生崩溃，绕过 Java CrashHandler，正是「模型输出时闪退却无日志」的典型盲区）。 */
     @Inject
@@ -296,6 +300,8 @@ class AIEditorApp : Application() {
             runCatching { dataSafetyNotifier.run() }
                 .onFailure { FileLogger.w(TAG, "数据保全（哨兵/自动备份/通知）失败，不影响启动", it) }
         }
+        // 定时提醒调度循环：启动即轮询扫描到点的 schedule 项（内部异常隔离，失败不影响启动）。
+        scheduleScheduler.start(appScope)
     }
 
     /**

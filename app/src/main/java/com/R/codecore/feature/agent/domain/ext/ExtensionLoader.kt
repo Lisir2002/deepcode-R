@@ -23,7 +23,9 @@ class ExtensionLoader @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val containerInstaller: ContainerInstaller,
     private val agentAssetRegistry: AgentAssetRegistry,
-    private val skillRepository: SkillRepository
+    private val skillRepository: SkillRepository,
+    /** 插件分发管理器：聚合已安装插件的命令/hook 内容源（B3）。 */
+    private val pluginManager: PluginManager
 ) {
 
     /** 用户扩展根目录 `<rcodecore>/ext/`（首次访问建目录）。 */
@@ -38,7 +40,8 @@ class ExtensionLoader @Inject constructor(
     private val commandCore = ExtensionCommandCore(
         userDir = userCommandsDir,
         assetsList = { listCommandAssets() },
-        assetsRead = { name -> readCommandAsset(name) }
+        assetsRead = { name -> readCommandAsset(name) },
+        extraFiles = { pluginManager.commandFiles() }
     )
 
     init {

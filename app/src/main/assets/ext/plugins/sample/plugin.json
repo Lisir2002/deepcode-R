@@ -1,0 +1,7 @@
+{
+  "name": "sample",
+  "version": "1.0.0",
+  "description": "示例插件：演示插件如何通过 manifest + 声明式扩展注入命令与 hooks",
+  "author": "R-CodeCore",
+  "provides": ["commands", "hooks"]
+}

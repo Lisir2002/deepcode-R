@@ -1037,6 +1037,10 @@ class AIAgentViewModel @Inject constructor(
                             isError = event.isError
                         )
                     }
+                    is AgentEvent.ScheduleFired -> {
+                        // 定时提醒到点由调度循环经 enqueueAgentRequest 直接注入会话（不走 workflow 事件流），
+                        // 本分支仅作穷举兜底（workflow 不产出该事件）。
+                    }
                 }
             }
 

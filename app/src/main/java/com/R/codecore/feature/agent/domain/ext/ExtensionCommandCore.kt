@@ -9,12 +9,14 @@ import java.io.File
  * 目录指纹 = 内置命令资产清单 + 用户命令目录下 `.md` 文件的 (mtime, size) 映射；
  * 读取先比对指纹，未变复用缓存，变了才重扫 —— 对齐
  * [com.R.codecore.feature.agent.domain.prompt.AgentAssetCore] 的 mtime 懒刷新。
- * 同名命令用户目录覆盖内置（优先级更高）。
+ * 同名命令优先级：用户目录 > 插件（[extraFiles]）> 内置资产。
  */
 internal class ExtensionCommandCore(
     internal val userDir: File,
     private val assetsList: () -> List<String> = { emptyList() },
-    private val assetsRead: (String) -> String? = { null }
+    private val assetsRead: (String) -> String? = { null },
+    /** 插件命令内容源（key=文件名，value=内容），优先级介于用户目录与内置资产之间。 */
+    private val extraFiles: () -> Map<String, String> = { emptyMap() }
 ) {
     private data class FileStamp(val mtime: Long, val size: Long)
 
@@ -49,6 +51,8 @@ internal class ExtensionCommandCore(
         val result = LinkedHashMap<String, FileStamp>()
         // 内置资产（静态，时间戳固定，先入）
         for (name in assetsList()) if (name.endsWith(".md")) result[name] = FileStamp(0L, 0L)
+        // 插件命令（静态内存源，先入，优先级低于用户目录）
+        for (name in extraFiles().keys) if (name.endsWith(".md")) result.putIfAbsent(name, FileStamp(-1L, 0L))
         // 用户目录同名覆盖（mtime 取用户文件，优先级更高）
         userDir.listFiles { f -> f.isFile && f.name.endsWith(".md") }
             ?.forEach { result[it.name] = FileStamp(it.lastModified(), it.length()) }
@@ -66,7 +70,7 @@ internal class ExtensionCommandCore(
         return byName.values.sortedBy { it.name }
     }
 
-    /** 优先级读取正文：用户目录 > assets 内置。 */
+    /** 优先级读取正文：用户目录 > 插件 > assets 内置。 */
     private fun readContent(name: String): String? {
         val userFile = File(userDir, name)
         if (userFile.isFile) {
@@ -74,6 +78,7 @@ internal class ExtensionCommandCore(
                 .onFailure { FileLogger.w(TAG, "读取用户命令失败 $name: ${it.message}", it) }
                 .getOrNull()
         }
+        extraFiles()[name]?.let { return it }
         return assetsRead(name)
     }
 

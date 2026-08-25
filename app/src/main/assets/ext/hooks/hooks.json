@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "id": "audit-high-risk",
+        "enabled": true,
+        "action": "log",
+        "message": "检测到高风险操作（rm 删除 / 权限变更），已记录审计日志。"
+      }
+    ],
+    "PreToolUse": [],
+    "UserPromptSubmit": [],
+    "Stop": [],
+    "SessionStart": []
+  }
+}

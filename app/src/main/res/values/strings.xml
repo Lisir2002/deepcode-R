@@ -237,6 +237,7 @@
     <string name="agent_goal_status_active">目标进行中</string>
     <string name="agent_goal_status_done">目标已完成</string>
     <string name="agent_goal_status_abandoned">目标已放弃</string>
+    <string name="agent_schedule_fired_prefix">【定时提醒】</string>
     <string name="agent_context_compacted">上下文已压缩</string>
     <string name="agent_context_no_compaction">当前上下文无需压缩（消息过少）</string>
     <string name="agent_compaction_failed">压缩失败: %1$s</string>

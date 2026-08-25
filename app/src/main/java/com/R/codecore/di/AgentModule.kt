@@ -220,6 +220,7 @@ object AgentModule {
         jobKillTool: com.R.codecore.feature.agent.domain.tool.job.JobKillTool,
         jobLogTool: com.R.codecore.feature.agent.domain.tool.job.JobLogTool,
         scheduleTool: com.R.codecore.feature.agent.domain.tool.schedule.ScheduleTool,
+        planTool: com.R.codecore.feature.agent.domain.tool.plan.PlanTool,
         resultTypeRegistry: com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
     ): ToolRegistry {
         return ToolRegistry().apply {
@@ -277,6 +278,8 @@ object AgentModule {
             registerTool("job_log", jobLogTool)
             // ══ 定时提醒（DSH schedule）：create(after/at/every) + list + cancel，到点注入会话
             registerTool("schedule", scheduleTool)
+            // ══ 计划协作（DSH plan + Claude Code Plan/Spec）：propose/get/approve/abandon + 每轮注入 pendingSelection
+            registerTool("plan", planTool)
         }
     }
 
@@ -340,7 +343,8 @@ object AgentModule {
         skillRuntimeProbe: com.R.codecore.feature.agent.domain.skill.SkillRuntimeProbe,
         hookDispatcher: com.R.codecore.feature.agent.domain.hook.HookDispatcher,
         wakeQueueManager: com.R.codecore.feature.agent.domain.wake.WakeQueueManager,
-        goalService: com.R.codecore.feature.agent.domain.goal.GoalService
+        goalService: com.R.codecore.feature.agent.domain.goal.GoalService,
+        planService: com.R.codecore.feature.agent.domain.plan.PlanService
     ): AgentWorkflow {
         return com.R.codecore.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -370,7 +374,8 @@ object AgentModule {
             skillRuntimeProbe,
             hookDispatcher,
             wakeQueueManager,
-            goalService
+            goalService,
+            planService
         )
     }
 }

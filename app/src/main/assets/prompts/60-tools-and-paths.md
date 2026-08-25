@@ -97,6 +97,12 @@ includes: []
 - 参数只有 `items`：数组，可为空；空数组表示清空任务清单。每项为对象：`subject`（必填，简短祈使句标题）、`description`（可选）、`status`（可选，默认 `pending`，可为 `pending` / `in_progress` / `completed`）、`priority`（可选，默认 0，越大越优先）。
 - 典型用法：接到复杂任务时调用一次 `todo(items=[...])` 建立清单；开始处理某项时改为 `in_progress` 并带上其他未变项重新提交；完成时改为 `completed` 并重新提交完整列表。
 
+## 任务编排与协作工具（目标 / 计划 / 后台任务 / 定时提醒）
+- `goal`：管理当前会话任务目标（每会话唯一当前目标，状态机 ACTIVE→DONE/ABANDONED）。`action=set` 用 `text` 设定/替换当前目标；`get` 读取；`update` 修订；`done`/`abandon` 终结。当前目标每轮注入系统提示词，可追溯、可修订、可归因。
+- `plan`：管理会话实施计划（每会话单计划，DRAFT→APPROVED→EXECUTING→COMPLETED/ABANDONED）。`action=propose` 用 `title` + `steps`（JSON 数组文本 `[{"text":..,"status":"pending"}]`）提议计划，可带 `pending_selection` 待定选择；`get` 读取；`update_steps` 更新步骤；`set_pending_selection` 更新待定选择；`approve` 批准（清空待定选择，进入执行）；`abandon` 放弃。未获批的 `pending_selection` 每轮注入系统提示词，供用户在方案间权衡。
+- `job_start` / `job_status` / `job_kill` / `job_log`：后台长任务（编译/测试/构建等）管理。`job_start` 提交命令后台执行并返回 job_id；`job_status` 查询状态（pending/running/success/failed/interrupted）；`job_kill` 终止；`job_log` 读取分段日志。耗时任务交给后台任务执行，避免阻塞对话，也便于中断与重试。
+- `schedule`：定时提醒。`action=create` 用 `rule`（after/at/every）配合 `delay_ms`/`at_ms`/`interval_ms` 与 `prompt` 创建；`list` 查询；`cancel` 按 `schedule_id` 取消。到点自动向会话注入提醒消息并唤醒 Agent 执行，跨重启持久化。
+
 ## 网络与搜索工具
 - `websearch`：通过互联网搜索引擎获取实时信息，突破知识库时间截断。回答时效性问题或寻找最新资料时，必须优先调用。
 - `webfetch`：抓取并读取指定 HTTP/HTTPS 网页内容。支持提取为纯文本（读正文）或原始 HTML（解析页面结构）。
