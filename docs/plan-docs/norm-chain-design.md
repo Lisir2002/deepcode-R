@@ -211,11 +211,52 @@
 **改动面**：`SystemPromptProvider` 增规则 Source（全局/工作区/模块，带 priority 与摘要/正文两级形态）+ 模块命中判断；`AgentAsset` 增 `priority` 字段解析；`/rules` 命令或 `load_rule` 工具（完整正文按需加载）；prompts/ 同步说明。
 **验收**：JVM 单测——四级规则拼接顺序/priority 收敛正确；模块规则仅在涉及该模块时注入；常驻只含摘要、正文经显式加载可取全；热加载生效。
 
+### 3.10 用户意图拆解（深入设计）
+
+**作用位置**：workflow 上游——用户输入进入 agent 前的"意图理解与拆解"链路（对齐 Claude Code parseUserInput + plan 模式；DSH 任务编排层 goal/plan/jobs/schedule 的形态判定）。
+
+**背景**：现状输入处理是"完整文本直接进 workflow + 斜杠命令完全相等匹配"（`findExact`），无结构化解析、无意图分类、无形态判定——模型靠直觉决定建 goal / 起 plan / 塞 job / 触 playbook。经深入讨论，补齐为**三层完整链路**。
+
+**设计**（深入讨论定稿）：
+1. **语法层：`UserInputParser` 结构化解析 + 意图分类**
+   - 新增 `UserInputParser`：把请求解析为 `ParsedInput(command?, args, text, intentLabel)`——首 token 斜杠命令 + 剩余 args/text，纯文本原样；斜杠命令由"完全相等匹配"改为"前缀 + 参数匹配"（如 `/playbook start` 传参），复用现有 `SlashCommandRegistry`。
+   - 意图分类（轻量规则）：`task`（任务性，含实现/修复/创建类动词）、`query`（询问性）、`file`（文件操作）、`command`（斜杠/命令）、`unknown`。Parser 输出 `intentLabel` 供形态判定参考（对齐 Claude Code 意图识别）。
+2. **自我问判：意图问判清单注入（对齐 3.1.2 注入体系）**
+   - step 前注入**意图问判三问**：① 我的理解（用户到底要什么）② 我的拆解思路（打算怎么拆/做）③ 应落哪个形态（goal/plan/jobs/schedule/playbook/普通对话）。
+   - 模型每轮开始内省核对；**低置信（理解不确定 / 形态不确定）时主动调 `AskUserQuestion` 澄清**，不猜着做。问判注入作为 3.1.2 的一个 Source（importance=P1 常规，可被预算裁剪）。
+3. **语义层：`intent_analyze` 判定平台（五形态路由）**
+   - 新增 `intent_analyze` 工具作为**意图判定平台**：模型在拆解前调用，工具内部跑通判定全流程后输出结构化结果（形态 + 参数 + 置信度），模型据其执行下一步。
+   - 判定流程（三阶）：① **规则预分类**（代码层关键词/模式，如"每天/每周"→schedule、"后台跑/编译"→jobs、"修复 bug"→playbook 匹配、"多步骤大任务"→plan、"长期目标"→goal）② **判定准则核对**（prompts/ 资产写清五形态判定准则，模型据此确认/修正预分类）③ **模型兜底**（模型最终裁定形态；低置信回退 AskUserQuestion）。
+   - 五形态路由输出：`goal`（建/更新 GoalService）、`plan`（起 PlanService + 批准流程）、`jobs`（JobTools 后台）、`schedule`（ScheduleTool 定时）、`playbook`（PlaybookExecutor 剧本，匹配 playbook 资产）、`none`（普通对话）。判定结果注入上下文，模型调对应形态的既有工具执行。
+4. **与既有机制关系**——不替代现有 goal/plan/jobs/schedule 工具，只在其上游加统一判定入口；`intent_analyze` 结果与 3.10.2 问判三问呼应（问判确认理解，判定平台定形态）。
+
+**可借鉴增量**（深入讨论定稿，对齐 Claude Code parseUserInput / plan 模式 / `!` 优先级标记 / AskUserQuestion 选项化 + DSH `determine_and_update_goal` / `should_update_goal` 准则 / goal 状态机）：
+
+5. **意图 → 行为模式切换**（对齐 CC plan 模式）
+   - intent_analyze 输出除五形态外，再输出 `behaviorMode`（本轮行为姿态，与五形态**正交**）：`design`（设计/评审——只出方案不写文件）/ `execute`（执行——默认，正常工具调用）/ `research`（调研——先搜索后答，不写文件）/ `chat`（问答——普通对话）。
+   - 规则映射：Parser 意图分类 `task`→execute、`query`+比较/了解/查资料类动词→research、设计/评审/方案类动词→design；模型可改判，作为 intent_analyze 输出字段。
+   - 生效方式：step 前注入一条"本轮行为模式"纪律行（如"当前为设计模式：只输出设计方案，不调用写文件类工具；如需写代码请先说明"）；design/research 模式对文件写类工具为**提示级约束**（非强制，模型可自主退出）。
+6. **持续意图维护闭环**（对齐 DSH `determine_and_update_goal` + `should_update_goal` 准则 + goal 状态机）
+   - 判定不一次性：形态判定落 goal/plan 后，任务执行中**持续核对**"当前目标是否仍匹配用户意图"。
+   - prompts 资产补 `should_update_goal` 准则："用户输入与当前目标冲突 / 扩展 / 缩小 / 任务完成 → 应更新 / 新建 / 完成目标"。
+   - 失配提醒（轻量）：workflow step 前检测用户最近输入与当前 goal 明显无关（不含目标关键词且非澄清），**连续 N 轮（默认 2）** 注入"当前目标可能已过期"提醒（新增 `GoalStaleSource`，importance=P2 可裁剪）。
+   - 结果反馈：goal/plan 状态迁移仍由模型按准则通过既有 `GoalService`/`PlanService` 完成；本设计只加"失配提醒"这一上游信号，不重复造状态机。
+7. **`!` 优先级 + `?` 咨询标记**（对齐 CC `!` 优先级标记）
+   - `UserInputParser` 识别首 token `!`/`?` 标记：`marker ∈ FORCE / CONSULT / NONE`（`!`/`?` 后跟空格或直接接文本，前缀匹配，无歧义）。
+   - `!`（立即执行）：注入"用户要求立即执行"纪律行，跳过**流程级**确认（如 plan 批准前奏）；**不绕过权限系统**（危险操作仍走权限审批）。
+   - `?`（仅咨询）：注入"仅咨询，不修改文件、不建任务"纪律行，天然对齐 chat/design 模式。
+8. **结构化澄清问题**（对齐 CC AskUserQuestion 选项化）
+   - 低置信澄清不开放式反问：prompts 资产写澄清模板——用 `AskUserQuestion` 给出 **2-3 个候选理解 / 候选形态**让用户选。
+   - 场景：形态不确定（plan vs goal vs 普通对话）、目标理解不确定、范围不确定（改哪些文件）。
+
+**改动面**：新增 `UserInputParser`（解析 + 意图分类 + marker）+ `IntentAnalyzeTool`（判定平台：五形态 + behaviorMode + marker，规则预分类 + 准则引用 + 兜底）；workflow step 前新增问判注入 Source + 行为模式纪律行 + `GoalStaleSource` 失配提醒；prompts/ 资产补五形态判定准则 + `should_update_goal` 准则 + 澄清模板；斜杠命令解析改前缀匹配。
+**验收**：JVM 单测——Parser 解析 command/args/text/marker/意图分类正确；intent_analyze 预分类命中五形态 + behaviorMode、模型兜底可改判；低置信触发**结构化**澄清；问判注入在低置信轮生效；失配提醒连续 N 轮触发且排除澄清。
+
 ## 4. 集成与分期
 
 | 批次 | 内容 | 验收 |
 |---|---|---|
-| 第一批 | 3.1 Agentic Workflow：① step 前上下文纪律（3 个 Source + 预算裁剪 + 四源排序）② 六段式流水线 guard 链（ToolGuard 接口 multibinding + FileObservationGuard + 文件观察硬拦截）③ 闭环核对（goal 注入 + TOOL_TIMEOUT 提示）④ 3.7 思维链路（空转软收敛 + reasoning_budget + 推理面板）⑤ 3.8 Trajectory 轨迹表（工具+轮次标记、全工具定制提取、消耗方聚合）⑥ 3.8 用量卡片（每回合 + 会话累计、仅 token）⑦ 3.9 分层规则纪律（四级拼接 + priority + 模块按需注入 + 摘要常驻/正文显式加载）⑧ 3.5 开关基础（总开关 + step_inject/tool_guard 子开关） | JVM 单测（注入/预算裁剪/排序/FS_NOT_OBSERVED/FS_STALE/豁免/空转收敛/推理参数/轨迹提取与聚合/用量一致性/规则分层与优先级）、构建绿 |
+| 第一批 | 3.10 用户意图拆解（`UserInputParser` 解析 + 意图分类 + marker；问判注入；`intent_analyze` 判定平台五形态 + behaviorMode 路由；行为模式纪律行；`GoalStaleSource` 失配提醒；结构化澄清模板）⑨ 3.1 Agentic Workflow：① step 前上下文纪律（3 个 Source + 预算裁剪 + 四源排序）② 六段式流水线 guard 链（ToolGuard 接口 multibinding + FileObservationGuard + 文件观察硬拦截）③ 闭环核对（goal 注入 + TOOL_TIMEOUT 提示）④ 3.7 思维链路（空转软收敛 + reasoning_budget + 推理面板）⑤ 3.8 Trajectory 轨迹表（工具+轮次标记、全工具定制提取、消耗方聚合）⑥ 3.8 用量卡片（每回合 + 会话累计、仅 token）⑦ 3.9 分层规则纪律（四级拼接 + priority + 模块按需注入 + 摘要常驻/正文显式加载）⑧ 3.5 开关基础（总开关 + step_inject/tool_guard 子开关） | JVM 单测（注入/预算裁剪/排序/FS_NOT_OBSERVED/FS_STALE/豁免/空转收敛/推理参数/轨迹提取与聚合/用量一致性/规则分层与优先级/意图解析与判定路由/marker/行为模式/失配提醒/问判注入）、构建绿 |
 | 第二批 | 3.2 SOP（独立 `SopAsset` + `SopRegistry` + `loadSop` 工具 + 6 份资产 + 全量摘要注入 + sop_summary 子开关，与 3.9 摘要/正文两级形态共享） | 摘要注入/loadSop 取正文/单测解析 |
 | 第三批 | 3.3 Playbook + 3.6 子代理机制（kind + `PlaybookExecutor` + `SubAgentRunner` + `PlaybookRunEntity` + 4 工具 + 双入口 + 3 剧本 + 三档权限过滤 + spawn/fork 双 seed + 并行聚合 + 结论回写 + 阶段内写串行化 + 产物清单幂等 + async 后台 + playbook_auto 子开关） | 剧本推进/审批/中断/恢复/失败重试/ABORTED/子代理隔离与聚合/Fork 继承与回写/写串行化/重入幂等 |
 | 第四批 | 3.4 Spec（pre-commit 提示扩展：配套性 + 状态行校验 + SOP 同步提示 + README + prompts） | 提示生效、无误报 |
@@ -227,6 +268,9 @@
 | 风险 | 对策 |
 |---|---|
 | goal 注入影响既有对话行为 | 仅注入头部一行、可关闭；单测回归 |
+| 行为模式纪律行误伤（design 模式误拦写操作） | 提示级约束非强制，模型可自主退出；仅 design/research 生效 |
+| 失配提醒误报（用户闲聊被当目标失配） | 连续 N 轮（默认 2）且排除澄清轮；提醒仅提示不阻断 |
+| marker 误解析（`!`/`?` 是正文内容） | 仅首 token `!`/`?` + 边界判断；有歧义按普通文本处理 |
 | 注入预算裁剪误伤关键上下文 | importance 分级 + P0 永不裁；裁剪策略单测覆盖 |
 | 文件观察硬拦截误伤（如模型已读但 mtime 恰变） | FS_STALE 为可恢复错误（提示重读），不产生永久阻断 |
 | 文件观察被 shell 写绕过 | 明确边界：仅 agent 文件工具链，容器写靠 SOP 纪律（文档写明） |
@@ -250,6 +294,7 @@
 
 四类规范流程分别作用在**对话循环 / 固定步骤 / 多阶段任务 / 变更治理**四个不同环节，各司其职、可独立落地、互不耦合。经逐机制深入讨论后，各自作用点已收敛为：
 
+- **用户意图拆解（上游基座）**：UserInputParser（结构化解析 + 意图分类）→ 自我问判注入（三问 + 低置信澄清）→ `intent_analyze` 判定平台（规则预分类 + 判定准则 + 模型兜底，五形态路由：goal/plan/jobs/schedule/playbook/none）。
 - **Agentic Workflow**：① step 前上下文纪律（统一 Source + 混合标记 + 3 级 importance + 完整预算裁剪）② 六段式工具流水线（契约化六段 + 真实 ToolGuard 链，核心是文件观察硬拦截：mtime 版本 CAS + 新建豁免 + 仅 agent 文件工具链）③ 思维链路（空转软收敛三级防线 + 推理预算流式呈现）。
 - **步骤结果汇总**：Trajectory 轨迹表（工具+轮次标记、全工具定制提取、append-only 不受压缩影响）作为"已做动作摘要/阶段总结/审计"的单一数据源；每回合用量卡片（本回合增量 + 会话累计、仅 token）。
 - **分层规则纪律**：四级全量（全局/项目/工作区/模块）+ 拼接 + 显式 priority；三级常驻（带预算裁剪）+ 模块按需注入 + 摘要常驻/正文显式加载（省 token）。

@@ -26,10 +26,11 @@
 
 ### 1.2 已设计待实施（📝 当前主设计域：规范流程与编排）
 
-> 详细设计见 [norm-chain-design.md](./norm-chain-design.md)（3.1–3.9 九章，逐机制讨论定稿）。
+> 详细设计见 [norm-chain-design.md](./norm-chain-design.md)（3.1–3.10 十章，逐机制讨论定稿）。
 
 | 批次 | 设计项 | 详细章节 | 状态 |
 |---|---|---|---|
+| D0 | 用户意图拆解：输入解析管线 + 自我问判 + 意图形态判定平台 | §3.10 | 📝 已设计待实施 |
 | B1 | Agentic Workflow 基座：step 前上下文纪律 + 六段式工具流水线（guard 链 + 文件观察）+ 闭环核对 + 统一开关 | §3.1 / §3.5 | 📝 已设计待实施 |
 | B1 | 思维链路：空转软收敛 + 推理预算流式呈现 | §3.7 | 📝 已设计待实施 |
 | B1 | 步骤结果汇总：Trajectory 轨迹表 + 用量卡片 | §3.8 | 📝 已设计待实施 |
@@ -62,7 +63,8 @@
 
 | 序 | 设计任务 | 详细文档 | 前置依赖 | 完成标准 | 状态 |
 |---|---|---|---|---|---|
-| D1 | **B1 Agentic Workflow 基座**：step 前上下文纪律（3 Source + 预算裁剪 + 四源排序）、六段式流水线 guard 链（ToolGuard + FileObservationGuard）、闭环核对、统一开关基础 | norm-chain-design.md §3.1 / §3.5 | 无（复用 SystemPromptProvider / HookDispatcher 既有能力） | 注入/预算/排序/文件观察 JVM 单测绿 + assembleDebug | 📝 |
+| D0 | **用户意图拆解**：UserInputParser（结构化解析 + 意图分类 + `!`/`?` marker）+ 自我问判注入（三问 + 低置信结构化澄清）+ intent_analyze 判定平台（规则预分类 + 判定准则 + 模型兜底，输出五形态 + behaviorMode + 参数）+ 持续意图维护（GoalStaleSource 失配提醒 + should_update_goal 准则） | norm-chain-design.md §3.10 | 无（基座，被 D1–D5 依赖） | 解析/预分类/判定路由/行为模式/marker/失配提醒 JVM 单测绿 + 问判注入生效 | 📝 |
+| D1 | **B1 Agentic Workflow 基座**：step 前上下文纪律（3 Source + 预算裁剪 + 四源排序）、六段式流水线 guard 链（ToolGuard + FileObservationGuard）、闭环核对、统一开关基础 | norm-chain-design.md §3.1 / §3.5 | D0（问判注入并入 step 前注入体系） | 注入/预算/排序/文件观察 JVM 单测绿 + assembleDebug | 📝 |
 | D2 | **B1 思维链路 + 步骤结果汇总**：空转软收敛、推理预算、Trajectory 轨迹表（全工具定制提取）、用量卡片 | §3.7 / §3.8 | D1（收敛注入与轨迹消费走 workflow 循环） | 轨迹提取/聚合/用量一致性单测绿 | 📝 |
 | D3 | **B1 分层规则纪律**：四级规则 + priority + 模块按需注入 + 摘要/正文两级 | §3.9 | D1（注入预算体系）+ D4（摘要/正文两级形态与 SOP 共享） | 规则分层/优先级/按需注入单测绿 | 📝 |
 | D4 | **B2 SOP**：SopAsset + SopRegistry + loadSop 工具 + 6 资产 + 全量摘要注入 | §3.2 | D1（注入体系） | 摘要注入/loadSop 取正文单测绿 | 📝 |
@@ -92,8 +94,9 @@
 
 | 任务 | 状态 | 完成日期 | 验证结果 |
 |---|---|---|---|
-| D1–D7 | ⬜ | — | — |
+| D0–D7 | ⬜ | — | — |
 
 ## 7. 变更记录
 
 - （2026-08-25）创建设计主计划：盘点 19 份 plan-docs，登记主设计域（norm-chain B1–B4，含 3.6–3.9 新增）与草案队列，规定 D1–D7 后续设计顺序。
+- （2026-08-25）新增 D0 用户意图拆解设计域（§3.10）：语法层 UserInputParser + 自我问判注入 + intent_analyze 判定平台（五形态路由）；置于 D1 前作为基座。
