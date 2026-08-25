@@ -273,7 +273,7 @@ fun ChatDrawerContent(
                         Text(
                             text = stringResource(R.string.chat_delete_session_running),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -295,7 +295,7 @@ fun ChatDrawerContent(
                             onUndoDelete()
                         }
                     }
-                }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.primary) }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.common_cancel)) }
@@ -503,9 +503,9 @@ private fun SessionActionSheet(
             SheetActionRow(
                 icon = Icons.Rounded.Delete,
                 label = stringResource(R.string.common_delete),
-                tint = MaterialTheme.colorScheme.error,
-                iconBgLight = Color(0xFFEF4444),
-                iconBgDark = Color(0xFFB91C1C),
+                tint = MaterialTheme.colorScheme.primary,
+                iconBgLight = Color(0xFF4C8DFF),
+                iconBgDark = Color(0xFF2B4E9E),
                 onClick = {
                     onDismiss()
                     onDelete()
@@ -687,17 +687,17 @@ private fun SwipeableSessionRow(
         enableDismissFromStartToEnd = false,
         backgroundContent = {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(Radius.sm))
-                    .background(MaterialTheme.colorScheme.errorContainer)
-                    .padding(horizontal = Spacing.md),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Delete,
-                    contentDescription = stringResource(R.string.common_delete),
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(Radius.sm))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(horizontal = Spacing.md),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = stringResource(R.string.common_delete),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(20.dp)
                 )
             }
