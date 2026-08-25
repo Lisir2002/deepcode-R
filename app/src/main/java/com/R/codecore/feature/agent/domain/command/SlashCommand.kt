@@ -48,4 +48,11 @@ interface SlashCommandContext {
 
     /** 切换到指定专项 Agent（`/agent <name>`）；空/非法名回退说明。 */
     fun switchAgent(name: String)
+
+    /**
+     * 把一段文本作为用户消息送入 Agent workflow（声明式命令展开用，方向 B1）。
+     * 由 [com.R.codecore.feature.agent.domain.ext.ExtensionCommand] 渲染正文后调用：
+     * 落库为用户消息 → 驱动一轮 Agent 循环，等价于用户在输入框直接发送该文本。
+     */
+    fun sendAgentRequest(text: String)
 }

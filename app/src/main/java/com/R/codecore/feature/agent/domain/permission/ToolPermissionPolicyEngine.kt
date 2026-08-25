@@ -39,6 +39,20 @@ class ToolPermissionPolicyEngine @Inject constructor(
             ToolCapability.MODIFY_CONTAINER_ENV,
             ToolCapability.EXTERNAL_TOOL
         )
+
+        /**
+         * 「越出工作区」的能力集合（方向 D2 workspace-write 约束）。
+         * 这些能力触碰容器环境/Agent 配置/网络写/外部动态工具/设备存储等，不在工作区文件面内，
+         * 在 [SandboxMode.WORKSPACE_WRITE]（及 [SandboxMode.READ_ONLY]）下被拦截。
+         */
+        val OUTSIDE_WORKSPACE_CAPABILITIES = setOf(
+            ToolCapability.MODIFY_CONTAINER_ENV,
+            ToolCapability.MODIFY_AGENT_CONFIG,
+            ToolCapability.NETWORK_WRITE,
+            ToolCapability.EXTERNAL_TOOL,
+            ToolCapability.ACCESS_DEVICE_STORAGE,
+            ToolCapability.MODIFY_NETWORK
+        )
     }
 
     enum class Verdict { ALLOW, DENY, ASK }
@@ -55,8 +69,40 @@ class ToolPermissionPolicyEngine @Inject constructor(
         val rememberDisabledReason: String? = null
     )
 
-    suspend fun evaluate(tool: AgentTool?, toolName: String, args: Map<String, JsonElement>, mode: com.R.codecore.feature.agent.domain.model.AgentMode): EvalResult {
+    /**
+     * 在 [mode]（AgentMode）之上叠加文件影响三档（方向 D2）评估。
+     *
+     * @param sandboxMode 显式/解析后的沙箱模式；null 表示未收紧（走现有 [mode] 逻辑）。
+     *   - [SandboxMode.READ_ONLY]：等同 PLAN 约束推广，禁止一切修改类工具；
+     *   - [SandboxMode.WORKSPACE_WRITE]：允许工作区读写与命令执行，但禁止越出工作区的
+     *     重配置能力（容器环境/Agent 配置/网络写/外部动态工具/设备存储等）。
+     */
+    suspend fun evaluate(
+        tool: AgentTool?,
+        toolName: String,
+        args: Map<String, JsonElement>,
+        mode: com.R.codecore.feature.agent.domain.model.AgentMode,
+        sandboxMode: SandboxMode? = null
+    ): EvalResult {
         val capabilities = tool?.effectiveCapabilities(args).orEmpty()
+        sandboxMode?.let { sb ->
+            if (sb.isReadOnly && isDangerousTool(toolName, args, capabilities)) {
+                return EvalResult(
+                    Verdict.DENY, emptyList(),
+                    denyReason = "当前为 read-only 沙箱模式，系统物理沙盒已禁止任何修改类操作（含写文件/执行命令）。" +
+                        "请仅调用只读工具探索，不要尝试修改文件或执行命令；如需修改请显式切换沙箱模式。"
+                )
+            }
+            if (sb.isWorkspaceRestricted &&
+                capabilities.any { it in OUTSIDE_WORKSPACE_CAPABILITIES }
+            ) {
+                return EvalResult(
+                    Verdict.DENY, emptyList(),
+                    denyReason = "当前为 workspace-write 沙箱模式，禁止越出工作区的操作（容器环境/Agent 配置/网络写/外部工具/设备存储）。" +
+                        "工作区内文件读写与命令执行不受影响。"
+                )
+            }
+        }
         if (mode == com.R.codecore.feature.agent.domain.model.AgentMode.PLAN && isDangerousTool(toolName, args, capabilities)) {
             return EvalResult(Verdict.DENY, emptyList(), denyReason = "当前处于 PLAN（计划）模式，系统物理沙盒已禁止修改系统状态或执行写操作。请在计划模式下仅调用只读工具探索代码，不要尝试修改文件或执行命令。")
         }

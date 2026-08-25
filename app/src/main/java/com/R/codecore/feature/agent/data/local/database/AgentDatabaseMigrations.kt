@@ -1,0 +1,112 @@
+package com.R.codecore.feature.agent.data.local.database
+
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
+/**
+ * agent 域库 v1→v2 迁移（任务编排层新表）。
+ *
+ * 任务编排层（Goal/Plan/Job/Schedule 四表）是 v1 全新库后的第一次结构演进，
+ * 全部为**新增表**（无列变更/无数据搬迁），迁移 SQL 与 Entity 定义逐列对齐，
+ * 保证 Room TableInfo 校验通过（Migration didn't properly handle 防御）。
+ *
+ * 说明：本迁移为程序化 Migration（不走 assets/migrations 的 SQL 文件切分器），
+ * 通过 [DatabaseModule] 的 AgentDatabase builder 注册。
+ */
+object AgentDatabaseMigrations {
+
+    /**
+     * v1 → v2：新增 agent_goals / agent_plans / agent_jobs / agent_schedules 四张表。
+     * 索引名遵循 Room 约定 `index_<table>_<cols...>`（与 @Entity indices 一致）。
+     */
+    val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // ── agent_goals（Goal 状态机）──
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `agent_goals` (" +
+                        "`goalId` TEXT NOT NULL, " +
+                        "`sessionId` TEXT NOT NULL, " +
+                        "`text` TEXT NOT NULL, " +
+                        "`status` TEXT NOT NULL DEFAULT 'ACTIVE', " +
+                        "`revision` INTEGER NOT NULL DEFAULT 0, " +
+                        "`parentGoalId` TEXT NOT NULL DEFAULT '', " +
+                        "`roundSeq` INTEGER NOT NULL DEFAULT 0, " +
+                        "`createdAtMs` INTEGER NOT NULL, " +
+                        "`updatedAtMs` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`goalId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_goals_sessionId` ON `agent_goals` (`sessionId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_goals_status` ON `agent_goals` (`status`)"
+            )
+
+            // ── agent_plans（Plan 协作状态）──
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `agent_plans` (" +
+                        "`planId` TEXT NOT NULL, " +
+                        "`sessionId` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`steps` TEXT NOT NULL DEFAULT '', " +
+                        "`status` TEXT NOT NULL DEFAULT 'DRAFT', " +
+                        "`pendingSelection` TEXT NOT NULL DEFAULT '', " +
+                        "`createdAtMs` INTEGER NOT NULL, " +
+                        "`updatedAtMs` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`planId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_plans_sessionId` ON `agent_plans` (`sessionId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_plans_status` ON `agent_plans` (`status`)"
+            )
+
+            // ── agent_jobs（后台任务）──
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `agent_jobs` (" +
+                        "`jobId` TEXT NOT NULL, " +
+                        "`sessionId` TEXT NOT NULL, " +
+                        "`kind` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`status` TEXT NOT NULL DEFAULT 'RUNNING', " +
+                        "`exitCode` INTEGER, " +
+                        "`outputLocator` TEXT NOT NULL DEFAULT '', " +
+                        "`createdAtMs` INTEGER NOT NULL, " +
+                        "`finishedAtMs` INTEGER, " +
+                        "`updatedAtMs` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`jobId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_jobs_sessionId` ON `agent_jobs` (`sessionId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_jobs_status` ON `agent_jobs` (`status`)"
+            )
+
+            // ── agent_schedules（定时提醒）──
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `agent_schedules` (" +
+                        "`scheduleId` TEXT NOT NULL, " +
+                        "`sessionId` TEXT NOT NULL, " +
+                        "`rule` TEXT NOT NULL, " +
+                        "`args` TEXT NOT NULL DEFAULT '', " +
+                        "`status` TEXT NOT NULL DEFAULT 'PENDING', " +
+                        "`enabled` INTEGER NOT NULL DEFAULT 1, " +
+                        "`createdAtMs` INTEGER NOT NULL, " +
+                        "`lastFiredAtMs` INTEGER, " +
+                        "`updatedAtMs` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`scheduleId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_schedules_sessionId` ON `agent_schedules` (`sessionId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_schedules_status` ON `agent_schedules` (`status`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_schedules_enabled` ON `agent_schedules` (`enabled`)"
+            )
+        }
+    }
+}

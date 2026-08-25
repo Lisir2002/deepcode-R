@@ -9,11 +9,15 @@ import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
 import com.R.codecore.feature.agent.data.local.entity.CheckpointEntity
 import com.R.codecore.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
 import com.R.codecore.feature.agent.data.local.entity.FileEditHunkEntity
+import com.R.codecore.feature.agent.data.local.entity.GoalEntity
 import com.R.codecore.feature.agent.data.local.entity.HallucinationFuseEntity
 import com.R.codecore.feature.agent.data.local.entity.HardConstraintDeleteAuditEntity
+import com.R.codecore.feature.agent.data.local.entity.JobEntity
 import com.R.codecore.feature.agent.data.local.entity.L0SoftCompactRestoreLogEntity
 import com.R.codecore.feature.agent.data.local.entity.ModeSwitchHistoryEntity
 import com.R.codecore.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
+import com.R.codecore.feature.agent.data.local.entity.PlanEntity
+import com.R.codecore.feature.agent.data.local.entity.ScheduleEntity
 import com.R.codecore.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
 import com.R.codecore.feature.agent.data.local.entity.SkillConversationStateEntity
 import com.R.codecore.feature.agent.data.local.entity.SkillStateEntity
@@ -83,7 +87,7 @@ object LightweightSchemaRescue {
     )
 
     /**
-     * ALL_ENTITY_CLASSES：与瘦身 AgentDatabase.kt @Database(entities=[...]) 一一对应（17 项顺序一致）。
+     * ALL_ENTITY_CLASSES：与瘦身 AgentDatabase.kt @Database(entities=[...]) 一一对应（21 项顺序一致）。
      * 数据层重构（新写法）后，本清单仅代表 agent 域库；其余 4 个域库各自独立、无救援清单。
      * 加表/删表时必须同步更新；DbSCHIELDPreflightTest.ENTITY-COUNT-TEST CI 闸门强制校验。
      *
@@ -107,7 +111,11 @@ object LightweightSchemaRescue {
         ZthTelemetryEventEntity::class.java,
         SkillConversationStateEntity::class.java,
         SkillStateEntity::class.java,
-        WakeItemEntity::class.java
+        WakeItemEntity::class.java,
+        GoalEntity::class.java,
+        PlanEntity::class.java,
+        JobEntity::class.java,
+        ScheduleEntity::class.java
     )
 
     // ── schema JSON 解析模型（Room 官方导出格式）──────────────────────────

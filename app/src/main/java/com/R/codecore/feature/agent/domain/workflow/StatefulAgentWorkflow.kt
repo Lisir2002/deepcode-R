@@ -9,6 +9,7 @@ import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.session.SessionUseCase
 import com.R.codecore.feature.agent.domain.session.MessagePersistenceUseCase
 import com.R.codecore.feature.agent.domain.checkpoint.CheckpointManager
+import com.R.codecore.feature.agent.domain.goal.GoalService
 import com.R.codecore.feature.agent.domain.permission.PermissionChoice
 import com.R.codecore.feature.agent.domain.permission.PermissionScope
 import com.R.codecore.feature.agent.domain.permission.ToolPermissionPolicyEngine
@@ -137,7 +138,9 @@ class StatefulAgentWorkflow @Inject constructor(
     /** R01 Hook 分发器：工具执行前后 / 用户提交 / 停止等事件挂点（对齐 design 第 11 节）。 */
     private val hookDispatcher: HookDispatcher,
     /** R02 统一唤醒队列：下轮开始前注入后台审查/耗时任务结果（对齐 design 11.3/16.2）。 */
-    private val wakeQueueManager: WakeQueueManager
+    private val wakeQueueManager: WakeQueueManager,
+    /** 会话任务目标状态机：每轮 step 前把当前 ACTIVE 目标注入 system prompt（DSH goal）。 */
+    private val goalService: GoalService
 ) : AgentWorkflow {
 
     init {
@@ -558,6 +561,8 @@ class StatefulAgentWorkflow @Inject constructor(
         var currentContext = context
         var state = AgentSessionState()
         var currentTools = tools
+        // 循环级 guard：统计连续「相同工具 + 相同参数」调用，达阈值在下一轮 CallLlm 注入提醒。
+        val loopGuardTracker = LoopGuardTracker()
         // L2 共享会话状态：随会话创建，注入 currentContext 供所有工具共享读写。
         val sessionState = context.sessionId?.let { ToolSessionState(it) }
         if (sessionState != null) {
@@ -671,6 +676,28 @@ class StatefulAgentWorkflow @Inject constructor(
             for (effect in effects) {
                 when (effect) {
                     is AgentSideEffect.CallLlm -> {
+                        // 会话任务目标注入：每轮 step 前读取当前 ACTIVE 目标，拼到系统提示词末尾，
+                        // 使目标可追溯、可修订、可归因（DSH goal；读取失败静默降级，不阻断主流程）。
+                        val activeGoal = try {
+                            withContext(Dispatchers.IO) {
+                                currentContext.sessionId?.let { goalService.getActive(it) }
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            FileLogger.w(TAG, "读取当前任务目标失败，跳过目标注入", e)
+                            null
+                        }
+                        val goalHint = activeGoal?.text?.takeIf { it.isNotBlank() }
+                            ?.let { "【当前任务目标】$it" }
+                        // 循环级 guard：取本轮待注入的重复调用提醒（无则 null），拼到系统提示词末尾。
+                        // 不阻塞、不改写工具调用，仅作 advisory，决策留给模型。
+                        val loopAdvisory = loopGuardTracker.takeAdvisory()
+                        val effectiveSystemPrompt = buildString {
+                            systemPrompt?.let { append(it) }
+                            goalHint?.let { if (isNotEmpty()) append("\n\n"); append(it) }
+                            loopAdvisory?.let { if (isNotEmpty()) append("\n\n"); append(it) }
+                        }.takeIf { it.isNotBlank() } ?: systemPrompt
                         // 识图轮：若当前聊天模型无 vision，使用独立识图模型发送
                         val visionProvider = if (state.pendingVisionRound) resolveVisionFallbackProvider(currentContext.sessionId) else null
                         val providerInUse = visionProvider ?: aiProvider
@@ -716,7 +743,7 @@ class StatefulAgentWorkflow @Inject constructor(
                             // 是为了避免把 source=INFERRED 的自定义多模态模型误当成纯文本模型，
                             // 发送前剥离图片导致模型「图都收不到还怎么识别」。
                             val messagesToSend = sanitizeImagesForModel(compactedMessages, sendImages)
-                            providerInUse.completeStream(systemPrompt, messagesToSend, currentTools, currentContext.reasoningEffort).collect { chunk ->
+                            providerInUse.completeStream(effectiveSystemPrompt, messagesToSend, currentTools, currentContext.reasoningEffort).collect { chunk ->
                                 when (chunk) {
                                     is AIStreamChunk.TextDelta -> {
                                         acc.accept(chunk.text)
@@ -833,7 +860,7 @@ class StatefulAgentWorkflow @Inject constructor(
                                 val acc2 = DeltaAccumulator()
                                 val reasoning2 = DeltaAccumulator()
                                 var final2: AIResponse? = null
-                                providerInUse.completeStream(systemPrompt, textOnlyMessages, currentTools, currentContext.reasoningEffort).collect { chunk ->
+                                providerInUse.completeStream(effectiveSystemPrompt, textOnlyMessages, currentTools, currentContext.reasoningEffort).collect { chunk ->
                                     when (chunk) {
                                         is AIStreamChunk.TextDelta -> {
                                             acc2.accept(chunk.text)
@@ -1004,6 +1031,8 @@ class StatefulAgentWorkflow @Inject constructor(
                         // 串行处理 mode 切换并组装批量结果。
                         val batchResults = mutableListOf<ToolBatchResult>()
                         toolCalls.forEachIndexed { index, toolCall ->
+                            // 循环级 guard：统计连续「相同工具 + 相同参数」调用（阈值 3/5/8 在下一轮提醒）。
+                            loopGuardTracker.record(toolCall.name, toolCall.arguments)
                             val runResult = runResults.getOrNull(index)
                                 ?: ToolRunResult(ToolResult.Error("工具未执行", "TOOL_NOT_EXECUTED").toTransportString(), true)
                             var rawResult = runResult.raw
@@ -1069,6 +1098,19 @@ class StatefulAgentWorkflow @Inject constructor(
                         // 逐个推送完成事件（保持与 batchToolCalls 一致顺序），并进入收尾。
                         batchResults.forEach { br ->
                             send(AgentEvent.ToolCallFinished(br.id, br.toolName, br.result, br.isError, attachments = br.attachments))
+                            // 目标状态机事件桥接：goal 工具结果（set/update/done/abandon）成功时，
+                            // 解析结构化结果并转发 AgentEvent.GoalChanged，与消息同日志、供下游消费。
+                            if (br.toolName == "goal" && !br.isError) {
+                                runCatching {
+                                    val g = (Json.parseToJsonElement(br.result) as JsonObject)["goal"] as JsonObject
+                                    AgentEvent.GoalChanged(
+                                        goalId = g["goal_id"]?.jsonPrimitive?.contentOrNull ?: "",
+                                        status = g["status"]?.jsonPrimitive?.contentOrNull ?: "",
+                                        text = g["text"]?.jsonPrimitive?.contentOrNull ?: "",
+                                        sessionId = currentContext.sessionId
+                                    )
+                                }.getOrNull()?.let { send(it) }
+                            }
                         }
                         actionQueue.addLast(AgentAction.ToolBatchFinished(batchResults))
                     }
@@ -1812,10 +1854,19 @@ class StatefulAgentWorkflow @Inject constructor(
             }
         }
 
-        val eval = policyEngine.evaluate(tool, tool.name, arguments, mode)
+        // 解析模型显式传入的 sandbox 参数（方向 D2 文件影响三档）；null 表示未收紧，走会话/全局默认。
+        val sandboxMode = com.R.codecore.feature.agent.domain.permission.SandboxMode.parse(
+            (arguments["sandbox"] as? JsonPrimitive)?.contentOrNull
+        )
+        val eval = policyEngine.evaluate(tool, tool.name, arguments, mode, sandboxMode)
         if (eval.verdict == ToolPermissionPolicyEngine.Verdict.DENY) {
             val reason = eval.denyReason ?: "该工具被项目安全规则策略禁止执行"
-            val code = if (mode == com.R.codecore.feature.agent.domain.model.AgentMode.PLAN) "PLAN_MODE_REJECTED" else "SYSTEM_DENIED"
+            val code = when {
+                sandboxMode?.isReadOnly == true -> "READ_ONLY_DENIED"
+                sandboxMode?.isWorkspaceRestricted == true -> "WORKSPACE_RESTRICTED"
+                mode == com.R.codecore.feature.agent.domain.model.AgentMode.PLAN -> "PLAN_MODE_REJECTED"
+                else -> "SYSTEM_DENIED"
+            }
             return PermissionCheckResult(false, reason, code)
         }
 

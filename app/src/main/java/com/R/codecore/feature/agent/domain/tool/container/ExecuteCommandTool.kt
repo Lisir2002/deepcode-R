@@ -68,6 +68,9 @@ class ExecuteCommandTool @Inject constructor(
          */
         const val MAX_TIMEOUT_SECONDS = 3_600L
 
+        /** 结构化超时错误码：模型可据 `error.code == TOOL_TIMEOUT` 决定重试或换策略（对齐 DSH 结构化超时护栏）。 */
+        const val ERROR_TIMEOUT = "TOOL_TIMEOUT"
+
         /** strict 模式错误信息中附带的末尾输出行数，用于帮助 AI 定位失败点。 */
         private const val STRICT_ERROR_TAIL_LINES = 20
 
@@ -151,6 +154,15 @@ class ExecuteCommandTool @Inject constructor(
             name = "strict",
             type = ParameterType.BOOLEAN,
             description = "strict=true 时命令非零退出码返回 ToolResult.Error（错误信息附末尾输出），便于 AI 快速感知失败；默认 false 时保持旧行为（非零退出码仍返回 Success 并含完整输出）。",
+            required = false
+        ),
+        "sandbox" to ToolParameter(
+            name = "sandbox",
+            type = ParameterType.STRING,
+            description = "可选的文件影响沙箱模式（方向 D2），限定本次执行的影响面：" +
+                "read_only（禁止一切修改类操作，仅可探索）；" +
+                "workspace_write（允许工作区内读写与命令执行，但禁止越出工作区的容器环境/Agent 配置/网络写/外部工具/设备存储操作）；" +
+                "danger_full_access（完全访问，默认）。未传时走会话/全局默认。",
             required = false
         )
     )
@@ -244,6 +256,11 @@ class ExecuteCommandTool @Inject constructor(
             }
             FileLogger.v(TAG, "execute_command 完成，输出 ${result.output.length} 字符，exit=${result.exitCode}")
             maybeSyncBundleStates(command)
+            // 结构化超时：区别于普通失败，返回 TOOL_TIMEOUT 让模型可据此重试/换策略。
+            if (result.timedOut) {
+                FileLogger.w(TAG, "execute_command 超时(${timeoutMs}ms)已强制终止: $command")
+                return ToolResult.Error(timeoutErrorMessage(timeoutMs, result.output), ERROR_TIMEOUT)
+            }
             aggregateResult(appendHints(command, result.output), result.exitCode, strict)
         } catch (e: CancellationException) {
             throw e
@@ -283,6 +300,8 @@ class ExecuteCommandTool @Inject constructor(
         var accumulated = BoundedOutput()
         // 记录命令真实退出码：CommandEvent.Exit 是流结束前最后一个事件，超时/异常时为 null。
         var exitCode: Int? = null
+        // 记录是否因超时被强制终止：由 CommandEvent.TimedOut 标记，区别于普通失败/异常。
+        var timedOut = false
         try {
             val workdir = workspaceRepository.currentPath()
             val (timeoutMs, loopGuarded) = resolveEffectiveTimeoutMs(args, command)
@@ -299,6 +318,7 @@ class ExecuteCommandTool @Inject constructor(
                             accumulated.append("\n")
                             emit(ToolStreamEvent.Progress(event.text))
                         }
+                        is CommandEvent.TimedOut -> { timedOut = true }
                         is CommandEvent.Exit -> { exitCode = event.code }
                     }
                 }
@@ -312,6 +332,14 @@ class ExecuteCommandTool @Inject constructor(
             }
             FileLogger.v(TAG, "execute_command(流式) 完成，输出 ${accumulated.totalChars} 字符，exit=$exitCode")
             maybeSyncBundleStates(command)
+            // 结构化超时：区别于普通失败，返回 TOOL_TIMEOUT 让模型可据此重试/换策略。
+            if (timedOut) {
+                FileLogger.w(TAG, "execute_command(流式) 超时(${timeoutMs}ms)已强制终止: $command")
+                emit(ToolStreamEvent.Completed(
+                    ToolResult.Error(timeoutErrorMessage(timeoutMs, accumulated.build()), ERROR_TIMEOUT)
+                ))
+                return@flow
+            }
             emit(ToolStreamEvent.Completed(aggregateResult(appendHints(command, accumulated.build()), exitCode, strict)))
         } catch (e: CancellationException) {
             throw e
@@ -356,5 +384,15 @@ class ExecuteCommandTool @Inject constructor(
         val tail = output.trimEnd().split("\n").takeLast(STRICT_ERROR_TAIL_LINES).joinToString("\n")
         val reason = if (exitCode != null) "命令退出码非零(exit=$exitCode)" else "命令未正常结束(超时或异常)"
         return if (tail.isNotBlank()) "$reason: 末尾输出...\n$tail" else reason
+    }
+
+    /** 结构化超时错误信息：附末尾若干行已捕获输出，帮助 AI 定位卡点。 */
+    private fun timeoutErrorMessage(timeoutMs: Long, output: String): String {
+        val tail = output.trimEnd().split("\n").takeLast(STRICT_ERROR_TAIL_LINES).joinToString("\n")
+        return if (tail.isNotBlank()) {
+            "命令执行超时（超过 ${timeoutMs / 1000} 秒已强制终止）。末尾输出...\n$tail"
+        } else {
+            "命令执行超时（超过 ${timeoutMs / 1000} 秒已强制终止）。"
+        }
     }
 }

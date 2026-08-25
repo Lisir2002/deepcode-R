@@ -92,6 +92,7 @@ class RemoteSshEngine @Inject constructor(
             val exitCode = session.exitStatus
             watchdog.cancel()
             if (timedOut.get()) {
+                emit(CommandEvent.TimedOut)
                 emit(CommandEvent.Line("[命令执行超时：超过 ${effectiveTimeout}ms 已被强制终止]"))
                 emit(CommandEvent.Exit(null))
             } else {
@@ -104,6 +105,7 @@ class RemoteSshEngine @Inject constructor(
         } catch (e: Exception) {
             watchdog.cancel()
             if (timedOut.get()) {
+                emit(CommandEvent.TimedOut)
                 emit(CommandEvent.Line("[命令执行超时：超过 ${effectiveTimeout}ms 已被强制终止]"))
                 emit(CommandEvent.Exit(null))
             } else {
@@ -161,12 +163,15 @@ class RemoteSshEngine @Inject constructor(
         val session = connection.startExecSession(buildCdCommand(command, projectPath))
         val output = BoundedOutput()
         var exitCode: Int? = null
+        // 结构化超时标记：看门狗触发（超时强关 session）时置位，供上层返回 TOOL_TIMEOUT。
+        val timedOut = AtomicBoolean(false)
         try {
             coroutineScope {
                 val watchdog = launch {
                     delay(effectiveTimeout)
                     if (session.isOpen) {
                         FileLogger.w(TAG, "命令超时(${effectiveTimeout}ms)已终止: $command")
+                        timedOut.set(true)
                         runCatching { session.close() }
                     }
                 }
@@ -187,7 +192,7 @@ class RemoteSshEngine @Inject constructor(
             runCatching { session.close() }
         }
         FileLogger.v(TAG, "命令完成(远程, 退出码 $exitCode，输出 ${output.totalChars} 字符): $command")
-        CommandResult(output.build(), exitCode)
+        CommandResult(output.build(), exitCode, timedOut.get())
     }
 
     override fun isContainerInstalled(): Boolean = connection.isConnected()

@@ -604,6 +604,7 @@ class ParallelPrefetchManager(
                         if (h != null) http = h
                     }
                 }
+                is CommandEvent.TimedOut -> { /* 超时标记：由随后的 Exit(null) 统一收尾 */ }
                 is CommandEvent.Exit -> { if (ev.code == null) http = 0 }
             }
         }

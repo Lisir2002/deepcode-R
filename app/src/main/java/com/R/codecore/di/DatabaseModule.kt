@@ -3,17 +3,22 @@ package com.R.codecore.di
 import android.content.Context
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import com.R.codecore.core.db.DbSplitMigrator
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.data.local.dao.CheckpointDao
 import com.R.codecore.feature.agent.data.local.dao.CheckpointFileSnapshotDao
 import com.R.codecore.feature.agent.data.local.dao.FileEditHunkDao
+import com.R.codecore.feature.agent.data.local.dao.GoalDao
 import com.R.codecore.feature.agent.data.local.dao.HallucinationFuseDao
 import com.R.codecore.feature.agent.data.local.dao.HardConstraintDeleteAuditDao
+import com.R.codecore.feature.agent.data.local.dao.JobDao
 import com.R.codecore.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
 import com.R.codecore.feature.agent.data.local.dao.ModeSwitchHistoryDao
 import com.R.codecore.feature.agent.data.local.dao.ModelCapabilityOverrideDao
+import com.R.codecore.feature.agent.data.local.dao.PlanDao
+import com.R.codecore.feature.agent.data.local.dao.ScheduleDao
 import com.R.codecore.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
 import com.R.codecore.feature.agent.data.local.dao.SkillConversationStateDao
 import com.R.codecore.feature.agent.data.local.dao.SkillStateDao
@@ -22,6 +27,7 @@ import com.R.codecore.feature.agent.data.local.dao.UserConfirmedSentinelDao
 import com.R.codecore.feature.agent.data.local.dao.WakeQueueDao
 import com.R.codecore.feature.agent.data.local.dao.ZthTelemetryEventDao
 import com.R.codecore.feature.agent.data.local.database.AgentDatabase
+import com.R.codecore.feature.agent.data.local.database.AgentDatabaseMigrations
 import com.R.codecore.feature.credentials.data.local.dao.GitCredentialDao
 import com.R.codecore.feature.credentials.data.local.database.CredentialsDatabase
 import com.R.codecore.feature.settings.data.local.dao.AIProviderDao
@@ -70,7 +76,12 @@ object DatabaseModule {
     @Singleton
     fun provideAgentDatabase(@ApplicationContext context: Context): AgentDatabase {
         DbSplitMigrator.migrateIfNeeded(context)
-        return buildNewDb(context, AgentDatabase::class.java, AGENT_DB_NAME)
+        return buildNewDb(
+            context,
+            AgentDatabase::class.java,
+            AGENT_DB_NAME,
+            AgentDatabaseMigrations.MIGRATION_1_2
+        )
     }
 
     @Provides
@@ -102,19 +113,24 @@ object DatabaseModule {
     }
 
     /**
-     * 新域库统一构建：v1 全新、无历史迁移链，只保留 WAL + 多实例失效通知两个基础设施项。
+     * 新域库统一构建：v1 全新、无历史迁移链（agent 库 v1→v2 起有结构演进，经 [migrations] 注册），
+     * 只保留 WAL + 多实例失效通知两个基础设施项。
      * 旧版的 DB-SHIELD 四阶段 Funnel / 崩溃备份等「数据保全重武器」不再需要——
      * 它们的存在正是单巨库历史包袱（49 版迁移链）的产物，新库从零开始无需携带。
      */
     private fun <T : RoomDatabase> buildNewDb(
         context: Context,
         dbClass: Class<T>,
-        name: String
+        name: String,
+        vararg migrations: Migration
     ): T {
-        return Room.databaseBuilder(context, dbClass, name)
+        val builder = Room.databaseBuilder(context, dbClass, name)
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
             .enableMultiInstanceInvalidation()
-            .build()
+        if (migrations.isNotEmpty()) {
+            builder.addMigrations(*migrations)
+        }
+        return builder.build()
     }
 
     // ══════════════════════════ agent 域 DAO ══════════════════════════
@@ -203,6 +219,26 @@ object DatabaseModule {
     @Singleton
     fun provideWakeQueueDao(database: AgentDatabase): WakeQueueDao =
         database.wakeQueueDao()
+
+    @Provides
+    @Singleton
+    fun provideGoalDao(database: AgentDatabase): GoalDao =
+        database.goalDao()
+
+    @Provides
+    @Singleton
+    fun providePlanDao(database: AgentDatabase): PlanDao =
+        database.planDao()
+
+    @Provides
+    @Singleton
+    fun provideJobDao(database: AgentDatabase): JobDao =
+        database.jobDao()
+
+    @Provides
+    @Singleton
+    fun provideScheduleDao(database: AgentDatabase): ScheduleDao =
+        database.scheduleDao()
 
     // ══════════════════════════ settings 域 DAO ══════════════════════════
 

@@ -224,6 +224,7 @@ class EnsureAndroidEnvTool @Inject constructor(
                         accumulated.append(event.text).append('\n')
                         stepLineToDisplay(event.text)?.let { emit(ToolStreamEvent.Progress(it)) }
                     }
+                    is CommandEvent.TimedOut -> { /* 超时标记：由随后的 Exit(null) 统一收尾 */ }
                     is CommandEvent.Exit -> { /* 结束在流完成后统一聚合 */ }
                 }
             }

@@ -242,6 +242,19 @@ sealed class ToolEvent(
         override val type: String = "state.mode.changed"
     }
 
+    /** 会话任务目标变更（goal 工具触发，action=get 不广播）。订阅者：会话快照 / 目标状态缓存。 */
+    data class GoalChanged(
+        val goalId: String,
+        val status: String,
+        override val source: String = "GoalTool",
+        override val sessionId: String? = null,
+        override val timestamp: Long = System.currentTimeMillis(),
+        override val depth: Int = 0,
+        override val causalChain: List<String> = emptyList()
+    ) : ToolEvent(source, sessionId, timestamp, depth, causalChain) {
+        override val type: String = "state.goal.changed"
+    }
+
     /** 会话清空。订阅者：所有层（清空状态）。 */
     data class StateSessionCleared(
         override val sessionId: String,

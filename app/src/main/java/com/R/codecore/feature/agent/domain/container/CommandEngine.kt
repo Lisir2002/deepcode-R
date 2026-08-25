@@ -9,10 +9,20 @@ sealed interface CommandEvent {
     data class Line(val text: String) : CommandEvent
     /** 命令结束，附退出码（兜底 shell 无法取到时为 null）。 */
     data class Exit(val code: Int?) : CommandEvent
+    /**
+     * 命令因超时被强制终止，在 [Exit] 之前 emit（exitCode 仍为 null）。
+     * 供工具层区分「超时」与普通失败/异常，返回结构化 `TOOL_TIMEOUT`（对齐 DSH 结构化超时护栏）。
+     */
+    data object TimedOut : CommandEvent
 }
 
-/** 一次命令执行的结果：限幅后的完整输出 + 退出码（超时/异常时为 null）。 */
-data class CommandResult(val output: String, val exitCode: Int?)
+/**
+ * 一次命令执行的结果：限幅后的完整输出 + 退出码（超时/异常时为 null）。
+ *
+ * [timedOut] 标识本次是否因超时被强制终止（区别于普通失败/异常退出），
+ * 供 run_code / ExecuteCommandTool 返回结构化 `TOOL_TIMEOUT`（对齐 DSH 结构化超时护栏）。
+ */
+data class CommandResult(val output: String, val exitCode: Int?, val timedOut: Boolean = false)
 
 /**
  * 命令执行后端抽象：把"在哪执行命令"从硬编码的本地 PRoot 解耦。

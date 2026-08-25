@@ -270,6 +270,7 @@ class LinuxContainerEngine @Inject constructor(
             watchdog.cancel()
             if (timedOut.get()) {
                 FileLogger.w(TAG, "命令超时(${effectiveTimeout}ms)已终止: $command")
+                emit(CommandEvent.TimedOut)
                 emit(CommandEvent.Line(timeoutNotice(effectiveTimeout)))
                 emit(CommandEvent.Exit(null))
             } else {
@@ -288,6 +289,7 @@ class LinuxContainerEngine @Inject constructor(
             watchdog.cancel()
             if (timedOut.get()) {
                 FileLogger.w(TAG, "命令超时(${effectiveTimeout}ms)已终止(readLine 异常): $command", e)
+                emit(CommandEvent.TimedOut)
                 emit(CommandEvent.Line(timeoutNotice(effectiveTimeout)))
                 emit(CommandEvent.Exit(null))
             } else {
@@ -333,11 +335,11 @@ class LinuxContainerEngine @Inject constructor(
         // 未就绪时不自动初始化，直接返回引导文案，由用户去终端页完成初始化。
         notReadyHint()?.let { return@withContext CommandResult(it, null) }
         val r = execCaptured(command, projectPath, timeoutMs)
-        CommandResult(r.output, r.exitCode)
+        CommandResult(r.output, r.exitCode, r.timedOut)
     }
 
-    /** 一次容器内执行的内部结果：限幅后的完整输出 + 退出码（超时/异常时为 null）。 */
-    private data class ExecResult(val output: String, val exitCode: Int?)
+    /** 一次容器内执行的内部结果：限幅后的完整输出 + 退出码（超时/异常时为 null）+ 是否超时。 */
+    private data class ExecResult(val output: String, val exitCode: Int?, val timedOut: Boolean = false)
 
     /**
      * 仅在容器和基础包已就绪时执行命令；不会触发 rootfs 解压或 apk 装包。
@@ -352,7 +354,7 @@ class LinuxContainerEngine @Inject constructor(
     ): CommandResult? {
         if (!containerInstaller.isInstalledFor(currentProfile) || !isProvisioned()) return null
         val result = execCaptured(command, projectPath, timeoutMs)
-        return CommandResult(result.output, result.exitCode)
+        return CommandResult(result.output, result.exitCode, result.timedOut)
     }
 
     /**
@@ -410,7 +412,7 @@ class LinuxContainerEngine @Inject constructor(
                 FileLogger.w(TAG, "命令超时(${effectiveTimeout}ms)已终止: $command")
                 output.append(timeoutNotice(effectiveTimeout))
                 output.append("\n")
-                ExecResult(output.build(), null)
+                ExecResult(output.build(), null, timedOut.get())
             } else {
                 FileLogger.v(TAG, "命令完成(退出码 $exitCode，输出 ${output.totalChars} 字符): $command")
                 ExecResult(output.build(), exitCode)
@@ -571,6 +573,11 @@ class LinuxContainerEngine @Inject constructor(
                                 )
                             }
                         }
+                        is CommandEvent.TimedOut -> {
+                            FileLogger.w(TAG, "apk 命令超时，立刻 cancel prefetch + shutdown")
+                            prefetchJob?.cancel("apk timeout")
+                            runCatching { prefetch.shutdown("apk timeout") }
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -656,6 +663,7 @@ class LinuxContainerEngine @Inject constructor(
                 ).collect { event ->
                     when (event) {
                         is CommandEvent.Line -> Unit
+                        is CommandEvent.TimedOut -> Unit
                         is CommandEvent.Exit -> exitCode = event.code
                     }
                 }
@@ -715,6 +723,7 @@ class LinuxContainerEngine @Inject constructor(
                                 // 同步更新 _initProgress 的 line，让 UI 能看到最新输出行
                                 _initProgress.value = ContainerInitState.BundleInstalling(bundleId = null, line = event.text)
                             }
+                            is CommandEvent.TimedOut -> exitCode = null
                             is CommandEvent.Exit -> exitCode = event.code
                         }
                     }

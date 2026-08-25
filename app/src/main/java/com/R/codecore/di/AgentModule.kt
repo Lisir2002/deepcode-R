@@ -194,6 +194,7 @@ object AgentModule {
         writeFileTool: WriteFileTool,
         editFileTool: EditFileTool,
         executeCommandTool: ExecuteCommandTool,
+        runCodeTool: com.R.codecore.feature.agent.domain.tool.container.RunCodeTool,
         checkEnvironmentTool: CheckEnvironmentTool,
         ensureAndroidEnvTool: EnsureAndroidEnvTool,
         switchContainerArchTool: SwitchContainerArchTool,
@@ -213,6 +214,12 @@ object AgentModule {
         browserTool: BrowserAgentTool,
         storageTool: com.R.codecore.feature.agent.domain.tool.storage.StorageTool,
         networkProxyTool: com.R.codecore.feature.agent.domain.tool.proxy.NetworkProxyTool,
+        goalTool: com.R.codecore.feature.agent.domain.tool.goal.GoalTool,
+        jobStartTool: com.R.codecore.feature.agent.domain.tool.job.JobStartTool,
+        jobStatusTool: com.R.codecore.feature.agent.domain.tool.job.JobStatusTool,
+        jobKillTool: com.R.codecore.feature.agent.domain.tool.job.JobKillTool,
+        jobLogTool: com.R.codecore.feature.agent.domain.tool.job.JobLogTool,
+        scheduleTool: com.R.codecore.feature.agent.domain.tool.schedule.ScheduleTool,
         resultTypeRegistry: com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
     ): ToolRegistry {
         return ToolRegistry().apply {
@@ -237,6 +244,7 @@ object AgentModule {
             registerTool("writeFile", writeFileTool)
             registerTool("editFile", editFileTool)
             registerTool("Bash", executeCommandTool)
+            registerTool("run_code", runCodeTool)
             registerTool("check_environment", checkEnvironmentTool)
             registerTool("ensure_android_env", ensureAndroidEnvTool)
             registerTool("switch_container_arch", switchContainerArchTool)
@@ -260,6 +268,15 @@ object AgentModule {
             registerTool("device_storage", storageTool)
             // ══ 网络代理工具（VPN 形态）：模型自助管理容器内 mihomo 代理，ASK 确认 + MODIFY_NETWORK 能力隔离
             registerTool("network_proxy", networkProxyTool)
+            // ══ 会话任务目标状态机（DSH goal）：set/get/update/done/abandon + 每轮注入
+            registerTool("goal", goalTool)
+            // ══ 后台任务（DSH jobs）：job_start/status/kill/log，长任务后台执行 + Room 持久化
+            registerTool("job_start", jobStartTool)
+            registerTool("job_status", jobStatusTool)
+            registerTool("job_kill", jobKillTool)
+            registerTool("job_log", jobLogTool)
+            // ══ 定时提醒（DSH schedule）：create(after/at/every) + list + cancel，到点注入会话
+            registerTool("schedule", scheduleTool)
         }
     }
 
@@ -322,7 +339,8 @@ object AgentModule {
         skillExecutor: com.R.codecore.feature.agent.domain.skill.SkillExecutor,
         skillRuntimeProbe: com.R.codecore.feature.agent.domain.skill.SkillRuntimeProbe,
         hookDispatcher: com.R.codecore.feature.agent.domain.hook.HookDispatcher,
-        wakeQueueManager: com.R.codecore.feature.agent.domain.wake.WakeQueueManager
+        wakeQueueManager: com.R.codecore.feature.agent.domain.wake.WakeQueueManager,
+        goalService: com.R.codecore.feature.agent.domain.goal.GoalService
     ): AgentWorkflow {
         return com.R.codecore.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -351,7 +369,8 @@ object AgentModule {
             skillExecutor,
             skillRuntimeProbe,
             hookDispatcher,
-            wakeQueueManager
+            wakeQueueManager,
+            goalService
         )
     }
 }

@@ -70,6 +70,24 @@ sealed class AgentEvent {
         val output: String,
         val isError: Boolean = false
     ) : AgentEvent()
+
+    /** 会话任务目标变更（goal 工具 set/update/done/abandon 触发后由 workflow 推送）。
+     *  与消息同日志，压缩后可从日志折叠出目标快照（对齐 DSH goal/change）。 */
+    data class GoalChanged(
+        val goalId: String,
+        val status: String,
+        val text: String,
+        val sessionId: String?
+    ) : AgentEvent()
+
+    /** 定时提醒到点（schedule 调度循环触发后由 ViewModel 注入会话）。
+     *  作为一条带 "scheduled" 标记的 user/message 进入对应会话，唤醒 Agent 执行提醒任务
+     * （对齐 DSH schedule fired）。[prompt] 为创建定时项时的提醒正文。 */
+    data class ScheduleFired(
+        val scheduleId: String,
+        val prompt: String,
+        val sessionId: String?
+    ) : AgentEvent()
 }
 
 interface AgentWorkflow {

@@ -102,10 +102,38 @@ class AIAgentViewModel @Inject constructor(
     private val backupManager: BackupManager,
     private val checkEnvironmentTool: CheckEnvironmentTool,
     private val agentAssetRegistry: AgentAssetRegistry,
+    /** 定时提醒调度循环：会话创建后注册到点投递回调（DSH schedule）。 */
+    private val scheduleScheduler: com.R.codecore.feature.agent.domain.schedule.ScheduleScheduler,
     @param:ApplicationContext private val context: Context
 ) : ViewModel(), SlashCommandContext {
 
     private val sessionJobs = mutableMapOf<String, Job>()
+
+    /** 已向调度循环注册过到点投递回调的会话 id 集合（去重 + onCleared 注销用）。 */
+    private val registeredScheduleSessions = mutableSetOf<String>()
+
+    /**
+     * 为会话注册「定时提醒到点投递」回调：到点时把提醒正文作为一条带 "scheduled"
+     * 标记的 user/message 经 [enqueueAgentRequest] 注入该会话（忙碌时排队、空闲直发），
+     * 唤醒 Agent 执行提醒任务（DSH schedule fired）。会话首次进入请求流程时注册一次。
+     */
+    private fun registerScheduleListener(sessionId: String) {
+        if (!registeredScheduleSessions.add(sessionId)) return
+        scheduleScheduler.register(sessionId) { _, prompt ->
+            val msg = context.getString(R.string.agent_schedule_fired_prefix) + prompt
+            enqueueAgentRequest(
+                request = msg,
+                projectRoot = _currentWorkspace.value,
+                targetSessionId = sessionId
+            )
+        }
+    }
+
+    override fun onCleared() {
+        registeredScheduleSessions.forEach { scheduleScheduler.unregister(it) }
+        registeredScheduleSessions.clear()
+        super.onCleared()
+    }
 
     /**
      * 会话级「当前专项 agent」（#1 会话内切换，design 8.5）。
@@ -777,19 +805,26 @@ class AIAgentViewModel @Inject constructor(
         inputImages: List<AgentImage> = emptyList(),
         inputAttachments: List<AgentAttachment> = emptyList(),
         targetSessionId: String? = null,
-        isAutoTrigger: Boolean = false
+        isAutoTrigger: Boolean = false,
+        skipCommandDispatch: Boolean = false
     ): Job = viewModelScope.launch {
         val sessionId = targetSessionId ?: ensureSession()
         if (sessionId.isBlank()) {
             FileLogger.w(TAG, "工作区未就绪，跳过请求")
             return@launch
         }
+        // 定时提醒投递注册：会话首次进入请求流程即挂接，到点把提醒正文注入本会话。
+        registerScheduleListener(sessionId)
         // 命令分流：完全相等匹配到斜杠命令时，不走 agent workflow，直接执行命令操作
         // （命令文本已作为用户消息落库，进入对话上下文）。不注册 sessionJobs，
         // 因此 isRunning 保持 false，/compress 等命令内部的自检可以正常工作。
-        slashCommandRegistry.findExact(request)?.let { command ->
-            runSlashCommand(command, request, sessionId)
-            return@launch
+        // skipCommandDispatch：声明式命令展开（sendAgentRequest）复用本方法时置位，
+        // 跳过命令分流，避免展开正文再次命中命令导致递归。
+        if (!skipCommandDispatch) {
+            slashCommandRegistry.findExact(request)?.let { command ->
+                runSlashCommand(command, request, sessionId)
+                return@launch
+            }
         }
         coroutineContext[Job]?.let { sessionJobs[sessionId] = it }
         setAgentState(sessionId, AgentUIState.Streaming)
@@ -961,6 +996,29 @@ class AIAgentViewModel @Inject constructor(
                     is AgentEvent.ModeChanged -> {
                         // 模式切换事件：PlanApprovalManager 已在 workflow 层面挂起等待用户批准
                         // 这里只更新 streamingText 显示
+                    }
+                    is AgentEvent.GoalChanged -> {
+                        // 会话任务目标变更：与消息同日志，落库为工具卡片，让用户「看见」目标被设定/更新/完成。
+                        setStreamingText(sessionId, null)
+                        setStreamingReasoning(sessionId, null)
+                        val msgId = "goal_${event.goalId}_${System.nanoTime()}"
+                        val statusLabel = when (event.status) {
+                            "done" -> context.getString(R.string.agent_goal_status_done)
+                            "abandoned" -> context.getString(R.string.agent_goal_status_abandoned)
+                            else -> context.getString(R.string.agent_goal_status_active)
+                        }
+                        val summary = if (event.text.isBlank()) statusLabel
+                        else "${context.getString(R.string.agent_goal_status_active)}：${event.text}"
+                        messagePersistenceUseCase.persist(
+                            sessionId,
+                            MessageRole.TOOL,
+                            summary,
+                            id = msgId,
+                            taskId = taskId,
+                            toolName = "goal",
+                            toolArgs = "[$statusLabel]",
+                            isError = false
+                        )
                     }
                     is AgentEvent.AutoTriggered -> {
                         // 自动触发技能已完成：落库为工具卡片，让用户「看见」自动触发的实际效果（含失败也展示）。
@@ -1367,6 +1425,22 @@ class AIAgentViewModel @Inject constructor(
             }
             messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, msg, isCompacted = true)
         }
+    }
+
+    /**
+     * 声明式命令展开（方向 B1）：把渲染后的正文作为用户消息送入 workflow。
+     * 复用 [executeAgentRequestStream] 完整链路（落库/checkpoint/历史/事件流），
+     * skipCommandDispatch 置位防止展开正文再次命中命令分流导致递归。
+     * 原始命令文本（`/name args`）已由 [runSlashCommand] 落库，故对话同时保留命令与展开正文。
+     */
+    override fun sendAgentRequest(text: String) {
+        val sid = _currentSessionId.value ?: return
+        executeAgentRequestStream(
+            request = text,
+            modelRequest = text,
+            targetSessionId = sid,
+            skipCommandDispatch = true
+        )
     }
 
     private fun sessionProviderModelDisplay(sid: String): String {
