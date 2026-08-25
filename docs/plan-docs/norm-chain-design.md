@@ -232,25 +232,31 @@
 
 **可借鉴增量**（深入讨论定稿，对齐 Claude Code parseUserInput / plan 模式 / `!` 优先级标记 / AskUserQuestion 选项化 + DSH `determine_and_update_goal` / `should_update_goal` 准则 / goal 状态机）：
 
-5. **意图 → 行为模式切换**（对齐 CC plan 模式）
-   - intent_analyze 输出除五形态外，再输出 `behaviorMode`（本轮行为姿态，与五形态**正交**）：`design`（设计/评审——只出方案不写文件）/ `execute`（执行——默认，正常工具调用）/ `research`（调研——先搜索后答，不写文件）/ `chat`（问答——普通对话）。
-   - 规则映射：Parser 意图分类 `task`→execute、`query`+比较/了解/查资料类动词→research、设计/评审/方案类动词→design；模型可改判，作为 intent_analyze 输出字段。
-   - 生效方式：step 前注入一条"本轮行为模式"纪律行（如"当前为设计模式：只输出设计方案，不调用写文件类工具；如需写代码请先说明"）；design/research 模式对文件写类工具为**提示级约束**（非强制，模型可自主退出）。
-6. **持续意图维护闭环**（对齐 DSH `determine_and_update_goal` + `should_update_goal` 准则 + goal 状态机）
+5. **意图 → 行为模式切换**（对齐 CC plan 模式，深入讨论定稿）
+   - **粒度**：四档 `behaviorMode`（与五形态正交）——`design`（设计/评审：只出方案不写文件）/ `execute`（执行：默认，正常工具调用）/ `research`（调研：先搜索后答，不写文件）/ `chat`（问答：普通对话不调工具）。
+   - **规则映射**：Parser 意图分类 `task`→execute、`query`+比较/了解/查资料类动词→research、设计/评审/方案类动词→design、无任务纯问答→chat；模型可改判，作为 intent_analyze 输出字段。
+   - **生效方式**：提示级纪律行 + guard 软提醒——step 前注入"本轮行为模式"纪律行（如"当前为设计模式：只输出设计方案，不调用写文件类工具；如需写代码请先说明"）；guard 层对 design/research 模式下文件写类工具返回 advisory 软提醒（不阻断，模型可自主覆盖）。复用六段式流水线 guard 段。
+   - **触发权**：规则预分类 → 模型改判 → 用户 `?` 标记强制咨询姿态（增量 7 联动）→ 新增 `/mode design|execute|research|chat` 斜杠命令手动切换（复用 `SlashCommandRegistry`）。
+   - **持久性**：默认每轮按新输入重判（意图变则模式自然变）；显式指令（`/mode` 切换、`?` 标记）锁定到下次显式解除；plan/design 形态在批准前持续 design。
+   - **与 Spec（3.4）轻关联**：design 模式纪律行附带一句"若为新增/复杂改动，先出设计文档到 `docs/plan-docs/` 走 Spec 评审"，不强绑。
+6. **持续意图维护闭环**（对齐 DSH `determine_and_update_goal` + `should_update_goal` 准则，深入讨论定稿）
    - 判定不一次性：形态判定落 goal/plan 后，任务执行中**持续核对**"当前目标是否仍匹配用户意图"。
-   - prompts 资产补 `should_update_goal` 准则："用户输入与当前目标冲突 / 扩展 / 缩小 / 任务完成 → 应更新 / 新建 / 完成目标"。
-   - 失配提醒（轻量）：workflow step 前检测用户最近输入与当前 goal 明显无关（不含目标关键词且非澄清），**连续 N 轮（默认 2）** 注入"当前目标可能已过期"提醒（新增 `GoalStaleSource`，importance=P2 可裁剪）。
-   - 结果反馈：goal/plan 状态迁移仍由模型按准则通过既有 `GoalService`/`PlanService` 完成；本设计只加"失配提醒"这一上游信号，不重复造状态机。
-7. **`!` 优先级 + `?` 咨询标记**（对齐 CC `!` 优先级标记）
-   - `UserInputParser` 识别首 token `!`/`?` 标记：`marker ∈ FORCE / CONSULT / NONE`（`!`/`?` 后跟空格或直接接文本，前缀匹配，无歧义）。
+   - **失配检测粒度**：语义相似度——规则层先轻量筛"疑似失配"（goal 关键词不命中且非澄清），仅在疑似时调 LLM 判相关度（输出 0-1 / yes-no），控制成本（复用现有 provider LLM 调用；项目无 embedding，不做向量）。
+   - **提醒通道**：新建 `GoalStaleSource`（importance=P2 可裁剪，独立开关），step 前注入"当前目标可能已过期"提醒；连续 N 轮（**默认 2，可配置**）触发，排除澄清轮。
+   - **准则载体**：`should_update_goal` 判定准则写入 `assets/prompts/`（"用户输入与当前目标冲突 / 扩展 / 缩小 / 任务完成 → 应更新 / 新建 / 完成目标"），**资产 + 代码兜底**（资产缺失时用代码内置常量）。
+   - **反馈深度**：完整事件闭环——关键工具结果（build/test/工具失败）后产生结构化事件（工具结果 → 目标状态候选迁移，如"编译失败 → 目标可能需调整"），注入给模型作为状态更新信号；**状态机保持现状三态**（ACTIVE/COMPLETED/ABANDONED，不引入 NEEDS_UPDATE），迁移仍由模型按准则通过既有 `GoalService`/`PlanService` 完成。
+7. **`!` 优先级 + `?` 咨询标记**（对齐 CC `!` 优先级标记，实现最轻）
+   - `UserInputParser` 识别首 token `!`/`?` 标记：`marker ∈ FORCE / CONSULT / NONE`（`!`/`?` 后跟空格或直接接文本，前缀匹配，无歧义；有歧义按普通文本）。
    - `!`（立即执行）：注入"用户要求立即执行"纪律行，跳过**流程级**确认（如 plan 批准前奏）；**不绕过权限系统**（危险操作仍走权限审批）。
-   - `?`（仅咨询）：注入"仅咨询，不修改文件、不建任务"纪律行，天然对齐 chat/design 模式。
-8. **结构化澄清问题**（对齐 CC AskUserQuestion 选项化）
-   - 低置信澄清不开放式反问：prompts 资产写澄清模板——用 `AskUserQuestion` 给出 **2-3 个候选理解 / 候选形态**让用户选。
-   - 场景：形态不确定（plan vs goal vs 普通对话）、目标理解不确定、范围不确定（改哪些文件）。
+   - `?`（仅咨询）：注入"仅咨询，不修改文件、不建任务"纪律行，天然对齐 chat/design 模式（与增量 5 触发权联动）。
+8. **结构化澄清问题**（对齐 CC AskUserQuestion 选项化，深入讨论定稿）
+   - **触发时机**：intent_analyze 输出低置信（理解/形态任一不确定）时 workflow **自动触发**结构化澄清；**模型可跳过**（有足够信息时）。
+   - **候选形态**：prompts 资产写"候选格式约定"（编号列表 + 每项一句），模型按约定生成候选理解，不强绑定代码模板。
+   - **候选数量**：按歧义维度**动态 1-4 个**（形态不确定 / 目标理解不确定 / 范围不确定各维度对应候选）。
+   - **结果回填**：用户选择作为下一轮输入**自然回填**，模型据此继续；intent_analyze 标记"已澄清"避免同一歧义重复问。
 
-**改动面**：新增 `UserInputParser`（解析 + 意图分类 + marker）+ `IntentAnalyzeTool`（判定平台：五形态 + behaviorMode + marker，规则预分类 + 准则引用 + 兜底）；workflow step 前新增问判注入 Source + 行为模式纪律行 + `GoalStaleSource` 失配提醒；prompts/ 资产补五形态判定准则 + `should_update_goal` 准则 + 澄清模板；斜杠命令解析改前缀匹配。
-**验收**：JVM 单测——Parser 解析 command/args/text/marker/意图分类正确；intent_analyze 预分类命中五形态 + behaviorMode、模型兜底可改判；低置信触发**结构化**澄清；问判注入在低置信轮生效；失配提醒连续 N 轮触发且排除澄清。
+**改动面**：新增 `UserInputParser`（解析 + 意图分类 + marker）+ `IntentAnalyzeTool`（判定平台：五形态 + behaviorMode + marker，规则预分类 + 准则引用 + 兜底）；workflow step 前新增问判注入 Source + 行为模式纪律行 + `GoalStaleSource` 失配提醒 + 目标状态候选迁移事件；`/mode` 斜杠命令；prompts/ 资产补五形态判定准则 + `should_update_goal` 准则 + 澄清格式约定（代码兜底常量）；斜杠命令解析改前缀匹配。
+**验收**：JVM 单测——Parser 解析 command/args/text/marker/意图分类正确；intent_analyze 预分类命中五形态 + behaviorMode、模型兜底可改判；`/mode` 切换锁定生效；低置信触发结构化澄清（动态 1-4 候选、可跳过、防重复）；失配提醒语义判定 + 连续 N 轮触发 + 排除澄清；目标状态候选迁移事件注入。
 
 ## 4. 集成与分期
 

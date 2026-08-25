@@ -63,7 +63,7 @@
 
 | 序 | 设计任务 | 详细文档 | 前置依赖 | 完成标准 | 状态 |
 |---|---|---|---|---|---|
-| D0 | **用户意图拆解**：UserInputParser（结构化解析 + 意图分类 + `!`/`?` marker）+ 自我问判注入（三问 + 低置信结构化澄清）+ intent_analyze 判定平台（规则预分类 + 判定准则 + 模型兜底，输出五形态 + behaviorMode + 参数）+ 持续意图维护（GoalStaleSource 失配提醒 + should_update_goal 准则） | norm-chain-design.md §3.10 | 无（基座，被 D1–D5 依赖） | 解析/预分类/判定路由/行为模式/marker/失配提醒 JVM 单测绿 + 问判注入生效 | 📝 |
+| D0 | **用户意图拆解**：UserInputParser（结构化解析 + 意图分类 + `!`/`?` marker）+ 自我问判注入（三问 + 低置信结构化澄清：自动触发+可跳过、动态 1-4 候选、防重复）+ intent_analyze 判定平台（规则预分类 + 判定准则 + 模型兜底，输出五形态 + behaviorMode + 参数）+ 行为模式切换（四档 + `/mode` 命令 + guard 软提醒）+ 持续意图维护（语义失配检测 + GoalStaleSource + should_update_goal 准则 + 目标状态候选迁移事件） | norm-chain-design.md §3.10 | 无（基座，被 D1–D5 依赖） | 解析/预分类/判定路由/行为模式/marker/失配提醒/结构化澄清 JVM 单测绿 + 问判注入生效 | 📝 |
 | D1 | **B1 Agentic Workflow 基座**：step 前上下文纪律（3 Source + 预算裁剪 + 四源排序）、六段式流水线 guard 链（ToolGuard + FileObservationGuard）、闭环核对、统一开关基础 | norm-chain-design.md §3.1 / §3.5 | D0（问判注入并入 step 前注入体系） | 注入/预算/排序/文件观察 JVM 单测绿 + assembleDebug | 📝 |
 | D2 | **B1 思维链路 + 步骤结果汇总**：空转软收敛、推理预算、Trajectory 轨迹表（全工具定制提取）、用量卡片 | §3.7 / §3.8 | D1（收敛注入与轨迹消费走 workflow 循环） | 轨迹提取/聚合/用量一致性单测绿 | 📝 |
 | D3 | **B1 分层规则纪律**：四级规则 + priority + 模块按需注入 + 摘要/正文两级 | §3.9 | D1（注入预算体系）+ D4（摘要/正文两级形态与 SOP 共享） | 规则分层/优先级/按需注入单测绿 | 📝 |
