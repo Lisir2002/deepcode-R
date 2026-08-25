@@ -244,7 +244,14 @@
    - **失配检测粒度**：语义相似度——规则层先轻量筛"疑似失配"（goal 关键词不命中且非澄清），仅在疑似时调 LLM 判相关度（输出 0-1 / yes-no），控制成本（复用现有 provider LLM 调用；项目无 embedding，不做向量）。
    - **提醒通道**：新建 `GoalStaleSource`（importance=P2 可裁剪，独立开关），step 前注入"当前目标可能已过期"提醒；连续 N 轮（**默认 2，可配置**）触发，排除澄清轮。
    - **准则载体**：`should_update_goal` 判定准则写入 `assets/prompts/`（"用户输入与当前目标冲突 / 扩展 / 缩小 / 任务完成 → 应更新 / 新建 / 完成目标"），**资产 + 代码兜底**（资产缺失时用代码内置常量）。
-   - **反馈深度**：完整事件闭环——关键工具结果（build/test/工具失败）后产生结构化事件（工具结果 → 目标状态候选迁移，如"编译失败 → 目标可能需调整"），注入给模型作为状态更新信号；**状态机保持现状三态**（ACTIVE/COMPLETED/ABANDONED，不引入 NEEDS_UPDATE），迁移仍由模型按准则通过既有 `GoalService`/`PlanService` 完成。
+   - **反馈深度**：完整事件闭环（深入讨论定稿，六决策点）——
+     - **触发范围**：关键工具白名单（build/test/run_code/execute 等有明确成败的长任务类工具），失败/异常结果优先触发；成功结果仅在"任务完成迹象"时触发。
+     - **事件模型**：丰富字段集 `GoalAdjustEvent`——`eventType` + `toolName` + `resultState`（SUCCESS/FAILED/PARTIAL）+ `candidateAction`（CONTINUE/UPDATE/COMPLETE/ABANDON）+ `goalId` + `confidence` + `source`。
+     - **注入链路**：事件入队列，step 前统一注入（新事件优先、未消费保留），importance=**P1**（执行反馈高于失配提醒 P2），受注入预算裁剪。
+     - **双信号协调**：事件提醒（执行反馈，P1）与 `GoalStaleSource` 失配提醒（输入失配，P2）**独立并存 + 语义分工**（一来自工具结果、一来自用户输入），不冲突；预算裁剪先裁 P2。
+     - **防重复**：队列去重 + 消费标记（同 goalId+eventType+candidateAction 同源事件已注入未消费则不重复注入）+ 模型调 GoalService 变更目标后清空队列。
+     - **终止条件**：目标状态到终态（COMPLETED/ABANDONED）或切换新目标时，清空事件队列并停止产生。
+     - 状态机保持现状三态（不引入 NEEDS_UPDATE），迁移仍由模型按准则通过既有 `GoalService`/`PlanService` 完成。
 7. **`!` 优先级 + `?` 咨询标记**（对齐 CC `!` 优先级标记，实现最轻）
    - `UserInputParser` 识别首 token `!`/`?` 标记：`marker ∈ FORCE / CONSULT / NONE`（`!`/`?` 后跟空格或直接接文本，前缀匹配，无歧义；有歧义按普通文本）。
    - `!`（立即执行）：注入"用户要求立即执行"纪律行，跳过**流程级**确认（如 plan 批准前奏）；**不绕过权限系统**（危险操作仍走权限审批）。
@@ -256,7 +263,7 @@
    - **结果回填**：用户选择作为下一轮输入**自然回填**，模型据此继续；intent_analyze 标记"已澄清"避免同一歧义重复问。
 
 **改动面**：新增 `UserInputParser`（解析 + 意图分类 + marker）+ `IntentAnalyzeTool`（判定平台：五形态 + behaviorMode + marker，规则预分类 + 准则引用 + 兜底）；workflow step 前新增问判注入 Source + 行为模式纪律行 + `GoalStaleSource` 失配提醒 + 目标状态候选迁移事件；`/mode` 斜杠命令；prompts/ 资产补五形态判定准则 + `should_update_goal` 准则 + 澄清格式约定（代码兜底常量）；斜杠命令解析改前缀匹配。
-**验收**：JVM 单测——Parser 解析 command/args/text/marker/意图分类正确；intent_analyze 预分类命中五形态 + behaviorMode、模型兜底可改判；`/mode` 切换锁定生效；低置信触发结构化澄清（动态 1-4 候选、可跳过、防重复）；失配提醒语义判定 + 连续 N 轮触发 + 排除澄清；目标状态候选迁移事件注入。
+**验收**：JVM 单测——Parser 解析 command/args/text/marker/意图分类正确；intent_analyze 预分类命中五形态 + behaviorMode、模型兜底可改判；`/mode` 切换锁定生效；低置信触发结构化澄清（动态 1-4 候选、可跳过、防重复）；失配提醒语义判定 + 连续 N 轮触发 + 排除澄清；`GoalAdjustEvent` 触发范围/字段/注入（P1）/去重/消费标记/目标变更清空/终态终止。
 
 ## 4. 集成与分期
 
