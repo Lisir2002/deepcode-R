@@ -39,14 +39,32 @@ class ProxyRouteHolder @Inject constructor() {
     }
 
     /**
+     * 网络层优化 C5：AI 接口直连/代理分流开关（可配置策略，默认关 = 保持全走代理）。
+     * 由 [ClashProxyManager] 收集 DataStore 设置写入；开启后已知 AI host 跳过代理直连，
+     * 去掉代理一跳延迟；若所在网络直连不通（依赖代理才能访问模型接口），关闭即可回退代理。
+     */
+    @Volatile
+    var aiHostsDirect: Boolean = false
+        private set
+
+    fun setAiHostsDirect(value: Boolean) {
+        this.aiHostsDirect = value
+    }
+
+    /**
      * 供共享 OkHttp 注入的 [ProxySelector]：未启用直连；启用时走 mihomo mixed-port，
-     * 但 loopback 与内网保持直连（[isNoProxy]），避免把自己服务代理出去。
+     * 但 loopback 与内网保持直连（[isNoProxy]），避免把自己服务代理出去；
+     * 若开启分流（[aiHostsDirect]），已知 AI host（[isKnownAiHost]）同样直连，其余走代理。
      */
     val selector: ProxySelector = object : ProxySelector() {
         override fun select(uri: URI): List<Proxy> {
             if (!this@ProxyRouteHolder.enabled) return listOf(Proxy.NO_PROXY)
             val host = uri.host ?: return listOf(Proxy.NO_PROXY)
             if (host.isBlank() || isNoProxy(host)) return listOf(Proxy.NO_PROXY)
+            // C5：分流开启且命中已知 AI host → 直连（省代理一跳）
+            if (this@ProxyRouteHolder.aiHostsDirect && isKnownAiHost(host)) {
+                return listOf(Proxy.NO_PROXY)
+            }
             return listOf(
                 Proxy(
                     Proxy.Type.HTTP,
@@ -93,4 +111,21 @@ class ProxyRouteHolder @Inject constructor() {
             false
         }
     }
+
+    companion object {
+        /**
+         * 已知模型接口 host（与 ConnectionPrewarmer 的默认预热列表保持一致）。
+         * 分流（[aiHostsDirect]）开启时这些 host 直连、跳过代理；用户自定义 base URL 的 host
+         * 不在列表内，仍走代理。做精确匹配避免误伤同域其它服务。
+         */
+        val KNOWN_AI_HOSTS = setOf(
+            "api.openai.com",
+            "api.anthropic.com",
+            "generativelanguage.googleapis.com"
+        )
+    }
 }
+
+/** C5：host 是否命中已知 AI host 列表。 */
+private fun isKnownAiHost(host: String): Boolean =
+    ProxyRouteHolder.KNOWN_AI_HOSTS.contains(host)

@@ -17,12 +17,12 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `data/ProxySettingsRepository.kt` | Preferences DataStore 持久化：全局开关、活跃 profile id、已播种 profile 列表（JSON 序列化，敏感内容加密）；含 `revealSecret` 按需解密 |
+| `data/ProxySettingsRepository.kt` | Preferences DataStore 持久化：全局开关、活跃 profile id、已播种 profile 列表（JSON 序列化，敏感内容加密）；**AI 直连分流开关 `ai_hosts_direct`**（`aiHostsDirectFlow` / `setAiHostsDirect`）；含 `revealSecret` 按需解密 |
 | `domain/ProxySubscription.kt` | profile 模型：`id/name/kind(subscription|manual)/secretCipher/createdAt`；`secretCipher` 为加密后的订阅 URL 或完整 YAML |
-| `domain/ClashProxyManager.kt` | 核心管理器（`@Singleton`）：配置合成、订阅拉取、内核生命周期、REST/WS 控制面、env 注入、运行时状态机 |
-| `domain/ProxyRouteHolder.kt` | 无依赖的代理路由开关托底：只存 `enabled/proxyAddress` 两个 volatile 值，向共享 OkHttp 暴露 `ProxySelector`，避免 OkHttp ↔ 管理器成环 |
-| `presentation/ProxyViewModel.kt` | 代理页 ViewModel：播种/预检/开关/展开节点/测速/分组·流量；定义 `ProxyPreview`、`ProfileNodesView`、`ProxyGroupsView` 视图模型 |
-| `presentation/component/ProxyConfigScreen.kt` | 网络代理配置/导入页：总开关、导入向导（订阅/手动/文件）、预检、profile 列表、展开区（节点列表 + 分组·流量） |
+| `domain/ClashProxyManager.kt` | 核心管理器（`@Singleton`）：配置合成、订阅拉取、内核生命周期、REST/WS 控制面、env 注入、运行时状态机；**collect `aiHostsDirectFlow` 同步写路由 holder** |
+| `domain/ProxyRouteHolder.kt` | 无依赖的代理路由开关托底：只存 `enabled/proxyAddress` + **`aiHostsDirect`（C5 分流）** 三个 volatile 值，向共享 OkHttp 暴露 `ProxySelector`，避免 OkHttp ↔ 管理器成环 |
+| `presentation/ProxyViewModel.kt` | 代理页 ViewModel：播种/预检/开关/展开节点/测速/分组·流量；**暴露 `aiHostsDirect` 状态与 `toggleAiHostsDirect`**；定义 `ProxyPreview`、`ProfileNodesView`、`ProxyGroupsView` 视图模型 |
+| `presentation/component/ProxyConfigScreen.kt` | 网络代理配置/导入页：总开关、导入向导（订阅/手动/文件）、预检、profile 列表、展开区（节点列表 + 分组·流量）、**AI 直连分流开关（`AiHostsDirectToggle`）** |
 | `presentation/component/ProxyNodesScreen.kt` | 独立「节点管理」整页：状态 Hero、分组/节点双 Tab、搜索、全部测速、点选切换节点 |
 
 ## 3. 核心架构与主流程
@@ -32,6 +32,12 @@
 - `ClashProxyManager.state: StateFlow<ProxyRuntimeState>`：`enabled / mode / activeProfileId / mixedHost+Port(7890) / controllerHost+Port(9090) / controllerReachable`。
 - 启动（`init`）时：生成/加载 secret → 若上次为启用态先兜底重建 config.yaml 并 `ensureKernelRunning`（内核先起，再置 enabled，避免流量打进无人监听的 7890）→ 之后由 `repository.proxyEnabledFlow.drop(1)` 驱动开关。
 - `ProxyRouteHolder` 由 manager 在开关变化时同步写位（`update(true, "127.0.0.1:7890")`），消除「on() 返回后立即发请求仍走直连」的竞态窗口。
+
+### 3.1.1 AI 直连分流（网络层优化 C5）
+
+- **开关**：`ProxySettingsRepository` 持久化 `ai_hosts_direct`（默认关）；`ClashProxyManager` 在初始化时 collect `aiHostsDirectFlow` 同步写 `routeHolder.setAiHostsDirect(direct)`，`ProxyConfigScreen` 的 `AiHostsDirectToggle` 经 `ProxyViewModel.toggleAiHostsDirect` 切换。
+- **路由**：`ProxyRouteHolder.selector.select` 在代理启用且分流开启时，对 `KNOWN_AI_HOSTS`（`api.openai.com` / `api.anthropic.com` / `generativelanguage.googleapis.com`，与 `ConnectionPrewarmer` 预热列表一致）做**精确匹配**返回直连，其余 host 仍走 mihomo mixed-port。
+- **回退**：所在网络依赖代理才能访问模型接口时，关闭开关即恢复全走代理；用户自定义 base URL 的 host 不在列表内，天然仍走代理。
 
 ### 3.2 配置合成（`synthesizeConfig`）
 
@@ -71,9 +77,9 @@
 | `ClashProxyManager.on(profileId, inlineYaml): String` | 拉起代理：从 profile 或 inline YAML 合成配置 → 落盘 → 启内核 → 置开关 → 写位；返回 "ok" 或错误描述 |
 | `ClashProxyManager.off()` | 停内核 → 关开关 → 写位 |
 | `ClashProxyManager.isEnabled()` / `exportContainerEnv()` / `controllerAddress()` / `controllerSecret()` | 供容器构建与上层读取的同步接口 |
-| `ProxySettingsRepository` | `subscriptionsFlow / proxyEnabledFlow / activeProfileIdFlow / upsertSubscription / deleteSubscription / revealSecret` |
-| `ProxyRouteHolder.selector` | 共享 OkHttp 的 ProxySelector 注入点 |
-| `ProxyViewModel` | `toggleEnabled / activate / delete / runPreview / inspectProfile / testProfileLatency / openGroups / closeGroups / selectGroupNode / commitProfile` |
+| `ProxySettingsRepository` | `subscriptionsFlow / proxyEnabledFlow / activeProfileIdFlow / aiHostsDirectFlow / upsertSubscription / deleteSubscription / revealSecret / setAiHostsDirect` |
+| `ProxyRouteHolder.selector` | 共享 OkHttp 的 ProxySelector 注入点；`aiHostsDirect` 分流开关位（`setAiHostsDirect` 由 manager 写入） |
+| `ProxyViewModel` | `toggleEnabled / activate / delete / runPreview / inspectProfile / testProfileLatency / openGroups / closeGroups / selectGroupNode / commitProfile / toggleAiHostsDirect` |
 | `ProxyConfigScreen` / `ProxyNodesScreen` | Compose 页面（配置/导入页 + 节点管理页） |
 
 依赖的外部模块：core.security（`CredentialEncryptor`）、core.util（`FileLogger`）、容器引擎（`exportContainerEnv` 供 `LinuxContainerEngine.buildContainerEnv` 并入）、模型工具 `network_proxy`（与 UI 共用 manager/repository 同一链路）。
@@ -85,6 +91,7 @@
 - **直连自举**：内核二进制属基础设施，下载强制绕过代理，避免「代理未起/代理本身被墙」影响下载。
 - **独立 Holder 避免依赖环**：`ProxyRouteHolder` 无任何依赖，由 manager 写入、OkHttp 只读，单例零环。
 - **no_proxy 保护**：loopback 与内网（含 172.16/12 容器网段）保持直连，避免把自己服务代理出去。
+- **AI 直连分流（C5）**：仅对 `KNOWN_AI_HOSTS` 精确匹配直连（避免误伤同域其它服务），开关持久化且默认关（保持全走代理）；直连不通的网络关闭开关即回退代理。与 `core/network/ConnectionPrewarmer` 的预热 host 列表保持一致。
 - **测速语义对齐 Clash**：只走内核真实出口的 generate_204 延迟；被测配置非当前运行态时临时启用、测完 `restoreAfterTest` 恢复原状态。
 - **内核版本固定**：`MIHOMO_VERSION=v1.19.13` + 官方 SHA256 硬编码，避免运行时探测 GitHub API 引入不确定性；旧版本资产长期保留故固定版本安全。
 

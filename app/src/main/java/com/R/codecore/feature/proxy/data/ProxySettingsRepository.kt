@@ -35,6 +35,7 @@ class ProxySettingsRepository @Inject constructor(
         val PROXY_ENABLED_KEY = booleanPreferencesKey("proxy_enabled")
         val ACTIVE_PROFILE_ID_KEY = stringPreferencesKey("active_profile_id")
         val PROFILES_JSON_KEY = stringPreferencesKey("proxy_profiles_json")
+        val AI_HOSTS_DIRECT_KEY = booleanPreferencesKey("ai_hosts_direct")
         val profileSerializer = ListSerializer(ProxySubscription.serializer())
         val json = Json { ignoreUnknownKeys = true }
     }
@@ -42,6 +43,11 @@ class ProxySettingsRepository @Inject constructor(
     /** 全局代理开关。默认关闭。 */
     val proxyEnabledFlow: Flow<Boolean> = context.proxyDataStore.data.map { prefs ->
         prefs[PROXY_ENABLED_KEY] ?: false
+    }
+
+    /** 网络层优化 C5：AI 接口直连分流开关。默认关（保持全走代理），可配置策略。 */
+    val aiHostsDirectFlow: Flow<Boolean> = context.proxyDataStore.data.map { prefs ->
+        prefs[AI_HOSTS_DIRECT_KEY] ?: false
     }
 
     /** 已播种的订阅列表（cipher 形式，不回显明文）。解析失败回退空列表。 */
@@ -58,6 +64,10 @@ class ProxySettingsRepository @Inject constructor(
 
     suspend fun setProxyEnabled(enabled: Boolean) {
         context.proxyDataStore.edit { it[PROXY_ENABLED_KEY] = enabled }
+    }
+
+    suspend fun setAiHostsDirect(enabled: Boolean) {
+        context.proxyDataStore.edit { it[AI_HOSTS_DIRECT_KEY] = enabled }
     }
 
     suspend fun isProxyEnabled(): Boolean = proxyEnabledFlow.first()

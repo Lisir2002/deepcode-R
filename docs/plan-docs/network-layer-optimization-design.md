@@ -1,6 +1,6 @@
 # 网络层性能优化设计
 
-> 状态：📝 草案（仅方案讨论，本次不落地）
+> 状态：✅ 已评审（本次已落地实施，见 §6）
 > 日期：2026-08-24
 > 范围：模型接口（AI Provider：OpenAI / Anthropic / Gemini）的「接受（TTFT）与返回（TOKT）速度」优化
 
@@ -134,4 +134,19 @@ P1+P2 (L2) → C1+C2+C3 (L1 小项) → S2 (L3) → C5 → C4 (Cronet，单独�
 
 ## 6. 本次范围
 
-仅方案讨论与设计沉淀，**不落地改码**。落地需用户另行明确指令，并按「分支与改动工作流」在 `feat/network-opt` 分支实施，同步更新 `docs/modules/agent.md`（或新增网络层模块文档）。
+在 `feat/network-opt` 分支落地实施（已合回 `main`，Tag `v0.2.0-rc16` 发布）：
+
+| 项 | 实施状态 | 说明 |
+|---|---|---|
+| C1 连接预热 | ✅ 已实施 | `core/network/ConnectionPrewarmer`，`AIEditorApp` 启动时 `warmDefaults()` 预热三家默认 host |
+| C2 连接池调优 | ✅ 已实施 | `AgentModule` 共享 OkHttp `ConnectionPool(8, 15min)` |
+| C3 异步 DNS 缓存 | ✅ 已实施 | `core/network/CachingDns`，短 TTL 60s，失败即清条目回退系统解析 |
+| C5 直连/代理分流 | ✅ 已实施 | `ProxyRouteHolder.aiHostsDirect` + 已知 AI host 精确匹配直连；`ProxySettingsRepository` 持久化、`ClashProxyManager` 同步、`ProxyViewModel`/`ProxyConfigScreen` UI 开关 |
+| P1 SSE 定点解析 | ✅ 已实施 | `core/network/SseFieldExtractor`（Gson `JsonReader` 流式定点抽取，不建整树）；三家 adapter 改用 Okio `readUtf8Line()` + 定点抽取，替换 `JsonParser.parseString().asJsonObject` |
+| P2 统一 kotlinx 序列化 | ⏸ 评估后未落地（安全子集） | 三家 adapter 现无 DTO data class（请求体 `Map<String,Any>` + GsonConverterFactory、非流式响应 Gson `JsonObject` 手动解析）。全量迁移需新建大量 DTO + 换 converter + 改三家响应解析，改动面最大、回归风险最高，且沙箱无真机条件回归兼容边界；P1 已解决流式主路径（TOKT 大头）。**结论**：本次保持现状（安全子集），作为后续独立优化项再评估 |
+| P3 请求体序列化 | ⏸ 随 P2 未落地 | 同上；请求体为 Map-based，Gson 反射序列化开销非当前主瓶颈 |
+| S2 流式日志异步化 | ✅ 验证现状已满足 | `AILogger.logResponseStream` 由调用方流结束后一次性传入（`rawSse` StringBuilder 内存累积，不在每 token 热路径落盘），且 `write()` 走 `ioExecutor` 异步写盘，符合设计目标，无需改码 |
+
+> ⚠️ 设计 §5.1 分场景基准矩阵（直连/代理/弱网 × 非流式/流式/流式+工具）需真机 + 真实模型 key 才能执行，本次未在沙箱内量化；落地项的收益预期与回归判定依据 §5.4 保持：三家 provider 各链路回归 + 未知字段/转义容错 + 弱网回退。
+
+落地涉及的模块文档与资产文档已同步：`docs/modules/core.md`（core/network）、`docs/modules/proxy.md`（C5 分流）、`docs/modules/agent.md`（P1 流式解析）、`app/src/main/assets/docs/`（AI 直连开关使用说明）。

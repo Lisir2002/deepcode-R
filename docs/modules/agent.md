@@ -39,7 +39,7 @@
 | `domain/model/` | 领域模型：`AgentMessage`（含 `AgentContext`：currentFile/selectedCode/projectRoot 等）、`ChatSession`（含 `AgentMode`：BUILD/PLAN/AUTO）、`CodeChange`、`ReasoningEffort`、`TodoItem` |
 | `domain/permission/` | 权限引擎：`ToolPermissionPolicyEngine`（ALLOW/DENY/ASK 判定）、`PermissionRulesRepository`、`ShellCommandParser`、`BuiltInSafeCommands`、`BuildCommandClassifier`、`PermissionModels`、`ZthFailureModels`、`DangerousCommandGuard`（危险命令静态守卫） |
 | `domain/prompt/SystemPromptProvider.kt` | 增量式系统提示词：按 `PromptSource` 组装静态规则（R04 起由 `AgentAssetRegistry` 按 mode 注入）、工作区上下文等片段，维护缓存与快照 |
-| `domain/provider/` | AI Provider 抽象：`AIProvider`（complete / completeStream，含 reasoning、signature、token 统计）、`OpenAIAdapter`、`AnthropicAdapter`、`GeminiAdapter`、`RetryPolicy`、`HttpErrorEnricher`（把 HTTP 错误体拼进 message） |
+| `domain/provider/` | AI Provider 抽象：`AIProvider`（complete / completeStream，含 reasoning、signature、token 统计）、`OpenAIAdapter`、`AnthropicAdapter`、`GeminiAdapter`、`RetryPolicy`、`HttpErrorEnricher`（把 HTTP 错误体拼进 message）。**流式 SSE 解析（网络层优化 P1）**：三家 adapter 改用 Okio `readUtf8Line()` 逐行读取 + `core/network/SseFieldExtractor` 定点字段抽取（Gson `JsonReader` 流式不建整树），替换原 `JsonParser.parseString().asJsonObject` 每行整树解析 |
 | `domain/session/` | 会话用例：`SessionUseCase`、`MessagePersistenceUseCase` |
 | `domain/skill/` | 技能系统：`Skill` 模型（PROMPT/SCRIPT/MCP 三形态、BUILTIN/LOCAL 来源）、`SkillParser`、`SkillRepository`、`SkillExecutor`、`SkillSource` + `LocalDirectorySkillSource`、`BuiltinSkillSeeder`（首启引导内置技能）、`SkillStateRepository`（Room 持久化启用状态） |
 | `domain/tool/` | 工具系统（详见 2.3） |
@@ -276,7 +276,7 @@
 
 - **被谁调用**：`presentation/AIAgentViewModel` 是 UI 唯一入口（被 Compose 聊天界面使用）；`StatefulAgentWorkflow` 由 ViewModel 驱动；其余领域服务（ToolRegistry、McpManager、SystemPromptProvider、CheckpointManager 等）均为 Hilt 单例，可被本模块内或外部注入。
 - **Room 数据库**：agent 域独立库 `AgentDatabase`（v1）只承载 agent 自身 17 张表（消息/会话/Todo/检查点/技能状态/模式切换/模型能力覆盖/ZTH 审计/wake_queue）。settings（`AIProviderEntity`）、workspace（`RemoteConnectionEntity`/`RemoteMountEntity`/`RemoteAuditLogEntity`）、credentials（`GitCredentialEntity`）、t2i（`T2IProviderEntity` 等）已随数据层重构（新写法）拆到各自 feature 域的独立库（见 `di/DatabaseModule`）；旧单巨库数据由 `DbSplitMigrator` 一次性移植。
-- **AI Provider**：`AIProvider` 接口 + `OpenAIAdapter`/`AnthropicAdapter`/`GeminiAdapter`；支持 reasoning（回传签名/思考文本）、token 统计、`stopReason` 截断续写；底层走 `data/remote/*` 的 Retrofit API。
+- **AI Provider**：`AIProvider` 接口 + `OpenAIAdapter`/`AnthropicAdapter`/`GeminiAdapter`；支持 reasoning（回传签名/思考文本）、token 统计、`stopReason` 截断续写；底层走 `data/remote/*` 的 Retrofit API。**网络层优化**：共享 OkHttp 连接池/DNS 缓存/连接预热与代理分流见 `docs/modules/core.md` 与 `docs/modules/proxy.md`；流式 SSE 解析为定点字段抽取（P1），工具调用路径（Anthropic `partial_json`、OpenAI/Gemini `functionCall`）保留完整 JSON 累积。
 - **Bridge 能力**：`RcbBridge` 在 loopback 随机端口起 TCP 服务，`RCB_BRIDGE_TOKEN` 注入容器，容器内 `rcb-*` helper 经 base64 行协议调用宿主侧剪贴板/URL/通知能力；`openUrlHandler` 由宿主注入（默认仅记日志）。
 - **外部模块依赖**：workspace（`FileAccessProvider`、`WorkspacePathMapper`、`WorkspaceRepository`、远程连接/挂载）、settings（AI Provider 配置）、t2i（图片生成）、core（`FileLogger`、`HostKeyManager`、加密凭据）。
 - **DAOs（本模块）**：`AgentMessageDao`、`ChatSessionDao`、`TodoItemDao`、`SkillStateDao`、`ModeSwitchHistoryDao`、`ModelCapabilityOverrideDao`、`CheckpointDao`、`CheckpointFileSnapshotDao`、`FileEditHunkDao`、`ZthTelemetryEventDao`、`UserConfirmedSentinelDao`、`HallucinationFuseDao`、`SentinelPlanRejectionAuditDao`、`HardConstraintDeleteAuditDao`、`L0SoftCompactRestoreLogDao`、`WakeQueueDao`。

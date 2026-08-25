@@ -1,5 +1,6 @@
 package com.R.codecore.feature.agent.domain.provider
 
+import com.R.codecore.core.network.SseFieldExtractor
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.feature.agent.data.remote.openai.OpenAIApi
 import com.R.codecore.feature.settings.domain.model.ProviderType
@@ -28,6 +29,33 @@ import com.R.codecore.feature.agent.data.remote.openai.OpenAIToolCall
 import com.R.codecore.feature.agent.data.remote.openai.OpenAIToolDefinition
 import com.R.codecore.feature.agent.data.remote.openai.OpenAIFunctionDefinition
 import com.R.codecore.feature.agent.data.remote.openai.StreamOptions
+
+/** P1 定点字段抽取：OpenAI Chat Completions 流式所需标量字段（点连接 = 嵌套路径，数组下标为路径段）。 */
+private const val OPENAI_TOOL_CALL_SUBSCRIPT_COUNT = 2
+private val OPENAI_CHAT_STREAM_PATHS: List<List<String>> = buildList {
+    add(listOf("error", "code"))
+    add(listOf("error", "message"))
+    add(listOf("usage", "prompt_tokens"))
+    add(listOf("usage", "completion_tokens"))
+    add(listOf("choices", "0", "finish_reason"))
+    add(listOf("choices", "0", "delta", "content"))
+    add(listOf("choices", "0", "delta", "reasoning_content"))
+    // 流式 chunk 中 delta.tool_calls 每 chunk 一个元素（index 标识累加目标），覆盖前 N 个元素。
+    repeat(OPENAI_TOOL_CALL_SUBSCRIPT_COUNT) { k ->
+        add(listOf("choices", "0", "delta", "tool_calls", "$k", "index"))
+        add(listOf("choices", "0", "delta", "tool_calls", "$k", "id"))
+        add(listOf("choices", "0", "delta", "tool_calls", "$k", "function", "name"))
+        add(listOf("choices", "0", "delta", "tool_calls", "$k", "function", "arguments"))
+    }
+}
+
+/** P1 定点字段抽取：OpenAI Responses API 流式热路径（output_text.delta）所需标量字段。 */
+private val OPENAI_RESPONSES_STREAM_PATHS: List<List<String>> = listOf(
+    listOf("error", "code"),
+    listOf("error", "message"),
+    listOf("type"),
+    listOf("delta")
+)
 
 class OpenAIAdapter @Inject constructor(
     private val api: OpenAIApi
@@ -207,57 +235,65 @@ class OpenAIAdapter @Inject constructor(
                             runCatching { rb.close() }
                         }
                         try {
-                            val reader = rb.charStream().buffered()
+                            val source = rb.source()
                             while (true) {
                                 coroutineContext.ensureActive()
-                                val line = reader.readLine()
+                                val line = source.readUtf8Line()
                                     ?: throw IOException("SSE 流被中断：未收到 [DONE] 结束标记（疑似网络断开）")
                                 if (!line.startsWith("data:")) continue
                                 val data = line.removePrefix("data:").trim()
                                 if (data.isEmpty()) continue
                                 rawSse.append(line).append('\n')
                                 if (data == "[DONE]") break
-                                val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
-                                obj.get("error")?.takeIf { it.isJsonObject }?.asJsonObject?.let { errObj ->
-                                    val code = errObj.get("code")?.takeIf { !it.isJsonNull }?.asString
-                                    val msg = errObj.get("message")?.takeIf { !it.isJsonNull }?.asString ?: "未知错误"
-                                    throw StreamApiException(code, msg)
+                                // P1 定点字段抽取：热路径（response.output_text.delta）只取 type/delta 两个标量，不建整树。
+                                val m = runCatching { SseFieldExtractor.extract(data, OPENAI_RESPONSES_STREAM_PATHS) }.getOrElse { emptyMap() }
+                                // 错误：error 对象至少带 message，命中任一字段即抛出。
+                                m["error.message"]?.let { msg ->
+                                    throw StreamApiException(m["error.code"], msg)
+                                } ?: m["error.code"]?.let { code ->
+                                    throw StreamApiException(code, "未知错误")
                                 }
                                 try {
-                                    val eventType = obj.get("type")?.asString
-                                    if (eventType == "response.output_text.delta") {
-                                        val delta = obj.get("delta")?.asString ?: ""
-                                        if (delta.isNotEmpty()) {
-                                            textBuilder.append(delta)
-                                            if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
-                                            onProduced()
-                                            emit(AIStreamChunk.TextDelta(delta))
-                                        }
-                                    } else if (eventType == "response.completed") {
-                                        val outputs = obj.getAsJsonObject("response")?.getAsJsonArray("output")
-                                        outputs?.forEach { out ->
-                                            val msg = out.asJsonObject
-                                            if (msg.get("role")?.asString == "assistant") {
-                                                msg.getAsJsonArray("content")?.forEach { partEl ->
-                                                    val part = partEl.asJsonObject
-                                                    if (part.get("type")?.asString == "tool_call") {
-                                                        val id = part.get("id")?.asString ?: ""
-                                                        val name = part.get("name")?.asString ?: ""
-                                                        val args = part.get("arguments")?.asString ?: ""
-                                                        val idx = toolAccs.size
-                                                        val acc = toolAccs.getOrPut(idx) { OpenAIToolAcc() }
-                                                        acc.id = id
-                                                        acc.name = name
-                                                        acc.args.append(args)
-                                                    }
-                                                }
+                                    when (m["type"]) {
+                                        "response.output_text.delta" -> {
+                                            val delta = m["delta"] ?: ""
+                                            if (delta.isNotEmpty()) {
+                                                textBuilder.append(delta)
+                                                if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
+                                                onProduced()
+                                                emit(AIStreamChunk.TextDelta(delta))
                                             }
                                         }
-                                        finishReason = "stop"
-                                        val usageObj = obj.get("response")?.takeIf { it.isJsonObject }?.asJsonObject
-                                            ?.get("usage")?.takeIf { it.isJsonObject }?.asJsonObject
-                                        streamInputTokens = usageObj?.get("input_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: 0
-                                        streamOutputTokens = usageObj?.get("output_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: 0
+                                        "response.completed" -> {
+                                            // 结束事件每轮一次（低频）：保留整树解析以复用原有结构化遍历（output 数组）。
+                                            val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull()
+                                            if (obj != null) {
+                                                val outputs = obj.getAsJsonObject("response")?.getAsJsonArray("output")
+                                                outputs?.forEach { out ->
+                                                    val msg = out.asJsonObject
+                                                    if (msg.get("role")?.asString == "assistant") {
+                                                        msg.getAsJsonArray("content")?.forEach { partEl ->
+                                                            val part = partEl.asJsonObject
+                                                            if (part.get("type")?.asString == "tool_call") {
+                                                                val id = part.get("id")?.asString ?: ""
+                                                                val name = part.get("name")?.asString ?: ""
+                                                                val args = part.get("arguments")?.asString ?: ""
+                                                                val idx = toolAccs.size
+                                                                val acc = toolAccs.getOrPut(idx) { OpenAIToolAcc() }
+                                                                acc.id = id
+                                                                acc.name = name
+                                                                acc.args.append(args)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                finishReason = "stop"
+                                                val usageObj = obj.get("response")?.takeIf { it.isJsonObject }?.asJsonObject
+                                                    ?.get("usage")?.takeIf { it.isJsonObject }?.asJsonObject
+                                                streamInputTokens = usageObj?.get("input_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: 0
+                                                streamOutputTokens = usageObj?.get("output_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: 0
+                                            }
+                                        }
                                     }
                                 } catch (e: CancellationException) {
                                     throw e
@@ -328,45 +364,40 @@ class OpenAIAdapter @Inject constructor(
                     runCatching { rb.close() }
                 }
                 try {
-                    val reader = rb.charStream().buffered()
-                    // 收到服务端 [DONE] 标记即 break 正常结束；readLine() 返回 null 则视为
+                    val source = rb.source()
+                    // 收到服务端 [DONE] 标记即 break 正常结束；readUtf8Line() 返回 null 则视为
                     // 流被异常截断（网络中断/TCP 重置/readTimeout），必须抛异常让重试/日志接管——
                     // 否则原本会用截断数据「正常完成」，表现为 AI 突然中断且无任何错误日志。
-                    // （收到 [DONE] 即 break，故走到 readLine()==null 时必然未收到过结束标记。）
+                    // （收到 [DONE] 即 break，故走到 readUtf8Line()==null 时必然未收到过结束标记。）
                     while (true) {
                         coroutineContext.ensureActive()
-                        val line = reader.readLine()
+                        val line = source.readUtf8Line()
                             ?: throw IOException("SSE 流被中断：未收到 [DONE] 结束标记（疑似网络断开）")
                         if (!line.startsWith("data:")) continue
                         val data = line.removePrefix("data:").trim()
                         if (data.isEmpty()) continue
                         rawSse.append(line).append('\n')
                         if (data == "[DONE]") break
-                        val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
-                        obj.get("error")?.takeIf { it.isJsonObject }?.asJsonObject?.let { errObj ->
-                            val code = errObj.get("code")?.takeIf { !it.isJsonNull }?.asString
-                            val msg = errObj.get("message")?.takeIf { !it.isJsonNull }?.asString ?: "未知错误"
-                            throw StreamApiException(code, msg)
+                        // P1 定点字段抽取：JsonReader 流式逐 token 只取目标标量，不建整棵 JSON 树。
+                        val m = runCatching { SseFieldExtractor.extract(data, OPENAI_CHAT_STREAM_PATHS) }.getOrElse { emptyMap() }
+                        // 错误：OpenAI 的 error 对象至少带 message，命中任一字段即抛出。
+                        m["error.message"]?.let { msg ->
+                            throw StreamApiException(m["error.code"], msg)
+                        } ?: m["error.code"]?.let { code ->
+                            throw StreamApiException(code, "未知错误")
                         }
                         // 单行 SSE 解析：不同上游/模型的字段类型偶有出入（如把对象写成数组、把字符串写成对象），
-                        // Gson 的 getAsJsonObject/getAsJsonArray 在类型不符时会直接抛 ClassCastException，
-                        // asString/asInt 对非原始值会抛 UnsupportedOperationException。
-                        // 单行异常不应中断整条流——这里宽松解析，出错仅跳过该行；已累积的文本与后续行不受影响。
+                        // 定点抽取对缺失/类型不符的字段视为「无该字段」，单行异常不应中断整条流——
+                        // 这里宽松解析，出错仅跳过该行；已累积的文本与后续行不受影响。
                         // 必须放行 CancellationException，否则会吞掉协程取消信号。
                         try {
-                            obj.get("usage")?.takeIf { it.isJsonObject }?.asJsonObject?.let { u ->
-                                streamInputTokens = u.get("prompt_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: streamInputTokens
-                                streamOutputTokens = u.get("completion_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: streamOutputTokens
-                            }
-                            val choice = obj.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject ?: continue
-                            val delta = choice.getAsJsonObject("delta") ?: continue
+                            m["usage.prompt_tokens"]?.toIntOrNull()?.let { streamInputTokens = it }
+                            m["usage.completion_tokens"]?.toIntOrNull()?.let { streamOutputTokens = it }
 
-                            choice.get("finish_reason")?.takeIf { !it.isJsonNull }?.asString?.let {
-                                finishReason = it
-                            }
+                            m["choices.0.finish_reason"]?.let { finishReason = it }
 
                             // 文字增量
-                            delta.get("content")?.takeIf { !it.isJsonNull }?.asString?.let { c ->
+                            m["choices.0.delta.content"]?.let { c ->
                                 if (c.isNotEmpty()) {
                                     textBuilder.append(c)
                                     if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
@@ -376,26 +407,26 @@ class OpenAIAdapter @Inject constructor(
                             }
                             // 思考过程增量（reasoning_content）：仅 UI 实时展示，不计入正文、不触发 onProduced
                             // （思考不落库，重试时重新流出即可，无重复文本风险），但收到即说明连接已活，取消首字节超时。
-                            delta.get("reasoning_content")?.takeIf { !it.isJsonNull }?.asString?.let { r ->
+                            m["choices.0.delta.reasoning_content"]?.let { r ->
                                 if (r.isNotEmpty()) {
                                     if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
                                     emit(AIStreamChunk.ReasoningDelta(r))
                                 }
                             }
                             // 工具调用增量：按 index 聚合 id/name/arguments 片段。
+                            // 流式 chunk 中 delta.tool_calls 数组通常每 chunk 一个元素（以 index 标识累加目标），
+                            // 定点抽取覆盖前 OPENAI_TOOL_CALL_SUBSCRIPT_COUNT 个元素，逐个处理。
                             // 有些模型（如 DeepSeek）在后续增量 chunk 中只传 arguments 片段，
                             // id 和 name 为空字符串 ""，不应覆盖已收到的有效值——否则首次 chunk
                             // 收到的完整 id/name 会被后续空值清空，导致 ToolCall 丢失。
-                            delta.getAsJsonArray("tool_calls")?.forEach { el ->
-                                val tc = el.asJsonObject
-                                val idx = tc.get("index")?.asInt ?: 0
+                            for (k in 0 until OPENAI_TOOL_CALL_SUBSCRIPT_COUNT) {
+                                val prefix = "choices.0.delta.tool_calls.$k"
+                                val idx = m["$prefix.index"]?.toIntOrNull() ?: continue
                                 val acc = toolAccs.getOrPut(idx) { OpenAIToolAcc() }
                                 // 仅在 id/name 非空时更新，避免增量 chunk 的空值覆盖首 chunk 的有效值
-                                tc.get("id")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotEmpty() }?.let { acc.id = it }
-                                tc.getAsJsonObject("function")?.let { fn ->
-                                    fn.get("name")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotEmpty() }?.let { acc.name = it }
-                                    fn.get("arguments")?.takeIf { !it.isJsonNull }?.asString?.let { acc.args.append(it) }
-                                }
+                                m["$prefix.id"]?.takeIf { it.isNotEmpty() }?.let { acc.id = it }
+                                m["$prefix.function.name"]?.takeIf { it.isNotEmpty() }?.let { acc.name = it }
+                                m["$prefix.function.arguments"]?.let { acc.args.append(it) }
                             }
                         } catch (e: CancellationException) {
                             throw e

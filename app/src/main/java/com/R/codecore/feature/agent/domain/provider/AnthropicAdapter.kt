@@ -6,6 +6,7 @@ import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicMessage
 import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicContentBlock
 import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicThinkingConfig
 import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicToolDefinition
+import com.R.codecore.core.network.SseFieldExtractor
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.feature.agent.domain.model.AgentImage
 import com.R.codecore.feature.agent.domain.model.AgentMessage
@@ -13,7 +14,6 @@ import com.R.codecore.feature.agent.domain.tool.AgentTool
 import com.R.codecore.feature.agent.domain.tool.ToolCall
 import com.R.codecore.feature.settings.domain.model.ProviderType
 import com.R.codecore.feature.settings.domain.model.defaultProviderApiPath
-import com.google.gson.JsonParser
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -29,6 +29,25 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+
+/** P1 定点字段抽取路径：Anthropic 流式各事件所需的标量字段（点连接 = 嵌套路径，数组下标为路径段）。 */
+private val ANTHROPIC_STREAM_PATHS: List<List<String>> = listOf(
+    listOf("type"),
+    listOf("error", "type"),
+    listOf("error", "message"),
+    listOf("message", "usage", "input_tokens"),
+    listOf("index"),
+    listOf("content_block", "type"),
+    listOf("content_block", "id"),
+    listOf("content_block", "name"),
+    listOf("delta", "type"),
+    listOf("delta", "text"),
+    listOf("delta", "thinking"),
+    listOf("delta", "signature"),
+    listOf("delta", "partial_json"),
+    listOf("delta", "stop_reason"),
+    listOf("usage", "output_tokens")
+)
 
 class AnthropicAdapter @Inject constructor(
     private val api: AnthropicApi
@@ -164,51 +183,49 @@ class AnthropicAdapter @Inject constructor(
                     runCatching { rb.close() }
                 }
                 try {
-                    val reader = rb.charStream().buffered()
-                    // 收到服务端 message_stop 事件即 break 正常结束；readLine() 返回 null 则视为
+                    val source = rb.source()
+                    // 收到服务端 message_stop 事件即 break 正常结束；readUtf8Line() 返回 null 则视为
                     // 流被异常截断（网络中断/TCP 重置/readTimeout），必须抛异常让重试/日志接管——
                     // 否则原本会用截断数据「正常完成」，表现为 AI 突然中断且无任何错误日志。
-                    // （收到 message_stop 即 break，故走到 readLine()==null 时必然未收到过结束标记。）
+                    // （收到 message_stop 即 break，故走到 readUtf8Line()==null 时必然未收到过结束标记。）
                     while (true) {
                         coroutineContext.ensureActive()
-                        val line = reader.readLine()
+                        val line = source.readUtf8Line()
                             ?: throw IOException("SSE 流被中断：未收到 message_stop 结束标记（疑似网络断开）")
                         if (!line.startsWith("data:")) continue
                         val data = line.removePrefix("data:").trim()
                         if (data.isEmpty()) continue
                         rawSse.append(line).append('\n')
-                        val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
-                        // 单行 SSE 解析：不同上游/模型的字段类型偶有出入，Gson 的 getAsJsonObject/getAsJsonArray
-                        // 在类型不符时会直接抛 ClassCastException，asString/asInt 对非原始值抛 UnsupportedOperationException。
-                        // 单行异常不应中断整条流——宽松解析，出错仅跳过该行；必须放行 CancellationException。
+                        // P1 定点字段抽取：JsonReader 流式逐 token 只取目标标量，不建整棵 JSON 树，
+                        // 显著降低流式主路径的解析 CPU 与 GC（旧实现每行 parseString 建整树）。
+                        val m = runCatching { SseFieldExtractor.extract(data, ANTHROPIC_STREAM_PATHS) }.getOrElse { emptyMap() }
+                        // 单行 SSE 解析：不同上游/模型的字段类型偶有出入，宽松解析——
+                        // 缺失/类型不符的字段从结果中缺失，按「无该字段」处理，出错仅跳过该行；
+                        // 必须放行 CancellationException。
                         try {
-                            when (obj.get("type")?.asString) {
+                            when (m["type"]) {
                                 "error" -> {
-                                    val errObj = obj.getAsJsonObject("error")
-                                    val code = errObj?.get("type")?.takeIf { !it.isJsonNull }?.asString
-                                    val msg = errObj?.get("message")?.takeIf { !it.isJsonNull }?.asString ?: "未知错误"
+                                    val code = m["error.type"]
+                                    val msg = m["error.message"] ?: "未知错误"
                                     throw StreamApiException(code, msg)
                                 }
                                 "message_start" -> {
-                                    val usage = obj.get("message")?.takeIf { it.isJsonObject }?.asJsonObject
-                                        ?.get("usage")?.takeIf { it.isJsonObject }?.asJsonObject
-                                    streamInputTokens = usage?.get("input_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: 0
+                                    streamInputTokens = m["message.usage.input_tokens"]?.toIntOrNull() ?: 0
                                 }
                                 "content_block_start" -> {
-                                    val index = obj.get("index")?.asInt ?: continue
-                                    val block = obj.getAsJsonObject("content_block")
-                                    if (block?.get("type")?.asString == "tool_use") {
+                                    val index = m["index"]?.toIntOrNull() ?: continue
+                                    if (m["content_block.type"] == "tool_use") {
                                         toolBlocks[index] = ToolBlockAcc(
-                                            id = block.get("id")?.asString ?: "",
-                                            name = block.get("name")?.asString ?: ""
+                                            id = m["content_block.id"] ?: "",
+                                            name = m["content_block.name"] ?: ""
                                         )
                                     }
                                 }
                                 "content_block_delta" -> {
-                                    val delta = obj.getAsJsonObject("delta") ?: continue
-                                    when (delta.get("type")?.asString) {
+                                    val index = m["index"]?.toIntOrNull()
+                                    when (m["delta.type"]) {
                                         "text_delta" -> {
-                                            val t = delta.get("text")?.asString ?: ""
+                                            val t = m["delta.text"] ?: ""
                                             if (t.isNotEmpty()) {
                                                 textBuilder.append(t)
                                                 if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
@@ -217,7 +234,7 @@ class AnthropicAdapter @Inject constructor(
                                             }
                                         }
                                         "thinking_delta" -> {
-                                            val t = delta.get("thinking")?.asString ?: ""
+                                            val t = m["delta.thinking"] ?: ""
                                             if (t.isNotEmpty()) {
                                                 // 思考内容不落库、可重试重流出，但收到即说明连接已活，取消首字节超时。
                                                 if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
@@ -225,26 +242,19 @@ class AnthropicAdapter @Inject constructor(
                                             }
                                         }
                                         "signature_delta" -> {
-                                            val sig = delta.get("signature")?.asString ?: ""
+                                            val sig = m["delta.signature"] ?: ""
                                             if (sig.isNotEmpty()) signature = sig
                                         }
                                         "input_json_delta" -> {
-                                            val index = obj.get("index")?.asInt
-                                            val partial = delta.get("partial_json")?.asString ?: ""
+                                            val partial = m["delta.partial_json"] ?: ""
                                             if (index != null) toolBlocks[index]?.args?.append(partial)
                                         }
                                     }
                                 }
                                 "message_stop" -> break
                                 "message_delta" -> {
-                                    val delta = obj.get("delta")?.takeIf { it.isJsonObject }?.asJsonObject
-                                    delta?.get("stop_reason")?.takeIf { !it.isJsonNull }?.asString?.let {
-                                        stopReason = it
-                                    }
-                                    val usage = obj.get("usage")?.takeIf { it.isJsonObject }?.asJsonObject
-                                    usage?.get("output_tokens")?.takeIf { !it.isJsonNull }?.asInt?.let {
-                                        streamOutputTokens = it
-                                    }
+                                    m["delta.stop_reason"]?.let { stopReason = it }
+                                    m["usage.output_tokens"]?.toIntOrNull()?.let { streamOutputTokens = it }
                                 }
                             }
                         } catch (e: CancellationException) {

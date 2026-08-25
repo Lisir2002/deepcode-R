@@ -91,6 +91,7 @@ fun ProxyConfigScreen(
 ) {
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val enabled by viewModel.enabled.collectAsStateWithLifecycle()
+    val aiHostsDirect by viewModel.aiHostsDirect.collectAsStateWithLifecycle()
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
     val preview by viewModel.preview.collectAsStateWithLifecycle()
     val nodesView by viewModel.profileNodes.collectAsStateWithLifecycle()
@@ -136,6 +137,15 @@ fun ProxyConfigScreen(
                         enabled = enabled,
                         activeProfileId = activeProfileId,
                         onToggle = viewModel::toggleEnabled
+                    )
+                }
+
+                // 网络层优化 C5：模型接口直连/代理分流开关（默认关，需先开启代理才可切换）。
+                item {
+                    AiHostsDirectToggle(
+                        checked = aiHostsDirect,
+                        enabled = enabled,
+                        onToggle = viewModel::toggleAiHostsDirect
                     )
                 }
 
@@ -259,6 +269,42 @@ private fun MasterToggle(
                 )
             }
             Switch(checked = enabled, onCheckedChange = onToggle)
+        }
+    }
+}
+
+/** 网络层优化 C5：模型接口直连/代理分流开关。需代理启用态才可切换（直连仅在代理链路下有意义）。 */
+@Composable
+private fun AiHostsDirectToggle(
+    checked: Boolean,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.proxy_ai_hosts_direct),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(Spacing.xs))
+                Text(
+                    text = stringResource(R.string.proxy_ai_hosts_direct_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = checked, onCheckedChange = onToggle, enabled = enabled)
         }
     }
 }

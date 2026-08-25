@@ -1365,6 +1365,8 @@
     <string name="ui______d0034676">兼容端点 · 能力判定默认策略</string>
     <string name="ui______d3ec5010">网络代理</string>
     <string name="ui______d3ec5010_2">mihomo 代理（VPN）· 导入订阅 / 手动 YAML · 交给模型自理</string>
+    <string name="proxy_ai_hosts_direct">模型接口直连（跳过代理）</string>
+    <string name="proxy_ai_hosts_direct_desc">开启后 OpenAI / Anthropic / Gemini 官方接口直连，省去代理一跳延迟；若直连不通（依赖代理才能访问），请关闭以回退代理。</string>
     <string name="ui______d8195afb">✅ 开启</string>
     <string name="ui______e17b4696">性能等级（低端机是否跳过 LLM 终检）</string>
     <string name="ui______ee92cd5e">复制命令</string>
