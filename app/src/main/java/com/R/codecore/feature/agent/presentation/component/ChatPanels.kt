@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +55,8 @@ import com.R.codecore.feature.agent.domain.tool.mode.PlanApprovalRequest
 import com.R.codecore.feature.agent.presentation.AgentUIState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Warning
 
 /**
@@ -169,8 +176,8 @@ internal fun StatusBanner(state: AgentUIState) {
         exit = fadeOut()
     ) {
         when (state) {
-            is AgentUIState.Error -> InfoBanner(
-                text = state.message,
+            is AgentUIState.Error -> ExpandableErrorBanner(
+                message = state.message,
                 container = MaterialTheme.colorScheme.errorContainer,
                 content = MaterialTheme.colorScheme.onErrorContainer,
                 icon = Icons.Rounded.Warning
@@ -184,6 +191,55 @@ internal fun StatusBanner(state: AgentUIState) {
             )
 
             else -> {}
+        }
+    }
+}
+
+/**
+ * 可展开的错误横幅：默认简略单行显示（超长省略号截断），点击展开查看完整详情。
+ * 错误信息可能很长（堆栈/多行提示），全量平铺会占据大量聊天区空间；
+ * 收敛为一行 + 点击展开，既保留完整信息可查，又不干扰对话流阅读。
+ */
+@Composable
+private fun ExpandableErrorBanner(
+    message: String,
+    container: Color,
+    content: Color,
+    icon: ImageVector
+) {
+    // 以 message 为 key：切换错误时展开态重置为收起。
+    var expanded by rememberSaveable(message) { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg, vertical = Spacing.xs)
+            .clickable { expanded = !expanded },
+        color = container,
+        shape = RoundedCornerShape(Radius.md)
+    ) {
+        Row(
+            modifier = Modifier.padding(Spacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = Brand.IconGray, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(Spacing.sm))
+            Text(
+                text = message,
+                color = content,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = if (expanded) Int.MAX_VALUE else 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(Spacing.xs))
+            Icon(
+                imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                contentDescription = stringResource(
+                    if (expanded) R.string.common_collapse else R.string.common_expand
+                ),
+                tint = content,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
