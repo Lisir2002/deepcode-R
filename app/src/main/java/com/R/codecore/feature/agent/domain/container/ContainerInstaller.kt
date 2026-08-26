@@ -36,6 +36,9 @@ class ContainerInstaller @Inject constructor(
         /** 从 assets 提取 SOP 标准作业到 ~/.rcodecore/sop/（D4-1，内置默认副本，每次启动全量覆盖）。 */
         @Volatile private var sopExtractedSession = false
 
+        /** 从 assets 提取 Playbook 剧本资产到 ~/.rcodecore/playbooks/（D5-2，内置默认副本，每次启动全量覆盖）。 */
+        @Volatile private var playbooksExtractedSession = false
+
         /** 从 assets 提取 SOP 标准作业资产到 ~/.rcodecore/sop/，使 App 升级后 SOP 随之更新。 */
         fun extractSop(context: Context) {
             if (sopExtractedSession) return
@@ -71,6 +74,25 @@ class ContainerInstaller @Inject constructor(
                 docsExtractedSession = true
             }.onFailure {
                 FileLogger.w(TAG, "提取内置文档失败: ${it.message}", it)
+            }
+        }
+
+        /** 从 assets 提取 Playbook 剧本资产到 ~/.rcodecore/playbooks/（D5-2，内置默认副本，使 App 升级后剧本随之更新）。 */
+        fun extractPlaybooks(context: Context) {
+            if (playbooksExtractedSession) return
+            val destDir = File(File(context.filesDir, "rcodecore"), "playbooks")
+            destDir.mkdirs()
+            runCatching {
+                val playbooks = context.assets.list("playbooks") ?: return
+                for (item in playbooks) {
+                    val destFile = File(destDir, item)
+                    context.assets.open("playbooks/$item").use { input ->
+                        destFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+                playbooksExtractedSession = true
+            }.onFailure {
+                FileLogger.w(TAG, "提取内置 Playbook 失败: ${it.message}", it)
             }
         }
 
@@ -443,6 +465,7 @@ class ContainerInstaller @Inject constructor(
         CoroutineScope(Dispatchers.IO).launch {
             extractDocs(context)
             extractSop(context)
+            extractPlaybooks(context)
             extractCredentialHelper(context)
         }
     }
@@ -452,6 +475,9 @@ class ContainerInstaller @Inject constructor(
 
     /** 从 assets 提取 SOP 标准作业资产到 ~/.rcodecore/sop/（D4-1）。 */
     fun extractSop() = extractSop(context)
+
+    /** 从 assets 提取 Playbook 剧本资产到 ~/.rcodecore/playbooks/（D5-2）。 */
+    fun extractPlaybooks() = extractPlaybooks(context)
 
     /** 从 assets 提取 git credential helper 到 ~/.rcodecore/git-credential-rcodecore 并赋可执行位。 */
     fun extractCredentialHelper() = extractCredentialHelper(context)

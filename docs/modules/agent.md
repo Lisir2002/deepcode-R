@@ -50,6 +50,7 @@
 | `domain/plan/` | **计划协作状态**（DSH plan + Claude Code Plan/Spec）：`PlanService` 管理会话单计划（propose/getById/update/approve/abandon/setPendingSelection），`PlanEntity` 持久化；workflow 每轮 step 前把未获批的 `pendingSelection` 注入 system prompt |
 | `domain/job/` | **后台任务**（DSH jobs）：`JobService`/`JobExecutor` 管理长任务（编译/测试/构建）后台执行，状态落库（pending/running/success/failed/interrupted），支持 start/status/kill/log |
 | `domain/schedule/` | **定时提醒**（DSH schedule）：`ScheduleService`（AFTER/AT/EVERY 三规则 + isDue 判定）、`ScheduleScheduler`（轮询调度，到点经 WakeQueueManager 注入会话唤醒 Agent），跨重启持久化 |
+| `domain/playbook/` | **剧本编排 Playbook**（D5）：`PlaybookAsset`（frontmatter 剧本资产：stages/agents/sop/gates/guards + `PlaybookGate` 审批门 + `PlaybookSeed` spawn/fork 双 seed）、`PlaybookRegistry`（扫 `assets/playbooks/`，复用 frontmatter 解析 + mtime 懒刷新）、`PlaybookExecutor`（双状态机执行：运行级 RUNNING/COMPLETED/ABORTED/INTERRUPTED + 阶段级 PENDING/ACTIVE/DONE/FAILED，支持 start/advance/resume/retry/abort/interrupt，产物清单幂等）、`SubAgentRunner`（阶段子代理执行：spawn/fork 双 seed + 三档 SandboxMode 降权 + 并行聚合 + 阶段内写串行化） |
 | `domain/hook/` | **声明式 hook 事件**（Claude Code hooks + DSH 工具流水线）：`HookDispatcher`（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart 挂点）、`HookConfigLoader`（合并内置/插件/用户 hooks.json）、`CommitDisciplineHook`（git commit/push 纪律检查示例） |
 | `domain/input/` | **用户意图拆解与持续意图维护源**（D0 + D1 step 前注入源）：`UserInputParser`（结构化解析 command?/args/text + 意图分类 + `!`/`?` marker）、`IntentAskSource`（意图问判三问，P1）、`BehaviorModeManager`/`BehaviorModeSource`（四档行为模式，P1）、`GoalStaleDetector`/`GoalStaleSource`（语义失配检测，P2）、`GoalAdjustEvent`/`GoalAdjustEventSource`（目标调整事件闭环，P1）、`GoalHintSource`（goal 注入，P0）、`PlanPendingHintSource`（plan pending 提示，P1）、`PlaybookStageSource`（剧本阶段注入，P1，D5 预留）、`LoopAdvisorySource`（空转循环提醒，P2） |
 | `domain/guard/` | **工具执行护栏链**（D1）：`ToolGuard` 接口（guard 三态 PASS/BLOCK/ADVISORY）+ `ToolGuardContext`（toolName/args/sessionId/projectRoot）+ `ToolGuardResult`（Pass/Block/Advisory）；`FileObservationGuard`（文件观察纪律：编辑前必须先读否则 `FS_NOT_OBSERVED`、mtime 版本 CAS 否则 `FS_STALE`，新建豁免、writeFile 即已知）；`GuardModule`（Dagger `@IntoSet` 汇集注册护栏到 `Set<ToolGuard>`，挂入六段式 guard 段，首个 BLOCK 短路） |
@@ -295,6 +296,15 @@
 - **guard 护栏链**（D1-3/4）：`Set<ToolGuard>` 经 `GuardModule` 的 Dagger `@IntoSet` 汇集注入，首个 `BLOCK` 短路（工具不执行直接返回错误）；`FileObservationGuard` 仅拦截 `editFile`：未观察已存在文件 → `FS_NOT_OBSERVED`（提示先 readFile）、观察后 mtime 变化 → `FS_STALE`（提示重读）、新建豁免、readFile 观察/writeFile 即已知（post-execute 段 `markObserved` 更新版本）；容器/终端内 shell 写不逐条拦截（靠 SOP/prompt 纪律约束）。
 - **统一开关基础**（§3.5）：总开关 `norm_flow_enabled` + 子开关 `step_inject_enabled`/`tool_guard_enabled`（`settings` 模块 `NormFlowSettingsRepository` 经 DataStore 持久化）；workflow 分别经 `isStepInjectActive()`/`isToolGuardActive()` 判定是否启用 step 前注入与 guard 链，设置页「规范流程」分区（`NormFlowSection`）提供开关 UI。
 - **闭环核对**（§3.1.1）：prompts 资产 `60-tools-and-paths.md` 补充文件观察纪律（`FS_NOT_OBSERVED`/`FS_STALE` 错误码）与 `TOOL_TIMEOUT` 结构化超时说明，与既有 goal 注入/循环提醒能力对齐接入。
+
+### 3.13 Playbook 剧本编排（D5，见 `docs/plan-docs/norm-chain-design.md` §3.3 / §3.6）
+
+- **剧本资产与注册**（D5-1/2）：`PlaybookRegistry` 扫 `assets/playbooks/` 加载 3 份剧本（bug-fix/code-review/feature-dev），复用 `AgentAssetCore` frontmatter 解析 + mtime 懒刷新；`PlaybookAsset` 由多阶段 `stages[]` 组成，每阶段含 `description`/`agents[]`（子代理配置 + `PlaybookSeed` spawn/fork）/`sop` 引用/`gates`（`PlaybookGate.APPROVAL/AUTO`）/`guards`。
+- **双状态机执行**（D5-3/8）：`PlaybookRunEntity`（agent_playbook_runs 表）持久化双状态机——运行级 RUNNING/COMPLETED/ABORTED/INTERRUPTED + 阶段级 PENDING/ACTIVE/DONE/FAILED；`PlaybookExecutor` 提供 start/advance/status/abort/resume/retry/interrupt；**产物清单幂等**：阶段 DONE 记录 artifacts，resume/retry 时注入对照跳过已完成操作；**完成判定护栏**：连续 N 轮无实质工具动作声明完成 → advisory 提醒确认阶段产出物；会话停止置 INTERRUPTED、可 resume，失败阶段可 retry。
+- **阶段注入与挂起 goal 双信号**（D5-5）：`PlaybookStageSource`（P1，八源第 4 位）把当前剧本名/阶段/目标注入 step 前块；运行期把当前阶段目标挂到 goal，暂停双信号（`GoalStale`/`GoalAdjustEvent` 不注入）避免阶段内误判语义失配。
+- **子代理执行**（D5-6/7）：`SubAgentRunner` 在阶段激活时执行 `agents[]`——spawn/fork 双 seed（上下文隔离：独立消息/工具/工作目录），三档 `SandboxMode` 权限降权（READ_ONLY/WORKSPACE_WRITE/DANGER_FULL_ACCESS），每子代理一协程 `async` + `awaitAll` 并行聚合（按声明顺序返回），阶段内共享 `Mutex` 把写档位工具调用串行化（读保持并行）；产出按内容写入天然幂等。
+- **工具与命令**（D5-4）：4 工具 `playbook_start/advance/status/abort`（`domain/tool/playbook/`）+ `/playbook <name>` 斜杠命令（`domain/command/PlaybookCommandHandler`）；**清单可见 + 精确匹配**，未命中回退 plan/goal。
+- **审批与开关**（D5-9 / D5-pa）：阶段 `gates=approval` 时推进需用户批准，用户消息首 token 为 `!` 时跳过当次流程级 approval gate（`markForceApproval`/`consumeForceApproval`，不绕权限系统）；总开关 `norm_flow_enabled` 关闭则 Playbook 整体不可用；子开关 `playbook_auto_enabled`（`playbook_auto`，默认开）关闭后模型不能自主 `playbook_start`，`/playbook` 命令不受影响。
 
 ## 4. 对外接口与集成点
 

@@ -156,7 +156,9 @@ class StatefulAgentWorkflow @Inject constructor(
     /** D1-7 规范流程统一开关：总开关 norm_flow_enabled + 子开关 step_inject / tool_guard（对齐 norm-chain §3.5）。 */
     private val normFlowSettingsRepository: com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository,
     /** D2-3/5 运行轨迹服务：工具执行完成追加 tool 轨迹、turn 边界轻量标记；空转收敛/阶段总结/审计的数据源。 */
-    private val trajectoryService: TrajectoryService
+    private val trajectoryService: TrajectoryService,
+    /** D5-8 Playbook 完成判定护栏：workflow 每轮按实质工具动作上报（recordSubstantiveAction / recordIdleRound）。 */
+    private val playbookExecutor: com.R.codecore.feature.agent.domain.playbook.PlaybookExecutor
 ) : AgentWorkflow {
 
     init {
@@ -590,9 +592,29 @@ class StatefulAgentWorkflow @Inject constructor(
         // 避免首轮准备阶段（prompt 构建 / provider 解析 / 上下文压缩 / 网络建连）长时间无反馈。
         send(AgentEvent.ReasoningDelta(""))
 
+        // D5-9：`!` 优先级标记——首 token `!`（后跟空格或直接接文本，前缀匹配无歧义）表示
+        // 本条用户消息强制跳过流程级确认（如 playbook approval gate）。剥离前缀送入模型，
+        // 并把会话标记置位（PlaybookExecutor.advance 下次推进消费）；永不绕过权限系统。
+        // 有歧义（如 "!important 内容"）按普通文本处理——仅当 `!` 后紧跟空白或消息仅含 `!` 时命中。
+        var effectiveRequest = userRequest
+        val requestTrimmed = userRequest.trimStart()
+        if (requestTrimmed.startsWith("!") && (requestTrimmed.length == 1 || requestTrimmed[1].isWhitespace())) {
+            effectiveRequest = requestTrimmed.removePrefix("!").trimStart()
+            val sid = context.sessionId
+            if (sid != null) {
+                try {
+                    withContext(Dispatchers.IO) { playbookExecutor.markForceApproval(sid) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "`!` 标记置位失败，跳过", e)
+                }
+            }
+        }
+
         // Hook：UserPromptSubmit（用户消息提交，executeEvents 入口）
         logHookFailures("UserPromptSubmit", hookDispatcher.dispatchUserPromptSubmit(
-            UserPromptSubmitContext(context.sessionId, userRequest, context.mode)
+            UserPromptSubmitContext(context.sessionId, effectiveRequest, context.mode)
         ))
 
         var currentContext = context
@@ -617,7 +639,7 @@ class StatefulAgentWorkflow @Inject constructor(
                 currentContext.sessionId?.let { goalService.getActive(it) }
             }
             currentContext.sessionId?.let { sid ->
-                promptProvider.feedGoalStale(sid, goalAtTurnStart?.text ?: "", userRequest)
+                promptProvider.feedGoalStale(sid, goalAtTurnStart?.text ?: "", effectiveRequest)
             }
         } catch (e: CancellationException) {
             throw e
@@ -648,7 +670,7 @@ class StatefulAgentWorkflow @Inject constructor(
         // 避免在收集线程（主线程）上阻塞拖慢首字节反馈。
         val autoTriggerResults = try {
             withContext(Dispatchers.IO) {
-                autoTriggerSkills(userRequest, currentContext, aiProvider, sessionState)
+                autoTriggerSkills(effectiveRequest, currentContext, aiProvider, sessionState)
             }
         } catch (e: CancellationException) {
             throw e
@@ -681,12 +703,12 @@ class StatefulAgentWorkflow @Inject constructor(
             systemPrompt = (systemPrompt?.takeIf { it.isNotBlank() }?.plus("\n\n$authorityHint")) ?: authorityHint
         }
         var userRequestContent = if (autoTriggerResults.isEmpty()) {
-            userRequest
+            effectiveRequest
         } else {
             // 技能输出 + 用户请求合并在同一条 User 消息内（技能在前、请求在后），保证模型必然读到规则；
             // 同时避免「连续多条 User 消息」触发 Anthropic 等要求 user/assistant 交替的 API 报错。
             autoTriggerResults.joinToString("\n\n---\n\n") { it.noteContent } +
-                "\n\n【本次用户请求】\n" + userRequest
+                "\n\n【本次用户请求】\n" + effectiveRequest
         }
 
         // R02 WakeQueue 下轮注入：上一轮后台审查/耗时任务产出的待注入唤醒，
@@ -1256,17 +1278,23 @@ class StatefulAgentWorkflow @Inject constructor(
                             }
                             // D2-1 空转检测：本轮是否有实质产出（文件写 / 命令执行 / run_code / 产出性读动作）。
                             // 有实质产出 → 清零空转计数；无 → 累计空转轮数（连续 N 轮由 CallLlm 侧强制收敛）。
+                            // D5-8 完成判定护栏：同一判定同步上报 PlaybookExecutor（recordSubstantiveAction 清零 /
+                            // recordIdleRound 累计），供 playbook_advance(done) 前校验「连续 N 轮无实质动作声明完成」。
                             if (toolCall.name in SUBSTANTIAL_TOOLS) {
                                 idleRounds = 0
+                                currentContext.sessionId?.let { playbookExecutor.recordSubstantiveAction(it) }
                             } else if (toolCall.name == "readFile") {
                                 val path = (toolCall.arguments["path"] as? JsonPrimitive)?.contentOrNull
                                 if (path != null && readPaths.add(path)) {
                                     idleRounds = 0 // 读到新文件 = 产出性读动作，清零
+                                    currentContext.sessionId?.let { playbookExecutor.recordSubstantiveAction(it) }
                                 } else {
                                     idleRounds++ // 反复重读同类文件才累计空转
+                                    currentContext.sessionId?.let { playbookExecutor.recordIdleRound(it) }
                                 }
                             } else {
                                 idleRounds++
+                                currentContext.sessionId?.let { playbookExecutor.recordIdleRound(it) }
                             }
                         }
 

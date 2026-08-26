@@ -7,7 +7,7 @@
 ## 1. 当前主线
 
 - **主设计域（D0–D6）设计已全部收敛**（含深度审计 13 项修订），任务已细化到**子任务级**（共 41 项，见 §2）。
-- 当前整体处于 🔄 实施中，**D0（基座）与 D1（Agentic Workflow 基座）已实施完成**，D2–D6 尚未开始编码。
+- 当前整体处于 🔄 实施中，**D0（基座）、D1（Agentic Workflow 基座）与 D5（Playbook + 子代理）已实施完成**，D2/D3/D4/D6 尚未开始编码。
 - 实施顺序：`D0 → D1 → D2 → D3 → D4 → D5 → D6`（D3 与 D4 互不依赖；D5 依赖 D2/D4 完成）。
 
 ## 2. 主设计域进度（子任务级）
@@ -65,19 +65,20 @@
 | D4-4 | `loadSop` 工具：按需取正文 + SOP/Skill **双判据边界**（适用范围主判 + 步骤化辅助）+ prompts 区分指引 | §3.2 | ⬜ |
 | D4-5 | 权威源同步提示：改 AGENTS.md / prompts 行为规则 → pre-commit 提示检查 sop 同步（复用 D6 脚本） | §3.2 | ⬜ |
 
-### D5 Playbook + 子代理（📝 | 前置：D1, D2, D4 | 后置：—）
+### D5 Playbook + 子代理（✅ 已实施 | 前置：D1, D2, D4 | 后置：—）
 
 | 子任务 | 内容（一行） | 章节 | 状态 |
 |---|---|---|---|
-| D5-1 | `PlaybookRegistry`（独立，扫 `assets/playbooks/`）+ PlaybookAsset frontmatter 解析（stages/agents/sop/gates/guards） | §3.3 | ⬜ |
-| D5-2 | 3 份 playbook 资产（多阶段任务剧本） | §3.3 | ⬜ |
-| D5-3 | `PlaybookExecutor` + `PlaybookRunEntity`（双状态机：运行级 RUNNING/COMPLETED/ABORTED + 阶段级 PENDING/ACTIVE/DONE/FAILED） | §3.3 | ⬜ |
-| D5-4 | 4 工具 + 命令：`playbook_start/advance/status/abort` + `/playbook <name>`；**清单可见 + 精确匹配**，未命中回退 plan/goal | §3.3 | ⬜ |
-| D5-5 | `PlaybookStageSource`（P1 注入）+ 运行期**挂起 goal 维护双信号**（GoalStale/GoalAdjustEvent 不注入） | §3.3 | ⬜ |
-| D5-6 | `SubAgentRunner`：spawn/fork 双 seed + 上下文隔离（独立消息/工具/工作目录）+ **三档 SandboxMode 权限**降权 | §3.6 | ⬜ |
-| D5-7 | 并行聚合（子代理结果合并）+ 阶段内写串行化 | §3.6 | ⬜ |
-| D5-8 | 产物清单幂等 + 完成判定护栏（连续无实质动作声明完成 → advisory）+ 中断/恢复（INTERRUPTED + resume）+ 失败重试 | §3.3 | ⬜ |
-| D5-9 | `!` 标记跳过 approval gate（统一流程级确认，不绕权限系统） | §3.3 | ⬜ |
+| D5-1 | `PlaybookRegistry`（独立，扫 `assets/playbooks/`）+ PlaybookAsset frontmatter 解析（stages/agents/sop/gates/guards） | §3.3 | ✅ |
+| D5-2 | 3 份 playbook 资产（多阶段任务剧本） | §3.3 | ✅ |
+| D5-3 | `PlaybookExecutor` + `PlaybookRunEntity`（双状态机：运行级 RUNNING/COMPLETED/ABORTED/INTERRUPTED + 阶段级 PENDING/ACTIVE/DONE/FAILED） | §3.3 | ✅ |
+| D5-4 | 4 工具 + 命令：`playbook_start/advance/status/abort` + `/playbook <name>`；**清单可见 + 精确匹配**，未命中回退 plan/goal | §3.3 | ✅ |
+| D5-5 | `PlaybookStageSource`（P1 注入）+ 运行期**挂起 goal 维护双信号**（GoalStale/GoalAdjustEvent 不注入） | §3.3 | ✅ |
+| D5-6 | `SubAgentRunner`：spawn/fork 双 seed + 上下文隔离（独立消息/工具/工作目录）+ **三档 SandboxMode 权限**降权 | §3.6 | ✅ |
+| D5-7 | 并行聚合（子代理结果合并）+ 阶段内写串行化 | §3.6 | ✅ |
+| D5-8 | 产物清单幂等 + 完成判定护栏（连续无实质动作声明完成 → advisory）+ 中断/恢复（INTERRUPTED + resume/retry） | §3.3 | ✅ |
+| D5-9 | `!` 标记跳过 approval gate（统一流程级确认，不绕权限系统） | §3.3 | ✅ |
+| D5-pa | `playbook_auto` 子开关（设置页 + NormFlowSettingsRepository 持久化）：关闭后模型不能自主 `playbook_start`，`/playbook` 命令与总开关不受影响 | §3.5 | ✅ |
 
 ### D6 Spec 规范驱动（📝 | 前置：无（独立治理） | 后置：—）
 

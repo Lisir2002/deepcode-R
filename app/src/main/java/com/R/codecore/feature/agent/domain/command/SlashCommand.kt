@@ -71,4 +71,11 @@ interface SlashCommandContext {
      * 落库为用户消息 → 驱动一轮 Agent 循环，等价于用户在输入框直接发送该文本。
      */
     fun sendAgentRequest(text: String)
+
+    /**
+     * Playbook 剧本命令（`/playbook ...`，D5-4）：解析参数并调 [com.R.codecore.feature.agent.domain.playbook.PlaybookExecutor]，
+     * 结果以 AI 气泡输出（启动后把首阶段目标交回 Agent 继续执行）。
+     * - 空参数：列出可用剧本清单；`<name>`：精确启动；`resume`/`retry`/`abort`/`status`：对应管理操作。
+     */
+    fun runPlaybook(arg: String)
 }

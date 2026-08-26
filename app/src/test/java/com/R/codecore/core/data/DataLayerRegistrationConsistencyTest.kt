@@ -15,9 +15,10 @@ import java.io.FileFilter
  * - DataRegistryModule 漏登记 → 该表不参与全量备份/无感自动迁移；
  * - DbSplitMigrator 漏登记 → 该表不参与旧包一次性移植。
  *
- * 因此强制：移植器登记的全部旧库表（26 张）必须 ⊆ 注册表（30 张）——注册表允许 registry-only
- * 新表（任务编排层 agent_goals/agent_plans/agent_jobs/agent_schedules，v1 之后新增、旧单巨库无此数据），
- * 并校验总量（30）、无重复登记、5 个域库分布（agent 21 + settings 1 + credentials 1 + workspace 4 + t2i 3）、
+ * 因此强制：移植器登记的全部旧库表（26 张）必须 ⊆ 注册表（32 张）——注册表允许 registry-only
+ * 新表（任务编排层 agent_goals/agent_plans/agent_jobs/agent_schedules + 轨迹 agent_trajectories +
+ * 剧本 agent_playbook_runs，v1 之后新增、旧单巨库无此数据），
+ * 并校验总量（32）、无重复登记、5 个域库分布（agent 23 + settings 1 + credentials 1 + workspace 4 + t2i 3）、
  * DataStore 域单独存在（目录级转储，不在表清单内）。
  */
 class DataLayerRegistrationConsistencyTest {
@@ -79,9 +80,9 @@ class DataLayerRegistrationConsistencyTest {
     }
 
     @Test
-    fun `Room 表清单总量为 30 且无重复登记`() {
+    fun `Room 表清单总量为 32 且无重复登记`() {
         val registered = registeredTables()
-        assertEquals("注册表应覆盖全部 30 张 Room 表（agent 21 + settings 1 + credentials 1 + workspace 4 + t2i 3）", 30, registered.size)
+        assertEquals("注册表应覆盖全部 32 张 Room 表（agent 23 + settings 1 + credentials 1 + workspace 4 + t2i 3）", 32, registered.size)
 
         val dup = registered.groupingBy { it }.eachCount().filter { it.value > 1 }
         assertTrue("存在重复登记的表: ${dup.keys}", dup.isEmpty())
@@ -90,7 +91,7 @@ class DataLayerRegistrationConsistencyTest {
     @Test
     fun `5 个域库表数分布与设计一致`() {
         val registered = registeredTables()
-        // agent 21 + settings 1 + credentials 1 + workspace 4 + t2i 3
+        // agent 23 + settings 1 + credentials 1 + workspace 4 + t2i 3
         val agentTables = listOf(
             "agent_messages", "chat_sessions", "todo_items", "session_checkpoints",
             "checkpoint_file_snapshots", "file_edit_hunks", "mode_switch_history",
@@ -99,6 +100,7 @@ class DataLayerRegistrationConsistencyTest {
             "zth_l0_soft_compact_restore_logs", "zth_telemetry_events", "skill_conversation_state",
             "skill_state", "wake_queue",
             "agent_goals", "agent_plans", "agent_jobs", "agent_schedules",
+            "agent_trajectories", "agent_playbook_runs",
         )
         val workspaceTables = listOf(
             "remote_connections", "remote_mounts", "remote_audit_logs", "credential_encryption_state",

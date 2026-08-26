@@ -144,4 +144,34 @@ object AgentDatabaseMigrations {
             )
         }
     }
+
+    /**
+     * v3 → v4：新增 agent_playbook_runs 剧本运行表（D5-3，对齐 norm-chain-design.md §3.3.6）。
+     *
+     * 字段与 [com.R.codecore.feature.agent.data.local.entity.PlaybookRunEntity] 逐列对齐
+     * （Room TableInfo 校验），索引仅 sessionId / status（查询走会话 + 状态分组）。
+     */
+    val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // ── agent_playbook_runs（Playbook 剧本运行，双状态机持久化）──
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `agent_playbook_runs` (" +
+                        "`playbookRunId` TEXT NOT NULL, " +
+                        "`sessionId` TEXT NOT NULL, " +
+                        "`playbookName` TEXT NOT NULL, " +
+                        "`currentStageIndex` INTEGER NOT NULL DEFAULT 0, " +
+                        "`stageStatuses` TEXT NOT NULL DEFAULT '', " +
+                        "`status` TEXT NOT NULL DEFAULT 'RUNNING', " +
+                        "`createdAtMs` INTEGER NOT NULL, " +
+                        "`updatedAtMs` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`playbookRunId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_playbook_runs_sessionId` ON `agent_playbook_runs` (`sessionId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agent_playbook_runs_status` ON `agent_playbook_runs` (`status`)"
+            )
+        }
+    }
 }

@@ -230,6 +230,10 @@ object AgentModule {
         scheduleTool: com.R.codecore.feature.agent.domain.tool.schedule.ScheduleTool,
         planTool: com.R.codecore.feature.agent.domain.tool.plan.PlanTool,
         intentAnalyzeTool: IntentAnalyzeTool,
+        playbookStartTool: com.R.codecore.feature.agent.domain.tool.playbook.PlaybookStartTool,
+        playbookAdvanceTool: com.R.codecore.feature.agent.domain.tool.playbook.PlaybookAdvanceTool,
+        playbookStatusTool: com.R.codecore.feature.agent.domain.tool.playbook.PlaybookStatusTool,
+        playbookAbortTool: com.R.codecore.feature.agent.domain.tool.playbook.PlaybookAbortTool,
         resultTypeRegistry: com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
     ): ToolRegistry {
         return ToolRegistry().apply {
@@ -295,6 +299,11 @@ object AgentModule {
             registerTool("plan", planTool)
             // ══ 用户意图判定平台（D0）：规则预分类五形态 + behaviorMode，Parser 门控（task/command）建议调用
             registerTool("intent_analyze", intentAnalyzeTool)
+            // ══ Playbook 剧本编排（D5-4，norm-chain §3.3.5）：start/advance/status/abort 四工具
+            registerTool("playbook_start", playbookStartTool)
+            registerTool("playbook_advance", playbookAdvanceTool)
+            registerTool("playbook_status", playbookStatusTool)
+            registerTool("playbook_abort", playbookAbortTool)
 
             // ══ D2-3 轨迹摘要提取器登记（norm-chain §3.8.2：规则表挂 ToolResultTypeRegistry，
             //    仅少数工具定制，其余走通用截断）。提取器签名 (args, resultData) → 一行摘要。
@@ -407,7 +416,8 @@ object AgentModule {
         toolGuards: Set<@JvmSuppressWildcards com.R.codecore.feature.agent.domain.guard.ToolGuard>,
         fileObservationGuard: com.R.codecore.feature.agent.domain.guard.FileObservationGuard,
         normFlowSettingsRepository: com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository,
-        trajectoryService: com.R.codecore.feature.agent.domain.trajectory.TrajectoryService
+        trajectoryService: com.R.codecore.feature.agent.domain.trajectory.TrajectoryService,
+        playbookExecutor: com.R.codecore.feature.agent.domain.playbook.PlaybookExecutor
     ): AgentWorkflow {
         return com.R.codecore.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
@@ -442,7 +452,8 @@ object AgentModule {
             toolGuards,
             fileObservationGuard,
             normFlowSettingsRepository,
-            trajectoryService
+            trajectoryService,
+            playbookExecutor
         )
     }
 }

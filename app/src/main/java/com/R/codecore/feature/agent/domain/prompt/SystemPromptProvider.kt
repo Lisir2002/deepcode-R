@@ -12,6 +12,7 @@ import com.R.codecore.feature.agent.domain.memory.MemoryRepository
 import com.R.codecore.feature.agent.domain.memory.MemoryScope
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.model.AgentMode
+import com.R.codecore.feature.agent.domain.playbook.PlaybookExecutor
 import com.R.codecore.feature.agent.domain.rule.RuleAsset
 import com.R.codecore.feature.agent.domain.rule.RuleLayer
 import com.R.codecore.feature.agent.domain.rule.RuleRegistry
@@ -20,6 +21,8 @@ import com.R.codecore.feature.agent.domain.skill.SkillType
 import com.R.codecore.feature.agent.domain.sop.SopRegistry
 import com.R.codecore.feature.agent.domain.workflow.LoopGuardTracker
 import com.R.codecore.feature.settings.data.repository.NormFlowSettingsRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -53,7 +56,10 @@ class SystemPromptProvider @Inject constructor(
     // D4-3：SOP 标准作业注册表（assets/sop/，摘要常驻注入 + loadSop 按需取正文）
     private val sopRegistry: SopRegistry,
     // D1-7/D4-3：规范流程统一开关（sop_summary 子开关控制 SOP 摘要常驻注入，逐项可关）
-    private val normFlowSettingsRepository: NormFlowSettingsRepository
+    private val normFlowSettingsRepository: NormFlowSettingsRepository,
+    // D5-5：Playbook 执行器（step 前查询本会话最近 RUNNING 运行的当前阶段喂入 PlaybookStageSource，
+    // 并在运行期间挂起 goal 维护双信号——GoalStale / GoalAdjustEvent 不注入）
+    private val playbookExecutor: PlaybookExecutor
 ) {
     // 抽象独立的 Source
     interface PromptSource {
@@ -406,10 +412,31 @@ class SystemPromptProvider @Inject constructor(
      *
      * D4-3：每轮先按 sop_summary 子开关（总开关 && 子开关）设置 SOP 摘要注入开关；
      * 该子开关只影响 SOP 摘要注入，loadSop 工具取正文不受影响。
+     *
+     * D5-5：每轮查询本会话最近 RUNNING 运行的当前阶段喂入 [PlaybookStageSource]（P1 注入）；
+     * 运行期间**挂起 goal 维护双信号**——GoalStale / GoalAdjustEvent 两 Source 不 build（不注入），
+     * 避免 Playbook 阶段目标与 goal 维护信号互相干扰（对齐 norm-chain §3.3 阶段注入审计定稿）。
      */
     suspend fun buildStepInjections(ctx: AgentContext): String? {
         sopSource.setSummaryEnabled(normFlowSettingsRepository.isSopSummaryActive())
+        // D5-5：查询当前阶段（失败静默降级为无阶段），喂入 PlaybookStageSource。
+        val sessionId = ctx.sessionId
+        val stageView = if (sessionId != null) {
+            try {
+                withContext(Dispatchers.IO) { playbookExecutor.currentStageView(sessionId) }
+            } catch (e: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+        playbookStageSource.feed(sessionId, stageView)
+        val playbookActive = stageView != null
         val entries = stepSources.mapNotNull { step ->
+            // 挂起双信号：playbook 运行期间 GoalStale / GoalAdjustEvent 不注入（§3.3 审计定稿）。
+            if (playbookActive && (step.source === goalStaleSource || step.source === goalAdjustEventSource)) {
+                return@mapNotNull null
+            }
             val text = try {
                 step.source.build(ctx)
             } catch (e: Exception) {

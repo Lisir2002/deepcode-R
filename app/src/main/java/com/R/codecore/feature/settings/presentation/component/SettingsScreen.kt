@@ -165,6 +165,9 @@ fun SettingsScreen(
     // D2-2/D2-4 规范流程子开关：推理预算 / 用量卡片。
     val reasoningBudgetEnabled by viewModel.reasoningBudgetEnabled.collectAsStateWithLifecycle()
     val usageCardEnabled by viewModel.usageCardEnabled.collectAsStateWithLifecycle()
+    val sopSummaryEnabled by viewModel.sopSummaryEnabled.collectAsStateWithLifecycle()
+    // D5-pa Playbook 自动触发子开关（对齐 §3.5）。
+    val playbookAutoEnabled by viewModel.playbookAutoEnabled.collectAsStateWithLifecycle()
 
     var section by remember { mutableStateOf(SettingsSection.Menu) }
     var logReturnSection by remember { mutableStateOf(SettingsSection.Menu) }
@@ -401,11 +404,15 @@ fun SettingsScreen(
                     toolGuardEnabled = toolGuardEnabled,
                     reasoningBudgetEnabled = reasoningBudgetEnabled,
                     usageCardEnabled = usageCardEnabled,
+                    sopSummaryEnabled = sopSummaryEnabled,
+                    playbookAutoEnabled = playbookAutoEnabled,
                     onToggleNormFlow = { viewModel.setNormFlowEnabled(it) },
                     onToggleStepInject = { viewModel.setStepInjectEnabled(it) },
                     onToggleToolGuard = { viewModel.setToolGuardEnabled(it) },
                     onToggleReasoningBudget = { viewModel.setReasoningBudgetEnabled(it) },
-                    onToggleUsageCard = { viewModel.setUsageCardEnabled(it) }
+                    onToggleUsageCard = { viewModel.setUsageCardEnabled(it) },
+                    onToggleSopSummary = { viewModel.setSopSummaryEnabled(it) },
+                    onTogglePlaybookAuto = { viewModel.setPlaybookAutoEnabled(it) }
                 )
                 SettingsSection.Backup -> {
                     val backupViewModel: com.R.codecore.feature.backup.presentation.BackupViewModel =

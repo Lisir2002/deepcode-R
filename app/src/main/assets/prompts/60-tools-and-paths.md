@@ -104,6 +104,7 @@ includes: []
 - `plan`：管理会话实施计划（每会话单计划，DRAFT→APPROVED→EXECUTING→COMPLETED/ABANDONED）。`action=propose` 用 `title` + `steps`（JSON 数组文本 `[{"text":..,"status":"pending"}]`）提议计划，可带 `pending_selection` 待定选择；`get` 读取；`update_steps` 更新步骤；`set_pending_selection` 更新待定选择；`approve` 批准（清空待定选择，进入执行）；`abandon` 放弃。未获批的 `pending_selection` 每轮注入系统提示词，供用户在方案间权衡。
 - `job_start` / `job_status` / `job_kill` / `job_log`：后台长任务（编译/测试/构建等）管理。`job_start` 提交命令后台执行并返回 job_id；`job_status` 查询状态（pending/running/success/failed/interrupted）；`job_kill` 终止；`job_log` 读取分段日志。耗时任务交给后台任务执行，避免阻塞对话，也便于中断与重试。
 - `schedule`：定时提醒。`action=create` 用 `rule`（after/at/every）配合 `delay_ms`/`at_ms`/`interval_ms` 与 `prompt` 创建；`list` 查询；`cancel` 按 `schedule_id` 取消。到点自动向会话注入提醒消息并唤醒 Agent 执行，跨重启持久化。
+- `playbook_start` / `playbook_advance` / `playbook_status` / `playbook_abort`：**剧本编排**（Playbook，多阶段任务剧本）。`playbook_start` 用 `name`（精确匹配，如 `bug-fix`/`code-review`/`feature-dev`）启动剧本，未命中时返回可用剧本清单，不要猜测剧本名；`playbook_status` 查询当前运行与阶段状态；`playbook_advance` 用 `action=done`（阶段完成推进，可带 `artifacts` 记录本阶段产物）/`fail`（阶段失败中止）推进；`playbook_abort` 中止运行。剧本按阶段推进，阶段可能声明子代理（spawn/fork 双模式）自动执行，产出清单幂等、失败可重试、会话中断可恢复。若 `playbook_start` 报 `PLAYBOOK_AUTO_DISABLED`，说明「剧本自动触发」子开关已关闭，请改用 `/playbook <name>` 命令由用户显式启动。
 
 ## 网络与搜索工具
 - `websearch`：通过互联网搜索引擎获取实时信息，突破知识库时间截断。回答时效性问题或寻找最新资料时，必须优先调用。

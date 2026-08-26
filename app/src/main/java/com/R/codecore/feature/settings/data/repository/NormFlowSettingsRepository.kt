@@ -23,6 +23,8 @@ import javax.inject.Singleton
  * - **子开关** [usageCardEnabledFlow]（D2-4，默认开）：每回合用量卡片（本回合增量 + 会话累计，仅 token）。
  * - **子开关** [sopSummaryEnabledFlow]（D4-3，默认开）：SOP 清单摘要常驻注入单独可关
  *   （完整正文经 loadSop 工具按需取用，不受此开关影响）。
+ * - **子开关** [playbookAutoEnabledFlow]（D5-pa，默认开）：Playbook 自动触发——控制模型自主
+ *   调用 `playbook_start` 工具启动剧本；`/playbook` 斜杠命令显式入口不受此开关影响。
  *
  * 第一批只落三个字段（对齐设计 §4 第一批「总开关 + step_inject/tool_guard 子开关」）；
  * SOP 摘要（sop_summary）/ Playbook 自动触发（playbook_auto）子开关随 D4/D5 批次补入本文件；
@@ -42,6 +44,7 @@ class NormFlowSettingsRepository @Inject constructor(
         val REASONING_BUDGET_ENABLED_KEY = booleanPreferencesKey("reasoning_budget_enabled")
         val USAGE_CARD_ENABLED_KEY = booleanPreferencesKey("usage_card_enabled")
         val SOP_SUMMARY_ENABLED_KEY = booleanPreferencesKey("sop_summary_enabled")
+        val PLAYBOOK_AUTO_ENABLED_KEY = booleanPreferencesKey("playbook_auto_enabled")
     }
 
     /** 总开关流；未设置时回退 true（默认开）。 */
@@ -61,6 +64,9 @@ class NormFlowSettingsRepository @Inject constructor(
 
     /** SOP 清单摘要子开关流（D4-3）；未设置时回退 true（默认开）。 */
     val sopSummaryEnabledFlow: Flow<Boolean> = context.settingsDataStore.data.map { it[SOP_SUMMARY_ENABLED_KEY] ?: true }
+
+    /** Playbook 自动触发子开关流（D5-pa）；未设置时回退 true（默认开）。 */
+    val playbookAutoEnabledFlow: Flow<Boolean> = context.settingsDataStore.data.map { it[PLAYBOOK_AUTO_ENABLED_KEY] ?: true }
 
     suspend fun setNormFlowEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[NORM_FLOW_ENABLED_KEY] = enabled }
@@ -84,6 +90,10 @@ class NormFlowSettingsRepository @Inject constructor(
 
     suspend fun setSopSummaryEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[SOP_SUMMARY_ENABLED_KEY] = enabled }
+    }
+
+    suspend fun setPlaybookAutoEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[PLAYBOOK_AUTO_ENABLED_KEY] = enabled }
     }
 
     /**
@@ -115,4 +125,11 @@ class NormFlowSettingsRepository @Inject constructor(
      * SystemPromptProvider step 前注入 SOP 摘要前读取；loadSop 工具取正文不受此开关影响。
      */
     suspend fun isSopSummaryActive(): Boolean = normFlowEnabledFlow.first() && sopSummaryEnabledFlow.first()
+
+    /**
+     * 组合判定：Playbook 自动触发（D5-pa）是否生效（总开关 && 子开关）。
+     * PlaybookStartTool 工具入口读取；`/playbook` 斜杠命令显式入口不受此开关影响（直接走
+     * [com.R.codecore.feature.agent.domain.playbook.PlaybookExecutor.start]，不经工具）。
+     */
+    suspend fun isPlaybookAutoActive(): Boolean = normFlowEnabledFlow.first() && playbookAutoEnabledFlow.first()
 }

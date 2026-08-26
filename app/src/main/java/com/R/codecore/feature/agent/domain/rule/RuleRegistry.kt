@@ -30,7 +30,7 @@ data class RuleAsset(
  * 分层规则注册表（D3-1/D3-2/D3-3，对齐 norm-chain-design.md §3.9）：
  *
  * - **四级资产**：全局（`rcodecoreDir/global-rules.md`）/ 项目（`AGENTS.md`，已有）/
- *   工作区（工作区根 `workspace-AGENTS.md`）/ 模块（`feature/*/AGENTS.md`，动态扫描）。
+ *   工作区（工作区根 `workspace-AGENTS.md`）/ 模块（`feature/<module>/AGENTS.md`，动态扫描）。
  * - **显式 priority + 拼接合并**：每份规则 frontmatter 可声明 `priority`（数值大优先），
  *   缺省按层级递增；冲突时按 priority 收敛，同 priority 靠后声明者优先。
  * - **热加载**：复用 [AgentAssetCore] 的 mtime 懒刷新机制（读取时比对指纹，变了才重扫）。
@@ -171,6 +171,7 @@ internal class RuleAssetCore(
         compareByDescending<RuleAsset> { it.priority }.thenBy { it.name }
 
     private companion object {
+        const val GLOBAL = "global-rules"
         const val WORKSPACE_RULES_FILE = "workspace-AGENTS.md"
         const val SUMMARY_CHARS = 120
     }

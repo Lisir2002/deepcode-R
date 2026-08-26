@@ -15,6 +15,7 @@ import com.R.codecore.feature.agent.data.local.dao.JobDao
 import com.R.codecore.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
 import com.R.codecore.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.R.codecore.feature.agent.data.local.dao.PlanDao
+import com.R.codecore.feature.agent.data.local.dao.PlaybookRunDao
 import com.R.codecore.feature.agent.data.local.dao.ScheduleDao
 import com.R.codecore.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
 import com.R.codecore.feature.agent.data.local.dao.TrajectoryDao
@@ -37,6 +38,7 @@ import com.R.codecore.feature.agent.data.local.entity.L0SoftCompactRestoreLogEnt
 import com.R.codecore.feature.agent.data.local.entity.ModeSwitchHistoryEntity
 import com.R.codecore.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.R.codecore.feature.agent.data.local.entity.PlanEntity
+import com.R.codecore.feature.agent.data.local.entity.PlaybookRunEntity
 import com.R.codecore.feature.agent.data.local.entity.ScheduleEntity
 import com.R.codecore.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
 import com.R.codecore.feature.agent.data.local.entity.SkillConversationStateEntity
@@ -52,13 +54,15 @@ import com.R.codecore.feature.agent.data.local.entity.ZthTelemetryEventEntity
  *
  * 拆分自旧单巨库 [LegacyAgentDatabase]（v49，见 T1a）。仅承载 agent 域
  * （消息/会话/todo/checkpoint/skill/wake/zth 等 17 实体 + 任务编排层
- * Goal/Plan/Job/Schedule 4 实体），与其他 4 个域库
+ * Goal/Plan/Job/Schedule 4 实体 + 运行轨迹 Trajectory + Playbook 剧本运行
+ * PlaybookRun 实体，共 23 实体），与其他 4 个域库
  * （settings / credentials / workspace / t2i）完全解耦，任何 feature 改表
  * 不再挤进同一条迁移链。
  *
  * 新库 v1 起全新、无历史迁移链；v1→v2 为任务编排层新增表迁移（见
  * [AgentDatabaseMigrations.MIGRATION_1_2]，在 [com.R.codecore.di.DatabaseModule] 注册）；
  * v2→v3 为运行轨迹表新增迁移（见 [AgentDatabaseMigrations.MIGRATION_2_3]）；
+ * v3→v4 为 Playbook 剧本运行表新增迁移（见 [AgentDatabaseMigrations.MIGRATION_3_4]）；
  * 旧库数据由 [LegacyAgentDatabase] 一次性移植。
  */
 @Database(
@@ -84,9 +88,10 @@ import com.R.codecore.feature.agent.data.local.entity.ZthTelemetryEventEntity
         PlanEntity::class,
         JobEntity::class,
         ScheduleEntity::class,
-        TrajectoryEntity::class
+        TrajectoryEntity::class,
+        PlaybookRunEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AgentDatabase : RoomDatabase() {
@@ -112,8 +117,9 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun jobDao(): JobDao
     abstract fun scheduleDao(): ScheduleDao
     abstract fun trajectoryDao(): TrajectoryDao
+    abstract fun playbookRunDao(): PlaybookRunDao
 
     companion object {
-        const val SCHEMA_VERSION = 3
+        const val SCHEMA_VERSION = 4
     }
 }

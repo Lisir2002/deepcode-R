@@ -216,6 +216,14 @@ class SettingsViewModel @Inject constructor(
     private val _usageCardEnabled = MutableStateFlow(true)
     val usageCardEnabled: StateFlow<Boolean> = _usageCardEnabled.asStateFlow()
 
+    // D4-3 SOP 清单摘要常驻注入子开关（默认开）。
+    private val _sopSummaryEnabled = MutableStateFlow(true)
+    val sopSummaryEnabled: StateFlow<Boolean> = _sopSummaryEnabled.asStateFlow()
+
+    // D5-pa Playbook 自动触发子开关（默认开，对齐 §3.5）。
+    private val _playbookAutoEnabled = MutableStateFlow(true)
+    val playbookAutoEnabled: StateFlow<Boolean> = _playbookAutoEnabled.asStateFlow()
+
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
@@ -434,6 +442,18 @@ class SettingsViewModel @Inject constructor(
             launch {
                 normFlowSettingsRepository.usageCardEnabledFlow.collectLatest {
                     _usageCardEnabled.value = it
+                }
+            }
+
+            launch {
+                normFlowSettingsRepository.sopSummaryEnabledFlow.collectLatest {
+                    _sopSummaryEnabled.value = it
+                }
+            }
+
+            launch {
+                normFlowSettingsRepository.playbookAutoEnabledFlow.collectLatest {
+                    _playbookAutoEnabled.value = it
                 }
             }
 
@@ -946,6 +966,18 @@ class SettingsViewModel @Inject constructor(
     fun setUsageCardEnabled(enabled: Boolean) {
         viewModelScope.launch {
             normFlowSettingsRepository.setUsageCardEnabled(enabled)
+        }
+    }
+
+    fun setSopSummaryEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            normFlowSettingsRepository.setSopSummaryEnabled(enabled)
+        }
+    }
+
+    fun setPlaybookAutoEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            normFlowSettingsRepository.setPlaybookAutoEnabled(enabled)
         }
     }
 

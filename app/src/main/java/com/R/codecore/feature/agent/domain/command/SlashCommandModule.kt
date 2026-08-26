@@ -35,4 +35,8 @@ abstract class SlashCommandModule {
     @Binds
     @IntoSet
     abstract fun bindRulesCommandHandler(handler: RulesCommandHandler): SlashCommandHandler
+
+    @Binds
+    @IntoSet
+    abstract fun bindPlaybookCommandHandler(handler: PlaybookCommandHandler): SlashCommandHandler
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.FactCheck
@@ -26,7 +27,8 @@ import com.R.codecore.core.theme.Spacing
  * 总开关 [normFlowEnabled]（关闭即 step 前注入 / guard 链整体停用）
  * + 子开关 [stepInjectEnabled]（step 前注入纪律）/ [toolGuardEnabled]（guard 链 + 文件观察）/
  * [reasoningBudgetEnabled]（推理预算，D2-2）/ [usageCardEnabled]（用量卡片，D2-4）/
- * [sopSummaryEnabled]（SOP 清单摘要，D4-3）。默认全开。
+ * [sopSummaryEnabled]（SOP 清单摘要，D4-3）/ [playbookAutoEnabled]（Playbook 自动触发，D5-pa）。
+ * 默认全开。
  */
 @Composable
 internal fun NormFlowSection(
@@ -36,12 +38,14 @@ internal fun NormFlowSection(
     reasoningBudgetEnabled: Boolean,
     usageCardEnabled: Boolean,
     sopSummaryEnabled: Boolean,
+    playbookAutoEnabled: Boolean,
     onToggleNormFlow: (Boolean) -> Unit,
     onToggleStepInject: (Boolean) -> Unit,
     onToggleToolGuard: (Boolean) -> Unit,
     onToggleReasoningBudget: (Boolean) -> Unit,
     onToggleUsageCard: (Boolean) -> Unit,
-    onToggleSopSummary: (Boolean) -> Unit
+    onToggleSopSummary: (Boolean) -> Unit,
+    onTogglePlaybookAuto: (Boolean) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -84,6 +88,13 @@ internal fun NormFlowSection(
                     subtitle = stringResource(R.string.settings_norm_flow_usage_card_desc),
                     checked = usageCardEnabled,
                     onCheckedChange = onToggleUsageCard
+                )
+                GroupSwitchRow(
+                    icon = Icons.Rounded.AutoAwesome,
+                    title = stringResource(R.string.settings_norm_flow_playbook_auto),
+                    subtitle = stringResource(R.string.settings_norm_flow_playbook_auto_desc),
+                    checked = playbookAutoEnabled,
+                    onCheckedChange = onTogglePlaybookAuto
                 )
             }
             Spacer(Modifier.height(Spacing.md))

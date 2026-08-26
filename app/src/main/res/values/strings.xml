@@ -96,6 +96,8 @@
     <string name="settings_norm_flow_reasoning_budget_desc">开启后透传每会话思考强度给模型，保持思维链连续</string>
     <string name="settings_norm_flow_usage_card">用量卡片</string>
     <string name="settings_norm_flow_usage_card_desc">每回合结束展示本回合增量与会话累计（仅 token）</string>
+    <string name="settings_norm_flow_playbook_auto">剧本自动触发</string>
+    <string name="settings_norm_flow_playbook_auto_desc">允许模型自主调用 playbook_start 启动剧本；/playbook 命令不受影响</string>
     <string name="settings_backup_subtitle">加密导出/导入配置、聊天历史与凭据</string>
     <string name="settings_about_subtitle">核心组件 · 使用统计 · 版本检查</string>
 
@@ -269,6 +271,8 @@
     <string name="agent_list_current">当前：%1$s</string>
     <string name="agent_list_current_main">主 agent（默认）</string>
     <string name="agent_list_usage">用法：发送 /agent &lt;name&gt; 切换；再次发送同一 name 恢复主 agent</string>
+    <string name="playbook_list_header">可用剧本：</string>
+    <string name="playbook_usage">用法：/playbook &lt;name&gt; 启动；/playbook resume|retry|abort|status 管理运行；/playbook 无参列出清单</string>
     <string name="agent_mode_ok">已切换行为模式：%1$s（锁定至再次切换或 /mode default）</string>
     <string name="agent_mode_reset">已恢复默认行为模式（按输入自动判定）</string>
     <string name="agent_mode_invalid">无效行为模式：%1$s（可选 design / execute / research / chat / default）</string>

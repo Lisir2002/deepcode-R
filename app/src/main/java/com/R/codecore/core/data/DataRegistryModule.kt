@@ -14,7 +14,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 /**
- * 数据注册表 DI：把全应用数据域（5 个域库 26 张 Room 表 + DataStore 目录）注册为
+ * 数据注册表 DI：把全应用数据域（5 个域库 31 张 Room 表 + DataStore 目录）注册为
  * `List<DataProvider>`，供 [DataRegistry] 统一注入。
  *
  * 表清单与 [com.R.codecore.core.db.DbSplitMigrator] 的旧库表映射保持一一对应（实体类不变，
@@ -24,7 +24,7 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DataRegistryModule {
 
-    /** agent 域库 22 张表（瘦身 [AgentDatabase] 实体 + 任务编排层 Goal/Plan/Job/Schedule 4 表 + 运行轨迹表）。 */
+    /** agent 域库 23 张表（瘦身 [AgentDatabase] 实体 + 任务编排层 Goal/Plan/Job/Schedule 4 表 + 运行轨迹/剧本 2 表）。 */
     private val AGENT_TABLES = listOf(
         "agent_messages", "chat_sessions", "todo_items", "session_checkpoints",
         "checkpoint_file_snapshots", "file_edit_hunks", "mode_switch_history",
@@ -33,7 +33,7 @@ object DataRegistryModule {
         "zth_l0_soft_compact_restore_logs", "zth_telemetry_events", "skill_conversation_state",
         "skill_state", "wake_queue",
         "agent_goals", "agent_plans", "agent_jobs", "agent_schedules",
-        "agent_trajectories",
+        "agent_trajectories", "agent_playbook_runs",
     )
 
     /** workspace 域库 4 张表。 */

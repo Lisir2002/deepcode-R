@@ -109,6 +109,10 @@ class AIAgentViewModel @Inject constructor(
     private val behaviorModeManager: BehaviorModeManager,
     /** 分层规则注册表（D3-1）：/rules 命令列出/加载四级规则资产。 */
     private val ruleRegistry: RuleRegistry,
+    /** Playbook 剧本执行器（D5-3）：/playbook 命令驱动多阶段剧本编排。 */
+    private val playbookExecutor: com.R.codecore.feature.agent.domain.playbook.PlaybookExecutor,
+    /** Playbook 剧本注册表（D5-1）：/playbook 无参列出可用剧本资产清单。 */
+    private val playbookRegistry: com.R.codecore.feature.agent.domain.playbook.PlaybookRegistry,
     /** 定时提醒调度循环：会话创建后注册到点投递回调（DSH schedule）。 */
     private val scheduleScheduler: com.R.codecore.feature.agent.domain.schedule.ScheduleScheduler,
     @param:ApplicationContext private val context: Context
@@ -1242,6 +1246,8 @@ class AIAgentViewModel @Inject constructor(
     fun stopAllAgents() {
         val jobs = sessionJobs.values.filter { it.isActive }
         jobs.forEach { it.cancel() }
+        // 先捕获各会话 id（sessionJobs.clear() 前），供 D5-8 中断标记用。
+        val stoppedSids = sessionJobs.keys.toList()
         sessionJobs.clear()
         // 全停时清理任意会话的残留权限确认请求（传 null = 任意会话）。
         toolPermissionManager.cancelPending(null)
@@ -1254,6 +1260,10 @@ class AIAgentViewModel @Inject constructor(
         _runningTools.value = emptyMap()
         _retryStates.value = emptyMap()
         currentTaskIdBySession.clear()
+        // D5-8 中断/恢复：会话停止时把各会话 RUNNING playbook 运行置 INTERRUPTED（可 playbook_resume 继续）。
+        viewModelScope.launch {
+            stoppedSids.forEach { sid -> runCatching { playbookExecutor.interrupt(sid) } }
+        }
     }
 
     fun stopAgent() {
@@ -1277,6 +1287,8 @@ class AIAgentViewModel @Inject constructor(
         setCompacting(sessionId, false)
         setRetryState(sessionId, null)
         viewModelScope.launch {
+            // D5-8 中断/恢复：会话停止时把本会话 RUNNING playbook 运行置 INTERRUPTED（可 playbook_resume 继续）。
+            runCatching { playbookExecutor.interrupt(sessionId) }
             if (runningTools.isNotEmpty()) {
                 // 并行执行被中止：所有未完成的工具都落库为「已停止」
                 runningTools.forEach { running ->
@@ -1561,6 +1573,58 @@ class AIAgentViewModel @Inject constructor(
             targetSessionId = sid,
             skipCommandDispatch = true
         )
+    }
+
+    /**
+     * /playbook —— 剧本编排入口（D5-4，对齐 norm-chain-design.md §3.3.7 双入口之「斜杠命令」）。
+     *
+     * - 空参数：列出全部可用剧本资产清单（AI 气泡输出）。
+     * - `<name>`：按名称精确启动（等价 playbook_start），启动成功把首阶段目标交回 Agent 继续执行。
+     * - `resume` / `retry` / `abort` / `status`：对应管理操作（结果 AI 气泡输出）。
+     *
+     * 与 playbook_start 工具走同一 [PlaybookExecutor]；playbook_auto 子开关不影响本显式入口。
+     */
+    override fun runPlaybook(arg: String) {
+        val sid = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            sessionUseCase.touch(sid, messagePersistenceUseCase.nextTimestamp())
+            when (arg.trim().lowercase()) {
+                "" -> {
+                    // 无参数：剧本清单（AI 气泡输出）。
+                    val list = playbookRegistry.listSummaries()
+                    messagePersistenceUseCase.persist(
+                        sessionId = sid, role = MessageRole.ASSISTANT,
+                        content = "可用剧本：\n$list", isCompacted = true
+                    )
+                }
+                "resume" -> {
+                    val result = playbookExecutor.resume(sid)
+                    messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, result.message, isCompacted = true)
+                }
+                "retry" -> {
+                    val result = playbookExecutor.retry(sid)
+                    messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, result.message, isCompacted = true)
+                }
+                "abort" -> {
+                    val result = playbookExecutor.abort(sid)
+                    messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, result.message, isCompacted = true)
+                }
+                "status" -> {
+                    val text = playbookExecutor.statusText(sid)
+                    messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, text, isCompacted = true)
+                }
+                else -> {
+                    val result = playbookExecutor.start(arg, sid)
+                    // 启动成功：把首阶段目标交回 Agent 继续执行（对齐 §3.3.7 双入口；命令文本已落库，
+                    // sendAgentRequest 展开为 USER 消息驱动 workflow，skipCommandDispatch 防递归）。
+                    if (result is com.R.codecore.feature.agent.domain.playbook.PlaybookOpResult.Stage) {
+                        sendAgentRequest(result.message)
+                    } else {
+                        messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, result.message, isCompacted = true)
+                    }
+                }
+            }
+        }
     }
 
     private fun sessionProviderModelDisplay(sid: String): String {

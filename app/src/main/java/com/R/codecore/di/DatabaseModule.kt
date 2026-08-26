@@ -18,6 +18,7 @@ import com.R.codecore.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
 import com.R.codecore.feature.agent.data.local.dao.ModeSwitchHistoryDao
 import com.R.codecore.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.R.codecore.feature.agent.data.local.dao.PlanDao
+import com.R.codecore.feature.agent.data.local.dao.PlaybookRunDao
 import com.R.codecore.feature.agent.data.local.dao.ScheduleDao
 import com.R.codecore.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
 import com.R.codecore.feature.agent.data.local.dao.SkillConversationStateDao
@@ -82,7 +83,8 @@ object DatabaseModule {
             AgentDatabase::class.java,
             AGENT_DB_NAME,
             AgentDatabaseMigrations.MIGRATION_1_2,
-            AgentDatabaseMigrations.MIGRATION_2_3
+            AgentDatabaseMigrations.MIGRATION_2_3,
+            AgentDatabaseMigrations.MIGRATION_3_4
         )
     }
 
@@ -246,6 +248,11 @@ object DatabaseModule {
     @Singleton
     fun provideTrajectoryDao(database: AgentDatabase): TrajectoryDao =
         database.trajectoryDao()
+
+    @Provides
+    @Singleton
+    fun providePlaybookRunDao(database: AgentDatabase): PlaybookRunDao =
+        database.playbookRunDao()
 
     // ══════════════════════════ settings 域 DAO ══════════════════════════
 
