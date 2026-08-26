@@ -1,6 +1,6 @@
 # 内置浏览器升级设计（browser-upgrade-design）
 
-> 状态：📝 草案（评审通过后转 ✅ 已评审）
+> 状态：✅ 已评审（refactor/browser-upgrade 分支已全量落地实施，落地细节见 `docs/modules/browser.md`）
 > 日期：2026-08-26
 > 关联模块：`feature/browser`、`feature/agent/domain/tool/browser`
 > 关联文档：`docs/modules/browser.md`、`app/src/main/assets/docs/*`

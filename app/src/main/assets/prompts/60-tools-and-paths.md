@@ -112,10 +112,13 @@ includes: []
 
 ## 内置服务浏览器（用户与模型共享的浏览会话）
 - `browser`：操作内置服务浏览器。**与用户共享同一个浏览会话与登录态**——用户手动登录后模型自动复用；模型浏览/操作在浏览器页实时可见。
-  - 典型流程：`browser(action="navigate", url=...)` 打开页面 → `browser(action="snapshot")` 提取可交互元素树 + 页面文本 → `browser(action="click"/"type"/"select_option"/"submit")` 操作 → `browser(action="screenshot")` 多模态查看效果。
+  - **统一返回 envelope**：所有动作返回 `{ok, action, changed, summary, note|error, recoverable, snapshot?, delta?}`。写操作（click/type/select_option/submit/scroll 等）自动返回 `delta`（新增/变化/消失元素清单 + 文本变化摘要）做前后对比，**无需反复 snapshot 轮询**；`ok=false` 时看 `error` 与 `recoverable`（可恢复错误会给重试建议）。
+  - **快照分级**：`snapshot_level`（summary 默认 / standard / full）控制粒度。`summary` 只给每控件一行的紧凑摘要（最省 token）；`standard` 加完整元素 JSON；`full` 再加页面正文。日常用默认 `summary`，需要完整元素/正文时再提级；正文可单独用 `browser(action="page_text")` 按需取。
+  - **三级元素定位**：`element_id` 接受三者任一——`data-rcb-id`（快照 `[id]` 编号）/ CSS 绝对路径（`locator` 字段）/ 语义描述符（`semantic` 字段，如 `role=button name=提交 index=1`）。元素被 SPA 重渲染替换后 id 可能失效，优先用 `locator`。
+  - 典型流程：`browser(action="navigate", url=...)` 打开页面 → `browser(action="snapshot")` 看控件摘要 → `browser(action="click"/"type"/"select_option"/"submit", element_id=...)` 操作 → `browser(action="wait_for_change")` 事件驱动等待页面变化（替代轮询）→ `browser(action="screenshot")` 多模态查看效果。
   - 外网与容器服务均可访问：外网直接给 URL；容器内开发服务用 `http://localhost:端口`（如 `http://localhost:8080`），PRoot 与宿主机共享网络栈，容器服务地址在浏览器里同样可达。
   - 页面需要登录时，`snapshot` 返回 `login_page=true` 与 `login_hint`：若密码框已在凭据库（模型之前代填过），直接 `browser(action="login")` 自动代填提交；若未保存，`login` 会请用户在浏览器页输入账号密码并加密保存，下次自动代填。
-  - 页面 alert/confirm 弹窗：用 `browser(action="handle_dialog", accept=true/false)` 处理；等待元素出现用 `browser(action="wait_for", selector=...)`；读元素属性用 `browser(action="get_attribute", element_id=..., attribute=...)`；需要更复杂交互时用 `browser(action="evaluate", js=...)` 执行任意 JS。
+  - 页面 alert/confirm 弹窗：用 `browser(action="handle_dialog", accept=true/false)` 处理；等待元素出现用 `browser(action="wait_for", selector=...)`；读元素属性用 `browser(action="get_attribute", element_id=..., attribute=...)`；需要更复杂交互时用 `browser(action="evaluate", js=...)` 执行任意 JS；最近动作回溯用 `browser(action="history")`。
   - 优先让用户看到你的操作过程：模型每步操作都会在浏览器页底部状态条展示，用户可随时接管（地址栏手动导航）。发现页面与预期不符时，先 `snapshot` 看清楚再行动。
 
 ## 在手机 (aarch64/ARM64) 上构建 Android APK 的标准作业流程（SOP）

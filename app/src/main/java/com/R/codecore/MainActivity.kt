@@ -110,6 +110,10 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var browserTakeoverManager: com.R.codecore.feature.browser.domain.BrowserTakeoverManager
 
+    /** 浏览器站点登录凭据加密存储（凭据管理 UI 用）。 */
+    @Inject
+    lateinit var browserCredentialStore: com.R.codecore.feature.browser.domain.BrowserCredentialStore
+
     /** 数据保全通知器：观察哨兵判定结果，数据疑似丢失/包名变更时弹启动级全局告警（D8b）。 */
     @Inject
     lateinit var dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier
@@ -186,6 +190,7 @@ class MainActivity : ComponentActivity() {
                             browserController = browserController,
                             browserLoginPromptManager = browserLoginPromptManager,
                             browserTakeoverManager = browserTakeoverManager,
+                            browserCredentialStore = browserCredentialStore,
                             dataSafetyNotifier = dataSafetyNotifier,
                             currentThemeMode = themeMode,
                             onCycleTheme = cycleTheme
@@ -250,6 +255,7 @@ fun AppNavigation(
     browserController: com.R.codecore.feature.browser.domain.BrowserController,
     browserLoginPromptManager: com.R.codecore.feature.browser.domain.BrowserLoginPromptManager,
     browserTakeoverManager: com.R.codecore.feature.browser.domain.BrowserTakeoverManager,
+    browserCredentialStore: com.R.codecore.feature.browser.domain.BrowserCredentialStore,
     dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier,
     currentThemeMode: AppThemeMode,
     onCycleTheme: () -> Unit
@@ -545,6 +551,7 @@ fun AppNavigation(
                     browserController = browserController,
                     loginPromptManager = browserLoginPromptManager,
                     takeoverManager = browserTakeoverManager,
+                    credentialStore = browserCredentialStore,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

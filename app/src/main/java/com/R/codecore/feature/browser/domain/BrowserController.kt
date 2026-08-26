@@ -47,6 +47,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
@@ -77,15 +78,29 @@ class BrowserController @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val pathMapper: WorkspacePathMapper,
     private val proxyManager: ClashProxyManager,
-    private val okHttp: OkHttpClient
+    private val okHttp: OkHttpClient,
+    private val historyStore: BrowserHistoryStore,
+    private val bookmarkStore: BrowserBookmarkStore
 ) {
     private companion object {
         const val TAG = "BrowserController"
 
+        /** 页面纯文本截断上限（与 JS_PAGE_TEXT 内 12000 一致）。 */
+        const val MAX_PAGE_TEXT = 12000
+
         /** 导航协议白名单：拦截 file://、content://、intent://、javascript: 等危险 scheme。 */
         val ALLOWED_SCHEMES = setOf("http", "https")
 
-        /** 页面快照 JS：给可交互控件打 data-rcb-id，解析控件类型/标签/取值/状态，返回元素树。 */
+        /** 桌面版网页 UA（R1.3 桌面版切换）：切换后按桌面 Chrome UA 渲染（有些站点对移动 UA 返回移动版页面）。 */
+        const val DESKTOP_UA =
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        /**
+         * 页面快照 JS：给可交互控件打持久 data-rcb-id（跨快照调用单调递增，SPA 重渲染节点
+         * 被替换后旧 id 失效 → 靠 locator/semantic 重定位），解析控件类型/标签/取值/状态，
+         * 并生成三级定位信息（CSS 绝对路径 locator + 语义描述符 semantic）与可操作性标注
+         * （in_viewport / visible / needs_scroll / overlapped），返回元素树。
+         */
         const val JS_SNAPSHOT = """
             (function() {
               function txt(n) { return (n && (n.innerText || n.textContent || '') || '').replace(/\s+/g, ' ').trim(); }
@@ -114,10 +129,59 @@ class BrowserController @Inject constructor(
                 }
                 return '';
               }
+              // CSS 绝对路径：html > body > div#main > form > div:nth-child(2) > input
+              function cssPath(el) {
+                if (!el || el.nodeType !== 1) return '';
+                var parts = [], node = el;
+                while (node && node.nodeType === 1 && node !== document.documentElement) {
+                  var part = node.tagName.toLowerCase();
+                  if (node.id) { part += '#' + node.id; parts.unshift(part); break; }
+                  if (node.classList && node.classList.length) part += '.' + node.classList[0];
+                  var parent = node.parentElement;
+                  if (parent && parent.children.length > 1) {
+                    var idx = 1, sib = parent.firstElementChild;
+                    while (sib && sib !== node) { if (sib.tagName === node.tagName) idx++; sib = sib.nextElementSibling; }
+                    part += ':nth-child(' + idx + ')';
+                  }
+                  parts.unshift(part);
+                  node = parent;
+                }
+                parts.unshift('html');
+                return parts.join(' > ');
+              }
+              function isVisible(el) {
+                var rect = el.getBoundingClientRect();
+                if (rect.width < 1 || rect.height < 1) return false;
+                var cs = window.getComputedStyle(el);
+                if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+                var o = parseFloat(cs.opacity);
+                if (!isNaN(o) && o === 0) return false;
+                return true;
+              }
+              function isInViewport(el) {
+                var r = el.getBoundingClientRect();
+                var vh = window.innerHeight || document.documentElement.clientHeight;
+                var vw = window.innerWidth || document.documentElement.clientWidth;
+                return r.top >= 0 && r.left >= 0 && r.bottom <= vh && r.right <= vw;
+              }
+              function isOverlapped(el) {
+                var r = el.getBoundingClientRect();
+                var x = r.left + r.width / 2, y = r.top + r.height / 2;
+                var top;
+                try { top = document.elementFromPoint(x, y); } catch (e) { return false; }
+                if (!top) return false;
+                return !(top === el || el.contains(top));
+              }
+              if (!window.__rcb_seq) window.__rcb_seq = 0;
               var els = [];
               var seen = new WeakSet();
-              var counter = 1;
               var sel = 'a,button,input,select,textarea,[role="button"],[role="link"],[role="menuitem"],[contenteditable="true"],summary';
+              var semIndex = {};
+              function semKey(el, kind) {
+                var role = (el.getAttribute('role') || (kind === 'link' ? 'link' : (kind.indexOf('input') === 0 ? 'input' : el.tagName.toLowerCase()))).toLowerCase();
+                var type = (el.getAttribute('type') || '').toLowerCase();
+                return role + '|' + type;
+              }
               function collect(root) {
                 if (!root || seen.has(root)) return;
                 seen.add(root);
@@ -129,7 +193,7 @@ class BrowserController @Inject constructor(
                   var rect = el.getBoundingClientRect();
                   if (rect.width < 1 || rect.height < 1) continue;
                   var id = el.getAttribute('data-rcb-id');
-                  if (!id) { id = String(counter++); el.setAttribute('data-rcb-id', id); }
+                  if (!id) { id = String(++window.__rcb_seq); el.setAttribute('data-rcb-id', id); }
                   var tag = el.tagName.toLowerCase();
                   var type = (el.getAttribute('type') || '').toLowerCase();
                   var role = el.getAttribute('role') || '';
@@ -152,6 +216,13 @@ class BrowserController @Inject constructor(
                     }
                   }
                   var checked = (tag === 'input' && (type === 'checkbox' || type === 'radio')) ? !!el.checked : false;
+                  var loc = cssPath(el);
+                  var skey = semKey(el, kind);
+                  semIndex[skey] = (semIndex[skey] || 0) + 1;
+                  var semRole = role || (kind === 'link' ? 'link' : (kind.indexOf('input') === 0 ? 'input' : tag));
+                  var semantic = 'role=' + semRole + ' name="' + (label || visibleText).slice(0, 80) + '" index=' + semIndex[skey];
+                  var visible = isVisible(el);
+                  var inViewport = visible && isInViewport(el);
                   els.push({
                     id: id,
                     tag: tag,
@@ -173,7 +244,13 @@ class BrowserController @Inject constructor(
                     checked: checked,
                     options: options,
                     placeholder: el.getAttribute('placeholder') || '',
-                    sensitive: sensitive
+                    sensitive: sensitive,
+                    locator: loc,
+                    semantic: semantic,
+                    inViewport: inViewport,
+                    visible: visible,
+                    needsScroll: visible && !inViewport,
+                    overlapped: inViewport && isOverlapped(el)
                   });
                 }
               }
@@ -224,12 +301,13 @@ class BrowserController @Inject constructor(
             })();
         """
 
-        /** 输入 JS（React 兼容 value setter）。 */
+        /** 输入 JS（React 兼容 value setter；先滚动到视口中央消除"点了没反应"）。 */
         const val JS_TYPE = """
             (function() {
               var id = arguments[0], text = arguments[1];
               var el = document.querySelector('[data-rcb-id="' + id + '"]');
               if (!el) return JSON.stringify({ok:false, reason:'NOT_FOUND'});
+              el.scrollIntoView({block:'center', behavior:'smooth'});
               el.focus();
               var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
               var setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
@@ -240,15 +318,103 @@ class BrowserController @Inject constructor(
             })();
         """
 
-        /** 下拉选择 JS。 */
+        /** 下拉选择 JS（先滚动到视口中央）。 */
         const val JS_SELECT = """
             (function() {
               var id = arguments[0], value = arguments[1];
               var el = document.querySelector('[data-rcb-id="' + id + '"]');
               if (!el) return JSON.stringify({ok:false, reason:'NOT_FOUND'});
+              el.scrollIntoView({block:'center', behavior:'smooth'});
               el.value = value;
               el.dispatchEvent(new Event('change', {bubbles:true}));
               return JSON.stringify({ok:true});
+            })();
+        """
+
+        /**
+         * 三级定位 JS（R2.2）：把模型传入的 element_id（data-rcb-id / CSS 绝对路径 / 语义描述符
+         * 三者任一）解析成元素并返回其 data-rcb-id。
+         * 解析顺序：`[data-rcb-id]` 直查 → CSS 路径 querySelector → 语义（role=… name=… index=…）匹配。
+         * 命中且元素尚无 id 时补打新 data-rcb-id（单调递增，保证后续操作可用同一 id）。
+         */
+        const val JS_LOCATE = """
+            (function() {
+              var loc = arguments[0];
+              if (!loc) return JSON.stringify({ok:false, reason:'EMPTY'});
+              function nextId() { if (!window.__rcb_seq) window.__rcb_seq = 0; return String(++window.__rcb_seq); }
+              // 1) data-rcb-id 直查
+              try {
+                var byId = document.querySelector('[data-rcb-id="' + loc + '"]');
+                if (byId) return JSON.stringify({ok:true, id: byId.getAttribute('data-rcb-id'), method:'id'});
+              } catch (e) {}
+              // 2) CSS 绝对路径 / 选择器
+              try {
+                var byCss = document.querySelector(loc);
+                if (byCss && byCss.getAttribute('data-rcb-skip') === null) {
+                  var cid = byCss.getAttribute('data-rcb-id');
+                  if (!cid) { cid = nextId(); byCss.setAttribute('data-rcb-id', cid); }
+                  return JSON.stringify({ok:true, id: cid, method:'css'});
+                }
+              } catch (e) {}
+              // 3) 语义描述符 role=… name=… index=…
+              var m = loc.match(/^role=([\w-]+)\s+name="?([^"]*?)"?\s+index=(\d+)$/i);
+              if (m) {
+                var role = m[1].toLowerCase(), name = m[2].trim(), index = parseInt(m[3], 10);
+                var nodes = document.querySelectorAll('a,button,input,select,textarea,[role]');
+                var n = 0;
+                for (var i = 0; i < nodes.length; i++) {
+                  var e = nodes[i];
+                  if (e.closest && e.closest('[data-rcb-skip]')) continue;
+                  var tag = e.tagName.toLowerCase();
+                  if (tag === 'INPUT' && e.type === 'hidden') continue;
+                  var r = (e.getAttribute('role') || (tag === 'a' ? 'link' : (tag === 'input' ? 'input' : tag))).toLowerCase();
+                  if (r !== role) continue;
+                  var nm = (e.getAttribute('aria-label') || (tag === 'a' || tag === 'button' ? (e.innerText || '') : (e.getAttribute('name') || ''))).trim();
+                  if (nm !== name) continue;
+                  n++;
+                  if (n === index) {
+                    var sid = e.getAttribute('data-rcb-id');
+                    if (!sid) { sid = nextId(); e.setAttribute('data-rcb-id', sid); }
+                    return JSON.stringify({ok:true, id: sid, method:'semantic'});
+                  }
+                }
+                return JSON.stringify({ok:false, reason:'SEMANTIC_NOT_FOUND'});
+              }
+              return JSON.stringify({ok:false, reason:'NOT_FOUND'});
+            })();
+        """
+
+        /**
+         * DOM 变化订阅 JS（R2.4）：document-start 注入，用 MutationObserver 监听元素新增/移除/
+         * 属性变化，写入页面环形缓冲 window.__rcb_mut（上限 50 条摘要），并维护单调版本号
+         * window.__rcb_mut_version。wait_for_change 挂起等待版本号变化即返回变化摘要。
+         * 幂等：window.__rcb_mut 已存在则跳过。
+         */
+        const val JS_CHANGE_OBSERVER = """
+            (function() {
+              if (window.__rcb_mut) return;
+              window.__rcb_mut = [];
+              window.__rcb_mut_version = 0;
+              var MAX_MUT = 50;
+              function summarize(records) {
+                for (var i = 0; i < records.length && window.__rcb_mut.length < MAX_MUT; i++) {
+                  var r = records[i];
+                  if (r.type === 'childList') {
+                    var t = r.target;
+                    if (t && t.nodeType === 1 && t.closest && t.closest('[data-rcb-skip]')) continue;
+                    if (r.addedNodes.length) window.__rcb_mut.push({type:'added', tag: r.addedNodes[0].nodeName || '', target: t && t.tagName ? t.tagName.toLowerCase() : ''});
+                    if (r.removedNodes.length) window.__rcb_mut.push({type:'removed', tag: r.removedNodes[0].nodeName || '', target: t && t.tagName ? t.tagName.toLowerCase() : ''});
+                  } else if (r.type === 'attributes') {
+                    if (r.target && r.target.nodeType === 1 && r.target.closest && r.target.closest('[data-rcb-skip]')) continue;
+                    window.__rcb_mut.push({type:'attr', name: r.attributeName || '', target: r.target && r.target.tagName ? r.target.tagName.toLowerCase() : ''});
+                  }
+                }
+                window.__rcb_mut_version++;
+              }
+              var obs = new MutationObserver(function(records) { summarize(records); });
+              if (document.documentElement) {
+                obs.observe(document.documentElement, {childList: true, subtree: true, attributes: true});
+              }
             })();
         """
 
@@ -645,6 +811,10 @@ class BrowserController @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
 
+    /** 原始移动 UA（R1.3 桌面版切换）：首个 WebView 创建时记录，桌面版关闭后恢复。 */
+    @Volatile
+    private var originalUserAgent: String? = null
+
     // 代理开关变化时，让已存在的 WebView 也跟上 mihomo 代理（新标签/导航天然生效）。
     init {
         scope.launch {
@@ -725,6 +895,23 @@ class BrowserController @Inject constructor(
     @Volatile
     private var lastSnapshot: BrowserPageSnapshot = BrowserPageSnapshot()
 
+    /**
+     * 增量快照基线（R2.1）：最近一次写操作后的快照，供 computeDelta 计算前后差异。
+     * 导航后重置（新页面与旧页面不可比）。
+     */
+    @Volatile
+    private var deltaBaseline: BrowserPageSnapshot? = null
+
+    /**
+     * 最近一次写操作后的增量结果（R2.1/R2.3 写操作自动验证）：
+     * 写操作内部计算「基线 → 操作后」差异后填充，工具侧读取并随 envelope 返回给模型。
+     */
+    @Volatile
+    private var lastDelta: BrowserSnapshotDelta? = null
+
+    /** 最近动作日志（R2.3 动作历史）：操作 + 结果摘要，最多保留 30 条。 */
+    private val actionLog = ArrayDeque<String>()
+
     private val json = Json { ignoreUnknownKeys = true }
 
     // ─────────────────────────── UI 绑定 ───────────────────────────
@@ -793,6 +980,106 @@ class BrowserController @Inject constructor(
         }
     }
 
+    // ─────────────────────── 用户侧 API（R1 更像浏览器） ───────────────────────
+
+    /** 访问历史（R1.1 历史记录）：时间倒序。 */
+    fun history(): List<BrowserHistoryEntry> = historyStore.entries()
+
+    /** 清空访问历史（R1.1）。 */
+    fun clearHistory() = historyStore.clear()
+
+    /** 收藏夹（R1.1 收藏夹）：时间倒序。 */
+    fun bookmarks(): List<BrowserBookmark> = bookmarkStore.bookmarks()
+
+    /** 当前 URL 是否已收藏（R1.1）。 */
+    fun isBookmarked(url: String): Boolean = bookmarkStore.contains(url)
+
+    /** 收藏当前页面（R1.1）；返回是否新增成功（同 URL 已收藏返回 false）。 */
+    fun addBookmark(): Boolean = bookmarkStore.add(_uiState.value.title, _uiState.value.currentUrl)
+
+    /** 取消收藏指定 URL（R1.1）。 */
+    fun removeBookmark(url: String) = bookmarkStore.remove(url)
+
+    /** 清除下载列表（R1.2 下载管理 UI）。 */
+    fun clearDownloads() {
+        mainHandler.post { _downloads.value = emptyList() }
+    }
+
+    /** 下载任务的宿主文件（供 UI「打开」下载文件用）；未完成或路径无效返回 null。 */
+    fun downloadHostFile(info: BrowserDownloadInfo): File? {
+        if (info.status != "done" || info.path.isBlank()) return null
+        return runCatching { pathMapper.toHostFile(info.path) }.getOrNull()?.takeIf { it.exists() }
+    }
+
+    /** 重试下载（R1.2 下载管理 UI）：按原 URL 重新发起下载任务。 */
+    suspend fun retryDownload(info: BrowserDownloadInfo) {
+        scope.launch {
+            downloadToWorkspace(info.url, null, null, null)
+        }.join()
+    }
+
+    /**
+     * 无痕模式（R1.3 无痕模式）：会话级开关。
+     * 开启/关闭时都清空 Cookie 与缓存（无痕会话不落痕；关闭后不残留本次会话的 cookie），
+     * 无痕期间不记录访问历史。
+     */
+    fun setIncognito(on: Boolean) {
+        mainHandler.post {
+            val cm = CookieManager.getInstance()
+            runCatching { cm.removeAllCookies(null) }
+            runCatching { activeWebView()?.clearCache(true) }
+            _uiState.value = _uiState.value.copy(incognito = on)
+        }
+    }
+
+    /**
+     * 桌面版网页切换（R1.3 桌面版切换）：切到桌面 UA 后重载当前页。
+     * 存储桌面 UA（[DESKTOP_UA]），非桌面态使用 WebView 默认移动 UA。
+     */
+    fun toggleDesktopMode() {
+        val next = !_uiState.value.desktopMode
+        mainHandler.post {
+            activeWebView()?.let { wv ->
+                if (next) {
+                    wv.settings.userAgentString = DESKTOP_UA
+                } else {
+                    // 恢复移动 UA：默认 UA（去 wv 标记）或保存的原始 UA
+                    wv.settings.userAgentString = originalUserAgent ?: wv.settings.userAgentString.replace(DESKTOP_UA, "")
+                }
+                _uiState.value = _uiState.value.copy(desktopMode = next)
+                wv.reload()
+            }
+        }
+    }
+
+    /** 页面缩放（R1.3 缩放控制）：textZoom 百分比（100 默认，范围 50–200）。 */
+    fun setTextZoom(percent: Int) {
+        val clamped = percent.coerceIn(50, 200)
+        mainHandler.post {
+            activeWebView()?.settings?.textZoom = clamped
+            _uiState.value = _uiState.value.copy(textZoom = clamped)
+        }
+    }
+
+    /** 页内查找（R1.1 页内查找）：findAllAsync 高亮全部匹配。 */
+    fun findOnPage(text: String) {
+        if (text.isBlank()) {
+            clearFindOnPage()
+            return
+        }
+        mainHandler.post { activeWebView()?.findAllAsync(text) }
+    }
+
+    /** 页内查找（R1.1）：在匹配结果中上/下切换高亮。 */
+    fun findNextOnPage(forward: Boolean) {
+        mainHandler.post { activeWebView()?.findNext(forward) }
+    }
+
+    /** 页内查找（R1.1）：清除高亮。 */
+    fun clearFindOnPage() {
+        mainHandler.post { activeWebView()?.clearMatches() }
+    }
+
     // ─────────────────────── 模型/工具操作（suspend） ───────────────────────
 
     /** 规范化 URL：无协议时自动补 https://。 */
@@ -822,29 +1109,122 @@ class BrowserController @Inject constructor(
         try {
             withContext(Dispatchers.Main) { ensureWebView().loadUrl(normalized) }
             waitForPageSettled(30_000)
-            snapshotInternal()
+            // 导航到新页面：重置增量基线与上次增量（新旧页面不可比），下次写操作后重新建立。
+            deltaBaseline = null
+            lastDelta = null
+            snapshotInternal(SnapshotLevel.SUMMARY)
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
     }
 
     /** 获取当前页面快照（元素树 + 文本）。 */
-    suspend fun snapshot(): BrowserPageSnapshot = mutex.withLock {
+    suspend fun snapshot(level: SnapshotLevel = SnapshotLevel.FULL): BrowserPageSnapshot = mutex.withLock {
         _agentStatus.value = AgentBrowserStatus("正在提取页面结构", true)
         try {
-            snapshotInternal()
+            snapshotInternal(level)
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
     }
 
+    /** 单独取页面纯文本（R2.1 按需取文）：模型需要正文时再取，不再随快照默认返回。 */
+    suspend fun pageText(): String = mutex.withLock {
+        evalJs(JS_PAGE_TEXT).take(MAX_PAGE_TEXT)
+    }
+
+    /**
+     * 三级定位解析（R2.2）：把模型传入的 element_id（data-rcb-id / CSS 绝对路径 / 语义描述符
+     * 三者任一）解析成元素的 data-rcb-id。
+     * @return null 表示全部解析失败；否则返回（id, 命中方式）。
+     */
+    suspend fun resolveElementId(locator: String): ResolvedElement? = mutex.withLock {
+        val raw = evalJs("($JS_LOCATE)(${quote(locator)})")
+        val obj = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return@withLock null
+        val ok = runCatching { (obj["ok"] as? JsonPrimitive)?.content?.toBoolean() }.getOrNull() ?: false
+        if (!ok) return@withLock null
+        val id = (obj["id"] as? JsonPrimitive)?.content ?: return@withLock null
+        val method = (obj["method"] as? JsonPrimitive)?.content ?: "id"
+        ResolvedElement(id, method)
+    }
+
+    /**
+     * 增量快照（R2.1）：相对 [deltaBaseline] 计算元素级差异。
+     * 基线为空（首次/导航后）返回 null，调用方应回退到全量快照。
+     */
+    fun computeDelta(after: BrowserPageSnapshot): BrowserSnapshotDelta? {
+        val before = deltaBaseline ?: return null
+        val beforeMap = before.elements.associateBy { it.id }
+        val afterMap = after.elements.associateBy { it.id }
+        val added = after.elements.filter { it.id !in beforeMap }
+        val removed = before.elements.map { it.id }.filter { it !in afterMap }
+        val changed = after.elements.filter { e ->
+            val b = beforeMap[e.id] ?: return@filter false
+            elementSignature(b) != elementSignature(e)
+        }
+        val textNote = when {
+            after.pageText.isBlank() || before.pageText.isBlank() -> ""
+            after.pageText.length > before.pageText.length * 2 -> "页面正文明显变长（${before.pageText.length} → ${after.pageText.length} 字）"
+            after.pageText.length * 2 < before.pageText.length -> "页面正文明显变短（${before.pageText.length} → ${after.pageText.length} 字）"
+            else -> ""
+        }
+        return BrowserSnapshotDelta(added = added, removed = removed, changed = changed, textNote = textNote)
+    }
+
+    /** 元素可感知签名（R2.1 diff 依据）：文本/取值/状态/可操作性/选项集合任一变化即视为变化。 */
+    private fun elementSignature(e: BrowserElement): String =
+        listOf(
+            e.kind, e.label, e.text, e.value, e.href, e.placeholder,
+            e.checked, e.disabled, e.required, e.readonly, e.sensitive,
+            e.inViewport, e.visible, e.needsScroll, e.overlapped,
+            e.options.joinToString("|") { "${it.value}=${it.text}" }
+        ).joinToString("∷")
+
+    /** 记录一次动作到 action_log（R2.3 动作历史）。 */
+    fun recordAction(action: String, summary: String) {
+        synchronized(actionLog) {
+            actionLog.addLast("[$action] $summary")
+            while (actionLog.size > 30) actionLog.removeFirst()
+        }
+    }
+
+    /** 动作历史（R2.3）：最近 30 条操作 + 结果摘要，供 history 动作查询。 */
+    fun actionHistory(): List<String> = synchronized(actionLog) { actionLog.toList() }
+
+    /** 最近一次写操作后的增量（R2.1/R2.3 写操作自动验证），供工具侧随 envelope 返回。 */
+    fun lastDelta(): BrowserSnapshotDelta? = lastDelta
+
+    /**
+     * 写操作后统一处理（R2.1/R2.3 写操作自动验证）：计算「基线 → 操作后」增量，
+     * 把基线推进到操作后快照（下次写操作以此为对照），并记录动作日志。
+     */
+    private fun afterWrite(action: String, after: BrowserPageSnapshot): BrowserPageSnapshot {
+        val delta = computeDelta(after)
+        lastDelta = delta
+        deltaBaseline = after
+        val summary = buildString {
+            append(action)
+            if (delta != null) {
+                append(": 新增 ${delta.added.size}，变化 ${delta.changed.size}，消失 ${delta.removed.size}")
+                if (delta.textNote.isNotBlank()) append("，${delta.textNote}")
+            }
+        }
+        recordAction(action, summary)
+        return after
+    }
+
     /** 点击元素，返回点击后的快照。 */
     suspend fun click(elementId: String): BrowserPageSnapshot = mutex.withLock {
-        _agentStatus.value = AgentBrowserStatus("正在点击元素 #$elementId", true)
+        _agentStatus.value = AgentBrowserStatus("正在点击元素 $elementId", true)
         try {
-            evalJs("($JS_CLICK)(${quote(elementId)})")
+            val resolved = resolveElementId(elementId)
+            if (resolved == null) {
+                recordAction("click", "失败：元素未找到（$elementId）")
+                return@withLock BrowserPageSnapshot(url = lastSnapshot.url, pageText = "元素 $elementId 未找到：data-rcb-id / CSS 路径 / 语义均未命中")
+            }
+            evalJs("($JS_CLICK)(${quote(resolved.id)})")
             waitForPageSettled(10_000)
-            snapshotInternal()
+            afterWrite("click", snapshotInternal(SnapshotLevel.SUMMARY))
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
@@ -852,10 +1232,15 @@ class BrowserController @Inject constructor(
 
     /** 在元素中输入文本。 */
     suspend fun type(elementId: String, text: String): BrowserPageSnapshot = mutex.withLock {
-        _agentStatus.value = AgentBrowserStatus("正在向 #$elementId 输入内容", true)
+        _agentStatus.value = AgentBrowserStatus("正在向 $elementId 输入内容", true)
         try {
-            evalJs("($JS_TYPE)(${quote(elementId)}, ${quote(text)})")
-            snapshotInternal()
+            val resolved = resolveElementId(elementId)
+            if (resolved == null) {
+                recordAction("type", "失败：元素未找到（$elementId）")
+                return@withLock BrowserPageSnapshot(url = lastSnapshot.url, pageText = "元素 $elementId 未找到：data-rcb-id / CSS 路径 / 语义均未命中")
+            }
+            evalJs("($JS_TYPE)(${quote(resolved.id)}, ${quote(text)})")
+            afterWrite("type", snapshotInternal(SnapshotLevel.SUMMARY))
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
@@ -863,10 +1248,15 @@ class BrowserController @Inject constructor(
 
     /** 下拉选择。 */
     suspend fun selectOption(elementId: String, value: String): BrowserPageSnapshot = mutex.withLock {
-        _agentStatus.value = AgentBrowserStatus("正在选择 #$elementId", true)
+        _agentStatus.value = AgentBrowserStatus("正在选择 $elementId", true)
         try {
-            evalJs("($JS_SELECT)(${quote(elementId)}, ${quote(value)})")
-            snapshotInternal()
+            val resolved = resolveElementId(elementId)
+            if (resolved == null) {
+                recordAction("select_option", "失败：元素未找到（$elementId）")
+                return@withLock BrowserPageSnapshot(url = lastSnapshot.url, pageText = "元素 $elementId 未找到：data-rcb-id / CSS 路径 / 语义均未命中")
+            }
+            evalJs("($JS_SELECT)(${quote(resolved.id)}, ${quote(value)})")
+            afterWrite("select_option", snapshotInternal(SnapshotLevel.SUMMARY))
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
@@ -876,9 +1266,10 @@ class BrowserController @Inject constructor(
     suspend fun submit(elementId: String?): BrowserPageSnapshot = mutex.withLock {
         _agentStatus.value = AgentBrowserStatus("正在提交表单", true)
         try {
-            evalJs("($JS_SUBMIT)(${if (elementId == null) "null" else quote(elementId)})")
+            val id = elementId?.let { resolveElementId(it)?.id }
+            evalJs("($JS_SUBMIT)(${if (id == null) "null" else quote(id)})")
             waitForPageSettled(15_000)
-            snapshotInternal()
+            afterWrite("submit", snapshotInternal(SnapshotLevel.SUMMARY))
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
@@ -890,7 +1281,7 @@ class BrowserController @Inject constructor(
         try {
             evalJs("($JS_SCROLL)(${quote(direction)})")
             delay(300)
-            snapshotInternal()
+            afterWrite("scroll", snapshotInternal(SnapshotLevel.SUMMARY))
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
@@ -984,7 +1375,7 @@ class BrowserController @Inject constructor(
         try {
             val deadline = System.currentTimeMillis() + timeoutMs
             while (System.currentTimeMillis() < deadline) {
-                val snap = snapshotInternal()
+                val snap = snapshotInternal(SnapshotLevel.STANDARD)
                 if (selector.isNullOrBlank()) {
                     if (snap.url.isNotBlank()) return@withLock snap
                 } else {
@@ -993,7 +1384,39 @@ class BrowserController @Inject constructor(
                 }
                 delay(500)
             }
-            snapshotInternal()
+            snapshotInternal(SnapshotLevel.STANDARD)
+        } finally {
+            _agentStatus.value = AgentBrowserStatus()
+        }
+    }
+
+    /**
+     * 事件驱动等待（R2.4）：挂起直到页面 DOM 发生变化（MutationObserver 版本号前进）或超时。
+     * @param timeoutMs    最长等待毫秒
+     * @param baselineVersion 变化基线版本号；不传则取当前版本号作为起点
+     * @return 等待结果：是否发生变化 + 变化摘要文本（从页面环形缓冲读取，取最近变化）
+     */
+    suspend fun waitForChange(timeoutMs: Long, baselineVersion: Long? = null): WaitChangeResult = mutex.withLock {
+        _agentStatus.value = AgentBrowserStatus("等待页面变化", true)
+        try {
+            val startVersion = baselineVersion ?: readMutVersion()
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                val version = readMutVersion()
+                if (version > startVersion) {
+                    val summary = decodeJsString(evalJs("JSON.stringify((window.__rcb_mut || []).slice(-10))"))
+                    return@withLock WaitChangeResult(changed = true, version = version, summary = summary)
+                }
+                // 网络事件也唤醒（wait_for_change 同时监听网络动静）
+                if (networkPendingCount() > 0) {
+                    val recs = listNetwork(1)
+                    if (recs.isNotEmpty() && recs.first().startTs > System.currentTimeMillis() - 2000) {
+                        return@withLock WaitChangeResult(changed = true, version = version, summary = "检测到新的网络请求：${recs.first().url.take(120)}")
+                    }
+                }
+                delay(300)
+            }
+            WaitChangeResult(changed = false, version = readMutVersion(), summary = "")
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
@@ -1001,13 +1424,24 @@ class BrowserController @Inject constructor(
 
     // ─────────────────── 补充动作（hover/drag/press_key/upload/导航） ───────────────────
 
+    /** 读取页面 DOM 变化版本号（R2.4，MutationObserver 维护）；注入失效时为 0。 */
+    private suspend fun readMutVersion(): Long {
+        val raw = evalJs("(window.__rcb_mut_version || 0)")
+        return raw.trim().toLongOrNull() ?: 0L
+    }
+
     /** 悬停元素，返回悬停后快照。 */
     suspend fun hover(elementId: String): BrowserPageSnapshot = mutex.withLock {
-        _agentStatus.value = AgentBrowserStatus("正在悬停元素 #$elementId", true)
+        _agentStatus.value = AgentBrowserStatus("正在悬停元素 $elementId", true)
         try {
-            evalJs("($JS_HOVER)(${quote(elementId)})")
+            val resolved = resolveElementId(elementId)
+            if (resolved == null) {
+                recordAction("hover", "失败：元素未找到（$elementId）")
+                return@withLock BrowserPageSnapshot(url = lastSnapshot.url, pageText = "元素 $elementId 未找到：data-rcb-id / CSS 路径 / 语义均未命中")
+            }
+            evalJs("($JS_HOVER)(${quote(resolved.id)})")
             delay(200)
-            snapshotInternal()
+            afterWrite("hover", snapshotInternal(SnapshotLevel.SUMMARY))
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
@@ -1015,10 +1449,15 @@ class BrowserController @Inject constructor(
 
     /** 按键（向元素派发 keydown/keyup）。 */
     suspend fun pressKey(elementId: String, key: String): BrowserPageSnapshot = mutex.withLock {
-        _agentStatus.value = AgentBrowserStatus("正在按键 #$elementId", true)
+        _agentStatus.value = AgentBrowserStatus("正在按键 $elementId", true)
         try {
-            evalJs("($JS_PRESS_KEY)(${quote(elementId)}, ${quote(key)})")
-            snapshotInternal()
+            val resolved = resolveElementId(elementId)
+            if (resolved == null) {
+                recordAction("press_key", "失败：元素未找到（$elementId）")
+                return@withLock BrowserPageSnapshot(url = lastSnapshot.url, pageText = "元素 $elementId 未找到：data-rcb-id / CSS 路径 / 语义均未命中")
+            }
+            evalJs("($JS_PRESS_KEY)(${quote(resolved.id)}, ${quote(key)})")
+            afterWrite("press_key", snapshotInternal(SnapshotLevel.SUMMARY))
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
@@ -1026,10 +1465,16 @@ class BrowserController @Inject constructor(
 
     /** 拖拽：从源元素拖到目标元素（targetElementId 可空，表示原地拖拽）。 */
     suspend fun drag(elementId: String, targetElementId: String?): BrowserPageSnapshot = mutex.withLock {
-        _agentStatus.value = AgentBrowserStatus("正在拖拽 #$elementId", true)
+        _agentStatus.value = AgentBrowserStatus("正在拖拽 $elementId", true)
         try {
-            evalJs("($JS_DRAG)(${quote(elementId)}, ${if (targetElementId == null) "null" else quote(targetElementId)})")
-            snapshotInternal()
+            val resolved = resolveElementId(elementId)
+            if (resolved == null) {
+                recordAction("drag", "失败：元素未找到（$elementId）")
+                return@withLock BrowserPageSnapshot(url = lastSnapshot.url, pageText = "元素 $elementId 未找到：data-rcb-id / CSS 路径 / 语义均未命中")
+            }
+            val targetResolved = targetElementId?.let { resolveElementId(it)?.id }
+            evalJs("($JS_DRAG)(${quote(resolved.id)}, ${if (targetResolved == null) "null" else quote(targetResolved)})")
+            afterWrite("drag", snapshotInternal(SnapshotLevel.SUMMARY))
         } finally {
             _agentStatus.value = AgentBrowserStatus()
         }
@@ -1297,7 +1742,9 @@ class BrowserController @Inject constructor(
             allowFileAccess = true
             loadsImagesAutomatically = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            userAgentString = userAgentString.replaceFirst("; wv", "")
+            // 首次创建时记录原始移动 UA（去 wv 标记），供桌面版切换关闭后恢复
+            if (originalUserAgent == null) originalUserAgent = userAgentString.replaceFirst("; wv", "")
+            userAgentString = if (_uiState.value.desktopMode) DESKTOP_UA else (originalUserAgent ?: userAgentString.replaceFirst("; wv", ""))
         }
         wv.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -1362,6 +1809,13 @@ class BrowserController @Inject constructor(
         } catch (e: Exception) {
             FileLogger.w(TAG, "addDocumentStartJavaScript 注入失败（旧 WebView 降级：不采集网络数据）", e)
         }
+        // DOM 变化订阅（R2.4 事件驱动感知）：document-start 注入 MutationObserver，
+        // 供 wait_for_change 挂起等待页面变化，替代轮询 snapshot。
+        try {
+            WebViewCompat.addDocumentStartJavaScript(wv, JS_CHANGE_OBSERVER, setOf("*"))
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "addDocumentStartJavaScript 注入失败（旧 WebView 降级：wait_for_change 不可用）", e)
+        }
         // 新 WebView 创建即按当前代理开关接管网络出口（WebView 不认 Java ProxySelector）。
         applyWebViewProxy(wv)
         return wv
@@ -1379,6 +1833,10 @@ class BrowserController @Inject constructor(
             view?.title?.let { tab.title = it }
         }
         publishTabs()
+        // R1.1 历史记录：页面加载完成且非无痕模式时写入访问历史（含 http/https 页面）
+        if (!_uiState.value.incognito && !url.isNullOrBlank() && (url.startsWith("http://") || url.startsWith("https://"))) {
+            historyStore.record(tab?.title ?: "", url)
+        }
         if (activeTabId == tabId) {
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
@@ -1415,7 +1873,12 @@ class BrowserController @Inject constructor(
         wv.destroy()
     }
 
-    private suspend fun snapshotInternal(): BrowserPageSnapshot {
+    /**
+     * 快照分级提取（R2.1）：总是收集元素树与标题大纲（供 delta 计算与元素定位），
+     * 仅 [SnapshotLevel.FULL] 时才额外取 page_text（最贵的部分），
+     * summary/standard 不取正文，由工具侧按分级裁剪元素 JSON 后返回。
+     */
+    private suspend fun snapshotInternal(level: SnapshotLevel = SnapshotLevel.FULL): BrowserPageSnapshot {
         val elJson = evalJs(JS_SNAPSHOT)
         val parsed = runCatching { json.parseToJsonElement(elJson).jsonObject }.getOrNull()
         val elements = runCatching {
@@ -1430,7 +1893,8 @@ class BrowserController @Inject constructor(
         }.getOrNull() ?: emptyList()
         val title = parsed?.get("title")?.let { if (it is JsonPrimitive) it.content else "" } ?: ""
         val url = parsed?.get("url")?.let { if (it is JsonPrimitive) it.content else "" } ?: ""
-        val pageText = evalJs(JS_PAGE_TEXT)
+        // 分级：page_text 只在 FULL 级提取；登录表单信号基于元素（密码框）始终检测
+        val pageText = if (level == SnapshotLevel.FULL) evalJs(JS_PAGE_TEXT) else ""
         val (hasLogin, hint) = detectLoginForm(
             BrowserPageSnapshot(title = title, url = url, headings = headings, elements = elements, pageText = pageText.take(12000))
         )
@@ -1603,6 +2067,18 @@ class BrowserController @Inject constructor(
     private fun quote(s: String): String {
         val escaped = s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
         return "\"$escaped\""
+    }
+
+    /**
+     * 解码 WebView evaluateJavascript 返回的 JS 字符串结果：JS 表达式结果为字符串时，
+     * WebView 会再包一层引号并转义（如 `"[\"a\"]"`），此处还原为原始 JSON 文本。
+     */
+    private fun decodeJsString(raw: String): String {
+        val t = raw.trim()
+        if (t.startsWith("\"") && t.endsWith("\"")) {
+            return runCatching { json.parseToJsonElement(t).jsonPrimitive.content }.getOrNull() ?: t
+        }
+        return t
     }
 
     /** 当前快照（模型读属性等用途）。 */

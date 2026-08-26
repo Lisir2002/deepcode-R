@@ -13,6 +13,7 @@
 7. **备份与还原 (Backup)**：请读取 `~/.rcodecore/docs/backup-and-restore.md`
 8. **Git 版本管理**：请读取 `~/.rcodecore/docs/git-page.md`
 9. **自定义提示词 (Custom Prompts)**：请读取 `~/.rcodecore/docs/custom-prompts.md`
+10. **内置服务浏览器 (Browser)**：请读取 `~/.rcodecore/docs/browser-guide.md`
 
 ---
 

@@ -436,6 +436,44 @@
     <string name="browser_login_password">密码</string>
     <string name="browser_login_confirm">登录</string>
     <string name="browser_takeover_done">已完成，继续</string>
+    <!-- 用户侧（R1 更像浏览器） -->
+    <string name="browser_more">更多</string>
+    <string name="browser_history">历史记录</string>
+    <string name="browser_history_empty">暂无浏览历史</string>
+    <string name="browser_clear_history">清空历史</string>
+    <string name="browser_clear_history_confirm">确定清空全部浏览历史？</string>
+    <string name="browser_bookmarks">收藏夹</string>
+    <string name="browser_bookmarks_empty">暂无收藏</string>
+    <string name="browser_add_bookmark">收藏本页</string>
+    <string name="browser_remove_bookmark">取消收藏</string>
+    <string name="browser_downloads">下载</string>
+    <string name="browser_downloads_empty">暂无下载</string>
+    <string name="browser_downloads_clear">清除列表</string>
+    <string name="browser_credentials">已存凭据</string>
+    <string name="browser_credentials_empty">暂无已存登录凭据</string>
+    <string name="browser_share">分享</string>
+    <string name="browser_copy_link">复制链接</string>
+    <string name="browser_link_copied">链接已复制</string>
+    <string name="browser_incognito">无痕模式</string>
+    <string name="browser_desktop_mode">桌面版网页</string>
+    <string name="browser_zoom">页面缩放</string>
+    <string name="browser_zoom_less">缩小</string>
+    <string name="browser_zoom_more">放大</string>
+    <string name="browser_zoom_reset">重置</string>
+    <string name="browser_open">打开</string>
+    <string name="browser_retry">重试</string>
+    <string name="browser_open_failed">没有可打开该文件的应用</string>
+    <string name="browser_home_search_hint">搜索或输入网址</string>
+    <string name="browser_recent_visits">最近访问</string>
+    <string name="browser_find">页内查找</string>
+    <string name="browser_find_hint">查找页面内容…</string>
+    <string name="browser_find_prev">上一个</string>
+    <string name="browser_find_next">下一个</string>
+    <string name="browser_find_close">关闭查找</string>
+    <string name="browser_credentials_delete">删除凭据</string>
+    <string name="browser_credentials_delete_confirm">确定删除 %1$s 的登录凭据？</string>
+    <string name="browser_credential_username">用户名: %1$s</string>
+    <string name="browser_credential_detail">用户名: %1$s  密码: %2$s</string>
 
     <!-- Chat Input Bar -->
     <string name="chat_input_placeholder">输入消息与 AI 聊天…</string>
