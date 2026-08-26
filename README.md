@@ -21,8 +21,8 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/screenshots/home.png" alt="R-CodeCore 主页 - AI 对话界面，支持代码生成与 Markdown 渲染" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/terminal.png" alt="R-CodeCore 终端 - 内置 Alpine Linux 容器，完整命令行环境" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/home.png" alt="R-CodeCore 主页 - AI 对话界面，支持代码生成与 Markdown 渲染" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="R-CodeCore 终端 - 内置 Alpine Linux 容器，完整命令行环境" width="270"/></td>
     </tr>
     <tr>
       <td align="center">主页 · AI 对话</td>

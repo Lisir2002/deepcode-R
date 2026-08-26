@@ -29,11 +29,12 @@ from __future__ import annotations
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "artwork" / "rcodecore-launcher-master.jpg"
+ROOT = Path(__file__).resolve().parents[2]   # 仓库根（docs/media/ 下移两级后再上一层）
+MEDIA = ROOT / "docs" / "media"              # 图片素材 + 图标脚本归并目录
+SRC = MEDIA / "rcodecore-launcher-master.jpg"
 RES = ROOT / "app" / "src" / "main" / "res"
-OUT_PLAY = ROOT / "artwork" / "rcodecore-launcher-playstore-512.png"
-OUT_REVIEW = ROOT / "artwork" / "rcodecore-launcher-v3-review.png"   # 生成 192 预览拼图
+OUT_PLAY = MEDIA / "rcodecore-launcher-playstore-512.png"
+OUT_REVIEW = MEDIA / "rcodecore-launcher-v3-review.png"   # 生成 192 预览拼图
 
 DENSITIES = {
     "mipmap-mdpi": 48,

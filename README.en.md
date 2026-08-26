@@ -21,8 +21,8 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/screenshots/home.png" alt="R-CodeCore home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/terminal.png" alt="R-CodeCore terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/home.png" alt="R-CodeCore home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="R-CodeCore terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
     </tr>
     <tr>
       <td align="center">Home · AI Chat</td>
