@@ -31,7 +31,7 @@
 | --- | --- |
 | `domain/bridge/RcbBridge.kt` | 容器 ⇄ 宿主 loopback TCP 桥：让容器内 `rcb-*` 命令把剪贴板/URL/通知操作交给 App；握手令牌鉴权，`open_url` 默认仅记日志 |
 | `domain/checkpoint/CheckpointManager.kt` | 文件检查点：每条用户消息建一个 checkpoint，文件被修改前保存原始快照（`<filesDir>/checkpoints/...`），支持回滚 |
-| `domain/command/` | 斜杠命令系统：`SlashCommand`（handler 接口）、`SlashCommandRegistry`（Hilt multibinding 汇集）、`SlashCommandModule`（注入绑定）、`CompressCommandHandler`、`StatusCommandHandler` |
+| `domain/command/` | 斜杠命令系统：`SlashCommand`（handler 接口）、`SlashCommandRegistry`（Hilt multibinding 汇集）、`SlashCommandModule`（注入绑定）、`CompressCommandHandler`、`StatusCommandHandler`、`RulesCommandHandler`（`/rules` 列出/加载分层规则，D3-3） |
 | `domain/container/` | 命令执行后端：`CommandEngine`（接口）、`LinuxContainerEngine`（PRoot 本地容器）、`RemoteSshEngine`（SSH exec）、`RemoteSshConnection`（共享 sshj 连接/SFTP）、`DelegatingCommandEngine`（按模式委派本地/远程）、`ContainerInstaller`、`ContainerProfile`、`ContainerInitState`、`BoundedOutput`、`GlobalInstallArchiveStore` |
 | `domain/container/progress/` | 安装进度聚合：`RealProgressAggregator`、`InstallProgressParser`、`ApkStdoutParser`、`ParallelPrefetchManager`、`PrefetchConcurrencyPolicy`、`ProgressModels` |
 | `domain/mcp/` | MCP 集成：`McpManager`（连接/工具注册/状态流）、`McpClient`、`McpTool`（MCP 工具适配 `AgentTool`）、`McpJsonRpc`、`McpServerConfig`、`McpConfigRepository`、`McpTransport` + `StdioTransport` / `StreamableHttpTransport`。**`server/` 子包（已实施）**：内置 MCP 服务器（`McpServerManager`/`McpHttpServer`/`McpServerSession`/`AgentToolMcpAdapter`/`McpServerSecurity`/`McpServerSettings`），把 App 能力开放给外部 MCP 客户端，见 [builtin-mcp-server-design](../plan-docs/builtin-mcp-server-design.md) |
@@ -53,6 +53,7 @@
 | `domain/playbook/` | **剧本编排 Playbook**（D5）：`PlaybookAsset`（frontmatter 剧本资产：stages/agents/sop/gates/guards + `PlaybookGate` 审批门 + `PlaybookSeed` spawn/fork 双 seed）、`PlaybookRegistry`（扫 `assets/playbooks/`，复用 frontmatter 解析 + mtime 懒刷新）、`PlaybookExecutor`（双状态机执行：运行级 RUNNING/COMPLETED/ABORTED/INTERRUPTED + 阶段级 PENDING/ACTIVE/DONE/FAILED，支持 start/advance/resume/retry/abort/interrupt，产物清单幂等）、`SubAgentRunner`（阶段子代理执行：spawn/fork 双 seed + 三档 SandboxMode 降权 + 并行聚合 + 阶段内写串行化） |
 | `domain/hook/` | **声明式 hook 事件**（Claude Code hooks + DSH 工具流水线）：`HookDispatcher`（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart 挂点）、`HookConfigLoader`（合并内置/插件/用户 hooks.json）、`CommitDisciplineHook`（git commit/push 纪律检查示例） |
 | `domain/input/` | **用户意图拆解与持续意图维护源**（D0 + D1 step 前注入源）：`UserInputParser`（结构化解析 command?/args/text + 意图分类 + `!`/`?` marker）、`IntentAskSource`（意图问判三问，P1）、`BehaviorModeManager`/`BehaviorModeSource`（四档行为模式，P1）、`GoalStaleDetector`/`GoalStaleSource`（语义失配检测，P2）、`GoalAdjustEvent`/`GoalAdjustEventSource`（目标调整事件闭环，P1）、`GoalHintSource`（goal 注入，P0）、`PlanPendingHintSource`（plan pending 提示，P1）、`PlaybookStageSource`（剧本阶段注入，P1，D5 预留）、`LoopAdvisorySource`（空转循环提醒，P2） |
+| `domain/rule/` | **分层规则纪律**（D3）：`RuleLayer`（全局/项目/工作区/模块四级 + 显式 priority）、`RuleAsset`（frontmatter 元数据 + 摘要/正文两级）、`RuleRegistry`（四级注册表：全局 `~/.rcodecore/global-rules.md` / 项目 `AGENTS.md` / 工作区 `workspace-AGENTS.md` / 模块 `feature/<module>/AGENTS.md`，复用 frontmatter 解析 + mtime 懒刷新；`resident` 三级常驻 + `moduleRules` 按需命中），`RuleAssetCore`（无 Android 依赖的解析核心，JVM 可测） |
 | `domain/guard/` | **工具执行护栏链**（D1）：`ToolGuard` 接口（guard 三态 PASS/BLOCK/ADVISORY）+ `ToolGuardContext`（toolName/args/sessionId/projectRoot）+ `ToolGuardResult`（Pass/Block/Advisory）；`FileObservationGuard`（文件观察纪律：编辑前必须先读否则 `FS_NOT_OBSERVED`、mtime 版本 CAS 否则 `FS_STALE`，新建豁免、writeFile 即已知）；`GuardModule`（Dagger `@IntoSet` 汇集注册护栏到 `Set<ToolGuard>`，挂入六段式 guard 段，首个 BLOCK 短路） |
 
 ### 2.3 domain/tool 工具系统
@@ -78,6 +79,7 @@
 | `tool/mode/` | `SwitchModeTool`（BUILD/PLAN/AUTO 切换）、`PlanApprovalManager` |
 | `tool/proxy/NetworkProxyTool.kt` | 网络代理（mihomo mixed-proxy）管理 |
 | `tool/question/` | `AskUserQuestionTool` + `AskUserQuestionManager` + `UserQuestionModels`（向用户提问并等待回答） |
+| `tool/rule/LoadRuleTool.kt` | 按需加载分层规则完整正文（`load_rule`，D3-3）：系统提示只注入规则摘要，判断适用时按名称精确查找取 body |
 | `tool/search/` | `WebSearchTool`、`WebFetchTool` |
 | `tool/skill/LoadSkillTool.kt` | 加载技能指令正文（PROMPT/SCRIPT 通用，仅返回 SKILL.md、不执行；含依赖注入、作用域校验、工具绑定） |
 | `tool/skill/RunSkillScriptTool.kt` | 执行 SCRIPT 脚本技能（容器沙箱 + 审批 + 审计，专用执行入口） |
@@ -305,6 +307,12 @@
 - **子代理执行**（D5-6/7）：`SubAgentRunner` 在阶段激活时执行 `agents[]`——spawn/fork 双 seed（上下文隔离：独立消息/工具/工作目录），三档 `SandboxMode` 权限降权（READ_ONLY/WORKSPACE_WRITE/DANGER_FULL_ACCESS），每子代理一协程 `async` + `awaitAll` 并行聚合（按声明顺序返回），阶段内共享 `Mutex` 把写档位工具调用串行化（读保持并行）；产出按内容写入天然幂等。
 - **工具与命令**（D5-4）：4 工具 `playbook_start/advance/status/abort`（`domain/tool/playbook/`）+ `/playbook <name>` 斜杠命令（`domain/command/PlaybookCommandHandler`）；**清单可见 + 精确匹配**，未命中回退 plan/goal。
 - **审批与开关**（D5-9 / D5-pa）：阶段 `gates=approval` 时推进需用户批准，用户消息首 token 为 `!` 时跳过当次流程级 approval gate（`markForceApproval`/`consumeForceApproval`，不绕权限系统）；总开关 `norm_flow_enabled` 关闭则 Playbook 整体不可用；子开关 `playbook_auto_enabled`（`playbook_auto`，默认开）关闭后模型不能自主 `playbook_start`，`/playbook` 命令不受影响。
+
+### 3.14 分层规则纪律（D3，见 `docs/plan-docs/norm-chain-design.md` §3.9）
+
+- **四级规则资产**（D3-1）：`RuleLayer` 定义全局（`~/.rcodecore/global-rules.md`）/ 项目（`AGENTS.md`，权威源）/ 工作区（工作区根 `workspace-AGENTS.md`）/ 模块（`feature/<module>/AGENTS.md`）四级，frontmatter 可声明 `priority`（数值大优先，缺省按层级 10/20/30/40 递增）；`RuleRegistry`（装配 `RuleAssetCore` 纯解析核心，复用 `AgentAssetCore` frontmatter 解析 + mtime 懒刷新）按 priority 降序拼接合并，同 priority 靠后声明者优先。
+- **三级常驻 + 模块级按需注入**（D3-2）：`resident` 只注入全局/项目/工作区三级；模块级规则按**文件观察命中路径**判断——`RuleRegistry.touchedModulePaths(projectRoot)` 遍历 `ToolResultCache.touchedPaths()`（readFile 观察 / writeFile 即已知的路径集合），命中 `/feature/<module>/` 段即取模块目录名，`moduleRules` 只注入本会话触碰过的模块规则；`SystemPromptProvider.RulesSource`（step 前注入）把 `resident + moduleRules` 合并后按 priority 注入摘要。
+- **摘要/正文两级**（D3-3）：常驻只注入 `summary`（frontmatter `summary` 优先，否则正文首段，默认 120 字符），完整正文经 `/rules` 命令（`RulesCommandHandler`，列出四级规则清单或加载指定规则正文）或 `load_rule` 工具（`LoadRuleTool`，按名称精确查找，不存在返回 `RULE_NOT_FOUND`）显式加载。
 
 ## 4. 对外接口与集成点
 

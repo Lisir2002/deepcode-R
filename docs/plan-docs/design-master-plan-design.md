@@ -96,7 +96,8 @@
 |---|---|---|---|
 | D0 用户意图拆解 | ✅ 已实施 | 2026-08-25 | Parser 解析/意图分类/门控缓存/行为模式/marker/失配提醒/结构化澄清/事件闭环 JVM 单测 50 例全绿；`assembleDebug` + `testReleaseUnitTest`（343 例）全绿 |
 | D1 Agentic Workflow 基座 | ✅ 已实施 | 2026-08-25 | 8 Source 一次登记 + 八源排序 + 预算裁剪（P0 永不裁）、ToolGuard 链 + FileObservationGuard（FS_NOT_OBSERVED/FS_STALE）、六段式契约对齐、闭环核对（prompts 补充 TOOL_TIMEOUT）、统一开关基础（NormFlowSettingsRepository + 设置页 UI）JVM 单测 15 例全绿；`assembleDebug` + `testReleaseUnitTest`（358 例）全绿 |
-| D2–D7 | ⬜ | — | — |
+| D3 分层规则纪律 | ✅ 已实施 | 2026-08-26 | 四级规则资产（RuleLayer/RuleAsset/RuleRegistry + RuleAssetCore 纯解析核心）、三级常驻注入 + 模块级按需注入（touchedModulePaths 从 ToolResultCache 文件观察路径命中 `/feature/<module>/` 推导）、摘要/正文两级（RulesSource 注入 + `/rules` 命令 + `load_rule` 工具）；`assembleDebug` + `testReleaseUnitTest` 全绿；模块文档 agent.md 同步 §3.14 |
+| D2、D4–D7 | ⬜ | — | — |
 
 ## 7. 变更记录
 

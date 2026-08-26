@@ -41,7 +41,8 @@ data class RuleAsset(
  */
 @Singleton
 class RuleRegistry @Inject constructor(
-    containerInstaller: ContainerInstaller
+    containerInstaller: ContainerInstaller,
+    private val toolResultCache: ToolResultCache
 ) {
     private val core = RuleAssetCore(
         globalRulesFile = { File(containerInstaller.rcodecoreDir, GLOBAL_RULES_FILE) },
@@ -62,11 +63,26 @@ class RuleRegistry @Inject constructor(
         return core.moduleRules(projectRoot, touched)
     }
 
-    /** 从文件观察记录（ToolResultCache.touchedPaths）推导已触碰的模块路径集合。 */
+    /**
+     * 从文件观察记录（[ToolResultCache.touchedPaths]）推导已触碰的模块路径集合。
+     *
+     * D3-2 模块命中判断：遍历本次会话/任务读写的文件路径（readFile 观察 / writeFile 即已知），
+     * 命中 `/feature/<module>/` 段即取模块目录名；只要路径含该段即可命中，与工作区根位置无关。
+     */
     fun touchedModulePaths(projectRoot: String): Set<String> {
         val root = projectRoot.trimEnd('/')
         if (root.isBlank()) return emptySet()
-        return emptySet()
+        val featureSegment = "/feature/"
+        return toolResultCache.touchedPaths().mapNotNull { path ->
+            val idx = path.lastIndexOf(featureSegment)
+            if (idx < 0) {
+                null
+            } else {
+                path.substring(idx + featureSegment.length)
+                    .substringBefore('/')
+                    .takeIf { it.isNotBlank() }
+            }
+        }.toSet()
     }
 
     /** 按名称精确查找（load_rule 用）；不存在返回 null。 */
