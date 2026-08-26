@@ -99,7 +99,8 @@
 | D2 思维链路 + 步骤结果汇总 | ✅ 已实施 | 2026-08-26 | 空转软收敛（idleRounds 计数器 + 实质产出/产出性读清零 + 连续 6 轮强制收敛返回已做动作摘要）、推理预算（reasoning_budget 子开关 + reasoningEffortForRound 透传 provider + ReasoningDelta 流式呈现）、TrajectoryEntity + DAO + v2→v3 迁移 + DataRegistry 登记 + 全工具定制提取（readFile/writeFile/editFile/run_code/Bash）、用量卡片（usageCardEnabled 子开关 + TurnUsage 事件落库渲染，本回合增量 + 会话累计）、轨迹消费（buildActionSummary 已做动作摘要 / getTrajectory 审计回放）；`assembleDebug` + `testReleaseUnitTest` 全绿 |
 | D3 分层规则纪律 | ✅ 已实施 | 2026-08-26 | 四级规则资产（RuleLayer/RuleAsset/RuleRegistry + RuleAssetCore 纯解析核心）、三级常驻注入 + 模块级按需注入（touchedModulePaths 从 ToolResultCache 文件观察路径命中 `/feature/<module>/` 推导）、摘要/正文两级（RulesSource 注入 + `/rules` 命令 + `load_rule` 工具）；`assembleDebug` + `testReleaseUnitTest` 全绿；模块文档 agent.md 同步 §3.14 |
 | D4 SOP 标准作业 | ✅ 已实施 | 2026-08-26 | SopAsset + SopRegistry（SopAssetCore 纯解析核心复用 SkillParser frontmatter + mtime 热加载）+ ContainerInstaller.extractSop 释放；6 份资产（10-release/20-migration/30-asset-sync/40-git-commit/50-troubleshooting/60-ai-conduct，编号步骤「操作+判定+产出」头部注明权威源）；SopSource 摘要常驻注入（P1，八源第 7 位，sop_summary 子开关管控）+ loadSop 工具按需取正文（双判据边界指引入 prompts/70-skills-and-mcp）；spec-check.sh 第 3 段 SOP 同步提示（warning 不阻断）；JVM 单测（SopAssetCoreTest：frontmatter 解析/order 回退/whenToUse 回退/排序/热加载/结构化正文取回）全绿；`assembleDebug` + `testReleaseUnitTest` 全绿；模块文档 agent.md 同步 §3.16 |
-| D6–D7 | ⬜ | — | — |
+| D6 Spec 规范驱动 | ✅ 已实施 | 2026-08-26 | `spec-check.sh` 独立预检（配套性触发：新增非 test 路径 .kt/新模块阻断提示补 design 文档，`git diff --cached` 只校验本次触碰；`*-design.md` 评审状态行存在+值合法校验：📝 草案/✅ 已评审/已实施，纯值不带括号注释/组合态，存量不迁移；SOP 同步提示：AGENTS.md ↔ sop/10-50、prompts 行为规则 ↔ sop/60-ai-conduct，warning 级不阻断）+ `.githooks/pre-commit` 调用 + `docs/plan-docs/README.md` 规范补充 + `prompts/40-approach.md` 追加「重大改动先出设计文档」+ feature-dev 剧本「设计文档」阶段联动（gates=approval）；无误报验证 5 用例通过（纯文档/test 路径 .kt 不误报；新增 main .kt/状态行非法正确阻断）；`assembleDebug` + `testReleaseUnitTest` 全绿 |
+| D7 | ⬜ | — | — |
 
 ## 7. 变更记录
 
