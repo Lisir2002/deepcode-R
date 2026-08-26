@@ -150,4 +150,5 @@ WebView 不认 Java `ProxySelector`，只能用 `ProxyController.setProxyOverrid
   - **R2 模型侧**：快照分级（summary/standard/full）+ 客户端增量 diff（`BrowserSnapshotDelta`）+ 统一动作 envelope（`BrowserActionResult`，干净替换无兼容层）+ 写操作自动验证 + 三级定位（CSS 绝对路径为主 + data-rcb-id 兜底 + 语义回退）+ 可操作性标注 + 自动滚动 + `wait_for_change`（MutationObserver 版本号）与动作 `history`；新增 `BrowserHistoryStore`/`BrowserBookmarkStore` 依赖注入。
   - **R1 用户侧**：历史记录/收藏夹持久化与面板、新标签页主页（搜索+最近访问+收藏）、页内查找条、下载管理 UI（打开/重试/清除）、凭据管理 UI（明文受保护+删除）、分享/复制链接、「更多」菜单（无痕/桌面版/缩放开关）；`ServiceBrowserScreen` 新增 `credentialStore` 参数。
   - **内存自愈（预防闸门）**：新增 `onMemoryPressure()`——由 `AIEditorApp.onTrimMemory` 在 `RUNNING_CRITICAL`/`lowMemory` 时转发调用，释放 `lastSnapshot`/`deltaBaseline`/`lastDelta` 页面快照大对象缓存，降低 LMKD 静默杀进程概率（LMKD 杀绕过 Java CrashHandler，是「模型输出时闪退却无日志」高概率根因）。
+  - **快照元素上限**：`JS_SNAPSHOT` 新增 `MAX_SNAPSHOT_ELEMENTS = 300` 保护——超大页面（长列表/表格/导航）只取前 300 个可交互控件，防止一次快照生成超大 JSON（内存/耗时峰值，低内存时易触发 LMKD 静默杀进程）；模型可滚动加载后续元素，summary 级快照本就只给控件摘要，上限不影响可用性。
 - **v0.1.0（2026-08-17 ~ 08-18）**：内置服务浏览器核心功能落地；动态数据捕获（异步请求插桩 + 网络日志查询 + 就绪判定升级，随后补齐 WS 出站记录 + SPA routechange 事件 + network 汇总字段）；修复进入/切换浏览器页 WebView 重复挂载与复用前未摘除旧父容器崩溃。

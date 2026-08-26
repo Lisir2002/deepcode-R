@@ -1319,7 +1319,16 @@ class StatefulAgentWorkflow @Inject constructor(
                         }
 
                         // L6 增量索引：记录本批轮次快照并持久化。
-                        recordIncrementalRound(currentContext, batchResults)
+                        // 异常边界防护：索引记录/持久化失败仅降级跳过，绝不阻断本轮主流程
+                        // （与上方轨迹写库同款静默降级；DB/IO 异常若未捕获会中断 channelFlow，
+                        // 表现为「模型输出/工具执行时报错」，是需规避的隐性崩溃入口）。
+                        try {
+                            recordIncrementalRound(currentContext, batchResults)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            FileLogger.w(TAG, "增量索引记录失败，跳过", e)
+                        }
 
                         // 逐个推送完成事件（保持与 batchToolCalls 一致顺序），并进入收尾。
                         batchResults.forEach { br ->

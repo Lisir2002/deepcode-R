@@ -88,6 +88,14 @@ class BrowserController @Inject constructor(
         /** 页面纯文本截断上限（与 JS_PAGE_TEXT 内 12000 一致）。 */
         const val MAX_PAGE_TEXT = 12000
 
+        /**
+         * 快照元素数量上限（R2.1 快照分级的内存保护）：超大页面只取前 N 个可交互控件。
+         * JS_SNAPSHOT 未设上限时，一个 500+ 控件页面会生成超大 JSON（每个元素 25+ 字段），
+         * 是快照内存/耗时峰值、进而触发低内存闪退的直接来源之一（headings 已有 100 上限先例）。
+         * 模型可通过滚动加载后续元素；summary 级快照本就只给控件摘要，上限不影响可用性。
+         */
+        const val MAX_SNAPSHOT_ELEMENTS = 300
+
         /** 导航协议白名单：拦截 file://、content://、intent://、javascript: 等危险 scheme。 */
         val ALLOWED_SCHEMES = setOf("http", "https")
 
@@ -252,6 +260,9 @@ class BrowserController @Inject constructor(
                     needsScroll: visible && !inViewport,
                     overlapped: inViewport && isOverlapped(el)
                   });
+                  // 元素上限保护：超大页面（长列表/表格/导航）只取前 MAX_SNAPSHOT_ELEMENTS 个，
+                  // 防止一次快照生成超大 JSON（内存/耗时峰值，低内存时易触发 LMKD 静默杀进程）。
+                  if (els.length >= MAX_SNAPSHOT_ELEMENTS) break;
                 }
               }
               collect(document);
