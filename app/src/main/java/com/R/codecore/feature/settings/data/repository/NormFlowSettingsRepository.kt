@@ -25,6 +25,9 @@ import javax.inject.Singleton
  *   （完整正文经 loadSop 工具按需取用，不受此开关影响）。
  * - **子开关** [playbookAutoEnabledFlow]（D5-pa，默认开）：Playbook 自动触发——控制模型自主
  *   调用 `playbook_start` 工具启动剧本；`/playbook` 斜杠命令显式入口不受此开关影响。
+ * - **子开关** [idleConvergeEnabledFlow]（D2-1，默认关）：空转软收敛——连续 [IDLE_CONVERGE_ROUNDS]
+ *   轮无实质产出（未写文件/未执行命令/未读到新信息）时自动结束回合。默认关：研究/浏览类请求
+ *   （websearch / browser 等不在实质产出集合）会被误伤收敛，故默认不启用，由用户按需开启。
  *
  * 第一批只落三个字段（对齐设计 §4 第一批「总开关 + step_inject/tool_guard 子开关」）；
  * SOP 摘要（sop_summary）/ Playbook 自动触发（playbook_auto）子开关随 D4/D5 批次补入本文件；
@@ -45,6 +48,7 @@ class NormFlowSettingsRepository @Inject constructor(
         val USAGE_CARD_ENABLED_KEY = booleanPreferencesKey("usage_card_enabled")
         val SOP_SUMMARY_ENABLED_KEY = booleanPreferencesKey("sop_summary_enabled")
         val PLAYBOOK_AUTO_ENABLED_KEY = booleanPreferencesKey("playbook_auto_enabled")
+        val IDLE_CONVERGE_ENABLED_KEY = booleanPreferencesKey("idle_converge_enabled")
     }
 
     /** 总开关流；未设置时回退 true（默认开）。 */
@@ -67,6 +71,9 @@ class NormFlowSettingsRepository @Inject constructor(
 
     /** Playbook 自动触发子开关流（D5-pa）；未设置时回退 true（默认开）。 */
     val playbookAutoEnabledFlow: Flow<Boolean> = context.settingsDataStore.data.map { it[PLAYBOOK_AUTO_ENABLED_KEY] ?: true }
+
+    /** 空转软收敛子开关流（D2-1）；未设置时回退 false（默认关，避免研究/浏览类请求被误伤收敛）。 */
+    val idleConvergeEnabledFlow: Flow<Boolean> = context.settingsDataStore.data.map { it[IDLE_CONVERGE_ENABLED_KEY] ?: false }
 
     suspend fun setNormFlowEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[NORM_FLOW_ENABLED_KEY] = enabled }
@@ -94,6 +101,10 @@ class NormFlowSettingsRepository @Inject constructor(
 
     suspend fun setPlaybookAutoEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[PLAYBOOK_AUTO_ENABLED_KEY] = enabled }
+    }
+
+    suspend fun setIdleConvergeEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[IDLE_CONVERGE_ENABLED_KEY] = enabled }
     }
 
     /**
@@ -132,4 +143,10 @@ class NormFlowSettingsRepository @Inject constructor(
      * [com.R.codecore.feature.agent.domain.playbook.PlaybookExecutor.start]，不经工具）。
      */
     suspend fun isPlaybookAutoActive(): Boolean = normFlowEnabledFlow.first() && playbookAutoEnabledFlow.first()
+
+    /**
+     * 组合判定：空转软收敛（D2-1）是否生效（总开关 && 子开关）。
+     * workflow 每轮 CallLlm 前读取；关闭时即使累计轮数达标也不强制收敛。
+     */
+    suspend fun isIdleConvergeActive(): Boolean = normFlowEnabledFlow.first() && idleConvergeEnabledFlow.first()
 }

@@ -168,6 +168,8 @@ fun SettingsScreen(
     val sopSummaryEnabled by viewModel.sopSummaryEnabled.collectAsStateWithLifecycle()
     // D5-pa Playbook 自动触发子开关（对齐 §3.5）。
     val playbookAutoEnabled by viewModel.playbookAutoEnabled.collectAsStateWithLifecycle()
+    // D2-1 空转软收敛子开关（默认关）。
+    val idleConvergeEnabled by viewModel.idleConvergeEnabled.collectAsStateWithLifecycle()
 
     var section by remember { mutableStateOf(SettingsSection.Menu) }
     var logReturnSection by remember { mutableStateOf(SettingsSection.Menu) }
@@ -406,13 +408,15 @@ fun SettingsScreen(
                     usageCardEnabled = usageCardEnabled,
                     sopSummaryEnabled = sopSummaryEnabled,
                     playbookAutoEnabled = playbookAutoEnabled,
+                    idleConvergeEnabled = idleConvergeEnabled,
                     onToggleNormFlow = { viewModel.setNormFlowEnabled(it) },
                     onToggleStepInject = { viewModel.setStepInjectEnabled(it) },
                     onToggleToolGuard = { viewModel.setToolGuardEnabled(it) },
                     onToggleReasoningBudget = { viewModel.setReasoningBudgetEnabled(it) },
                     onToggleUsageCard = { viewModel.setUsageCardEnabled(it) },
                     onToggleSopSummary = { viewModel.setSopSummaryEnabled(it) },
-                    onTogglePlaybookAuto = { viewModel.setPlaybookAutoEnabled(it) }
+                    onTogglePlaybookAuto = { viewModel.setPlaybookAutoEnabled(it) },
+                    onToggleIdleConverge = { viewModel.setIdleConvergeEnabled(it) }
                 )
                 SettingsSection.Backup -> {
                     val backupViewModel: com.R.codecore.feature.backup.presentation.BackupViewModel =

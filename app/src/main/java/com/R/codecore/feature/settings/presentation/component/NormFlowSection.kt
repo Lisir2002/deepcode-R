@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.FactCheck
 import androidx.compose.material.icons.rounded.Input
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -27,8 +28,9 @@ import com.R.codecore.core.theme.Spacing
  * 总开关 [normFlowEnabled]（关闭即 step 前注入 / guard 链整体停用）
  * + 子开关 [stepInjectEnabled]（step 前注入纪律）/ [toolGuardEnabled]（guard 链 + 文件观察）/
  * [reasoningBudgetEnabled]（推理预算，D2-2）/ [usageCardEnabled]（用量卡片，D2-4）/
- * [sopSummaryEnabled]（SOP 清单摘要，D4-3）/ [playbookAutoEnabled]（Playbook 自动触发，D5-pa）。
- * 默认全开。
+ * [sopSummaryEnabled]（SOP 清单摘要，D4-3）/ [playbookAutoEnabled]（Playbook 自动触发，D5-pa）/
+ * [idleConvergeEnabled]（空转软收敛，D2-1，默认关）。
+ * 除空转收敛外默认全开。
  */
 @Composable
 internal fun NormFlowSection(
@@ -39,13 +41,15 @@ internal fun NormFlowSection(
     usageCardEnabled: Boolean,
     sopSummaryEnabled: Boolean,
     playbookAutoEnabled: Boolean,
+    idleConvergeEnabled: Boolean,
     onToggleNormFlow: (Boolean) -> Unit,
     onToggleStepInject: (Boolean) -> Unit,
     onToggleToolGuard: (Boolean) -> Unit,
     onToggleReasoningBudget: (Boolean) -> Unit,
     onToggleUsageCard: (Boolean) -> Unit,
     onToggleSopSummary: (Boolean) -> Unit,
-    onTogglePlaybookAuto: (Boolean) -> Unit
+    onTogglePlaybookAuto: (Boolean) -> Unit,
+    onToggleIdleConverge: (Boolean) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -95,6 +99,13 @@ internal fun NormFlowSection(
                     subtitle = stringResource(R.string.settings_norm_flow_playbook_auto_desc),
                     checked = playbookAutoEnabled,
                     onCheckedChange = onTogglePlaybookAuto
+                )
+                GroupSwitchRow(
+                    icon = Icons.Rounded.Timer,
+                    title = stringResource(R.string.settings_norm_flow_idle_converge),
+                    subtitle = stringResource(R.string.settings_norm_flow_idle_converge_desc),
+                    checked = idleConvergeEnabled,
+                    onCheckedChange = onToggleIdleConverge
                 )
             }
             Spacer(Modifier.height(Spacing.md))

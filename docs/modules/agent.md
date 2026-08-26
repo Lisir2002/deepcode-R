@@ -318,7 +318,7 @@
 
 ### 3.15 思维链路 + 步骤结果汇总（D2，见 `docs/plan-docs/norm-chain-design.md` §3.7 / §3.8）
 
-- **空转软收敛**（D2-1，§3.7.1）：`StatefulAgentWorkflow` 维护 `idleRounds` 计数器——每轮统计实质产出（文件写 / 命令执行 / run_code 命中 `SUBSTANTIAL_TOOLS` 即清零；`readFile` 读到**新文件路径**视为产出性读动作也清零，仅反复重读同类文件才累计空转）；连续 `IDLE_CONVERGE_ROUNDS`（6）轮无实质产出 → 在 CallLlm 前**强制结束回合**（区别于 LoopGuard 的 advisory），把 `TrajectoryService.buildActionSummary` 生成的已做动作摘要 + 结束原因返回用户；与 `MAX_ITERATIONS`（50）硬上限、`LoopGuardTracker`（3/5/8 advisory）构成三级防线。
+- **空转软收敛**（D2-1，§3.7.1）：`StatefulAgentWorkflow` 维护 `idleRounds` 计数器——每轮统计实质产出（文件写 / 命令执行 / run_code 命中 `SUBSTANTIAL_TOOLS` 即清零；`readFile` 读到**新文件路径**视为产出性读动作也清零，仅反复重读同类文件才累计空转）；连续 `IDLE_CONVERGE_ROUNDS`（6）轮无实质产出 → 在 CallLlm 前**强制结束回合**（区别于 LoopGuard 的 advisory），把 `TrajectoryService.buildActionSummary` 生成的已做动作摘要 + 结束原因返回用户；与 `MAX_ITERATIONS`（50）硬上限、`LoopGuardTracker`（3/5/8 advisory）构成三级防线。**空转收敛子开关**（`NormFlowSettingsRepository.idleConvergeEnabledFlow`，默认关）：`isIdleConvergeActive()`（总开关 && 子开关）每轮 CallLlm 前判定，关闭时即使累计达标也不收敛——因 `SUBSTANTIAL_TOOLS` 未覆盖 `websearch/browser` 等研究/浏览动作，默认关避免此类请求被误伤结束。
 - **推理预算**（D2-2，§3.7.2）：子开关 `reasoning_budget`（`NormFlowSettingsRepository`，默认开）+ 总开关开启时，workflow 每轮取 `currentContext.reasoningEffort` 透传给 `provider.completeStream`（关闭则 null 禁用推理参数）；模型返回 reasoning 时经 `reasoningAcc` 累积逐段发 `AgentEvent.ReasoningDelta` 流式呈现（`AIChatPanel` 折叠面板，复用 AssistantText reasoningAcc 通道），DeepSeek `reasoning_content` / Anthropic / OpenAI reasoning 均支持；reasoning 随 AssistantMessage 进入后续轮次并计入压缩 token。
 - **运行轨迹表**（D2-3，§3.8.1/2）：`agent_trajectories`（`TrajectoryEntity`，append-only，v2→v3 迁移 + `DataRegistry` 登记 + `LightweightSchemaRescue`）字段 trajectoryId/sessionId/taskId/turnIndex/kind/toolName/argsHash/resultSummary/isError/durationMs/tokensIn/tokensOut/ts；workflow 每次工具执行完成追加 tool 轨迹，turn 边界/压缩/注入/错误/超时追加轻量标记；`resultSummary` 经 `ToolResultTypeRegistry.registerTrajectorySummarizer` 定制提取（readFile 路径+行数 / writeFile 目标 / editFile 状态 / run_code exit+stdout 尾 / Bash 命令），其余通用截断。
 - **用量卡片**（D2-4，§3.8.4）：回合结束 `TrajectoryService.turnUsage`（本回合增量：输入/输出/总 token、耗时、工具数）+ `sessionUsage`（会话累计，仅 token 不估成本）经 `AgentEvent.TurnUsage` 发送，`AIAgentViewModel` 落库为 usage 工具卡片（Room Flow 驱动渲染）；子开关 `usage_card` 关闭则不发（均默认开，受总开关管控）。
@@ -368,6 +368,7 @@
 
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
+- **v0.3.0-rc3（2026-08-26）**：空转软收敛（D2-1）新增「规范流程 → 空转收敛」子开关（`NormFlowSettingsRepository.idleConvergeEnabledFlow`，默认关）：workflow 每轮 CallLlm 前经 `isIdleConvergeActive()` 判定，关闭时即使连续 6 轮无实质产出也不强制收敛，避免研究/浏览类请求（websearch/browser 不在实质产出集合）被误伤结束；设置页「规范流程」二级页新增开关行。
 - **v0.3.0-rc2（2026-08-26）**：AI 工作流规范体系 D2~D6 落地——D2 思维链路 + 步骤结果汇总（空转软收敛、推理预算、运行轨迹表、用量卡片）；D3 分层规则纪律（全局/项目/工作区/模块四级规则资产 + 显式 priority + 模块级按需注入，基于文件观察命中判断）；D4 SOP 标准作业（6 份 SOP + `loadSop` 工具）；D5 Playbook + 子代理（剧本资产与执行引擎、4 个剧本工具 + `/playbook`、spawn/fork 双模式、`playbook_auto` 子开关）；D6 Spec 规范驱动（`spec-check.sh` 预检）。
 - **v0.3.0-rc1（2026-08-25）**：D0 用户意图拆解基座（问判模式、行为模式、GoalStale/GoalAdjustEvent 注入）；D1 Agentic Workflow 基座（`step` 前注入链、`ToolGuard` 链式护栏、统一开关）。
 - **v0.2.0（2026-08-25）**：任务编排协作（Goal/Plan/Job/Schedule 声明式扩展生态）；流式累积归一化；网络层性能优化（连接预热、SSE 定点解析、模型 host 直连分流）；危险命令静态守卫双层拦截；`/agent` 专项切换。

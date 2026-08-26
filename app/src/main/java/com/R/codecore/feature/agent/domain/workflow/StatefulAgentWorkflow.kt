@@ -762,7 +762,17 @@ class StatefulAgentWorkflow @Inject constructor(
                         // D2-1 空转软收敛：连续 IDLE_CONVERGE_ROUNDS 轮无实质产出（文件写 / 命令执行 /
                         // run_code / 产出性读动作均未命中）→ 强制结束回合，不再调用 LLM，把已做动作摘要
                         // + 结束原因返回用户（对齐 norm-chain §3.7.1；区别于 LoopGuard 的 advisory）。
-                        if (idleRounds >= IDLE_CONVERGE_ROUNDS) {
+                        // 受「规范流程 → 空转收敛」开关控制（默认关）：关闭时即使累计达标也不强制收敛，
+                        // 避免研究/浏览类请求（websearch/browser 不在实质产出集合）被误伤结束。
+                        val idleConvergeActive = try {
+                            normFlowSettingsRepository.isIdleConvergeActive()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            FileLogger.w(TAG, "读取空转收敛开关失败，按默认关闭处理", e)
+                            false
+                        }
+                        if (idleConvergeActive && idleRounds >= IDLE_CONVERGE_ROUNDS) {
                             val actionSummary = try {
                                 trajectoryService.buildActionSummary(currentContext.sessionId)
                             } catch (e: CancellationException) {

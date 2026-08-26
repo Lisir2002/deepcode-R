@@ -224,6 +224,10 @@ class SettingsViewModel @Inject constructor(
     private val _playbookAutoEnabled = MutableStateFlow(true)
     val playbookAutoEnabled: StateFlow<Boolean> = _playbookAutoEnabled.asStateFlow()
 
+    // D2-1 空转软收敛子开关（默认关：研究/浏览类请求会被误伤收敛，按需开启）。
+    private val _idleConvergeEnabled = MutableStateFlow(false)
+    val idleConvergeEnabled: StateFlow<Boolean> = _idleConvergeEnabled.asStateFlow()
+
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
@@ -454,6 +458,12 @@ class SettingsViewModel @Inject constructor(
             launch {
                 normFlowSettingsRepository.playbookAutoEnabledFlow.collectLatest {
                     _playbookAutoEnabled.value = it
+                }
+            }
+
+            launch {
+                normFlowSettingsRepository.idleConvergeEnabledFlow.collectLatest {
+                    _idleConvergeEnabled.value = it
                 }
             }
 
@@ -978,6 +988,12 @@ class SettingsViewModel @Inject constructor(
     fun setPlaybookAutoEnabled(enabled: Boolean) {
         viewModelScope.launch {
             normFlowSettingsRepository.setPlaybookAutoEnabled(enabled)
+        }
+    }
+
+    fun setIdleConvergeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            normFlowSettingsRepository.setIdleConvergeEnabled(enabled)
         }
     }
 
