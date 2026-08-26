@@ -98,3 +98,9 @@ refresh(): notReadyHint()? 容器未就绪→引导文案
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
 - **v0.1.0（早期）**：可视化 Git 客户端核心落地（状态/分支/标签/提交拓扑图/diff 四大视图，命令复用容器 `CommandEngine`，远程凭据统一走 credentials 模块）。v0.2.0 / v0.3.0 无独立功能性变化，仅随仓库整体演进。
+- **v0.3.1（gitops 工具）**：把仓库 Git 经验沉淀为 AI Agent 可调用的 `gitops` 工具（`feature/agent/domain/tool/git/GitOpsTool.kt`）+ 开发者 CLI 脚本层（`scripts/gitops/gitops.sh`）：
+  - 提交规范化：`check_commit`（对齐 `.githooks/commit-msg` Conventional Commits 校验）、`suggest_commit`（基于 status+diff 推断 type/scope 生成建议）、`hooks_status`（检查 `core.hooksPath` 启用状态并给出指引）。
+  - 发版自动化：`release_check`（分支/main 干净 + tag 名合法 + **RC 判定规则**——tag 含 rc/beta/alpha/dev 后缀、改动触及启动/容器/构建链路、含功能代码改动任一命中 → 建议 RC；纯文档/资源文案可直接正式）、`release_tag`（本地打 tag，推送交给外部 Bash + `credential.helper=store` 兜底）。
+  - 版本日志：`changelog` 从 `git log <prev>..HEAD` 拉 Conventional Commits，按 Keep a Changelog 六类（Added/Improved/Fixed/Changed/Removed/Adjusted）归类生成草稿，供 `CHANGELOG.md` + 模块文档版本演进润色。
+  - 安全经验全复用：底层直接注入 `GitRepository`（`@Singleton`，已含 shellQuote 注入防护 + 读/写分离错误语义 + `remote.origin.url` 强制 `--local` 等全部 git 安全经验），零重写。
+  - 资产同步：`assets/prompts/60-tools-and-paths.md` 新增 Git 工程化工具说明；`assets/docs/git-page.md` 新增「AI 辅助 Git 工程化（gitops）」用户使用文档与 RC 判定规则。

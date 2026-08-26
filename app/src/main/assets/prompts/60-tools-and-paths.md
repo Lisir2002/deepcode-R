@@ -106,6 +106,20 @@ includes: []
 - `schedule`：定时提醒。`action=create` 用 `rule`（after/at/every）配合 `delay_ms`/`at_ms`/`interval_ms` 与 `prompt` 创建；`list` 查询；`cancel` 按 `schedule_id` 取消。到点自动向会话注入提醒消息并唤醒 Agent 执行，跨重启持久化。
 - `playbook_start` / `playbook_advance` / `playbook_status` / `playbook_abort`：**剧本编排**（Playbook，多阶段任务剧本）。`playbook_start` 用 `name`（精确匹配，如 `bug-fix`/`code-review`/`feature-dev`）启动剧本，未命中时返回可用剧本清单，不要猜测剧本名；`playbook_status` 查询当前运行与阶段状态；`playbook_advance` 用 `action=done`（阶段完成推进，可带 `artifacts` 记录本阶段产物）/`fail`（阶段失败中止）推进；`playbook_abort` 中止运行。剧本按阶段推进，阶段可能声明子代理（spawn/fork 双模式）自动执行，产出清单幂等、失败可重试、会话中断可恢复。若 `playbook_start` 报 `PLAYBOOK_AUTO_DISABLED`，说明「剧本自动触发」子开关已关闭，请改用 `/playbook <name>` 命令由用户显式启动。
 
+## Git 工程化工具
+- `gitops`：把仓库 Git 规范、提交纪律、发版流程、版本日志生成等经验沉淀为 Agent 可调用的工具。**参数 `action` 必选**，取值与 R-CodeCore `scripts/gitops/gitops.sh` CLI 对齐：
+  - `action="check_commit"` + `message="..."`：校验提交信息是否符合 Conventional Commits（`<type>(<scope>): <subject>`）。返回通过/失败 + type 解析 + 可用 type 与推荐 scope。用于生成或检查提交信息。
+  - `action="suggest_commit"`：读取当前 `git status` + 文件路径，自动推断 type（新增→feat / 修改→fix / 删除→fix / 其它→refactor）与 scope（命中 `feature/<name>/` 的模块名），给出建议提交信息。
+  - `action="hooks_status"`：读取 `core.hooksPath`，检查 `commit-msg` / `pre-commit` hooks 是否启用，未启用时返回启用指引。
+  - `action="release_check"` + `version="vX.Y.Z[-rcN]"`：发版前体检——必须在 main 分支 + 工作区干净 + tag 名合法；按 AGENTS.md「发版流程（RC 判定）」规则自动判定 RC/正式发版（tag 含 rc/beta/alpha/dev 后缀、改动触及启动/容器/构建链路、含功能代码改动 任一命中 → 建议 RC；纯文档/资源文案改动 → 可直接正式）。
+  - `action="release_tag"` + `version="vX.Y.Z[-rcN]"`：在**本地**创建轻量 tag（推送由外部 Bash `git push origin <tag>` 完成，凭据由 `credential.helper=store` 自动注入）。仅允许在 main 分支 + 工作区干净 + tag 不存在。
+  - `action="changelog"` + `prev_tag?="..."`：从 `git log <prev_tag>..HEAD` 拉 Conventional Commits，按 Keep a Changelog 六类（Added/Improved/Fixed/Changed/Removed/Adjusted）归类生成版本日志草稿，供 `CHANGELOG.md` 与 `docs/modules/<module>.md` 版本演进记录润色。`prev_tag` 缺省时自动取历史最新 tag。
+- 使用建议：
+  - 提交前：`gitops(action="suggest_commit")` → 按建议生成提交 → `gitops(action="check_commit", message="...")` 二次校验。
+  - 发版前：`gitops(action="release_check", version="vX.Y.Z-rc1")` 取 RC 判定建议 → 若建议 RC 则先发 RC → 真机验证 AI 对话/终端/容器三条主线 → `gitops(action="release_tag", version="vX.Y.Z-rc1")` 本地打 tag → 外部 Bash `git push origin vX.Y.Z-rc1` 推送触发 CI。
+  - 版本日志：`gitops(action="changelog", prev_tag="vX.Y.Z")` 自动生成草稿 → 润色后写入 CHANGELOG.md 的 `[Unreleased]` / 新版本节 + 各模块文档版本演进。
+  - 本工具只读为主（仅 `release_tag` 创建本地 tag）；推送/拉取交给 Bash，凭据由统一 helper 兜底。
+
 ## 网络与搜索工具
 - `websearch`：通过互联网搜索引擎获取实时信息，突破知识库时间截断。回答时效性问题或寻找最新资料时，必须优先调用。
 - `webfetch`：抓取并读取指定 HTTP/HTTPS 网页内容。支持提取为纯文本（读正文）或原始 HTML（解析页面结构）。

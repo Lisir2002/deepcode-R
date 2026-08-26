@@ -234,6 +234,7 @@ object AgentModule {
         playbookAdvanceTool: com.R.codecore.feature.agent.domain.tool.playbook.PlaybookAdvanceTool,
         playbookStatusTool: com.R.codecore.feature.agent.domain.tool.playbook.PlaybookStatusTool,
         playbookAbortTool: com.R.codecore.feature.agent.domain.tool.playbook.PlaybookAbortTool,
+        gitOpsTool: com.R.codecore.feature.agent.domain.tool.git.GitOpsTool,
         resultTypeRegistry: com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
     ): ToolRegistry {
         return ToolRegistry().apply {
@@ -304,6 +305,8 @@ object AgentModule {
             registerTool("playbook_advance", playbookAdvanceTool)
             registerTool("playbook_status", playbookStatusTool)
             registerTool("playbook_abort", playbookAbortTool)
+            // ══ GitOps 工程化工具：提交规范校验/建议、hooks 状态、发版前体检/打 Tag、版本日志生成
+            registerTool("gitops", gitOpsTool)
 
             // ══ D2-3 轨迹摘要提取器登记（norm-chain §3.8.2：规则表挂 ToolResultTypeRegistry，
             //    仅少数工具定制，其余走通用截断）。提取器签名 (args, resultData) → 一行摘要。

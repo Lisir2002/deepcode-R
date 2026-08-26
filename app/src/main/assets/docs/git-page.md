@@ -62,3 +62,32 @@
 | 远程鉴权失败 | 远程鉴权失败，请检查凭据配置（用户名/密码/Token） |
 | 未配置提交署名 | 尚未配置提交署名，请在设置中填写用户名和邮箱 |
 | 未配置远程仓库 | 未配置远程仓库，无法推送/拉取 |
+
+## AI 辅助 Git 工程化（gitops）
+
+对话中调用 `gitops` 工具，或在容器终端运行 `./scripts/gitops/gitops.sh`（需要 `git config core.hooksPath .githooks` 启用 hooks），可把项目 Git 规范、提交纪律、发版流程、版本日志生成等经验自动执行。支持的子命令：
+
+| 场景 | 调用示例 |
+|---|---|
+| 提交信息规范化 | `gitops check_commit --message "feat(agent): 新增流式工具调用"` |
+| 基于改动自动生成提交建议 | `gitops suggest_commit`（AI：`gitops(action="suggest_commit")`） |
+| 检查本地 hooks 启用状态 | `gitops hooks-status`（未启用时会给出启用指引） |
+| 发版前体检 + RC 判定 | `gitops release-check v1.2.3-rc1` 或 `gitops release-check v1.2.3` |
+| 本地打 Tag（推送交给外部） | `gitops release-tag v1.2.3-rc1` |
+| 自动生成版本日志草稿 | `gitops changelog v1.2.0`（缺省用最近历史 tag） |
+
+**RC 判定规则**（对齐仓库发版纪律）：
+- tag 含 `-rc` / `-beta` / `-alpha` / `-dev` 后缀 → 按 RC 处理
+- 改动触及启动 / 容器 / 构建链路（`AndroidManifest.xml`、`AIEditorApp.kt`、`feature/terminal/`、`feature/container/`、`app/build.gradle.kts`、`.github/workflows` 等）→ 建议先发 RC 预览版
+- 含功能代码改动 → 建议先发 RC
+- 仅 `.md` / `values/strings.xml` 文档或资源文案改动 → 可直接发正式版
+- 无提交变更 → 可直接发正式版（需人工确认 tag 语义）
+
+**发版建议工作流**（AI 会在 `release-check` 结果里一并返回 next_steps）：
+1. 切到 `main` 分支 + 提交干净
+2. `gitops release-check vX.Y.Z-rc1` 取 RC 判定建议
+3. 若建议 RC：`gitops release-tag vX.Y.Z-rc1` → Bash 执行 `git push origin vX.Y.Z-rc1` 推送触发 CI → 真机验证 AI 对话 / 终端 / 容器启动三条主线
+4. 若无阻塞且直接发正式：`gitops release-tag vX.Y.Z` → Bash 执行 `git push origin vX.Y.Z` → CI 自动构建 Release
+5. 每次发版前用 `gitops changelog <prev-tag>` 生成版本日志草稿，润色后写入 `CHANGELOG.md` 与 `docs/modules/<module>.md` 版本演进
+
+**注意**：`release-tag` 仅在本地创建 tag，推送由外部 Bash 完成，凭据由 `credential.helper=store` 自动注入。
