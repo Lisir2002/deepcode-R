@@ -5,6 +5,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ComponentCallbacks2
+import android.content.SharedPreferences
 import android.os.Build
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.core.util.FileLogger
@@ -43,6 +44,12 @@ class AIEditorApp : Application() {
 
     private companion object {
         const val TAG = "AIEditorApp"
+
+        /** 预防闸门诊断标记存储（见 [diagnoseLastExit] / [recordTrimCritical]）。 */
+        const val DIAG_PREFS = "rcodecore_diag"
+
+        /** 上次运行触发内存临界（RUNNING_CRITICAL/lowMemory）的时间戳，供下次启动诊断「无日志闪退」。 */
+        const val KEY_LAST_TRIM_CRITICAL = "last_trim_critical_ms"
     }
 
     override fun attachBaseContext(base: android.content.Context) {
@@ -138,6 +145,11 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var t2iDatabase: T2IDatabase
 
+    /** 内置服务浏览器控制器（@Singleton）：低内存临界时释放其持有的页面快照大对象缓存，
+     *  降低 LMKD 静默杀进程概率（LMKD 杀绕过 Java CrashHandler，是「模型输出时闪退却无日志」高概率根因）。 */
+    @Inject
+    lateinit var browserController: com.R.codecore.feature.browser.domain.BrowserController
+
     /** settings DataStore 收敛搬迁器（数据层重构 T2：11 个旧碎片文件 → 统一 settings_prefs）。 */
     @Inject
     lateinit var settingsDataStoreMigrator: com.R.codecore.feature.settings.data.repository.SettingsDataStoreMigrator
@@ -218,6 +230,13 @@ class AIEditorApp : Application() {
         appScope.launch {
             runCatching { checkDatabaseIntegrity() }
                 .onFailure { FileLogger.w(TAG, "数据库完整性检查异常（忽略，不影响启动）", it) }
+        }
+        // 预防闸门（异常退出自诊断）：上次运行若触发过内存临界（RUNNING_CRITICAL/lowMemory），
+        // 进程可能已被 LMKD 静默回收（无 Java 日志）——本次启动读出标记并写日志留痕，
+        // 配合启动时自动导出日志，让「无报错闪退」在下一次启动自动留下排查证据。
+        appScope.launch {
+            runCatching { diagnoseLastExit() }
+                .onFailure { FileLogger.w(TAG, "上次退出诊断异常（忽略，不影响启动）", it) }
         }
         // 启动即加载持久化等级，并随设置页改动实时生效（唯一同步点）。
         appScope.launch {
@@ -431,6 +450,23 @@ class AIEditorApp : Application() {
         if (info.lowMemory) {
             FileLogger.e("Memory", "系统内存严重不足（lowMemory=true），极可能被 LMKD 静默杀进程 → 闪退且无 Java 日志")
         }
+        // 预防闸门（内存峰值自愈）：只在最危险级别（RUNNING_CRITICAL / lowMemory）主动降负——
+        //  ① 释放浏览器页面快照大对象缓存（降低当前进程堆峰值，提高被 LMKD 保留的概率）；
+        //  ② 对所有域库做 WAL checkpoint(TRUNCATE)：WAL 模式被 LMKD 杀进程时，未合并回主库的
+        //     WAL/SHM 在下次启动可能触发 SQLite 原生崩溃（绕过 Java CrashHandler）——主动合并
+        //     显著缩小该损坏窗口；
+        //  ③ 落「内存临界」时间戳标记，供下次启动 diagnoseLastExit 自诊断「无日志闪退」。
+        //  ①② 均在 appScope 异步执行（onTrimMemory 在主线程回调，不能做 IO）。
+        val critical = info.lowMemory || level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
+        if (critical) {
+            runCatching { browserController.onMemoryPressure() }
+                .onFailure { FileLogger.w(TAG, "低内存释放浏览器快照缓存失败（忽略）", it) }
+            appScope.launch {
+                runCatching { checkpointAllDatabases() }
+                    .onFailure { FileLogger.w(TAG, "低内存 WAL checkpoint 失败（忽略）", it) }
+            }
+            recordTrimCritical()
+        }
     }
 
     override fun onLowMemory() {
@@ -471,4 +507,59 @@ class AIEditorApp : Application() {
             FileLogger.d("DBIntegrity", "全部 5 个域库完整性检查通过")
         }
     }
+
+    /**
+     * 预防闸门（WAL 自愈）：对所有域库执行 `PRAGMA wal_checkpoint(TRUNCATE)`，把 WAL 日志合并回
+     * 主库文件。WAL 模式下进程被 LMKD 静默杀死时，未合并的 WAL/SHM 在下次启动可能触发
+     * SQLite 原生崩溃（SIGABRT，绕过 Java CrashHandler）——低内存临界时主动合并显著缩小损坏窗口。
+     * 仅在 IO 线程调用（onTrimMemory 主线程回调里经 appScope 异步）。
+     */
+    private fun checkpointAllDatabases() {
+        val databases = mapOf(
+            "agent" to agentDatabase,
+            "settings" to settingsDatabase,
+            "credentials" to credentialsDatabase,
+            "workspace" to workspaceDatabase,
+            "t2i" to t2iDatabase
+        )
+        for ((name, db) in databases) {
+            runCatching {
+                db.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
+                    cursor.moveToFirst()
+                    FileLogger.d(
+                        "DBIntegrity",
+                        "[$name] WAL checkpoint 完成（busy=${cursor.getInt(0)} log=${cursor.getInt(1)} checkpointed=${cursor.getInt(2)}）"
+                    )
+                }
+            }.onFailure { FileLogger.w("DBIntegrity", "[$name] WAL checkpoint 失败（忽略）", it) }
+        }
+    }
+
+    /** 预防闸门（自诊断）：落「上次触发内存临界」时间戳标记，供下次启动 [diagnoseLastExit] 读取。 */
+    private fun recordTrimCritical() {
+        diagPrefs().edit().putLong(KEY_LAST_TRIM_CRITICAL, System.currentTimeMillis()).apply()
+    }
+
+    /**
+     * 预防闸门（异常退出自诊断）：读取上次运行是否触发过内存临界（[recordTrimCritical] 落盘）。
+     * 若在 12 小时内，判定「上次进程可能被 LMKD 静默回收」（该路径无 Java 日志，是「模型输出时
+     * 闪退却无报错」的典型盲区），写日志留痕；随后清除标记，避免同一条告警反复刷屏。
+     */
+    private fun diagnoseLastExit() {
+        val last = diagPrefs().getLong(KEY_LAST_TRIM_CRITICAL, 0L)
+        if (last > 0L) {
+            val agoMin = (System.currentTimeMillis() - last) / 60_000
+            if (agoMin < 12 * 60) {
+                FileLogger.w(
+                    TAG,
+                    "预防闸门：上次运行 ${agoMin} 分钟前曾触发内存临界（RUNNING_CRITICAL/lowMemory），" +
+                        "进程可能已被系统静默回收（LMKD 杀无 Java 日志）；" +
+                        "排查见 Download/RCodeCore/logs/（本次启动已自动导出）"
+                )
+            }
+        }
+        diagPrefs().edit().remove(KEY_LAST_TRIM_CRITICAL).apply()
+    }
+
+    private fun diagPrefs(): SharedPreferences = getSharedPreferences(DIAG_PREFS, MODE_PRIVATE)
 }

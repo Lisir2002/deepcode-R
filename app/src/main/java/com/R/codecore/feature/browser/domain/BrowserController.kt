@@ -1195,6 +1195,19 @@ class BrowserController @Inject constructor(
     fun lastDelta(): BrowserSnapshotDelta? = lastDelta
 
     /**
+     * 系统内存压力回调（由 AIEditorApp.onTrimMemory 在 RUNNING_CRITICAL/lowMemory 时转发）：
+     * 释放本进程持有的页面快照大对象缓存（全量元素树 / 增量基线 / 增量结果），
+     * 降低被 LMKD 静默杀进程的概率——LMKD 杀进程绕过 Java CrashHandler，
+     * 正是「模型输出时闪退却无日志」的高概率根因之一（见 AIEditorApp.onTrimMemory）。
+     * 释放后模型下一次 snapshot 会重新生成快照，属可接受的降级。
+     */
+    fun onMemoryPressure() {
+        lastSnapshot = BrowserPageSnapshot()
+        deltaBaseline = null
+        lastDelta = null
+    }
+
+    /**
      * 写操作后统一处理（R2.1/R2.3 写操作自动验证）：计算「基线 → 操作后」增量，
      * 把基线推进到操作后快照（下次写操作以此为对照），并记录动作日志。
      */

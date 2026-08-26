@@ -30,6 +30,7 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 - **运行环境抽象**：`EnvironmentDetector` 在启动/首次使用时探测宿主 ABI（`arm64-v8a` / `x86_64`）与模拟器信号（fingerprint/product/qemu），导出 `hostIsArm64` / `hostIsX86_64` / `containerRunnable` / `defaultProfileId()`；被 `ContainerSettingsRepository`（默认容器 profile）、`ContainerInstaller`（proot 架构）、`LinuxContainerEngine`（容器启动）统一消费。探测仅用于**适配与降级**，绝不用于授权/安全判断。
 - **安全体系**：凭据/敏感字段经 `CredentialEncryptor` 加密落库，密钥由 `DEKManager` 管理；ZTH 敏感列走 `ZthSensitiveColumnCrypto`。`HostKeyManager` 管理 SSH host key 校验。
 - **启动链路**：`AIEditorApp` 初始化 `FileLogger`、`TerminalKeepaliveService`、`McpManager` 等核心服务；启动后调 `ConnectionPrewarmer.warmDefaults()` 后台预热三家模型默认 host（DNS+TCP+TLS，失败静默）；`MainActivity` 承载 Compose 导航。
+- **崩溃与内存自愈防线（预防闸门）**：`attachBaseContext` 最早安装全局 Java CrashHandler（落盘 + 导出 `Download/RCodeCore/logs/`）；`onTrimMemory` 在 `RUNNING_CRITICAL`/`lowMemory` 时主动降负——释放浏览器快照大对象缓存（`BrowserController.onMemoryPressure`）、对所有域库 `PRAGMA wal_checkpoint(TRUNCATE)`（缩小 LMKD 杀进程后的 WAL 损坏窗口，防 SQLite 原生崩溃）、落「内存临界」时间戳标记；下次启动 `diagnoseLastExit` 读出该标记自诊断「无日志闪退」（LMKD 静默杀绕过 Java CrashHandler），配合启动时自动导出上一轮日志，让此类闪退自动留痕。
 - **网络层优化**：共享 OkHttp 在 `di/AgentModule` 配 `ConnectionPool(8, 15min)`（C2）+ `CachingDns`（C3）；三家 provider 流式 SSE 解析改用 `SseFieldExtractor` 定点抽取（P1）。详见 `core/network/` 与设计文档。
 - **后台任务**：`core/worker` 的 WorkManager 任务负责审计日志清理、凭据轮换、V1→V2 迁移等周期/一次性工作。
 
@@ -59,6 +60,7 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
+- **v0.3.0-rc3（2026-08-26）**：崩溃与内存自愈防线（预防闸门）落地——`AIEditorApp.onTrimMemory` 在内存临界时释放浏览器快照缓存 + 5 域库 WAL checkpoint(TRUNCATE) + 落临界标记；新增 `diagnoseLastExit` 启动自诊断「上次因内存压力被 LMKD 静默回收」并留痕（解决「模型输出时闪退却无日志」的排查盲区）。同步新增浏览器侧 `BrowserController.onMemoryPressure`。
 - **v0.3.0-rc2（2026-08-26）**：仓库整理（移除调试数据库等杂项）；文档审计对齐（agent 库 v4、32 表、迁移链）。
 - **v0.2.0（2026-08-25）**：网络层连接预热组件落地（`core/network/ConnectionPrewarmer`：DNS+TCP+TLS 预建）。
 - **v0.1.0（早期）**：数据层按域拆库（5 库 + `LegacyAgentDatabase` 一次性移植 + `DataRegistry` 注册表）、加密组件（`DEKManager`/`CredentialEncryptor`/`CredentialRotationWorker`）、`FileLogger`/`AILogger`、主题组件。
