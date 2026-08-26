@@ -1,0 +1,35 @@
+-- infra / Queue v1 schema（设计文档 §6.3 / §6.6）
+-- 生成类：InfraDb / QueueQueries
+
+CREATE TABLE queue_store (
+  id          INTEGER PRIMARY KEY,
+  topic       TEXT    NOT NULL,
+  payload     TEXT    NOT NULL,
+  status      TEXT    NOT NULL,
+  attempt     INTEGER NOT NULL DEFAULT 0,
+  next_run    INTEGER NOT NULL,
+  error_msg   TEXT,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX queue_store_pending_idx ON queue_store (topic, status, next_run);
+
+-- ── queries ──
+insertQueueItem:
+INSERT INTO queue_store (topic, payload, status, attempt, next_run, error_msg, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectPending:
+SELECT * FROM queue_store WHERE topic = ? AND status = ? AND next_run <= ?
+ORDER BY next_run ASC;
+
+selectById:
+SELECT * FROM queue_store WHERE id = ?;
+
+markStatus:
+UPDATE queue_store SET status = ?, attempt = ?, error_msg = ? WHERE id = ?;
+
+deleteQueueItem:
+DELETE FROM queue_store WHERE id = ?;
+
+selectLastInsertId:
+SELECT last_insert_rowid() AS id;

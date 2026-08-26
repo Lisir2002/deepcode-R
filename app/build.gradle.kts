@@ -9,6 +9,7 @@ plugins {
     kotlin("plugin.serialization") version "2.2.21"
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
+    id("app.cash.sqldelight")
 }
 
 // 从本地 keystore.properties 读取 release 签名密钥（已 gitignore，不入库）。
@@ -426,8 +427,20 @@ dependencies {
     implementation("androidx.webkit:webkit:1.13.0")
     // Testing
     testImplementation("junit:junit:4.13.2")
+    // JSON（TableDataProvider / SqlDelightDataProvider 通用表转储 Provider 使用；main sourceSet 需要）
+    implementation("org.json:json:20240303")
     // MigrationSchemaConsistencyTest：解析 Room 导出的 schema JSON（app/schemas/）做迁移一致性校验
     testImplementation("org.json:json:20240303")
+
+    // ── 新数据层（data-layer-redesign）─ SQLDelight（设计文档 §2/§12）──
+    // Android 驱动（AndroidSqliteDriver，L0 引擎，可插拔加密 factory 的明文实现）
+    implementation("app.cash.sqldelight:android-driver:2.2.1")
+    // 响应式查询（KVStore.observe 等 asFlow 扩展）
+    implementation("app.cash.sqldelight:coroutines-extensions:2.2.1")
+    // JVM 驱动（迁移黄金测试 / 数据保护测试用 NativeSqliteDriver，设计 §5.5）
+    testImplementation("app.cash.sqldelight:sqlite-driver:2.2.1")
+    // androidx-sqlite 桥接（PlainDriverFactory 的 FrameworkSQLiteOpenHelperFactory）
+    implementation("androidx.sqlite:sqlite-framework:2.4.0")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation(composeBom)
@@ -437,4 +450,46 @@ dependencies {
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// ── 新数据层（data-layer-redesign）─ SQLDelight 6 库拓扑（设计文档 §4 / §12）──
+// 核心 5 域各自独立 Database 类（独立版本链）+ infra 一个 Database 类承载全部 Store。
+// 生成规则（SQLDelight 2.x）：Database 类在公共包 com.R.codecore.datalayer.sqldelight；
+// 查询类/数据类在 packageName + 相对 srcDir 的目录路径（agent/ → .sqldelight.agent 等）。
+// 文件布局：src/main/sqldelight/<域>/<域>/<文件>.sq（.sq 必须位于 srcDir 的子目录「包目录」）。
+// dialect = sqlite 3.38：schema 编译期校验按 3.38；运行期由设备 SQLite 提供（语句均兼容 3.18+，
+// 已避免 UPSERT 等 3.24+ 语法以兼容 targetSdk=28 / Android 9 的 SQLite 3.22）。
+sqldelight {
+    databases {
+        create("AgentDb") {
+            packageName.set("com.R.codecore.datalayer.sqldelight")
+            srcDirs("src/main/sqldelight/agent")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
+        }
+        create("CredentialsDb") {
+            packageName.set("com.R.codecore.datalayer.sqldelight")
+            srcDirs("src/main/sqldelight/credentials")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
+        }
+        create("SettingsDb") {
+            packageName.set("com.R.codecore.datalayer.sqldelight")
+            srcDirs("src/main/sqldelight/settings")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
+        }
+        create("WorkspaceDb") {
+            packageName.set("com.R.codecore.datalayer.sqldelight")
+            srcDirs("src/main/sqldelight/workspace")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
+        }
+        create("T2iDb") {
+            packageName.set("com.R.codecore.datalayer.sqldelight")
+            srcDirs("src/main/sqldelight/t2i")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
+        }
+        create("InfraDb") {
+            packageName.set("com.R.codecore.datalayer.sqldelight")
+            srcDirs("src/main/sqldelight/infra")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
+        }
+    }
 }

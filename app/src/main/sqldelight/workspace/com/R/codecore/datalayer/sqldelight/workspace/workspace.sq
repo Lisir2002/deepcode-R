@@ -1,0 +1,57 @@
+-- workspace 域 v1 schema（设计文档 §11.4）
+-- 生成类：WorkspaceDb / WorkspaceQueries
+
+CREATE TABLE workspace_project (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  name        TEXT    NOT NULL,
+  path        TEXT    NOT NULL,
+  type        TEXT,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE workspace_file (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  project_id  TEXT    NOT NULL,
+  rel_path    TEXT    NOT NULL,
+  kind        TEXT,
+  size        INTEGER,
+  hash        TEXT,
+  updated_at  INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES workspace_project(id)
+);
+CREATE INDEX workspace_file_proj_idx ON workspace_file (project_id, rel_path);
+
+-- ── queries ──
+insertProject:
+INSERT INTO workspace_project (id, name, path, type, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectProjectById:
+SELECT * FROM workspace_project WHERE id = ?;
+
+selectAllProjects:
+SELECT * FROM workspace_project ORDER BY updated_at DESC;
+
+deleteProject:
+DELETE FROM workspace_project WHERE id = ?;
+
+insertFile:
+INSERT INTO workspace_file (id, project_id, rel_path, kind, size, hash, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+upsertFile:
+INSERT INTO workspace_file (id, project_id, rel_path, kind, size, hash, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  rel_path = excluded.rel_path,
+  kind = excluded.kind,
+  size = excluded.size,
+  hash = excluded.hash,
+  updated_at = excluded.updated_at;
+
+selectFilesByProject:
+SELECT * FROM workspace_file WHERE project_id = ? ORDER BY rel_path ASC;
+
+deleteFile:
+DELETE FROM workspace_file WHERE id = ?;

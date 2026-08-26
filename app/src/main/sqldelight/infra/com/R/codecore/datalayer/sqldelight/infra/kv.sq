@@ -1,0 +1,39 @@
+-- infra / KVStore v1 schema（设计文档 §6.6）
+-- 生成类：InfraDb / KvQueries
+
+CREATE TABLE kv_store (
+  id          INTEGER PRIMARY KEY,
+  namespace   TEXT    NOT NULL,
+  key         TEXT    NOT NULL,
+  type        TEXT    NOT NULL,
+  string_val  TEXT,
+  int_val     INTEGER,
+  bool_val    INTEGER,
+  json_val    TEXT,
+  updated_at  INTEGER NOT NULL,
+  deleted     INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (namespace, key)
+);
+
+-- ── queries ──
+insertKv:
+INSERT INTO kv_store (namespace, key, type, string_val, int_val, bool_val, json_val, updated_at, deleted)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0);
+
+-- upsertKv：INSERT OR REPLACE（兼容 targetSdk=28 的 SQLite 3.22，不支持 ON CONFLICT DO UPDATE/UPSERT）。
+-- 语义：UNIQUE(namespace,key) 冲突时删除旧行插入新行（代理键 id 变化，无外部引用，可接受）。
+upsertKv:
+INSERT OR REPLACE INTO kv_store (namespace, key, type, string_val, int_val, bool_val, json_val, updated_at, deleted)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0);
+
+selectKv:
+SELECT * FROM kv_store WHERE namespace = ? AND key = ? AND deleted = 0;
+
+selectKvByNamespace:
+SELECT * FROM kv_store WHERE namespace = ? AND deleted = 0 ORDER BY key ASC;
+
+tombstoneKv:
+UPDATE kv_store SET deleted = 1, updated_at = ? WHERE namespace = ? AND key = ?;
+
+deleteKv:
+DELETE FROM kv_store WHERE namespace = ? AND key = ?;

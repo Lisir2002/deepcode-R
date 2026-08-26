@@ -1,0 +1,31 @@
+-- infra / TimeSeries v1 schema（设计文档 §6.5 / §6.6）
+-- 生成类：InfraDb / TsQueries
+
+CREATE TABLE ts_store (
+  id            INTEGER PRIMARY KEY,
+  ts            INTEGER NOT NULL,
+  type          TEXT    NOT NULL,
+  payload_json  TEXT    NOT NULL,
+  meta          TEXT
+);
+CREATE INDEX ts_store_type_ts_idx ON ts_store (type, ts);
+
+-- ── queries ──
+insertTs:
+INSERT INTO ts_store (ts, type, payload_json, meta)
+VALUES (?, ?, ?, ?);
+
+selectTsByType:
+SELECT * FROM ts_store WHERE type = ? ORDER BY ts ASC;
+
+selectTsRange:
+SELECT * FROM ts_store WHERE type = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC;
+
+deleteTsOlderThan:
+DELETE FROM ts_store WHERE type = ? AND ts < ?;
+
+countTsByType:
+SELECT COUNT(*) AS cnt FROM ts_store WHERE type = ?;
+
+selectLastInsertId:
+SELECT last_insert_rowid() AS id;

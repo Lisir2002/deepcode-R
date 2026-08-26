@@ -1,0 +1,55 @@
+-- settings 域 v1 schema（设计文档 §11.3）
+-- 生成类：SettingsDb / SettingsQueries
+
+CREATE TABLE settings_profile (
+  id         TEXT    NOT NULL PRIMARY KEY,
+  name       TEXT,
+  active     INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE settings_pref (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  profile_id  TEXT,
+  key         TEXT    NOT NULL,
+  type        TEXT    NOT NULL,
+  string_val  TEXT,
+  int_val     INTEGER,
+  bool_val    INTEGER,
+  json_val    TEXT,
+  updated_at  INTEGER NOT NULL,
+  UNIQUE (profile_id, key)
+);
+
+-- ── queries ──
+insertProfile:
+INSERT INTO settings_profile (id, name, active, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?);
+
+clearActiveProfile:
+UPDATE settings_profile SET active = 0;
+
+setActiveProfile:
+UPDATE settings_profile SET active = ? WHERE id = ?;
+
+selectAllProfiles:
+SELECT * FROM settings_profile ORDER BY updated_at DESC;
+
+insertPref:
+INSERT INTO settings_pref (id, profile_id, key, type, string_val, int_val, bool_val, json_val, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- upsertPref：INSERT OR REPLACE（兼容 targetSdk=28 的 SQLite 3.22；UNIQUE(profile_id,key) 冲突时删旧插新）。
+upsertPref:
+INSERT OR REPLACE INTO settings_pref (id, profile_id, key, type, string_val, int_val, bool_val, json_val, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectPref:
+SELECT * FROM settings_pref WHERE profile_id IS ? AND key = ?;
+
+selectAllPrefs:
+SELECT * FROM settings_pref WHERE profile_id IS ?;
+
+deletePref:
+DELETE FROM settings_pref WHERE profile_id IS ? AND key = ?;

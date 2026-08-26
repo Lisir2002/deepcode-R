@@ -1,0 +1,36 @@
+-- infra / DocumentStore v1 schema（设计文档 §6.2 / §6.6）
+-- FTS5 虚表 doc_fts + trigger 由 DocumentStore 在初始化时经 driver.execute 建立（避免 SQLDelight 对虚拟表解析问题）。
+-- 生成类：InfraDb / DocQueries
+
+CREATE TABLE doc_store (
+  id          INTEGER PRIMARY KEY,
+  collection  TEXT    NOT NULL,
+  key         TEXT    NOT NULL,
+  doc_json    TEXT    NOT NULL,
+  version     INTEGER NOT NULL DEFAULT 1,
+  updated_at  INTEGER NOT NULL,
+  deleted     INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (collection, key)
+);
+
+-- ── queries ──
+insertDoc:
+INSERT INTO doc_store (collection, key, doc_json, version, updated_at, deleted)
+VALUES (?, ?, ?, ?, ?, 0);
+
+-- upsertDoc：INSERT OR REPLACE（兼容 targetSdk=28 的 SQLite 3.22；UNIQUE(collection,key) 冲突时删旧插新）。
+upsertDoc:
+INSERT OR REPLACE INTO doc_store (collection, key, doc_json, version, updated_at, deleted)
+VALUES (?, ?, ?, ?, ?, 0);
+
+selectDoc:
+SELECT * FROM doc_store WHERE collection = ? AND key = ? AND deleted = 0;
+
+selectDocByCollection:
+SELECT * FROM doc_store WHERE collection = ? AND deleted = 0 ORDER BY key ASC;
+
+tombstoneDoc:
+UPDATE doc_store SET deleted = 1, updated_at = ? WHERE collection = ? AND key = ?;
+
+deleteDoc:
+DELETE FROM doc_store WHERE collection = ? AND key = ?;

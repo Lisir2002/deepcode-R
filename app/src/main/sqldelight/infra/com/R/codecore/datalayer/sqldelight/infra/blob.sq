@@ -1,0 +1,27 @@
+-- infra / BlobStore v1 schema（设计文档 §6.4 / §6.6）
+-- 生成类：InfraDb / BlobQueries
+
+CREATE TABLE blob_store (
+  id          INTEGER PRIMARY KEY,
+  mime        TEXT,
+  size        INTEGER NOT NULL,
+  data        BLOB    NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+
+-- ── queries ──
+insertBlob:
+INSERT INTO blob_store (mime, size, data, created_at)
+VALUES (?, ?, ?, ?);
+
+selectBlob:
+SELECT * FROM blob_store WHERE id = ?;
+
+selectBlobMeta:
+SELECT id, mime, size, created_at FROM blob_store WHERE id = ?;
+
+deleteBlob:
+DELETE FROM blob_store WHERE id = ?;
+
+selectLastInsertId:
+SELECT last_insert_rowid() AS id;

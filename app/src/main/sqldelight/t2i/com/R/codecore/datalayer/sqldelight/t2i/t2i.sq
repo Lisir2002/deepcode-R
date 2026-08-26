@@ -1,0 +1,47 @@
+-- t2i 域 v1 schema（设计文档 §11.5）
+-- 生成类：T2iDb / T2iQueries
+
+CREATE TABLE t2i_task (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  prompt      TEXT    NOT NULL,
+  params_json TEXT,
+  status      TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE t2i_result (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  task_id     TEXT    NOT NULL,
+  blob_ref    TEXT    NOT NULL,
+  seed        INTEGER,
+  width       INTEGER,
+  height      INTEGER,
+  seq         INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES t2i_task(id)
+);
+CREATE INDEX t2i_result_task_idx ON t2i_result (task_id);
+
+-- ── queries ──
+insertTask:
+INSERT INTO t2i_task (id, prompt, params_json, status, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateTaskStatus:
+UPDATE t2i_task SET status = ?, updated_at = ? WHERE id = ?;
+
+selectTaskById:
+SELECT * FROM t2i_task WHERE id = ?;
+
+selectAllTasks:
+SELECT * FROM t2i_task ORDER BY updated_at DESC;
+
+insertResult:
+INSERT INTO t2i_result (id, task_id, blob_ref, seed, width, height, seq)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectResultsByTask:
+SELECT * FROM t2i_result WHERE task_id = ? ORDER BY seq ASC;
+
+deleteTask:
+DELETE FROM t2i_task WHERE id = ?;

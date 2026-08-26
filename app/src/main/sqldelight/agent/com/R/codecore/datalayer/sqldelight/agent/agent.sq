@@ -1,0 +1,102 @@
+-- agent 域 v1 schema（设计文档 §11.1）
+-- 生成类：AgentDb / AgentQueries（包 com.R.codecore.datalayer.sqldelight.agent）
+
+CREATE TABLE agent_session (
+  id         TEXT    NOT NULL PRIMARY KEY,
+  title      TEXT,
+  mode       TEXT    NOT NULL,
+  model      TEXT,
+  status     TEXT    NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE agent_message (
+  id         TEXT    NOT NULL PRIMARY KEY,
+  session_id TEXT    NOT NULL,
+  role       TEXT    NOT NULL,
+  seq        INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES agent_session(id)
+);
+CREATE INDEX agent_message_session_idx ON agent_message (session_id, seq);
+
+CREATE TABLE agent_message_part (
+  id           TEXT    NOT NULL PRIMARY KEY,
+  message_id   TEXT    NOT NULL,
+  kind         TEXT    NOT NULL,
+  seq          INTEGER NOT NULL,
+  text_content TEXT,
+  tool_name    TEXT,
+  tool_args    TEXT,
+  tool_result  TEXT,
+  tool_error   TEXT,
+  FOREIGN KEY (message_id) REFERENCES agent_message(id)
+);
+CREATE INDEX agent_message_part_msg_idx ON agent_message_part (message_id, seq);
+
+CREATE TABLE agent_tool_call (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  message_id  TEXT    NOT NULL,
+  name        TEXT    NOT NULL,
+  args_json   TEXT,
+  result_json TEXT,
+  status      TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL,
+  FOREIGN KEY (message_id) REFERENCES agent_message(id)
+);
+CREATE INDEX agent_tool_call_msg_idx ON agent_tool_call (message_id);
+
+CREATE TABLE agent_checkpoint (
+  id            TEXT    NOT NULL PRIMARY KEY,
+  session_id    TEXT    NOT NULL,
+  snapshot_json TEXT    NOT NULL,
+  created_at    INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES agent_session(id)
+);
+CREATE INDEX agent_checkpoint_session_idx ON agent_checkpoint (session_id, created_at);
+
+-- ── queries ──
+insertSession:
+INSERT INTO agent_session (id, title, mode, model, status, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateSessionTitle:
+UPDATE agent_session SET title = ?, updated_at = ? WHERE id = ?;
+
+updateSessionStatus:
+UPDATE agent_session SET status = ?, updated_at = ? WHERE id = ?;
+
+selectSessionById:
+SELECT * FROM agent_session WHERE id = ?;
+
+selectAllSessions:
+SELECT * FROM agent_session ORDER BY updated_at DESC;
+
+deleteSession:
+DELETE FROM agent_session WHERE id = ?;
+
+insertMessage:
+INSERT INTO agent_message (id, session_id, role, seq, created_at)
+VALUES (?, ?, ?, ?, ?);
+
+selectMessagesBySession:
+SELECT * FROM agent_message WHERE session_id = ? ORDER BY seq ASC;
+
+insertMessagePart:
+INSERT INTO agent_message_part (id, message_id, kind, seq, text_content, tool_name, tool_args, tool_result, tool_error)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertToolCall:
+INSERT INTO agent_tool_call (id, message_id, name, args_json, result_json, status, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectToolCallsByMessage:
+SELECT * FROM agent_tool_call WHERE message_id = ?;
+
+insertCheckpoint:
+INSERT INTO agent_checkpoint (id, session_id, snapshot_json, created_at)
+VALUES (?, ?, ?, ?);
+
+selectCheckpointsBySession:
+SELECT * FROM agent_checkpoint WHERE session_id = ? ORDER BY created_at DESC;
