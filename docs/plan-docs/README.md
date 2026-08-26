@@ -24,7 +24,7 @@
 ## 预检规则（.githooks/spec-check.sh）
 
 - 本次提交新增非 test 路径 `.kt` 或新增 feature 模块 → 提示需配套 `docs/plan-docs/*-design.md`（阻断 + `--no-verify` 逃生口）。
-- 本次提交含 `*-design.md` → 校验头部 `> 评审状态：` 行存在且值合法（阻断 + 逃生口）。
+- 本次提交含 `*-design.md` → 校验头部 `> 评审状态：` 行存在且值合法（阻断 + 逃生口）；状态为 `✅ 已评审` 时建议另起一行 `> 评审结论：<一句话>`，缺失仅 warning 不阻断。
 - 改 `AGENTS.md` / `prompts/` 行为规则文件 → 提示检查 `assets/sop/` 同步（warning 级、不阻断）。
 
 ## 索引

@@ -4,8 +4,9 @@
 # 职责（见 docs/plan-docs/norm-chain-design.md §3.4）：
 #   1) 配套性触发：本次提交「新增 feature/<module> 目录 或 新增非 test 路径 .kt」
 #      → 提示需配套 docs/plan-docs/*-design.md（阻断 + --no-verify 逃生口，与 docs/modules 同款）。
-#   2) 评审状态行校验：本次提交含 *-design.md → 校验文档头部 `> 评审状态：<状态>` 引用行
-#      存在且值合法（📝 草案 / ✅ 已评审 / 已实施）（阻断 + 逃生口）。
+#   2) 评审状态行校验（两字段）：本次提交含 *-design.md → 校验文档头部 `> 评审状态：<状态>` 引用行
+#      存在且值合法（📝 草案 / ✅ 已评审 / 已实施）（阻断 + 逃生口）；`✅ 已评审` 时建议另起一行
+#      `> 评审结论：<一句话>`，缺失给 warning（不阻断）。
 #   3) SOP 同步提示（warning 级、不阻断）：改 AGENTS.md → 提示检查 sop/10-50 同步；
 #      改 prompts/ 行为规则文件（15-project-rules、40-approach）→ 提示检查 sop/60-ai-conduct 同步。
 #
@@ -46,7 +47,9 @@ if (( need_design_hint == 1 )); then
 fi
 
 #############################################
-# 2) 评审状态行校验：本次提交含 *-design.md
+# 2) 评审状态行校验（两字段）：本次提交含 *-design.md
+#    评审状态：存在 + 值合法（📝 草案 / ✅ 已评审 / 已实施，纯值不带括号注释/组合态），阻断；
+#    评审结论：`> 评审结论：<一句话>`（✅ 已评审 时建议必填），缺失 warning 不阻断。
 #############################################
 VALID_STATUSES=("📝 草案" "✅ 已评审" "已实施")
 touched_design=0
@@ -70,6 +73,14 @@ while IFS= read -r line; do
     if (( ok == 0 )); then
       echo "❌ Spec 状态行非法：$path 的评审状态「$value」不在合法取值（📝 草案 / ✅ 已评审 / 已实施），且不得带括号注释/组合态" >&2
       errors=$((errors+1))
+    elif [[ "$value" == "✅ 已评审" ]]; then
+      conclusion_line="$(grep -m1 -E '^> *评审结论：' "$ROOT/$path" || true)"
+      conclusion_value="${conclusion_line#*> *评审结论：}"
+      conclusion_value="$(echo "$conclusion_value" | xargs)"
+      if [[ -z "$conclusion_line" || -z "$conclusion_value" ]]; then
+        echo "ℹ️  Spec 评审结论建议：$path 状态为「✅ 已评审」但缺少头部引用行「> 评审结论：<一句话>」（建议必填，warning 不阻断）" >&2
+        warnings=$((warnings+1))
+      fi
     fi
   fi
 done <<< "$CACHED_NAMESTATUS"
