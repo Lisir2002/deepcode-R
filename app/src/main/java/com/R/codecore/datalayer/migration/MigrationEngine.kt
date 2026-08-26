@@ -1,6 +1,6 @@
 package com.R.codecore.datalayer.migration
 
-import app.cash.sqldelight.db.Migration
+import app.cash.sqldelight.db.AfterVersion
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlSchema
 import com.R.codecore.datalayer.engine.DatabasePathProvider
@@ -25,7 +25,7 @@ class MigrationEngine(private val pathProvider: DatabasePathProvider) {
         driver: SqlDriver,
         schema: SqlSchema<*>,
         codeMigrations: List<CodeMigration> = emptyList(),
-        sqlMigrations: Array<out Migration> = emptyArray(),
+        sqlMigrations: Array<out AfterVersion> = emptyArray(),
         heavy: Boolean = false,
     ) {
         val current = currentVersion(driver)
@@ -34,7 +34,7 @@ class MigrationEngine(private val pathProvider: DatabasePathProvider) {
             current == 0 -> schema.create(driver)
             current < target -> {
                 snapshot(lib, heavy)
-                schema.migrate(driver, current, target, *sqlMigrations)
+                schema.migrate(driver, current.toLong(), target, *sqlMigrations)
                 codeMigrations
                     .filter { it.from >= current && it.to <= target }
                     .sortedBy { it.from }

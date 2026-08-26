@@ -448,7 +448,7 @@ class GitOpsTool @Inject constructor(
             JsonPrimitive("3. CI 构建产物校验：ABI（arm64+x86_64 双通用包）/ 签名/SHA256"),
             JsonPrimitive("4. 发版完成，在 Release 页核对版本日志与下载链接")
         ) else emptyList()
-        return (tagPush + rcOnly + stableOnly).map { JsonPrimitive(it) }
+        return tagPush + rcOnly + stableOnly
     }
 
     /**
