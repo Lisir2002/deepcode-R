@@ -43,6 +43,7 @@
 | `domain/session/` | 会话用例：`SessionUseCase`（**删除事务化** `withTransaction` + 级联清理 9 张关联表[todo/hunk/模式切换历史/技能会话态/wake/任务编排 4 表]、重命名长度截断 `TITLE_MAX`、删当前会话后重选兜底 `getFirstSessionOfWorkspace`→`getFirstUnboundSession`→`getMostRecentSession`）、`MessagePersistenceUseCase` |
 | `domain/skill/` | 技能系统：`Skill` 模型（PROMPT/SCRIPT/MCP 三形态、BUILTIN/LOCAL 来源）、`SkillParser`、`SkillRepository`、`SkillExecutor`、`SkillSource` + `LocalDirectorySkillSource`、`BuiltinSkillSeeder`（首启引导内置技能）、`SkillStateRepository`（Room 持久化启用状态） |
 | `domain/tool/` | 工具系统（详见 2.3） |
+| `domain/trajectory/` | **运行轨迹**（D2-3/D2-5）：`TrajectoryEntity`（agent_trajectories 表，append-only：tool/turn/compaction/inject/error/timeout 六类 kind）、`TrajectoryService`（记录 tool 轨迹与轻量标记、`buildActionSummary` 已做动作摘要、`turnUsage`/`sessionUsage` 用量聚合、`getTrajectory` 审计回放）；workflow 每次工具执行完成追加 tool 轨迹、turn 边界/压缩/注入/错误/超时追加标记，独立于 agent_messages 不受压缩影响 |
 | `domain/workflow/` | Agent 工作流：`AgentWorkflow`（接口 + `AgentEvent` 事件集）、`StatefulAgentWorkflow`（MVI 状态机实现）、`ContextCompactor`（上下文压缩）。**D1 六段式工具流水线契约**：runToolSync 内 pre-execute（门，L5 缓存/视图守卫）→ guard（护栏链）→ execute（执行）→ post-execute（可改写结果/媒体剥离/文件观察版本更新）→ finalizeContent（结果定型）→ result（只读观测）；每轮 step 前经 `NormFlowSettingsRepository.isStepInjectActive()` 判定注入 step 前注入块，guard 段经 `isToolGuardActive()` 判定挂载护栏链 |
 | `domain/zth/` | ZTH 零信任防护：`ZthGuardAggregateFacade`（聚合门面）、`ZthCircuitBreakerManager`、`ZthConfirmationCardManager` + `ZthConfirmationCardStateMachine`、`ZthPlanApprovalManagerWrapper`、`ZthContentReviewer`、`ZthToolOutputGuard`、`ZthCapabilityGuard`、`ZthFailureClassifier`、`ZthWorkflowHooks`、`ZthDomainModels`、`TerminalBundleMirrorRotator` |
 | `domain/ext/` | **声明式扩展生态**（Claude Code 形态）：`ExtensionLoader`（统一扫描内置 `assets/ext/` + 用户 `<rcodecore>/ext/` 的声明式命令，FileObserver 热加载）、`ExtensionCommand`（frontmatter 命令模型）、`ExtensionCommandCore`（无 Android 依赖的命令扫描核心，mtime 懒刷新）、`PluginManifest`/`PluginManager`（插件分发：内置/用户两级，zip 导入 + Zip Slip 防护，聚合插件命令与 hooks 内容源） |
@@ -54,6 +55,7 @@
 | `domain/hook/` | **声明式 hook 事件**（Claude Code hooks + DSH 工具流水线）：`HookDispatcher`（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart 挂点）、`HookConfigLoader`（合并内置/插件/用户 hooks.json）、`CommitDisciplineHook`（git commit/push 纪律检查示例） |
 | `domain/input/` | **用户意图拆解与持续意图维护源**（D0 + D1 step 前注入源）：`UserInputParser`（结构化解析 command?/args/text + 意图分类 + `!`/`?` marker）、`IntentAskSource`（意图问判三问，P1）、`BehaviorModeManager`/`BehaviorModeSource`（四档行为模式，P1）、`GoalStaleDetector`/`GoalStaleSource`（语义失配检测，P2）、`GoalAdjustEvent`/`GoalAdjustEventSource`（目标调整事件闭环，P1）、`GoalHintSource`（goal 注入，P0）、`PlanPendingHintSource`（plan pending 提示，P1）、`PlaybookStageSource`（剧本阶段注入，P1，D5 预留）、`LoopAdvisorySource`（空转循环提醒，P2） |
 | `domain/rule/` | **分层规则纪律**（D3）：`RuleLayer`（全局/项目/工作区/模块四级 + 显式 priority）、`RuleAsset`（frontmatter 元数据 + 摘要/正文两级）、`RuleRegistry`（四级注册表：全局 `~/.rcodecore/global-rules.md` / 项目 `AGENTS.md` / 工作区 `workspace-AGENTS.md` / 模块 `feature/<module>/AGENTS.md`，复用 frontmatter 解析 + mtime 懒刷新；`resident` 三级常驻 + `moduleRules` 按需命中），`RuleAssetCore`（无 Android 依赖的解析核心，JVM 可测） |
+| `domain/sop/` | **SOP 标准作业**（D4）：`SopAsset`（独立结构：`name`/`order`/`whenToUse`/`body`，与 `AgentAsset` 解耦，body 为编号步骤「操作 + 判定 + 产出/出错处理」）、`SopRegistry`（扫 `~/.rcodecore/sop/`，复用 `SkillParser` frontmatter 解析 + mtime 懒刷新；`SopAssetCore` 无 Android 依赖解析核心，JVM 可测）；摘要（名称 + whenToUse）经 `SystemPromptProvider.SopSource` 常驻注入，完整正文经 `loadSop` 工具按需取用 |
 | `domain/guard/` | **工具执行护栏链**（D1）：`ToolGuard` 接口（guard 三态 PASS/BLOCK/ADVISORY）+ `ToolGuardContext`（toolName/args/sessionId/projectRoot）+ `ToolGuardResult`（Pass/Block/Advisory）；`FileObservationGuard`（文件观察纪律：编辑前必须先读否则 `FS_NOT_OBSERVED`、mtime 版本 CAS 否则 `FS_STALE`，新建豁免、writeFile 即已知）；`GuardModule`（Dagger `@IntoSet` 汇集注册护栏到 `Set<ToolGuard>`，挂入六段式 guard 段，首个 BLOCK 短路） |
 
 ### 2.3 domain/tool 工具系统
@@ -63,7 +65,7 @@
 | `tool/AgentTool.kt` | 工具基类：`ToolResult`（Success/Error/Partial）、`ToolParameter`、`ToolCapability`、`ToolPermissionPolicy`、`RetryPolicy`/`ToolErrorClass`（L3 错误分类）、`provides/consumes`（L3 结果协议）、`dependsOn`（L4 依赖）、`subscribedEvents`（L7 事件）、`buildPostExecutionEvent`（L7 事件自声明钩子，事件由工具自声取代工作流硬编码 mapping）、`StreamingAgentTool` 流式接口、`ToolCall` |
 | `tool/ToolRegistry.kt` | 单例工具注册表（`ConcurrentHashMap`），注册/查找/列出可用工具 |
 | `tool/ToolResultCache.kt` | L5 结果缓存：会话级 + TTL（默认 60s），文件类工具按 mtime 失效；**文件观察版本（D1-4）**：`recordFileMtime(path, mtime)` 记录观察版本、`fileMtime(path)` 供 `FileObservationGuard` 做 mtime CAS 判定 |
-| `tool/ToolResultTypeRegistry.kt` | L3 结构化结果类型登记 |
+| `tool/ToolResultTypeRegistry.kt` | L3 结构化结果类型登记；**轨迹摘要提取器（D2-3）**：`registerTrajectorySummarizer` 按工具名登记定制提取器（readFile 路径+行数 / writeFile 目标文件 / editFile 状态 / run_code exit+stdout 尾 / Bash 命令），无定制走通用截断（前 200 字符 + truncated） |
 | `tool/ToolDependencyScheduler.kt` | L4 依赖感知调度：按工具 `dependsOn` 构建依赖图调度执行 |
 | `tool/ToolEventBus.kt` + `ToolEvent.kt` | L7 事件总线：工具间声明式事件发布/订阅，驱动缓存失效等 |
 | `tool/IncrementalIndexStore.kt` | 工具动作与轮次快照的增量索引 |
@@ -313,6 +315,21 @@
 - **四级规则资产**（D3-1）：`RuleLayer` 定义全局（`~/.rcodecore/global-rules.md`）/ 项目（`AGENTS.md`，权威源）/ 工作区（工作区根 `workspace-AGENTS.md`）/ 模块（`feature/<module>/AGENTS.md`）四级，frontmatter 可声明 `priority`（数值大优先，缺省按层级 10/20/30/40 递增）；`RuleRegistry`（装配 `RuleAssetCore` 纯解析核心，复用 `AgentAssetCore` frontmatter 解析 + mtime 懒刷新）按 priority 降序拼接合并，同 priority 靠后声明者优先。
 - **三级常驻 + 模块级按需注入**（D3-2）：`resident` 只注入全局/项目/工作区三级；模块级规则按**文件观察命中路径**判断——`RuleRegistry.touchedModulePaths(projectRoot)` 遍历 `ToolResultCache.touchedPaths()`（readFile 观察 / writeFile 即已知的路径集合），命中 `/feature/<module>/` 段即取模块目录名，`moduleRules` 只注入本会话触碰过的模块规则；`SystemPromptProvider.RulesSource`（step 前注入）把 `resident + moduleRules` 合并后按 priority 注入摘要。
 - **摘要/正文两级**（D3-3）：常驻只注入 `summary`（frontmatter `summary` 优先，否则正文首段，默认 120 字符），完整正文经 `/rules` 命令（`RulesCommandHandler`，列出四级规则清单或加载指定规则正文）或 `load_rule` 工具（`LoadRuleTool`，按名称精确查找，不存在返回 `RULE_NOT_FOUND`）显式加载。
+
+### 3.15 思维链路 + 步骤结果汇总（D2，见 `docs/plan-docs/norm-chain-design.md` §3.7 / §3.8）
+
+- **空转软收敛**（D2-1，§3.7.1）：`StatefulAgentWorkflow` 维护 `idleRounds` 计数器——每轮统计实质产出（文件写 / 命令执行 / run_code 命中 `SUBSTANTIAL_TOOLS` 即清零；`readFile` 读到**新文件路径**视为产出性读动作也清零，仅反复重读同类文件才累计空转）；连续 `IDLE_CONVERGE_ROUNDS`（6）轮无实质产出 → 在 CallLlm 前**强制结束回合**（区别于 LoopGuard 的 advisory），把 `TrajectoryService.buildActionSummary` 生成的已做动作摘要 + 结束原因返回用户；与 `MAX_ITERATIONS`（50）硬上限、`LoopGuardTracker`（3/5/8 advisory）构成三级防线。
+- **推理预算**（D2-2，§3.7.2）：子开关 `reasoning_budget`（`NormFlowSettingsRepository`，默认开）+ 总开关开启时，workflow 每轮取 `currentContext.reasoningEffort` 透传给 `provider.completeStream`（关闭则 null 禁用推理参数）；模型返回 reasoning 时经 `reasoningAcc` 累积逐段发 `AgentEvent.ReasoningDelta` 流式呈现（`AIChatPanel` 折叠面板，复用 AssistantText reasoningAcc 通道），DeepSeek `reasoning_content` / Anthropic / OpenAI reasoning 均支持；reasoning 随 AssistantMessage 进入后续轮次并计入压缩 token。
+- **运行轨迹表**（D2-3，§3.8.1/2）：`agent_trajectories`（`TrajectoryEntity`，append-only，v2→v3 迁移 + `DataRegistry` 登记 + `LightweightSchemaRescue`）字段 trajectoryId/sessionId/taskId/turnIndex/kind/toolName/argsHash/resultSummary/isError/durationMs/tokensIn/tokensOut/ts；workflow 每次工具执行完成追加 tool 轨迹，turn 边界/压缩/注入/错误/超时追加轻量标记；`resultSummary` 经 `ToolResultTypeRegistry.registerTrajectorySummarizer` 定制提取（readFile 路径+行数 / writeFile 目标 / editFile 状态 / run_code exit+stdout 尾 / Bash 命令），其余通用截断。
+- **用量卡片**（D2-4，§3.8.4）：回合结束 `TrajectoryService.turnUsage`（本回合增量：输入/输出/总 token、耗时、工具数）+ `sessionUsage`（会话累计，仅 token 不估成本）经 `AgentEvent.TurnUsage` 发送，`AIAgentViewModel` 落库为 usage 工具卡片（Room Flow 驱动渲染）；子开关 `usage_card` 关闭则不发（均默认开，受总开关管控）。
+- **轨迹消费**（D2-5，§3.8.3）：`buildActionSummary` 生成已做动作摘要（空转收敛返回 / Playbook 阶段总结复用）；`getTrajectory`/`getByTask` 供审计回放；删除会话时 `TrajectoryDao.deleteBySession` 级联清理。
+
+### 3.16 SOP 标准作业（D4，见 `docs/plan-docs/norm-chain-design.md` §3.2）
+
+- **资产与注册**（D4-1/2）：`SopRegistry`（装配 `SopAssetCore` 纯解析核心，复用 `SkillParser.splitAndParseFrontmatter` frontmatter 解析 + mtime 懒刷新）扫 `~/.rcodecore/sop/`（内置默认副本经 `ContainerInstaller.extractSop` 启动全量释放）；`SopAsset` 独立结构 `name`/`order`/`whenToUse`/`body`（与 `AgentAsset` 解耦），frontmatter 缺省回退文件名/数字前缀/正文首段；`assets/sop/` 共 6 份：10-release（发版）/20-migration（迁移）/30-asset-sync（资产同步）/40-git-commit（提交）/50-troubleshooting（排障）/60-ai-conduct（行为纪律步骤化），正文均为编号步骤「操作 + 判定 + 产出/出错处理」，头部注明权威源（10-50 对齐 `AGENTS.md`、60 对齐 `prompts/`）。
+- **摘要常驻 + 按需取正文**（D4-3/4）：`SystemPromptProvider.SopSource`（step 前注入，importance=P1，八源第 7 位 order 7，走预算裁剪）全量常驻注入 SOP 清单摘要（名称 + whenToUse 一句话，不做 mode 过滤）；完整正文经 `loadSop` 工具（`domain/tool/sop/LoadSopTool`，参数 `sop_name`，按名称精确查找，不存在返回 `SOP_NOT_FOUND`）按需加载。**sop_summary 子开关**（`NormFlowSettingsRepository`，默认开）：`isSopSummaryActive()` 每轮控制摘要注入开合，`loadSop` 取正文不受影响。
+- **SOP/Skill 双判据边界**（D4-4）：主判据按适用范围——SOP = 仓库内固定操作流程（绑项目语义，摘要常驻注入）；Skill = 通用可复用技能（用户可增删的技能中心）。辅助判据按步骤化程度——SOP 严格编号步骤；Skill 可非步骤化。双判据同时满足才归 SOP；区分指引写入 `prompts/70-skills-and-mcp.md`（§技能）。
+- **权威源同步提示**（D4-5）：`.githooks/spec-check.sh` 第 3 段（warning 级、不阻断）——本次提交改 `AGENTS.md` → 提示检查 `sop/10-50` 同步；改 `prompts/15-project-rules.md` / `40-approach.md` → 提示检查 `sop/60-ai-conduct` 同步。
 
 ## 4. 对外接口与集成点
 

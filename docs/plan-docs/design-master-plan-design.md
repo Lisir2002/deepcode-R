@@ -96,8 +96,10 @@
 |---|---|---|---|
 | D0 用户意图拆解 | ✅ 已实施 | 2026-08-25 | Parser 解析/意图分类/门控缓存/行为模式/marker/失配提醒/结构化澄清/事件闭环 JVM 单测 50 例全绿；`assembleDebug` + `testReleaseUnitTest`（343 例）全绿 |
 | D1 Agentic Workflow 基座 | ✅ 已实施 | 2026-08-25 | 8 Source 一次登记 + 八源排序 + 预算裁剪（P0 永不裁）、ToolGuard 链 + FileObservationGuard（FS_NOT_OBSERVED/FS_STALE）、六段式契约对齐、闭环核对（prompts 补充 TOOL_TIMEOUT）、统一开关基础（NormFlowSettingsRepository + 设置页 UI）JVM 单测 15 例全绿；`assembleDebug` + `testReleaseUnitTest`（358 例）全绿 |
+| D2 思维链路 + 步骤结果汇总 | ✅ 已实施 | 2026-08-26 | 空转软收敛（idleRounds 计数器 + 实质产出/产出性读清零 + 连续 6 轮强制收敛返回已做动作摘要）、推理预算（reasoning_budget 子开关 + reasoningEffortForRound 透传 provider + ReasoningDelta 流式呈现）、TrajectoryEntity + DAO + v2→v3 迁移 + DataRegistry 登记 + 全工具定制提取（readFile/writeFile/editFile/run_code/Bash）、用量卡片（usageCardEnabled 子开关 + TurnUsage 事件落库渲染，本回合增量 + 会话累计）、轨迹消费（buildActionSummary 已做动作摘要 / getTrajectory 审计回放）；`assembleDebug` + `testReleaseUnitTest` 全绿 |
 | D3 分层规则纪律 | ✅ 已实施 | 2026-08-26 | 四级规则资产（RuleLayer/RuleAsset/RuleRegistry + RuleAssetCore 纯解析核心）、三级常驻注入 + 模块级按需注入（touchedModulePaths 从 ToolResultCache 文件观察路径命中 `/feature/<module>/` 推导）、摘要/正文两级（RulesSource 注入 + `/rules` 命令 + `load_rule` 工具）；`assembleDebug` + `testReleaseUnitTest` 全绿；模块文档 agent.md 同步 §3.14 |
-| D2、D4–D7 | ⬜ | — | — |
+| D4 SOP 标准作业 | ✅ 已实施 | 2026-08-26 | SopAsset + SopRegistry（SopAssetCore 纯解析核心复用 SkillParser frontmatter + mtime 热加载）+ ContainerInstaller.extractSop 释放；6 份资产（10-release/20-migration/30-asset-sync/40-git-commit/50-troubleshooting/60-ai-conduct，编号步骤「操作+判定+产出」头部注明权威源）；SopSource 摘要常驻注入（P1，八源第 7 位，sop_summary 子开关管控）+ loadSop 工具按需取正文（双判据边界指引入 prompts/70-skills-and-mcp）；spec-check.sh 第 3 段 SOP 同步提示（warning 不阻断）；JVM 单测（SopAssetCoreTest：frontmatter 解析/order 回退/whenToUse 回退/排序/热加载/结构化正文取回）全绿；`assembleDebug` + `testReleaseUnitTest` 全绿；模块文档 agent.md 同步 §3.16 |
+| D6–D7 | ⬜ | — | — |
 
 ## 7. 变更记录
 
