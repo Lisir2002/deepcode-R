@@ -1,7 +1,7 @@
 package com.R.codecore.datalayer.engine
 
 import android.content.Context
-import app.cash.sqldelight.android.AndroidSqliteDriver
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import app.cash.sqldelight.db.SqlDriver
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import com.R.codecore.datalayer.sqldelight.AgentDb
