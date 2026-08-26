@@ -45,4 +45,29 @@ class SettingsRepository(private val db: SettingsDb) {
 
     suspend fun deletePref(profileId: String?, key: String) =
         withContext(Dispatchers.IO) { q.deletePref(profileId, key) }
+
+    // ── 阶段 1 补表方法（ai_providers）──
+
+    suspend fun insertProvider(
+        id: String, name: String, type: String, encryptedApiKey: String, baseUrl: String,
+        defaultModel: String, isActive: Long, models: String, isEnabled: Long,
+        useFullUrl: Long, useResponseApi: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertProvider(id, name, type, encryptedApiKey, baseUrl, defaultModel, isActive, models, isEnabled, useFullUrl, useResponseApi)
+    }
+
+    suspend fun getProvider(id: String): com.R.codecore.datalayer.sqldelight.settings.Ai_providers? =
+        withContext(Dispatchers.IO) { q.selectProviderById(id).executeAsOneOrNull() }
+
+    suspend fun listProviders(): List<com.R.codecore.datalayer.sqldelight.settings.Ai_providers> =
+        withContext(Dispatchers.IO) { q.selectAllProviders().executeAsList() }
+
+    suspend fun getActiveProvider(): com.R.codecore.datalayer.sqldelight.settings.Ai_providers? =
+        withContext(Dispatchers.IO) { q.selectActiveProvider().executeAsOneOrNull() }
+
+    suspend fun deactivateAllProviders() =
+        withContext(Dispatchers.IO) { q.deactivateAllProviders() }
+
+    suspend fun deleteProvider(id: String) =
+        withContext(Dispatchers.IO) { q.deleteProvider(id) }
 }

@@ -39,4 +39,25 @@ class CredentialsRepository(private val db: CredentialsDb) {
 
     suspend fun deleteSecrets(connectionId: String) =
         withContext(Dispatchers.IO) { q.deleteSecretByConnection(connectionId) }
+
+    // ── 阶段 1 补表方法（git_credentials）──
+
+    suspend fun insertGitCredential(
+        id: String, host: String, username: String, encryptedToken: String, label: String,
+        isDefault: Long, createdAtMs: Long, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertGitCredential(id, host, username, encryptedToken, label, isDefault, createdAtMs, updatedAtMs)
+    }
+
+    suspend fun getGitCredential(id: String): com.R.codecore.datalayer.sqldelight.credentials.Git_credentials? =
+        withContext(Dispatchers.IO) { q.selectGitCredentialById(id).executeAsOneOrNull() }
+
+    suspend fun listGitCredentials(): List<com.R.codecore.datalayer.sqldelight.credentials.Git_credentials> =
+        withContext(Dispatchers.IO) { q.selectAllGitCredentials().executeAsList() }
+
+    suspend fun getDefaultGitCredential(): com.R.codecore.datalayer.sqldelight.credentials.Git_credentials? =
+        withContext(Dispatchers.IO) { q.selectDefaultGitCredential().executeAsOneOrNull() }
+
+    suspend fun deleteGitCredential(id: String) =
+        withContext(Dispatchers.IO) { q.deleteGitCredential(id) }
 }

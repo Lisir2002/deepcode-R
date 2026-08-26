@@ -37,4 +37,43 @@ class T2iRepository(private val db: T2iDb) {
 
     suspend fun deleteTask(id: String) =
         withContext(Dispatchers.IO) { q.deleteTask(id) }
+
+    // ── 阶段 1 补表方法（t2i_providers / t2i_provider_models）──
+
+    suspend fun insertT2iProvider(
+        id: String, name: String, type: String, baseUrl: String, encryptedApiKey: String,
+        endpointMode: String, isActive: Long, priority: Long, isEnabled: Long,
+        extraHeadersJson: String, createdAtMs: Long, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertT2iProvider(id, name, type, baseUrl, encryptedApiKey, endpointMode, isActive, priority, isEnabled, extraHeadersJson, createdAtMs, updatedAtMs)
+    }
+
+    suspend fun getT2iProvider(id: String): com.R.codecore.datalayer.sqldelight.t2i.T2i_providers? =
+        withContext(Dispatchers.IO) { q.selectT2iProviderById(id).executeAsOneOrNull() }
+
+    suspend fun listT2iProviders(): List<com.R.codecore.datalayer.sqldelight.t2i.T2i_providers> =
+        withContext(Dispatchers.IO) { q.selectAllT2iProviders().executeAsList() }
+
+    suspend fun getActiveT2iProvider(): com.R.codecore.datalayer.sqldelight.t2i.T2i_providers? =
+        withContext(Dispatchers.IO) { q.selectActiveT2iProvider().executeAsOneOrNull() }
+
+    suspend fun deactivateAllT2iProviders() =
+        withContext(Dispatchers.IO) { q.deactivateAllT2iProviders() }
+
+    suspend fun deleteT2iProvider(id: String) =
+        withContext(Dispatchers.IO) { q.deleteT2iProvider(id) }
+
+    suspend fun insertT2iProviderModel(
+        id: String, providerId: String, modelId: String, displayName: String, supportsHd: Long,
+        supportsInpaint: Long, defaultWidth: Long, defaultHeight: Long, maxSteps: Long,
+        defaultSteps: Long, costPerImageTokens: Long, createdAtMs: Long, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertT2iProviderModel(id, providerId, modelId, displayName, supportsHd, supportsInpaint, defaultWidth, defaultHeight, maxSteps, defaultSteps, costPerImageTokens, createdAtMs, updatedAtMs)
+    }
+
+    suspend fun listT2iModels(providerId: String): List<com.R.codecore.datalayer.sqldelight.t2i.T2i_provider_models> =
+        withContext(Dispatchers.IO) { q.selectT2iModelsByProvider(providerId).executeAsList() }
+
+    suspend fun deleteT2iProviderModels(providerId: String) =
+        withContext(Dispatchers.IO) { q.deleteT2iProviderModels(providerId) }
 }
