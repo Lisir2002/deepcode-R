@@ -100,3 +100,447 @@ VALUES (?, ?, ?, ?);
 
 selectCheckpointsBySession:
 SELECT * FROM agent_checkpoint WHERE session_id = ? ORDER BY created_at DESC;
+
+-- ── 旧 Room agent 域补表（阶段 1：V2 全面接管前置）──
+-- 列名 snake_case（旧 Room 为 camelCase，由 V2 Repository 映射）；zth 密文列保留原名（s_ 前缀列名）。
+
+CREATE TABLE todo_items (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  session_id  TEXT    NOT NULL,
+  subject     TEXT    NOT NULL,
+  description TEXT    NOT NULL DEFAULT '',
+  status      TEXT    NOT NULL DEFAULT 'PENDING',
+  priority    INTEGER NOT NULL DEFAULT 0,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE session_checkpoints (
+  id               TEXT    NOT NULL PRIMARY KEY,
+  session_id       TEXT    NOT NULL,
+  user_message_id  TEXT    NOT NULL,
+  prompt_snippet   TEXT    NOT NULL,
+  created_at_ms    INTEGER NOT NULL
+);
+
+CREATE TABLE checkpoint_file_snapshots (
+  id                      TEXT    NOT NULL PRIMARY KEY,
+  checkpoint_id           TEXT    NOT NULL,
+  file_path               TEXT    NOT NULL,
+  snapshot_relative_path  TEXT    NOT NULL,
+  change_type             TEXT    NOT NULL,
+  created_at              INTEGER NOT NULL,
+  FOREIGN KEY (checkpoint_id) REFERENCES session_checkpoints(id)
+);
+
+CREATE TABLE file_edit_hunks (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  session_id  TEXT    NOT NULL,
+  file_path   TEXT    NOT NULL,
+  operation   TEXT    NOT NULL,
+  hunk        TEXT    NOT NULL,
+  old_content TEXT    NOT NULL,
+  new_content TEXT    NOT NULL,
+  created_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE mode_switch_history (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  TEXT    NOT NULL,
+  from_mode   TEXT    NOT NULL,
+  to_mode     TEXT    NOT NULL,
+  reason      TEXT    NOT NULL,
+  timestamp_ms INTEGER NOT NULL
+);
+
+CREATE TABLE model_capability_overrides (
+  id                TEXT    NOT NULL,
+  provider_type     TEXT    NOT NULL,
+  model_id          TEXT    NOT NULL,
+  override_vision   INTEGER,
+  override_tools    INTEGER,
+  override_reasoning INTEGER,
+  updated_at_ms     INTEGER NOT NULL,
+  PRIMARY KEY (provider_type, model_id)
+);
+
+CREATE TABLE agent_goals (
+  goal_id       TEXT    NOT NULL PRIMARY KEY,
+  session_id    TEXT    NOT NULL,
+  text          TEXT    NOT NULL,
+  status        TEXT    NOT NULL DEFAULT 'ACTIVE',
+  revision      INTEGER NOT NULL DEFAULT 0,
+  parent_goal_id TEXT   NOT NULL DEFAULT '',
+  round_seq     INTEGER NOT NULL DEFAULT 0,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE agent_plans (
+  plan_id          TEXT    NOT NULL PRIMARY KEY,
+  session_id       TEXT    NOT NULL,
+  title            TEXT    NOT NULL,
+  steps            TEXT    NOT NULL DEFAULT '',
+  status           TEXT    NOT NULL DEFAULT 'DRAFT',
+  pending_selection TEXT   NOT NULL DEFAULT '',
+  created_at_ms    INTEGER NOT NULL,
+  updated_at_ms    INTEGER NOT NULL
+);
+
+CREATE TABLE agent_jobs (
+  job_id         TEXT    NOT NULL PRIMARY KEY,
+  session_id     TEXT    NOT NULL,
+  kind           TEXT    NOT NULL,
+  title          TEXT    NOT NULL,
+  status         TEXT    NOT NULL DEFAULT 'RUNNING',
+  exit_code      INTEGER,
+  output_locator TEXT    NOT NULL DEFAULT '',
+  created_at_ms  INTEGER NOT NULL,
+  finished_at_ms INTEGER,
+  updated_at_ms  INTEGER NOT NULL
+);
+
+CREATE TABLE agent_schedules (
+  schedule_id    TEXT    NOT NULL PRIMARY KEY,
+  session_id     TEXT    NOT NULL,
+  rule           TEXT    NOT NULL,
+  args           TEXT    NOT NULL DEFAULT '',
+  status         TEXT    NOT NULL DEFAULT 'PENDING',
+  enabled        INTEGER NOT NULL DEFAULT 1,
+  created_at_ms  INTEGER NOT NULL,
+  last_fired_at_ms INTEGER,
+  updated_at_ms  INTEGER NOT NULL
+);
+
+CREATE TABLE agent_trajectories (
+  trajectory_id  TEXT    NOT NULL PRIMARY KEY,
+  session_id     TEXT    NOT NULL,
+  task_id        TEXT    NOT NULL DEFAULT '',
+  turn_index     INTEGER NOT NULL DEFAULT 0,
+  kind           TEXT    NOT NULL,
+  tool_name      TEXT    NOT NULL DEFAULT '',
+  args_hash      TEXT    NOT NULL DEFAULT '',
+  result_summary TEXT    NOT NULL DEFAULT '',
+  is_error       INTEGER NOT NULL DEFAULT 0,
+  duration_ms    INTEGER NOT NULL DEFAULT 0,
+  tokens_in      INTEGER NOT NULL DEFAULT 0,
+  tokens_out     INTEGER NOT NULL DEFAULT 0,
+  ts             INTEGER NOT NULL
+);
+
+CREATE TABLE agent_playbook_runs (
+  playbook_run_id   TEXT    NOT NULL PRIMARY KEY,
+  session_id        TEXT    NOT NULL,
+  playbook_name     TEXT    NOT NULL,
+  current_stage_index INTEGER NOT NULL DEFAULT 0,
+  stage_statuses    TEXT    NOT NULL DEFAULT '',
+  status            TEXT    NOT NULL DEFAULT 'RUNNING',
+  created_at_ms     INTEGER NOT NULL,
+  updated_at_ms     INTEGER NOT NULL
+);
+
+CREATE TABLE skill_state (
+  id                 TEXT    NOT NULL PRIMARY KEY,
+  enabled            INTEGER NOT NULL DEFAULT 1,
+  version            TEXT    NOT NULL DEFAULT '0.0.0',
+  source             TEXT    NOT NULL DEFAULT 'LOCAL',
+  installed_at_ms    INTEGER NOT NULL,
+  scope_override     TEXT,
+  agent_type_override TEXT
+);
+
+CREATE TABLE skill_conversation_state (
+  skill_id   TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (skill_id, session_id)
+);
+
+CREATE TABLE wake_queue (
+  wake_id      TEXT    NOT NULL PRIMARY KEY,
+  session_id   TEXT    NOT NULL,
+  source       TEXT    NOT NULL,
+  type         TEXT    NOT NULL,
+  content      TEXT    NOT NULL,
+  status       TEXT    NOT NULL,
+  created_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE zth_user_confirmed_sentinels (
+  id                        TEXT    NOT NULL PRIMARY KEY,
+  session_id                TEXT    NOT NULL,
+  linkage_version           INTEGER NOT NULL,
+  chain_id                  TEXT    NOT NULL,
+  chain_index               INTEGER NOT NULL,
+  card_template_id          TEXT    NOT NULL,
+  trigger_sub_class         TEXT    NOT NULL,
+  s_planPayloadCiphertext   TEXT    NOT NULL,
+  s_userTextCiphertext      TEXT,
+  s_cardPayloadCiphertext   TEXT    NOT NULL,
+  user_choice               TEXT    NOT NULL,
+  swipe_verified            INTEGER NOT NULL,
+  s_modifiedPlanCiphertext  TEXT,
+  expire_at_ms              INTEGER NOT NULL DEFAULT -1,
+  rollback_flag             INTEGER NOT NULL DEFAULT 0,
+  created_at_ms             INTEGER NOT NULL
+);
+
+CREATE TABLE zth_hallucination_fuses (
+  id                     TEXT    NOT NULL,
+  scope                  TEXT    NOT NULL,
+  scope_id               TEXT    NOT NULL,
+  state                  TEXT    NOT NULL,
+  linkage_version        INTEGER NOT NULL,
+  failure_count          INTEGER NOT NULL DEFAULT 0,
+  open_since_ms          INTEGER NOT NULL DEFAULT 0,
+  last_probe_at_ms       INTEGER NOT NULL DEFAULT 0,
+  kill_switch1_triggered INTEGER NOT NULL DEFAULT 0,
+  kill_switch2_soft_disabled INTEGER NOT NULL DEFAULT 0,
+  last_trip_subclass     TEXT,
+  updated_at_ms          INTEGER NOT NULL,
+  PRIMARY KEY (scope, scope_id)
+);
+
+CREATE TABLE zth_sentinel_plan_rejection_audits (
+  id                              TEXT    NOT NULL PRIMARY KEY,
+  sentinel_id                     TEXT    NOT NULL,
+  rejection_type                  TEXT    NOT NULL,
+  s_reasonCiphertext              TEXT,
+  s_rejectedPlanSnapshotCiphertext TEXT   NOT NULL,
+  created_at_ms                   INTEGER NOT NULL
+);
+
+CREATE TABLE zth_hard_constraint_delete_audits (
+  id                    TEXT    NOT NULL PRIMARY KEY,
+  session_id            TEXT    NOT NULL,
+  affected_table_name   TEXT    NOT NULL,
+  s_affectedKeysCiphertext TEXT  NOT NULL,
+  trigger_sub_class     TEXT    NOT NULL,
+  rollback_applied      INTEGER NOT NULL DEFAULT 0,
+  created_at_ms         INTEGER NOT NULL
+);
+
+CREATE TABLE zth_l0_soft_compact_restore_logs (
+  id                          TEXT    NOT NULL PRIMARY KEY,
+  session_id                  TEXT    NOT NULL,
+  first_message_id            TEXT    NOT NULL,
+  last_message_id             TEXT    NOT NULL,
+  original_row_count          INTEGER NOT NULL,
+  tokens_before               INTEGER NOT NULL,
+  tokens_after                INTEGER NOT NULL,
+  s_compactSourceDigestCiphertext TEXT NOT NULL,
+  expire_at_ms                INTEGER NOT NULL,
+  restored_flag               INTEGER NOT NULL DEFAULT 0,
+  created_at_ms               INTEGER NOT NULL
+);
+
+CREATE TABLE zth_telemetry_events (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_kind           TEXT    NOT NULL,
+  event_sub_kind       TEXT    NOT NULL,
+  severity_tier        INTEGER NOT NULL,
+  session_sha256_prefix TEXT,
+  latency_ms           INTEGER,
+  flag_a               INTEGER,
+  flag_b               INTEGER,
+  metric_a             INTEGER,
+  metric_b             INTEGER,
+  created_at_ms        INTEGER NOT NULL
+);
+
+-- ── queries（补表）──
+insertTodoItem:
+INSERT INTO todo_items (id, session_id, subject, description, status, priority, sort_order, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectTodoItemsBySession:
+SELECT * FROM todo_items WHERE session_id = ? ORDER BY sort_order ASC;
+
+updateTodoItemStatus:
+UPDATE todo_items SET status = ?, updated_at_ms = ? WHERE id = ?;
+
+deleteTodoItem:
+DELETE FROM todo_items WHERE id = ?;
+
+insertCheckpointFull:
+INSERT INTO session_checkpoints (id, session_id, user_message_id, prompt_snippet, created_at_ms)
+VALUES (?, ?, ?, ?, ?);
+
+insertCheckpointFileSnapshot:
+INSERT INTO checkpoint_file_snapshots (id, checkpoint_id, file_path, snapshot_relative_path, change_type, created_at)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectCheckpointFileSnapshots:
+SELECT * FROM checkpoint_file_snapshots WHERE checkpoint_id = ?;
+
+insertFileEditHunk:
+INSERT INTO file_edit_hunks (id, session_id, file_path, operation, hunk, old_content, new_content, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectFileEditHunksBySession:
+SELECT * FROM file_edit_hunks WHERE session_id = ? ORDER BY created_at_ms ASC;
+
+insertModeSwitch:
+INSERT INTO mode_switch_history (session_id, from_mode, to_mode, reason, timestamp_ms)
+VALUES (?, ?, ?, ?, ?);
+
+selectModeSwitchesBySession:
+SELECT * FROM mode_switch_history WHERE session_id = ? ORDER BY timestamp_ms DESC;
+
+insertCapabilityOverride:
+INSERT OR REPLACE INTO model_capability_overrides (id, provider_type, model_id, override_vision, override_tools, override_reasoning, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectCapabilityOverride:
+SELECT * FROM model_capability_overrides WHERE provider_type = ? AND model_id = ?;
+
+deleteCapabilityOverride:
+DELETE FROM model_capability_overrides WHERE provider_type = ? AND model_id = ?;
+
+insertGoal:
+INSERT INTO agent_goals (goal_id, session_id, text, status, revision, parent_goal_id, round_seq, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectGoalsBySession:
+SELECT * FROM agent_goals WHERE session_id = ? ORDER BY round_seq ASC;
+
+updateGoalStatus:
+UPDATE agent_goals SET status = ?, updated_at_ms = ? WHERE goal_id = ?;
+
+deleteGoal:
+DELETE FROM agent_goals WHERE goal_id = ?;
+
+insertPlan:
+INSERT INTO agent_plans (plan_id, session_id, title, steps, status, pending_selection, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectPlansBySession:
+SELECT * FROM agent_plans WHERE session_id = ? ORDER BY updated_at_ms DESC;
+
+updatePlanStatus:
+UPDATE agent_plans SET status = ?, updated_at_ms = ? WHERE plan_id = ?;
+
+deletePlan:
+DELETE FROM agent_plans WHERE plan_id = ?;
+
+insertJob:
+INSERT INTO agent_jobs (job_id, session_id, kind, title, status, exit_code, output_locator, created_at_ms, finished_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectJobsBySession:
+SELECT * FROM agent_jobs WHERE session_id = ? ORDER BY created_at_ms ASC;
+
+updateJobStatus:
+UPDATE agent_jobs SET status = ?, exit_code = ?, output_locator = ?, finished_at_ms = ?, updated_at_ms = ? WHERE job_id = ?;
+
+deleteJob:
+DELETE FROM agent_jobs WHERE job_id = ?;
+
+insertSchedule:
+INSERT INTO agent_schedules (schedule_id, session_id, rule, args, status, enabled, created_at_ms, last_fired_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectSchedulesBySession:
+SELECT * FROM agent_schedules WHERE session_id = ? ORDER BY created_at_ms ASC;
+
+updateScheduleStatus:
+UPDATE agent_schedules SET status = ?, last_fired_at_ms = ?, updated_at_ms = ? WHERE schedule_id = ?;
+
+deleteSchedule:
+DELETE FROM agent_schedules WHERE schedule_id = ?;
+
+insertTrajectory:
+INSERT INTO agent_trajectories (trajectory_id, session_id, task_id, turn_index, kind, tool_name, args_hash, result_summary, is_error, duration_ms, tokens_in, tokens_out, ts)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectTrajectoriesBySession:
+SELECT * FROM agent_trajectories WHERE session_id = ? ORDER BY ts ASC;
+
+deleteTrajectoriesBySession:
+DELETE FROM agent_trajectories WHERE session_id = ?;
+
+insertPlaybookRun:
+INSERT INTO agent_playbook_runs (playbook_run_id, session_id, playbook_name, current_stage_index, stage_statuses, status, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectPlaybookRunsBySession:
+SELECT * FROM agent_playbook_runs WHERE session_id = ? ORDER BY created_at_ms DESC;
+
+updatePlaybookRun:
+UPDATE agent_playbook_runs SET current_stage_index = ?, stage_statuses = ?, status = ?, updated_at_ms = ? WHERE playbook_run_id = ?;
+
+insertSkillState:
+INSERT OR REPLACE INTO skill_state (id, enabled, version, source, installed_at_ms, scope_override, agent_type_override)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectSkillStateById:
+SELECT * FROM skill_state WHERE id = ?;
+
+selectAllSkillStates:
+SELECT * FROM skill_state ORDER BY id ASC;
+
+upsertSkillConversationState:
+INSERT OR REPLACE INTO skill_conversation_state (skill_id, session_id, enabled)
+VALUES (?, ?, ?);
+
+selectSkillConversationState:
+SELECT * FROM skill_conversation_state WHERE skill_id = ? AND session_id = ?;
+
+insertWakeItem:
+INSERT INTO wake_queue (wake_id, session_id, source, type, content, status, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectPendingWakeItems:
+SELECT * FROM wake_queue WHERE status = 'PENDING' ORDER BY created_at_ms ASC;
+
+markWakeItemConsumed:
+UPDATE wake_queue SET status = 'CONSUMED' WHERE wake_id = ?;
+
+insertSentinel:
+INSERT INTO zth_user_confirmed_sentinels (id, session_id, linkage_version, chain_id, chain_index, card_template_id, trigger_sub_class, s_planPayloadCiphertext, s_userTextCiphertext, s_cardPayloadCiphertext, user_choice, swipe_verified, s_modifiedPlanCiphertext, expire_at_ms, rollback_flag, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectSentinelsBySession:
+SELECT * FROM zth_user_confirmed_sentinels WHERE session_id = ? ORDER BY created_at_ms DESC;
+
+updateSentinelChoice:
+UPDATE zth_user_confirmed_sentinels SET user_choice = ?, swipe_verified = ?, s_modifiedPlanCiphertext = ? WHERE id = ?;
+
+insertFuse:
+INSERT OR REPLACE INTO zth_hallucination_fuses (id, scope, scope_id, state, linkage_version, failure_count, open_since_ms, last_probe_at_ms, kill_switch1_triggered, kill_switch2_soft_disabled, last_trip_subclass, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectFuse:
+SELECT * FROM zth_hallucination_fuses WHERE scope = ? AND scope_id = ?;
+
+updateFuseState:
+UPDATE zth_hallucination_fuses SET state = ?, failure_count = ?, last_probe_at_ms = ?, kill_switch1_triggered = ?, kill_switch2_soft_disabled = ?, last_trip_subclass = ?, updated_at_ms = ? WHERE scope = ? AND scope_id = ?;
+
+insertRejectionAudit:
+INSERT INTO zth_sentinel_plan_rejection_audits (id, sentinel_id, rejection_type, s_reasonCiphertext, s_rejectedPlanSnapshotCiphertext, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectRejectionAuditsBySentinel:
+SELECT * FROM zth_sentinel_plan_rejection_audits WHERE sentinel_id = ? ORDER BY created_at_ms DESC;
+
+insertDeleteAudit:
+INSERT INTO zth_hard_constraint_delete_audits (id, session_id, affected_table_name, s_affectedKeysCiphertext, trigger_sub_class, rollback_applied, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+insertRestoreLog:
+INSERT INTO zth_l0_soft_compact_restore_logs (id, session_id, first_message_id, last_message_id, original_row_count, tokens_before, tokens_after, s_compactSourceDigestCiphertext, expire_at_ms, restored_flag, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectRestoreLogsBySession:
+SELECT * FROM zth_l0_soft_compact_restore_logs WHERE session_id = ? ORDER BY created_at_ms DESC;
+
+insertTelemetryEvent:
+INSERT INTO zth_telemetry_events (event_kind, event_sub_kind, severity_tier, session_sha256_prefix, latency_ms, flag_a, flag_b, metric_a, metric_b, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectTelemetryByKind:
+SELECT * FROM zth_telemetry_events WHERE event_kind = ? ORDER BY created_at_ms DESC LIMIT ?;
+
+countTelemetryByKind:
+SELECT COUNT(*) AS cnt FROM zth_telemetry_events WHERE event_kind = ?;

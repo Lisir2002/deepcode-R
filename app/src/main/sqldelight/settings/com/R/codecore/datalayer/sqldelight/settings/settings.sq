@@ -53,3 +53,39 @@ SELECT * FROM settings_pref WHERE profile_id IS ?;
 
 deletePref:
 DELETE FROM settings_pref WHERE profile_id IS ? AND key = ?;
+
+-- ── 旧 Room settings 域补表（阶段 1）──
+
+CREATE TABLE ai_providers (
+  id               TEXT    NOT NULL PRIMARY KEY,
+  name             TEXT    NOT NULL,
+  type             TEXT    NOT NULL,
+  encrypted_api_key TEXT   NOT NULL DEFAULT '',
+  base_url         TEXT    NOT NULL,
+  default_model    TEXT    NOT NULL,
+  is_active        INTEGER NOT NULL,
+  models           TEXT    NOT NULL DEFAULT '',
+  is_enabled       INTEGER NOT NULL DEFAULT 1,
+  use_full_url     INTEGER NOT NULL DEFAULT 0,
+  use_response_api INTEGER NOT NULL DEFAULT 0
+);
+
+-- ── queries ──
+insertProvider:
+INSERT INTO ai_providers (id, name, type, encrypted_api_key, base_url, default_model, is_active, models, is_enabled, use_full_url, use_response_api)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectProviderById:
+SELECT * FROM ai_providers WHERE id = ?;
+
+selectAllProviders:
+SELECT * FROM ai_providers ORDER BY name ASC;
+
+selectActiveProvider:
+SELECT * FROM ai_providers WHERE is_active = 1;
+
+deactivateAllProviders:
+UPDATE ai_providers SET is_active = 0;
+
+deleteProvider:
+DELETE FROM ai_providers WHERE id = ?;
