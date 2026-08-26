@@ -151,7 +151,7 @@ Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push orig
 | Build | Android Gradle Plugin 8.9.3 + KSP |
 | UI | Jetpack Compose (BOM 2025.12.01) + Material 3 |
 | DI | Hilt 2.56.1 (Dagger) |
-| Database | Room 2.7.1 (file-driven SQL migration system, Schema v46) |
+| Database | Room 2.7.1 (split by domain into 5 DBs: agent v4 / settings / credentials / workspace / t2i; legacy single-DB file-driven SQL migration only for historical reads) |
 | Network | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
 | Async | Kotlin Coroutines / Flow |
 | Terminal | Termux terminal-emulator + terminal-view (JNI libtermux.so) |
@@ -170,12 +170,16 @@ app/src/main/java/com/R/codecore/
 ├── di/                  # Hilt DI (AgentModule, RepositoryModule, BackupModule)
 ├── feature/
 │   ├── agent/           # AI Agent (MVI workflow, 20+ tools, permission engine, MCP, skills, memory, checkpoints, provider adapters)
+│   ├── backup/          # AES-encrypted backup & restore
+│   ├── browser/         # Built-in browser (WebView sessions, login takeover, dynamic data capture)
+│   ├── capability/      # Capability hub (aggregated tools/agents/skills view)
 │   ├── credentials/     # Git credential management (3-endpoint IPC bridge, file sync, global dialog)
 │   ├── git/             # Git visualization (status/branches/commits/tags/graph/diff)
+│   ├── proxy/           # Network proxy (mihomo core, subscriptions, routing injection)
 │   ├── settings/        # App settings (AI provider management, container, MCP, remote, logs, etc.)
+│   ├── t2i/             # Text-to-image (provider abstraction, SYNC/ASYNC/AUTO endpoints)
 │   ├── terminal/        # Terminal emulation & session management (local PRoot + remote SSH, 7 built-in bundles)
-│   ├── workspace/       # Workspace & document management (local + remote SFTP/FTP sync)
-│   └── backup/          # AES-encrypted backup & restore
+│   └── workspace/       # Workspace & document management (local + remote SFTP/FTP sync)
 ├── AIEditorApp.kt       # Application entry (BC registration, credential bridge, MCP, keepalive init)
 └── MainActivity.kt      # Main Activity (NavHost + Drawer + global credential dialog)
 ```

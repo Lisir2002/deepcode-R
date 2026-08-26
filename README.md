@@ -150,7 +150,7 @@ keyPassword=your_key_password
 | 构建 | Android Gradle Plugin 8.9.3 + KSP |
 | UI | Jetpack Compose (BOM 2025.12.01) + Material 3 |
 | 依赖注入 | Hilt 2.56.1 (Dagger) |
-| 数据库 | Room 2.7.1（文件驱动 SQL 迁移系统，Schema v46） |
+| 数据库 | Room 2.7.1（按域拆库 5 库：agent v4 / settings / credentials / workspace / t2i；旧单库文件驱动 SQL 迁移仅历史读取用） |
 | 网络 | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
 | 异步 | Kotlin Coroutines / Flow |
 | 终端 | Termux terminal-emulator + terminal-view（JNI libtermux.so） |
@@ -169,12 +169,16 @@ app/src/main/java/com/R/codecore/
 ├── di/                  # Hilt 依赖注入（AgentModule、RepositoryModule、BackupModule）
 ├── feature/
 │   ├── agent/           # AI Agent（MVI 工作流、20+ 工具、权限引擎、MCP、技能、记忆、检查点、Provider 适配）
+│   ├── backup/          # AES 加密备份与恢复
+│   ├── browser/         # 内置浏览器（WebView 会话、登录接管、动态数据捕获）
+│   ├── capability/      # 能力中心（工具/Agent/技能聚合视图）
 │   ├── credentials/     # Git 凭据统一管理（三端 IPC 桥、文件同步、全局弹窗）
 │   ├── git/             # Git 可视化（状态/分支/提交/标签/拓扑图/Diff）
+│   ├── proxy/           # 网络代理（mihomo 内核、订阅、路由注入）
 │   ├── settings/        # 应用设置（AI Provider 管理、容器、MCP、远程、日志等）
+│   ├── t2i/             # 文生图（Provider 抽象、SYNC/ASYNC/AUTO 端点）
 │   ├── terminal/        # 终端模拟与会话管理（本地 PRoot + 远程 SSH，7 个内置 Bundle）
-│   ├── workspace/       # 工作区与文档管理（本地 + 远程 SFTP/FTP 同步）
-│   └── backup/          # AES 加密备份与恢复
+│   └── workspace/       # 工作区与文档管理（本地 + 远程 SFTP/FTP 同步）
 ├── AIEditorApp.kt       # Application 入口（BC 注册、凭据桥、MCP、保活服务初始化）
 └── MainActivity.kt      # 主 Activity（NavHost + Drawer + 全局凭据弹窗）
 ```

@@ -16,7 +16,7 @@
 | 路径 | 职责 |
 | --- | --- |
 | `data/local/dao/` | Room DAO：`AgentMessageDao`、`ChatSessionDao`、`TodoItemDao`、`SkillStateDao`、`SkillConversationStateDao`、`ModeSwitchHistoryDao`、`ModelCapabilityOverrideDao`、Checkpoint 系列（`CheckpointDao`、`CheckpointFileSnapshotDao`、`FileEditHunkDao`）、ZTH 审计系列（`ZthTelemetryEventDao`、`UserConfirmedSentinelDao`、`HallucinationFuseDao`、`SentinelPlanRejectionAuditDao`、`HardConstraintDeleteAuditDao`、`L0SoftCompactRestoreLogDao`）、任务编排层（`GoalDao`、`PlanDao`、`JobDao`、`ScheduleDao`）、`WakeQueueDao` |
-| `data/local/database/AgentDatabase.kt` | **agent 域独立库**（v2，`exportSchema=true`），仅承载 agent 域 21 张表（消息/会话/todo/checkpoint/skill/wake/zth + 任务编排层 Goal/Plan/Job/Schedule 4 表）；`v1→v2` 迁移见 `AgentDatabaseMigrations.MIGRATION_1_2`（DatabaseModule 注册）；`LegacyAgentDatabase.kt` 为旧单巨库（v49）只读副本，供一次性移植 |
+| `data/local/database/AgentDatabase.kt` | **agent 域独立库**（v4，`exportSchema=true`），仅承载 agent 域 23 张表（消息/会话/todo/checkpoint/skill/wake/zth + 任务编排层 Goal/Plan/Job/Schedule 4 表 + 运行轨迹 `agent_trajectories` + 剧本运行 `agent_playbook_runs`）；迁移链见 `AgentDatabaseMigrations`（`MIGRATION_1_2` 任务编排层 / `MIGRATION_2_3` 运行轨迹 / `MIGRATION_3_4` 剧本运行，DatabaseModule 注册）；`LegacyAgentDatabase.kt` 为旧单巨库（v49）只读副本，供一次性移植 |
 | `data/local/entity/` | 与 DAO 一一对应的实体类（`AgentMessageEntity`、`ChatSessionEntity`、`CheckpointEntity`、`SkillStateEntity`、`SkillConversationStateEntity`、`TodoItemEntity` 等） |
 | `data/remote/anthropic/` | Anthropic API 客户端（`AnthropicApi`、`AnthropicModels`），含 `@Streaming` SSE 流式接口 |
 | `data/remote/openai/` | OpenAI 兼容 API 客户端（`OpenAIApi`、`OpenAIModels`） |
@@ -359,7 +359,7 @@
 - **新增斜杠命令**：实现 `SlashCommandHandler` + `@Binds @IntoSet` 即自动纳入 `SlashCommandRegistry`（无需改注册表），建议同时提供 `trigger`/`matches`/`filterByPrefix` 语义。
 - **新增 Hook**：实现对应事件接口（如 `PostToolUseHook`）+ 在 `domain/hook/HookModule` 以 `@Binds @IntoSet` 绑定，即自动被 `HookDispatcher` 汇集；若事件逻辑需同步到模型可见行为，需同步检查 `assets/prompts/` 提示词与 `assets/docs/` 使用文档。hook 内不得吞 `CancellationException`，不得阻塞主流程（骨架阶段仅同步计算，耗时逻辑应内部异步化）；后台审查/耗时任务的产出走 `WakeQueueManager.enqueueAsync` 写入唤醒队列，下轮会话自动注入。
 - **新增 AI Provider**：实现 `AIProvider` 接口，新增 Adapter（参考 `OpenAIAdapter`/`AnthropicAdapter`/`GeminiAdapter`），在 `data/remote/` 加 Retrofit API，并在 Provider 选择处注册。
-- **新增 DAO/实体**：agent 域新增 DAO/Entity 时，在 `data/local/` 新增并在 `AgentDatabase` 的 `entities` 列表与抽象访问器中登记，同时把新表名加进 `core/data/DataRegistryModule`（数据注册表，保证备份/恢复全量覆盖）与 `core/db/DbSplitMigrator` 的表映射（如仍需从旧库移植）。agent 库为 v1 全新、无历史迁移链，新增表无需再提供迁移 SQL。
+- **新增 DAO/实体**：agent 域新增 DAO/Entity 时，在 `data/local/` 新增并在 `AgentDatabase` 的 `entities` 列表与抽象访问器中登记，同时把新表名加进 `core/data/DataRegistryModule`（数据注册表，保证备份/恢复全量覆盖）与 `core/db/DbSplitMigrator` 的表映射（如仍需从旧库移植）。agent 库已独立演进至 v4（v1→v2 任务编排层 / v2→v3 运行轨迹 / v3→v4 剧本运行），新增表需在 `AgentDatabaseMigrations` 提供程序化 Migration（新增表走 `CREATE TABLE IF NOT EXISTS`，无数据搬迁）并在 `DatabaseModule` 注册。
 - **新增能力/权限维度**：扩展 `ToolCapability` 枚举，并在 `ToolPermissionPolicyEngine` 的危险能力集、`ZthCapabilityGuard` 能力降级表、`ToolPermissionManager` 中同步处理。
 - **新增 ZTH 审计维度**：新增 DAO/Entity 与 `data/repository/` 仓库，接入 `ZthGuardAggregateFacade` 对应审计阶段，如需云端同步则在 `data/remote/zth/` 补 DTO 与 Firestore 映射。
 - **新增容器能力**：扩展 `CommandEngine` 实现（本地/远程），或新增 `domain/tool/container/` 下的环境类工具；安装进度解析在 `domain/container/progress/` 扩展 `InstallProgressParser`。

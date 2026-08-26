@@ -14,7 +14,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 /**
- * 数据注册表 DI：把全应用数据域（5 个域库 31 张 Room 表 + DataStore 目录）注册为
+ * 数据注册表 DI：把全应用数据域（5 个域库 32 张 Room 表 + DataStore 目录）注册为
  * `List<DataProvider>`，供 [DataRegistry] 统一注入。
  *
  * 表清单与 [com.R.codecore.core.db.DbSplitMigrator] 的旧库表映射保持一一对应（实体类不变，
