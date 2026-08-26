@@ -29,7 +29,7 @@ source: AGENTS.md「发版流程（RC 判定）」「版本号规范」
 
 - **操作**：打 Tag 前先更新两部分版本日志（见 `AGENTS.md`「发版流程 → 版本日志（发版必做）」）。
 - **判定**：
-  1. 仓库根 `CHANGELOG.md`（发布视角）：按 Keep a Changelog 记录本次版本用户可见变更（`Added/Changed/Fixed/Removed`）；初稿从 `git log <prev-tag>..<tag>`（Conventional Commits）汇总后人工润色；仅当无任何用户可见变更时才可跳过。
+  1. 仓库根 `CHANGELOG.md`（发布视角）：按 Keep a Changelog 记录本次版本用户可见变更，分类固定六类（`Added` 新增 / `Improved` 改进 / `Fixed` 修复 / `Changed` 变更 / `Removed` 删除 / `Adjusted` 调整）；初稿从 `git log <prev-tag>..<tag>`（Conventional Commits）汇总后人工润色；仅当无任何用户可见变更时才可跳过。
   2. 本次有改动的各模块文档 `docs/modules/<module>.md` 末尾「## 7. 版本演进记录」追加本次版本开发维度演进。
 - **产出**：版本日志与本次发版内容一致，随代码一起在 main 上提交。
 

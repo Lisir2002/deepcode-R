@@ -163,7 +163,7 @@ R-CodeCore 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 
 每次发版（RC 或正式）前，必须维护版本日志，两部分缺一不可：
 
-1. **仓库根 `CHANGELOG.md`（发布视角）**：按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格记录本次版本的用户可见变更（`Added` 新增 / `Changed` 变更 / `Fixed` 修复 / `Removed` 移除）。初稿从 `git log <prev-tag>..<tag>`（Conventional Commits）汇总，过滤内部实现细节后人工润色写入；仅当本次版本无任何用户可见变更时方可跳过。
+1. **仓库根 `CHANGELOG.md`（发布视角）**：按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格记录本次版本的用户可见变更，分类固定六类——`Added` 新增 / `Improved` 改进 / `Fixed` 修复 / `Changed` 变更 / `Removed` 删除 / `Adjusted` 调整（语义判定见 `CHANGELOG.md` 头部「分类约定」）。初稿从 `git log <prev-tag>..<tag>`（Conventional Commits）汇总，过滤内部实现细节后人工润色写入；仅当本次版本无任何用户可见变更时方可跳过。
 2. **各模块文档「版本演进记录」章节（开发视角）**：`docs/modules/<module>.md` 末尾「## 7. 版本演进记录」追加本次版本中该模块的开发维度演进（功能落地 / 结构调整 / 关键修复），与 CHANGELOG 发布视角互补；模块有改动即应追加。
 
 > 🔧 **云端构建的完整运维手册**（CI 全流程 6 阶段 / 实时监控 GitHub API 命令 / 产物校验清单 / 签名 secrets 配置与回退说明）：见 **[docs/ci-release.md](./docs/ci-release.md)**。AI 或维护者推 Tag 发版后，必须按该手册实时监控并校验产物。
