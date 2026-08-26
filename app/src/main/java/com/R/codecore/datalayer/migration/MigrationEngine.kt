@@ -1,6 +1,7 @@
 package com.R.codecore.datalayer.migration
 
 import app.cash.sqldelight.db.AfterVersion
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlSchema
 import com.R.codecore.datalayer.engine.DatabasePathProvider
@@ -47,8 +48,10 @@ class MigrationEngine(private val pathProvider: DatabasePathProvider) {
     /** 读取 PRAGMA user_version（每库单一版本真相，§5.6）。 */
     fun currentVersion(driver: SqlDriver): Int {
         return driver.executeQuery(null, "PRAGMA user_version", { cursor ->
-            // SQLDelight 2.x：SqlCursor.next() 返回 QueryResult<Boolean>，经 .value 解包
-            if (cursor.next().value) cursor.getLong(0)?.toInt() ?: 0 else 0
+            // SQLDelight 2.x：SqlCursor.next() 返回 QueryResult<Boolean>，经 .value 解包；
+            // executeQuery 的 map 需返回 QueryResult<R>（非裸值）。
+            val v = if (cursor.next().value) cursor.getLong(0)?.toInt() ?: 0 else 0
+            QueryResult.Value(v)
         }, 0, null).value
     }
 
