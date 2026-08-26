@@ -15,10 +15,11 @@ import java.io.FileFilter
  * - DataRegistryModule 漏登记 → 该表不参与全量备份/无感自动迁移；
  * - DbSplitMigrator 漏登记 → 该表不参与旧包一次性移植。
  *
- * 因此强制：移植器登记的全部旧库表（26 张）必须 ⊆ 注册表（32 张）——注册表允许 registry-only
+ * 因此强制：移植器登记的全部旧库表（26 张）必须 ⊆ 注册表（50 张）——注册表允许 registry-only
  * 新表（任务编排层 agent_goals/agent_plans/agent_jobs/agent_schedules + 轨迹 agent_trajectories +
  * 剧本 agent_playbook_runs，v1 之后新增、旧单巨库无此数据），
- * 并校验总量（32）、无重复登记、5 个域库分布（agent 23 + settings 1 + credentials 1 + workspace 4 + t2i 3）、
+ * 并校验总量（50）、无重复登记、分布（Room 32：agent 23 + settings 1 + credentials 1 + workspace 4 + t2i 3；
+ * SQLDelight 18：agent 5 + credentials 2 + settings 2 + workspace 2 + t2i 2 + infra 5）、
  * DataStore 域单独存在（目录级转储，不在表清单内）。
  */
 class DataLayerRegistrationConsistencyTest {
@@ -39,7 +40,7 @@ class DataLayerRegistrationConsistencyTest {
         return p
     }
 
-    /** 从 DataRegistryModule.kt 提取全部双引号字符串字面量 = 注册的 Room 表清单。 */
+    /** 从 DataRegistryModule.kt 提取全部双引号字符串字面量 = 注册的表清单（Room 32 + SQLDelight v2 18）。 */
     private fun registeredTables(): List<String> =
         Regex(""""([^"]+)"""").findAll(mainSource("com/R/codecore/core/data/DataRegistryModule.kt").readText())
             .map { it.groupValues[1] }
@@ -80,18 +81,22 @@ class DataLayerRegistrationConsistencyTest {
     }
 
     @Test
-    fun `Room 表清单总量为 32 且无重复登记`() {
+    fun `注册表总量为 50 且无重复登记`() {
         val registered = registeredTables()
-        assertEquals("注册表应覆盖全部 32 张 Room 表（agent 23 + settings 1 + credentials 1 + workspace 4 + t2i 3）", 32, registered.size)
+        assertEquals(
+            "注册表应覆盖 50 张表（Room 32：agent 23 + settings 1 + credentials 1 + workspace 4 + t2i 3；" +
+                "SQLDelight 18：agent 5 + credentials 2 + settings 2 + workspace 2 + t2i 2 + infra 5）",
+            50, registered.size,
+        )
 
         val dup = registered.groupingBy { it }.eachCount().filter { it.value > 1 }
         assertTrue("存在重复登记的表: ${dup.keys}", dup.isEmpty())
     }
 
     @Test
-    fun `5 个域库表数分布与设计一致`() {
+    fun `5 个域库 + infra 表数分布与设计一致`() {
         val registered = registeredTables()
-        // agent 23 + settings 1 + credentials 1 + workspace 4 + t2i 3
+        // Room 32：agent 23 + settings 1 + credentials 1 + workspace 4 + t2i 3
         val agentTables = listOf(
             "agent_messages", "chat_sessions", "todo_items", "session_checkpoints",
             "checkpoint_file_snapshots", "file_edit_hunks", "mode_switch_history",
@@ -107,7 +112,18 @@ class DataLayerRegistrationConsistencyTest {
         )
         val t2iTables = listOf("t2i_providers", "t2i_provider_models", "t2i_tasks")
 
-        val expected = agentTables + listOf("ai_providers") + listOf("git_credentials") + workspaceTables + t2iTables
-        assertEquals(expected.toSet(), registered.toSet())
+        // SQLDelight v2 18：agent 5 + credentials 2 + settings 2 + workspace 2 + t2i 2 + infra 5
+        val v2AgentTables = listOf(
+            "agent_session", "agent_message", "agent_message_part", "agent_tool_call", "agent_checkpoint",
+        )
+        val v2CredentialsTables = listOf("cred_connection", "cred_secret")
+        val v2SettingsTables = listOf("settings_profile", "settings_pref")
+        val v2WorkspaceTables = listOf("workspace_project", "workspace_file")
+        val v2T2iTables = listOf("t2i_task", "t2i_result")
+        val v2InfraTables = listOf("kv_store", "doc_store", "queue_store", "blob_store", "ts_store")
+
+        val expected = agentTables + listOf("ai_providers") + listOf("git_credentials") + workspaceTables + t2iTables +
+            v2AgentTables + v2CredentialsTables + v2SettingsTables + v2WorkspaceTables + v2T2iTables + v2InfraTables
+        assertEquals("注册表应精确等于 50 张表清单", expected.toSet(), registered.toSet())
     }
 }

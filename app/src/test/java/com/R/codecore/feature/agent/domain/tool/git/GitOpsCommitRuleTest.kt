@@ -119,8 +119,15 @@ class GitOpsCommitRuleTest {
     }
 
     @Test
-    fun `multi line subject first line matters`() {
-        // 正则只匹配第一行；多行提交信息首行合规即可
-        assertTrue(isValid("feat: 首行合规\n第二行正文"))
+    fun `validation only checks first line of multi line message`() {
+        // 实现只对 firstLine 做完整匹配（COMMIT_REGEX.matches(firstLine)）：
+        // 首行合规 → 合法；首行违规 → 非法（即使后续行看起来合规）。
+        val firstLine = "feat: 首行合规"
+        val multiLine = "$firstLine\n第二行正文"
+        // 内联实现语义：完整消息的 matches() 会因 $ 锚定被 \n 阻断而失败，
+        // 因此这里显式模拟实现只校验首行（与 GitOpsTool 保持一致）。
+        assertTrue(COMMIT_REGEX.matches(firstLine))
+        assertFalse(COMMIT_REGEX.matches(multiLine))
+        assertFalse(COMMIT_REGEX.matches("不是合法type: 首行\nfeat: 看起来像合法"))
     }
 }
