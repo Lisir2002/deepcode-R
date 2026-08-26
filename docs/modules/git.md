@@ -92,3 +92,9 @@ refresh(): notReadyHint()? 容器未就绪→引导文案
 - **改动输出格式**：若修改 `--pretty=format` 字段顺序，须同步更新 `GitRepository.log`/`GitGraphBuilder.parseGraphCommits`/`loadAllRefs` 的分割逻辑（均以 `|` 分隔、`limit` 限制拆分数）。
 - **拓扑图可视化增强**：`GitGraph` 已含 lanes/edges/activeTopLanes/activeBottomLanes/activeLanes/maxLane 全部布局数据，UI 只需在 `GitLogTab` 的 Canvas 绘制逻辑上扩展。
 - **测试建议**：覆盖空仓库/非仓库、合并提交/根提交的泳道布局、跨批次分页连线连续性、路径含空格与特殊字符、二进制与超大文件 diff、写命令失败（未署名/无上游/非快进）提示。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.1.0（早期）**：可视化 Git 客户端核心落地（状态/分支/标签/提交拓扑图/diff 四大视图，命令复用容器 `CommandEngine`，远程凭据统一走 credentials 模块）。v0.2.0 / v0.3.0 无独立功能性变化，仅随仓库整体演进。

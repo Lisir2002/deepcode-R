@@ -113,3 +113,10 @@
 - **会话并发安全**：涉及 tab 增删的代码必须走 `tabOpLock`；`ensureAtLeastOneTab` 的「空→新建」逻辑不要移除缓冲窗口与双重判空。
 - **修改 Bundle 版本**：必须同步 +1 version，否则已装用户不会触发重装。
 - **涉及本模块的行为变更**：更新 `docs/modules/terminal.md` 的对应小节。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.2.0（2026-08-25）**：修复终端启动字段初始化顺序导致的 NPE 闪退。
+- **v0.1.0（早期）**：终端与会话核心落地（Termux 组件 + PRoot 容器、后台常驻、多标签、7 个内置功能包、容器未装 `/system/bin/sh` fallback、远程 SSH shell channel）。

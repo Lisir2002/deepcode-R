@@ -103,3 +103,10 @@
 - **配置安全**：凡写入 `secretCipher` 的内容必须经 `CredentialEncryptor.encrypt`；界面/工具输出一律不回显明文，只展示脱敏信息。
 - **规则变更**：修改 `OVERRIDDEN_KEYS` / `GROUP_TYPES` / `isNoProxy` 网段时，需同步更新 `ProxyConfigScreen` 的 `FIXED_OVERRIDE_HINT` 文案与 `ProxyViewModel.dangerScan` 提示，保持用户可见行为一致。
 - **测试建议**：覆盖「启动自动恢复（config 缺失重建）」、`synthesizeConfig` 对块式/流式 YAML 与 HTML 回退、口令场景、内核秒退日志定位、WS /traffic 推流启停。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.2.0（2026-08-25）**：网络层性能优化「C5 模型 host 直连分流」落地（`ai_hosts_direct` 开关，对 `KNOWN_AI_HOSTS` 精确匹配直连，与 `core/network/ConnectionPrewarmer` 预热 host 列表保持一致）。
+- **v0.1.0（早期）**：mihomo 内核网络代理核心落地（Profile 播种/订阅解析、内核生命周期、external-controller 控制面、节点分组/测速/流量、App 与容器双路路由注入）。

@@ -172,3 +172,13 @@ catalog 刷新：App 启动调 `refreshFromNetworkIfStale()`；`init` 中监听 
 - **数据库 schema 升级**：`ai_providers` 相关迁移须与 `AIProviderDao`/Entity 对齐（历史教训：RC68 SCHEMA 38 删除明文列）。
 - **新增二级分区**：在 `SettingsSection` 枚举加项 + `SettingsScreen` 的 when 分发 + `SettingsViewModel` 状态。
 - **测试建议**：覆盖加密失败不覆盖密文、active 互斥、模型元数据决策链各策略分支、执行模式切换（本地/远程）、日志筛选与 live tail。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.3.0-rc2（2026-08-26）**：设置页「规范流程」二级页补齐 playbook / SOP / 轨迹等子开关的说明（修复 D5/D4/D2 子开关说明缺失）。
+- **v0.3.0-rc1（2026-08-25）**：规范流程统一开关（D1 norm-flow，总开关 `norm_flow_enabled` + `step_inject_enabled` / `tool_guard_enabled` 子开关）。
+- **v0.2.0（2026-08-25）**：四款回复气泡样式与设置切换（chatrender）；能力中心入口移入设置页，侧边栏底部改两图标贴右。
+- **v0.1.x（2026-08-22 ~ 23）**：设置页保活图标 Pulse 改 Favorite；设置页与关于页深色模式白底改主题语义色。
+- **v0.1.0（早期）**：设置模块整体落地（AI Provider、日志、主题、保活、MCP、权限、容器、执行模式、安全、技能中心、关于）。

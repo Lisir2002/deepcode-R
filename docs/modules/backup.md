@@ -154,3 +154,10 @@
   - **外部安全备份（包名无关安全网）约束**：外部公共目录仅允许写入**签名密钥加密**内容（`SignatureKeyStore.signaturePassword()` 派生口令 + `BackupCrypto.encryptStream`），绝不允许明文落公共目录；外部落点统一走 `ExternalBackupStore`（API 29+ MediaStore / 更早版本公共目录文件），勿在别处直接写公共目录。若调整外部保留份数，同步改 `AutoBackupManager.KEEP_MAX` 并补 `excessExternalBackups` 单测。
   - **启动级全局告警**：哨兵判定由 `DataSafetyNotifier` 统一发布，MainActivity 的 `DataSafetyStartupAlert` 消费。新增「需要启动提醒」的判定时，改 `shouldShowStartupAlert` 并同步 `SentinelVerdict` 分支。
   - **禁止改 applicationId**：改动即被 D1/D3/CI 门禁拦截，如遇 rebrand 需求只允许改应用名/图标/namespace。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.1.0（2026-08-22）**：新增**数据保全三层防线**（防历史对话丢失）、修复历史对话因包名变更丢失的数据救济与可见性、外部备份轮转（含启动级全局告警与签名密钥加密的外部安全备份）。
+- **更早（迁移前）**：R-DeepCode → R-CodeCore 品牌与包名迁移（`com.deep.rcode` → `com.R.codecore`）。

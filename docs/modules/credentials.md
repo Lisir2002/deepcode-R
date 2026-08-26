@@ -102,3 +102,10 @@ CredentialEditorSheet / CredentialListSection / GitScreen 凭据页
 - **新增 git 协议支持**：若引入 ssh 凭据，需在 `CredentialRequestBridge`（helper 协议字段）与 `GitCredentialsFileSync`（store 格式仅 https）分别适配。
 - **helper 脚本变更**：请求/响应文件名前缀（`cred-req-`/`cred-resp-`）与清理/轮询逻辑必须与容器内 helper 脚本保持一致，否则链路断裂。
 - **测试建议**：覆盖 FileObserver 失效时兜底轮询、双通道去重、在途计数与 watchdog 联动、响应原子写、同 host 多账号默认切换后落盘文件内容、cancel 路径（git 报认证失败）。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.1.0（早期）**：三端凭据统一管理落地（UI Git / AI Bash / 终端 git 共用 `git_credentials` 表 + helper 桥）。
+- **v0.1.0-rc68（DB-SHIELD SCHEMA 38 重构）**：`git_credentials` 删除明文 token 列，时间戳字段加 Ms 后缀（与 Entity/DAO/迁移对齐）。

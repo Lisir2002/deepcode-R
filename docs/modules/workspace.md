@@ -133,3 +133,10 @@ AI 的文件工具（`FileTools`/`EditFileTool`/`ListFilesTool`/`ImageTools`/`Se
 - **审计埋点**：优先复用 `RemoteAuditCategory`/`RemoteAuditAction` 常量，经 `RemoteAuditLogRepository.append` 写入，勿硬编码字符串。
 - **修改暴露目录**：同步更新 `WorkspaceDocumentsProvider.exposedChildren()` 白名单与 `sandboxedFile` 规则（改根下子目录名是安全敏感变更，需谨慎）。
 - **涉及本模块的行为变更**：更新 `docs/modules/workspace.md` 的对应小节。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.2.0（2026-08-25）**：工作区入口迁移到侧边栏（「工作目录」tab，支持文件浏览与独立阅读页）。
+- **v0.1.0（早期）**：工作区与文档管理核心落地（本地/远程工作区、SAF 暴露、内置 FTP 服务、远程 SSH exec/SFTP 文件访问、同步引擎、审计日志）。

@@ -115,3 +115,9 @@ PENDING ──► RUNNING ──► SUCCESS
 - **实现真实缩略图**：将 `persistImage` 的缩略图写入替换为 `BitmapFactory.decodeByteArray` + `Bitmap.createScaledBitmap`（≤256px），注意模块间 android.graphics 依赖边界。
 - **扩展异步轮询**：ASYNC 形态的轮询状态推进与超时策略、`remoteTaskId` 复用，可参考 `setRemoteTaskId` + `markSuccess/markFailedOrRetry` 接口扩展。
 - **测试建议**：覆盖 P1~P6 短路顺序与额度临界值、SYNC/ASYNC/AUTO 探测判定、4xx 不退款 / 5xx 退款、状态机流转（含重试与悬垂恢复）、文件落盘与超大图拦截。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.1.0（早期，RC69）**：文生图能力落地（Provider 抽象 + 独立 3 张表、SYNC/ASYNC/AUTO 三 endpoint 形态、P1~P6 额度治理、任务状态机 + 悬垂恢复）。v0.2.0 / v0.3.0 无独立功能性变化（P4 月度额度等见「维护与扩展指引」待补项）。

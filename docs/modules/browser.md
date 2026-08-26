@@ -103,3 +103,9 @@ WebView 不认 Java `ProxySelector`，只能用 `ProxyController.setProxyOverrid
 - **敏感字段扩展**：新增密码类字段需在快照/属性读取/网络脱敏三处保持一致。
 - **升级 AndroidX WebView 依赖**：`ProxyController` 依赖 `WebViewFeature.PROXY_OVERRIDE`、`addDocumentStartJavaScript` 依赖 `WebViewFeature.DOCUMENT_START_SCRIPT`，升级时需校验特性开关，注入失败已按降级处理。
 - **测试建议**：覆盖多标签切换复用、模型驱动交互后快照、登录探测与凭据代填、接管超时、上传回填、下载落盘路径、WebView 代理开关切换。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.1.0（2026-08-17 ~ 08-18）**：内置服务浏览器核心功能落地；动态数据捕获（异步请求插桩 + 网络日志查询 + 就绪判定升级，随后补齐 WS 出站记录 + SPA routechange 事件 + network 汇总字段）；修复进入/切换浏览器页 WebView 重复挂载与复用前未摘除旧父容器崩溃。

@@ -104,7 +104,7 @@ R-CodeCore 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 - **功能、工具变化 → 检查 docs**：任何功能新增/删除/行为变化或工具变更，还要检查 `app/src/main/assets/docs/` 下是否有对应使用文档需要更新（如新功能的使用说明、工具行为变化的提示）。
 - **UI 变化 → 必须更新对应使用文档**：任何 UI 变化（新增页面、改交互、调布局、改文案）**必须**同步更新 `app/src/main/assets/docs/` 下对应的使用文档，确保用户可见的说明与实际界面一致。AI 应自行在 `docs/` 目录中查找对应的文档；若不存在则新建。
 - **UI 文案 → 必须同步 strings.xml**：任何新增或修改用户可见的中文文案（按钮、标题、提示、Toast 等），**必须**将其提取为 string resource 写入 `app/src/main/res/values/strings.xml`（中文）和 `app/src/main/res/values-en/strings.xml`（英文翻译），并在 `.kt` 代码中用 `stringResource(R.string.xxx)` 或 `context.getString(R.string.xxx)` 引用。**禁止在 .kt 文件中硬编码中文 UI 文案。** 命名规范：语义化英文全小写下划线分隔，通用文案用 `common_` 前缀跨页面复用。
-- **代码结构变化 → 必须同步模块文档**：`docs/modules/` 是功能模块级开发文档（一个模块一份，对应 `feature/<module>/`），与 `assets/docs/`（用户使用说明）用途不同，面向开发与维护。任何功能新增/删除/行为变化/目录结构调整，**必须**同步更新对应模块文档 `docs/modules/<module>.md`；在 `feature/` 下**新增模块时，必须实时新建** `docs/modules/<module>.md` 并在 `docs/modules/README.md` 索引登记。文档固定六段式结构（模块定位 / 目录结构与职责 / 核心架构与主流程 / 对外接口与集成点 / 关键设计点与约束 / 维护与扩展指引），命名规范与同步规则详见 `docs/modules/README.md`。改动只涉及单个模块内部逻辑时可只更新该模块文档；涉及跨模块结构变更还需同步 `core.md` 与索引。**该规则由 `.githooks/pre-commit` 自动校验**：提交时检查「每个 feature 模块都有对应文档、无孤儿文档」，违反即阻断（启用 hooks：仓库根执行 `git config core.hooksPath .githooks`）。
+- **代码结构变化 → 必须同步模块文档**：`docs/modules/` 是功能模块级开发文档（一个模块一份，对应 `feature/<module>/`），与 `assets/docs/`（用户使用说明）用途不同，面向开发与维护。任何功能新增/删除/行为变化/目录结构调整，**必须**同步更新对应模块文档 `docs/modules/<module>.md`；在 `feature/` 下**新增模块时，必须实时新建** `docs/modules/<module>.md` 并在 `docs/modules/README.md` 索引登记。文档固定六段式结构 + 可选第七节「版本演进记录」（模块定位 / 目录结构与职责 / 核心架构与主流程 / 对外接口与集成点 / 关键设计点与约束 / 维护与扩展指引 / 版本演进记录），命名规范与同步规则详见 `docs/modules/README.md`。改动只涉及单个模块内部逻辑时可只更新该模块文档；涉及跨模块结构变更还需同步 `core.md` 与索引。**该规则由 `.githooks/pre-commit` 自动校验**：提交时检查「每个 feature 模块都有对应文档、无孤儿文档」，违反即阻断（启用 hooks：仓库根执行 `git config core.hooksPath .githooks`）。
 - **设计文档 → `docs/plan-docs/`**：任何架构/功能**设计文档**（方案、评审、决策记录）统一放置 `docs/plan-docs/`，命名 `<名称>-design.md`（全小写 snake_case），并在文档头部标注评审状态（`📝 草案` / `✅ 已评审` / `已实施`）。设计文档只放该目录，**禁止散放根目录或其他位置**。设计定稿并实施后，由对应的 `docs/modules/` 模块文档反映落地实现。
 
 ## Git 提交规范
@@ -158,6 +158,13 @@ R-CodeCore 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 2. CI 接收到 `v*` Tag 后，自动捕获 Tag 版本推导生成 APK，构建 Release 发出。
 3. **真机装 rc 包**，至少跑通 AI 对话 + 终端 + 容器启动三条主线。
 4. 有问题 -> 从该 RC Tag 拉 `hotfix/xxx` 分支修复（**勿从最新 `main` 拉**，否则会把已合入的未发版功能带进修复包）-> 升 rc 序号打 Tag（`v1.7.0-rc2`）推送重发 -> 将修复合回 `main` 并推送 -> 删除 hotfix 分支；无问题 -> 直接打正式 Tag（`v1.7.0`）推远端转正。
+
+### 版本日志（发版必做）
+
+每次发版（RC 或正式）前，必须维护版本日志，两部分缺一不可：
+
+1. **仓库根 `CHANGELOG.md`（发布视角）**：按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格记录本次版本的用户可见变更（`Added` 新增 / `Changed` 变更 / `Fixed` 修复 / `Removed` 移除）。初稿从 `git log <prev-tag>..<tag>`（Conventional Commits）汇总，过滤内部实现细节后人工润色写入；仅当本次版本无任何用户可见变更时方可跳过。
+2. **各模块文档「版本演进记录」章节（开发视角）**：`docs/modules/<module>.md` 末尾「## 7. 版本演进记录」追加本次版本中该模块的开发维度演进（功能落地 / 结构调整 / 关键修复），与 CHANGELOG 发布视角互补；模块有改动即应追加。
 
 > 🔧 **云端构建的完整运维手册**（CI 全流程 6 阶段 / 实时监控 GitHub API 命令 / 产物校验清单 / 签名 secrets 配置与回退说明）：见 **[docs/ci-release.md](./docs/ci-release.md)**。AI 或维护者推 Tag 发版后，必须按该手册实时监控并校验产物。
 

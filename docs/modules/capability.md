@@ -64,3 +64,9 @@
 - **新增工具权限策略**：扩展 `ToolPermissionPolicy` 时同步 `PermissionBadge` 的 when 分支与文案资源。
 - **工具列表实时化**：如未来工具改为运行时动态注册，需将 `tools` 从一次性快照改为 `ToolRegistry` 流 + `stateIn`，并同步 `AgentInfoUi.toolCount` 的聚合方式。
 - **测试建议**：覆盖三 Tab 切换、空工具空态、Agent 概览聚合（执行模式/Provider/规则计数随上游流变化）、技能 Tab 复用渲染。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.1.0（早期）**：能力中心（工具/Agent/技能聚合视图）落地；随后随「技能中心 v2」（settings 模块）联动补充技能 Tab 的查看/编辑/对话级控制展示。无独立的功能性版本变化，演进随上游模块。

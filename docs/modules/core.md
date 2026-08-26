@@ -54,3 +54,11 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 - 新增跨模块公共能力（加密、日志、工具类、Worker）→ 放入对应 `core/` 子包，并在本文档登记。
 - 新增 Hilt 绑定 → 放入 `di/` 对应 Module。
 - 数据库变更 → 遵循「数据库迁移」纪律（见 §5）。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.3.0-rc2（2026-08-26）**：仓库整理（移除调试数据库等杂项）；文档审计对齐（agent 库 v4、32 表、迁移链）。
+- **v0.2.0（2026-08-25）**：网络层连接预热组件落地（`core/network/ConnectionPrewarmer`：DNS+TCP+TLS 预建）。
+- **v0.1.0（早期）**：数据层按域拆库（5 库 + `LegacyAgentDatabase` 一次性移植 + `DataRegistry` 注册表）、加密组件（`DEKManager`/`CredentialEncryptor`/`CredentialRotationWorker`）、`FileLogger`/`AILogger`、主题组件。

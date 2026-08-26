@@ -363,3 +363,12 @@
 - **新增能力/权限维度**：扩展 `ToolCapability` 枚举，并在 `ToolPermissionPolicyEngine` 的危险能力集、`ZthCapabilityGuard` 能力降级表、`ToolPermissionManager` 中同步处理。
 - **新增 ZTH 审计维度**：新增 DAO/Entity 与 `data/repository/` 仓库，接入 `ZthGuardAggregateFacade` 对应审计阶段，如需云端同步则在 `data/remote/zth/` 补 DTO 与 Firestore 映射。
 - **新增容器能力**：扩展 `CommandEngine` 实现（本地/远程），或新增 `domain/tool/container/` 下的环境类工具；安装进度解析在 `domain/container/progress/` 扩展 `InstallProgressParser`。
+
+## 7. 版本演进记录
+
+> 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
+
+- **v0.3.0-rc2（2026-08-26）**：AI 工作流规范体系 D2~D6 落地——D2 思维链路 + 步骤结果汇总（空转软收敛、推理预算、运行轨迹表、用量卡片）；D3 分层规则纪律（全局/项目/工作区/模块四级规则资产 + 显式 priority + 模块级按需注入，基于文件观察命中判断）；D4 SOP 标准作业（6 份 SOP + `loadSop` 工具）；D5 Playbook + 子代理（剧本资产与执行引擎、4 个剧本工具 + `/playbook`、spawn/fork 双模式、`playbook_auto` 子开关）；D6 Spec 规范驱动（`spec-check.sh` 预检）。
+- **v0.3.0-rc1（2026-08-25）**：D0 用户意图拆解基座（问判模式、行为模式、GoalStale/GoalAdjustEvent 注入）；D1 Agentic Workflow 基座（`step` 前注入链、`ToolGuard` 链式护栏、统一开关）。
+- **v0.2.0（2026-08-25）**：任务编排协作（Goal/Plan/Job/Schedule 声明式扩展生态）；流式累积归一化；网络层性能优化（连接预热、SSE 定点解析、模型 host 直连分流）；危险命令静态守卫双层拦截；`/agent` 专项切换。
+- **v0.1.0（2026-08-22）**：AI Agent 核心作为首个正式版落地（多 Provider、20+ 工具、流式输出、上下文压缩、多会话、PLAN/BUILD/AUTO、检查点回滚、MCP 双角色、ZTH、技能中心）。
