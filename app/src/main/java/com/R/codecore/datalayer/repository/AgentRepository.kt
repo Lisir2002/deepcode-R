@@ -680,23 +680,23 @@ class AgentRepository(private val db: AgentDb) : WakeQueueStore {
         q.insertWakeItem(wakeId, sessionId, source, type, content, status, createdAtMs)
     }
 
-    suspend fun upsertWakeItem(
+    override suspend fun upsertWakeItem(
         wakeId: String, sessionId: String, source: String, type: String, content: String,
         status: String, createdAtMs: Long,
     ) = withContext(Dispatchers.IO) {
         q.upsertWakeItem(wakeId, sessionId, source, type, content, status, createdAtMs)
     }
 
-    suspend fun listPendingWakeItems(): List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue> =
+    override suspend fun listPendingWakeItems(): List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue> =
         withContext(Dispatchers.IO) { q.selectPendingWakeItems().executeAsList() }
 
-    suspend fun listWakeBySessionAndStatus(sessionId: String, status: String): List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue> =
+    override suspend fun listWakeBySessionAndStatus(sessionId: String, status: String): List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue> =
         withContext(Dispatchers.IO) { q.selectWakeBySessionAndStatus(status, sessionId).executeAsList() }
 
     suspend fun markWakeItemConsumed(wakeId: String) =
         withContext(Dispatchers.IO) { q.markWakeItemConsumed(wakeId) }
 
-    suspend fun markWakeItemsConsumedBatch(ids: List<String>, status: String) =
+    override suspend fun markWakeItemsConsumedBatch(ids: List<String>, status: String) =
         withContext(Dispatchers.IO) { q.markWakeItemsConsumedBatch(status, ids) }
 
     suspend fun insertSentinel(
