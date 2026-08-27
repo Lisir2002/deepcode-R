@@ -73,12 +73,6 @@ import javax.inject.Singleton
 @Singleton
 class BackupManagerImpl @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val aiProviderDao: AIProviderDao,
-    private val gitCredentialDao: GitCredentialDao,
-    private val remoteConnectionDao: RemoteConnectionDao,
-    private val chatSessionDao: ChatSessionDao,
-    private val agentMessageDao: AgentMessageDao,
-    private val todoItemDao: TodoItemDao,
     private val mcpConfigRepository: McpConfigRepository,
     private val mcpManager: McpManager,
     private val permissionRulesRepository: PermissionRulesRepository,
@@ -88,6 +82,8 @@ class BackupManagerImpl @Inject constructor(
     private val visionModelSettingsRepository: VisionModelSettingsRepository,
     private val compactionModelSettingsRepository: CompactionModelSettingsRepository,
     private val syncSettingsRepository: SyncSettingsRepository,
+    private val settingsRepo: com.R.codecore.datalayer.repository.SettingsRepository,
+    private val credentialsRepo: com.R.codecore.datalayer.repository.CredentialsRepository,
     private val workspaceRepository: WorkspaceRepository,
     private val encryptor: CredentialEncryptor,
     private val dataRegistry: DataRegistry,
@@ -118,7 +114,7 @@ class BackupManagerImpl @Inject constructor(
         }.getOrDefault(failValue)
     }
 
-    private fun currentSchemaVersion(): Int = AgentDatabase.SCHEMA_VERSION
+    private fun currentSchemaVersion(): Int = AGENT_SCHEMA_VERSION
 
     private fun appVersionName(): String = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
@@ -322,10 +318,10 @@ class BackupManagerImpl @Inject constructor(
         schemaVersion = currentSchemaVersion(),
         appVersion = appVersionName(),
         createdAt = System.currentTimeMillis(),
-        providers = if (options.providers) safeDaoSuspend("getAllProviders", emptyList()) { aiProviderDao.getAllProvidersOnce().map { it.toDto() } } else emptyList(),
-        gitCredentials = if (options.gitCredentials) safeDaoSuspend("getAllGitCred", emptyList()) { gitCredentialDao.getAllOnce().map { it.toDto() } } else emptyList(),
-        remoteConnections = if (options.remoteConnections) safeDaoSuspend("getAllRemoteConn", emptyList()) { remoteConnectionDao.getAllConnectionsOnce().map { it.toDto() } } else emptyList(),
-        remoteMounts = if (options.remoteConnections) safeDaoSuspend("getAllRemoteMounts", emptyList()) { remoteConnectionDao.getAllMountsOnce().map { it.toDto() } } else emptyList(),
+        providers = if (options.providers) safeDaoSuspend("getAllProviders", emptyList()) { settingsRepo.listProviders().map { it.toV2Dto() } } else emptyList(),
+        gitCredentials = if (options.gitCredentials) safeDaoSuspend("getAllGitCred", emptyList()) { credentialsRepo.listGitCredentials().map { it.toV2Dto() } } else emptyList(),
+        remoteConnections = if (options.remoteConnections) safeDaoSuspend("getAllRemoteConn", emptyList()) { workspaceRepository.listRemoteConnections().map { it.toV2Dto() } } else emptyList(),
+        remoteMounts = if (options.remoteConnections) safeDaoSuspend("getAllRemoteMounts", emptyList()) { workspaceRepository.listAllRemoteMounts().map { it.toV2Dto() } } else emptyList(),
         mcpServers = if (options.mcpServers) mcpConfigRepository.getServers() else emptyList(),
         globalPermissionRules = if (options.permissionRules) permissionRulesRepository.getGlobalRulesOnce() else emptyList(),
         themeMode = if (options.appSettings) themeSettingsRepository.snapshot() else null,
@@ -494,10 +490,20 @@ class BackupManagerImpl @Inject constructor(
      * v1 上界误拒。因此上界取「已知最大版本」，超过才拒绝。
      */
     private fun checkVersion(schemaVersion: Int) {
-        val maxKnown = maxOf(AgentDatabase.SCHEMA_VERSION, LegacyAgentDatabase.SCHEMA_VERSION)
+        val maxKnown = maxOf(AGENT_SCHEMA_VERSION, LEGACY_AGENT_SCHEMA_VERSION)
         if (schemaVersion > maxKnown) {
             error("备份的数据库版本 v$schemaVersion 高于本应用已知最大版本 v$maxKnown，请升级应用")
         }
+    }
+
+    companion object {
+        /**
+         * 拆库后 agent 拆分库的当前 schema 版本（v1）。旧版备份可能携带旧单库 v49
+         * （LEGACY_AGENT_SCHEMA_VERSION）的 schemaVersion——那同样可读可迁移，不能按当前
+         * v1 上界误拒。因此上界取「已知最大版本」，超过才拒绝。
+         */
+        private const val AGENT_SCHEMA_VERSION = 1
+        private const val LEGACY_AGENT_SCHEMA_VERSION = 49
     }
 
     /** 旧格式（单文件 snapshot.json 完整快照）还原。 */
@@ -535,22 +541,63 @@ class BackupManagerImpl @Inject constructor(
     private suspend fun restoreMeta(meta: BackupMetadata): RestoreStats {
         if (meta.providers.isNotEmpty()) {
             safeDaoSuspend("insertProviders", Unit) {
-                aiProviderDao.insertAllProviders(meta.providers.map { it.toEntity() })
+                meta.providers.forEach { p ->
+                    val encrypted = if (p.apiKey.isNotEmpty()) {
+                        runCatching { encryptor.encrypt(p.apiKey) }
+                            .onFailure { FileLogger.w(TAG, "restoreMeta 加密 apiKey 失败，encryptedApiKey 落库为空串") }
+                            .getOrDefault("")
+                    } else ""
+                    settingsRepo.saveProvider(
+                        id = p.id, name = p.name, type = p.type,
+                        encryptedApiKey = encrypted, baseUrl = p.baseUrl,
+                        defaultModel = p.selectedModel.ifBlank { p.defaultModel },
+                        isActive = p.isActive, models = p.models,
+                        isEnabled = p.isEnabled, useFullUrl = p.useFullUrl, useResponseApi = p.useResponseApi,
+                    )
+                }
             }
         }
         if (meta.gitCredentials.isNotEmpty()) {
             safeDaoSuspend("upsertGitCreds", Unit) {
-                gitCredentialDao.upsertAll(meta.gitCredentials.map { it.toEntity() })
+                meta.gitCredentials.forEach { c ->
+                    val encrypted = if (c.token.isNotEmpty()) {
+                        runCatching { encryptor.encrypt(c.token) }
+                            .onFailure { FileLogger.w(TAG, "restoreMeta 加密 git token 失败") }
+                            .getOrDefault("")
+                    } else ""
+                    credentialsRepo.upsertGitCredential(
+                        id = c.id, host = c.host, username = c.username,
+                        encryptedToken = encrypted, label = c.label,
+                        isDefault = if (c.isDefault) 1L else 0L,
+                        createdAtMs = c.createdAt, updatedAtMs = c.updatedAt,
+                    )
+                }
             }
         }
         if (meta.remoteConnections.isNotEmpty()) {
             safeDaoSuspend("insertRemoteConns", Unit) {
-                remoteConnectionDao.insertAllConnections(meta.remoteConnections.map { it.toEntity() })
+                meta.remoteConnections.forEach { c ->
+                    val isPwd = c.authType.equals("PASSWORD", ignoreCase = true)
+                    val authData = if (isPwd && c.authData.isNotEmpty()) encryptor.encrypt(c.authData) else c.authData
+                    val pass = c.passphrase?.takeIf { it.isNotBlank() }?.let { encryptor.encrypt(it) }
+                    workspaceRepository.upsertRemoteConnection(
+                        id = c.id, name = c.name, protocol = c.protocol, host = c.host,
+                        port = c.port.toLong(), username = c.username, authType = c.authType,
+                        authData = authData, passphrase = pass,
+                    )
+                }
             }
         }
         if (meta.remoteMounts.isNotEmpty()) {
             safeDaoSuspend("insertRemoteMounts", Unit) {
-                remoteConnectionDao.insertAllMounts(meta.remoteMounts.map { it.toEntity() })
+                meta.remoteMounts.forEach { m ->
+                    workspaceRepository.upsertRemoteMount(
+                        id = m.id, connectionId = m.connectionId, remotePath = m.remotePath,
+                        localMountPath = m.localMountPath,
+                        isActive = if (m.isActive) 1L else 0L,
+                        autoConnect = if (m.autoConnect) 1L else 0L,
+                    )
+                }
             }
         }
         if (meta.mcpServers.isNotEmpty()) {
@@ -593,6 +640,74 @@ class BackupManagerImpl @Inject constructor(
     private fun createTempFile(): File = File.createTempFile("backup", ".tmp", context.cacheDir)
 
     // ── Entity ↔ DTO 转换 ──────────────────────────────────────
+
+    private suspend fun com.R.codecore.datalayer.sqldelight.settings.Ai_providers.toV2Dto(): ProviderDto {
+        val resolvedKey = if (encrypted_api_key.isNotEmpty()) {
+            runCatching { encryptor.decrypt(encrypted_api_key) }
+                .onFailure { FileLogger.w(TAG, "toDto 解密 encrypted_api_key 失败，导出空串: ${it.message}") }
+                .getOrDefault("")
+        } else ""
+        return ProviderDto(
+            id = id,
+            name = name,
+            type = type,
+            apiKey = resolvedKey,
+            baseUrl = base_url,
+            defaultModel = default_model,
+            isActive = is_active == 1L,
+            models = models,
+            selectedModel = default_model,
+            isEnabled = is_enabled == 1L,
+            useFullUrl = use_full_url == 1L,
+            useResponseApi = use_response_api == 1L
+        )
+    }
+
+    private suspend fun com.R.codecore.datalayer.sqldelight.credentials.Git_credentials.toV2Dto(): GitCredentialDto {
+        val resolvedToken = if (encrypted_token.isNotEmpty()) {
+            runCatching { encryptor.decrypt(encrypted_token) }
+                .onFailure { FileLogger.w(TAG, "toDto GitCredential 解密 encrypted_token 失败：${it.message}") }
+                .getOrDefault("")
+        } else ""
+        return GitCredentialDto(
+            id = id,
+            host = host,
+            username = username,
+            token = resolvedToken,
+            label = label,
+            isDefault = is_default == 1L,
+            createdAt = created_at_ms,
+            updatedAt = updated_at_ms
+        )
+    }
+
+    private suspend fun com.R.codecore.datalayer.sqldelight.workspace.Remote_connections.toV2Dto(): RemoteConnectionDto {
+        val isPwd = auth_type.equals("PASSWORD", ignoreCase = true)
+        val resolvedAuthData: String = if (isPwd) {
+            try {
+                encryptor.decrypt(auth_data)
+            } catch (_: Throwable) {
+                auth_data
+            }
+        } else {
+            auth_data
+        }
+        val resolvedPassphrase: String? = if (!passphrase.isNullOrBlank()) {
+            try {
+                encryptor.decrypt(passphrase)
+            } catch (_: Throwable) {
+                passphrase
+            }
+        } else {
+            null
+        }
+        return RemoteConnectionDto(
+            id, name, protocol, host, port.toInt(), username, auth_type, resolvedAuthData, resolvedPassphrase
+        )
+    }
+
+    private fun com.R.codecore.datalayer.sqldelight.workspace.Remote_mounts.toV2Dto() =
+        RemoteMountDto(id, connection_id, remote_path, local_mount_path, is_active == 1L, auto_connect == 1L)
 
     private suspend fun AIProviderEntity.toDto(): ProviderDto {
         // RC68 SCHEMA 38 后：Entity 中已无 apiKey/selectedModel 列。
