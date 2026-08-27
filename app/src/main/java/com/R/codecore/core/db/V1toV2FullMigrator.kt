@@ -88,7 +88,7 @@ class V1toV2FullMigrator @Inject constructor(
                 agentDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             )
             try {
-                db.query("chat_sessions").use { c ->
+                db.rawQuery("SELECT * FROM chat_sessions", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.upsertSession(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -109,7 +109,7 @@ class V1toV2FullMigrator @Inject constructor(
                     }
                 }
                 // P2-3 热表回填：agent_message 全列（content/toolCallsJson/分块/压缩/token 等）。
-                db.query("agent_messages").use { c ->
+                db.rawQuery("SELECT * FROM agent_messages", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.insertMessage(
                             com.R.codecore.datalayer.sqldelight.agent.Agent_message(
@@ -141,7 +141,7 @@ class V1toV2FullMigrator @Inject constructor(
                     }
                 }
                 // P2-2：todo / checkpoint / Zth 域表全量移植（V2 读源后这些表不能为空）
-                db.query("todo_items").use { c ->
+                db.rawQuery("SELECT * FROM todo_items", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.insertTodo(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -157,7 +157,7 @@ class V1toV2FullMigrator @Inject constructor(
                         rows++
                     }
                 }
-                db.query("session_checkpoints").use { c ->
+                db.rawQuery("SELECT * FROM session_checkpoints", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.insertCheckpointFull(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -169,7 +169,7 @@ class V1toV2FullMigrator @Inject constructor(
                         rows++
                     }
                 }
-                db.query("checkpoint_file_snapshots").use { c ->
+                db.rawQuery("SELECT * FROM checkpoint_file_snapshots", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.insertCheckpointFileSnapshot(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -179,9 +179,10 @@ class V1toV2FullMigrator @Inject constructor(
                             changeType = c.getString(c.getColumnIndexOrThrow("changeType")),
                             createdAt = c.getLong(c.getColumnIndexOrThrow("createdAt")),
                         )
-                    rows++
+                        rows++
+                    }
                 }
-                db.query("zth_hallucination_fuses").use { c ->
+                db.rawQuery("SELECT * FROM zth_hallucination_fuses", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.upsertFuse(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -200,7 +201,7 @@ class V1toV2FullMigrator @Inject constructor(
                         rows++
                     }
                 }
-                db.query("zth_user_confirmed_sentinels").use { c ->
+                db.rawQuery("SELECT * FROM zth_user_confirmed_sentinels", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.insertSentinel(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -223,7 +224,7 @@ class V1toV2FullMigrator @Inject constructor(
                         rows++
                     }
                 }
-                db.query("zth_sentinel_plan_rejection_audits").use { c ->
+                db.rawQuery("SELECT * FROM zth_sentinel_plan_rejection_audits", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.insertRejectionAudit(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -236,7 +237,7 @@ class V1toV2FullMigrator @Inject constructor(
                         rows++
                     }
                 }
-                db.query("zth_hard_constraint_delete_audits").use { c ->
+                db.rawQuery("SELECT * FROM zth_hard_constraint_delete_audits", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.insertDeleteAudit(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -250,7 +251,7 @@ class V1toV2FullMigrator @Inject constructor(
                         rows++
                     }
                 }
-                db.query("zth_l0_soft_compact_restore_logs").use { c ->
+                db.rawQuery("SELECT * FROM zth_l0_soft_compact_restore_logs", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.insertRestoreLog(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -268,7 +269,7 @@ class V1toV2FullMigrator @Inject constructor(
                         rows++
                     }
                 }
-                db.query("zth_telemetry_events").use { c ->
+                db.rawQuery("SELECT * FROM zth_telemetry_events", null).use { c ->
                     while (c.moveToNext()) {
                         agentRepo.insertTelemetryEvent(
                             eventKind = c.getString(c.getColumnIndexOrThrow("eventKind")),
@@ -297,7 +298,7 @@ class V1toV2FullMigrator @Inject constructor(
                 settingsDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             )
             try {
-                db.query("ai_providers").use { c ->
+                db.rawQuery("SELECT * FROM ai_providers", null).use { c ->
                     while (c.moveToNext()) {
                         // saveProvider 内含 RC68 active 互斥（isActive 时先清全部）；
                         // 按 id 升序移植（与 V2 selectAllProviders 排序键一致），
@@ -330,7 +331,7 @@ class V1toV2FullMigrator @Inject constructor(
                 credDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             )
             try {
-                db.query("git_credentials").use { c ->
+                db.rawQuery("SELECT * FROM git_credentials", null).use { c ->
                     while (c.moveToNext()) {
                         credentialsRepo.insertGitCredential(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -357,7 +358,7 @@ class V1toV2FullMigrator @Inject constructor(
                 wsDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             )
             try {
-                db.query("remote_connections").use { c ->
+                db.rawQuery("SELECT * FROM remote_connections", null).use { c ->
                     while (c.moveToNext()) {
                         workspaceRepo.insertRemoteConnection(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -373,7 +374,7 @@ class V1toV2FullMigrator @Inject constructor(
                         rows++
                     }
                 }
-                db.query("remote_mounts").use { c ->
+                db.rawQuery("SELECT * FROM remote_mounts", null).use { c ->
                     while (c.moveToNext()) {
                         workspaceRepo.insertRemoteMount(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -398,7 +399,7 @@ class V1toV2FullMigrator @Inject constructor(
                 t2iDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             )
             try {
-                db.query("t2i_providers").use { c ->
+                db.rawQuery("SELECT * FROM t2i_providers", null).use { c ->
                     while (c.moveToNext()) {
                         t2iRepo.insertT2iProvider(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -417,7 +418,7 @@ class V1toV2FullMigrator @Inject constructor(
                         rows++
                     }
                 }
-                db.query("t2i_provider_models").use { c ->
+                db.rawQuery("SELECT * FROM t2i_provider_models", null).use { c ->
                     while (c.moveToNext()) {
                         t2iRepo.insertT2iProviderModel(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -438,7 +439,7 @@ class V1toV2FullMigrator @Inject constructor(
                     }
                 }
                 // P2-2：t2i_task 全列对齐 Room T2ITaskEntity（30 列），补迁任务表。
-                db.query("t2i_tasks").use { c ->
+                db.rawQuery("SELECT * FROM t2i_tasks", null).use { c ->
                     while (c.moveToNext()) {
                         t2iRepo.insertTask(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
