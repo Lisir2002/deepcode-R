@@ -54,7 +54,7 @@ class WakeQueueManager @Inject constructor(
             createdAtMs = System.currentTimeMillis()
         )
         if (isV2()) {
-            v2Agent.upsertWakeItem(
+            requireNotNull(v2Agent).upsertWakeItem(
                 wakeId = item.wakeId,
                 sessionId = item.sessionId,
                 source = item.source,
@@ -87,19 +87,19 @@ class WakeQueueManager @Inject constructor(
 
     /** 读取某会话的全部待注入唤醒（按入队时间升序）。sessionId 为 null/空串时仅匹配全局唤醒。 */
     suspend fun pendingForSession(sessionId: String?): List<WakeItemEntity> =
-        if (isV2()) v2Agent.listWakeBySessionAndStatus(sessionId.orEmpty(), WakeItemEntity.STATUS_PENDING).map { it.toEntity() }
+        if (isV2()) requireNotNull(v2Agent).listWakeBySessionAndStatus(sessionId.orEmpty(), WakeItemEntity.STATUS_PENDING).map { it.toEntity() }
         else dao.getBySessionAndStatus(sessionId.orEmpty(), WakeItemEntity.STATUS_PENDING)
 
     /** 消费确认：把已成功注入的唤醒标记为 CONSUMED（防重复注入）。空列表安全返回。 */
     suspend fun markConsumed(ids: List<String>) {
         if (ids.isEmpty()) return
-        if (isV2()) v2Agent.markWakeItemsConsumedBatch(ids, WakeItemEntity.STATUS_CONSUMED)
+        if (isV2()) requireNotNull(v2Agent).markWakeItemsConsumedBatch(ids, WakeItemEntity.STATUS_CONSUMED)
         else dao.updateStatus(ids, WakeItemEntity.STATUS_CONSUMED)
     }
 
     /** 全部待注入唤醒（启动重扫用）。 */
     suspend fun allPending(): List<WakeItemEntity> =
-        if (isV2()) v2Agent.listPendingWakeItems().map { it.toEntity() }
+        if (isV2()) requireNotNull(v2Agent).listPendingWakeItems().map { it.toEntity() }
         else dao.getByStatus(WakeItemEntity.STATUS_PENDING)
 
     // ── V2（SQLDelight）↔ Room Entity 映射 ──────────────────────────────
