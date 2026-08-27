@@ -225,16 +225,22 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 
 **去双路径通用模式**：删 `readMode` 构造参数、删 `private suspend fun isV2()`，保留 `if(isV2()) V2分支 else ROOM分支` 的 V2 分支、删 else；未用 import 可保留（无 allWarningsAsErrors）。`DataReadMode/DataReadModeHolder/V2TakeoverGate` 仍保留（供再阅），待最后清理。
 
-**本会话已完成（CI 每批验证通过）**：
+**已完成（CI 每批验证通过）**：
 - 第2步去双路径：约 46 文件 / 235 调用点全部纯 V2，已删全部 `isV2()/currentModeSync/readMode.currentMode()`（业务代码）。
-- 第3步局部：`V1toV2FullMigrator` 读端重写为纯 `SQLiteDatabase.openDatabase`+游标（5 旧库 18+ 表），不再依赖 Room；`AndroidV1RowCountProvider` 改 SQLite 直读；`BackupManagerImpl` 去掉 6 个 Room DAO 构造依赖，metadata 4 表（providers/git/connections/mounts）读写改走 V2 repo（`settingsRepo/credentialsRepo/v2WorkspaceRepository`），schema 版本内联为 companion 常量。
+- 第3步·迁移器与依赖：`V1toV2FullMigrator` 读端重写为纯 `SQLiteDatabase.openDatabase`+游标（5 旧库 18+ 表），不再依赖 Room；`AndroidV1RowCountProvider` 改 SQLite 直读；`BackupManagerImpl` 去掉 6 个 Room DAO 构造依赖，metadata 4 表改走 V2 repo，schema 版本内联为 companion 常量。
+- 第3步·死代码清除：删除 `AIProviderRepositoryImpl`/`CredentialRepositoryImpl`/`T2IRepositoryRoomImpl`（Hilt 均绑定 V2 impl，Room 版从未被注入）、`V1toV2MigrationWorker`/`CredentialRotationWorker`（无 WorkManager 调度点）。
+- 第3步·Zth 去 DAO：`ZthConfirmationCardManager` 去掉 fuseDao/sentinelDao/rejectionAuditDao，改用 V2 `AgentRepository`（`getFuseVersion`+`upsertFuse`+`casUpdateFuseState` 保 CAS 语义；`insertSentinel`/`insertRejectionAudit`），id 格式由 `composeSessionId`/`composeSentinelId` 内联保持 `SESSION:$id` / `$sessionId:$chainId:$chainIndex` 兼容既有数据。`ZthConfirmationCardRepository` 本就纯 V2（无 DAO）。
 
-**待续（第3步剩余 → 完全剔除 Room）**，均需先扫再改、逐个 CI：
-1. **T2I 双路径清理**：`feature/t2i/data/repository/T2IRepositoryRoomImpl.kt` 仍是纯 Room 实现；`ImageGenerator.kt`/`T2IRepository.kt`/`T2IPermissionPolicyEngine.kt`/UI 仍引用 `T2ITaskEntity/T2IProviderEntity/T2IProviderModelEntity`。需改 V2（`datalayer/repository/T2iRepository.kt`）。
-2. **设置/凭证/一部分 UI 仍用 Room**：`AIProviderRepositoryImpl`、`CredentialRepositoryImpl` 走 Room DAO；`ModelMetadataService`/`Provider*Screen`/`RemoteAuditLogsScreen`/`AboutStatsViewModel` 引用 Room entity。改走 V2 repo。
-3. **DB 初始化/迁移/救援基础设施仍绑 Room**：`AIEditorApp.kt`（初始化 5 Room 库）、`di/DatabaseModule.kt`（Room Hilt 提供，量大）、`DataRegistryModule.kt`、`DbSplitMigrator.kt`、`MigrationLoader.kt`、`LightweightSchemaRescue.kt`、`V1toV2MigrationWorker.kt`、`CredentialRotationWorker.kt`。这些是一键拆链的难点，需逐文件解耦。
-4. **`BackupManagerImpl` 残留 Room Entity 桥**：`toDto/toEntity/toV2` 转换仍经 `ChatSessionEntity/AgentMessageEntity/TodoItemEntity/AIProviderEntity/...` 中转（如 158 行 `session.toDto()`、messages 走 `V2AgentMessage.toEntity()` 后 `toDto()`）。删 Room 前须重写为 V2↔DTO 直连（`V2AgentSession.toV2Dto()` 等）。
-5. 最后删除 5 个 Room Database 类 + 32 个 DAO + 所有 `@Entity`，移除 `app/build.gradle.kts` 的 `room`/`ksp` 依赖与 schema 目录，清 `core/data/DataRegistry` 旧路径。
+**里程碑达成：生产代码零活 DAO 消费者**（RepositoryModule 的 AIProvider/Credential/T2I 绑定全为 V2 impl；唯一活 DAO 使用者 ZthConfirmationCardManager 已迁移）。
+
+**待续：物理删除 Room 骨架（须一次原子批完成，无法增量拆分）**
+1. **删文件**：`di/DatabaseModule.kt`+5 个 `feature/*/data/local/database/*Database.kt`+`LegacyAgentDatabase`+`AgentDatabaseMigrations`+全部 `/*Dao.kt`（agent 域 30+ 个已无业务消费者）+`core/db` 的 `DbSplitMigrator/MigrationLoader/LightweightSchemaRescue`+`DataRegistryModule`（注意保留 `datalayer/migration` 的 V2 `MigrationEngine/HeavyMigration/CodeMigration`）。
+2. **删后联锁 V2 backup**：`DataRegistryModule` 现以 5 个 Room Database 底层 driver 喂 `SqlDelightDataProvider.create(...)`（V2 backup/DataRegistry 连接点）——删 Room DB 须改为直接用 V2 `ConnectionPool`/driver factory 提供，属跨 Room+V2 的联锁替换。
+3. **改 `AIEditorApp.kt`**：去掉 5 个 Database 字段注入与完整性检查，**保留** `v1toV2FullMigrator.migrateIfNeeded()`（已纯 SQLite）。
+4. **剥离 Entity 注解**：领域层/UI/Firebase 同步依然把 Room Entity 当 DTO 用（如 `V2AgentGoal.toEntity()`→`GoalEntity`、Backup 的 `toDto/toEntity`、Zth 同步 DTO）——因此**把全部 Room `@Entity` 改为纯 Kotlin data class**（删 `@Entity/@ColumnInfo/@PrimaryKey/@Index` 与 `import androidx.room.*`，compose helper 保留），而非全量换成 V2 类型（风险低、改动机械）。注意顺序：剥离注解必须在删 DB/DAO 之后，否则 DB/DAO 因「非 @Entity」报错。
+5. **gradle**：移除 `app/build.gradle.kts` 的 `room-runtime/room-ktx`、`ksp`+`room-compiler` 与 `ksp { arg("room.schemaLocation"...) }`、schema 目录（`schemas/**` 及 roomExportSchema 产物）。
+
+**迁移器改造易错点**：SQLite 游标取值列名必须与 Room schema JSON（`app/src/main/.../schemas/**/N.json`）精确一致；`SQLiteDatabase.query(table)` 无单参重载，须用 `rawQuery("SELECT * FROM t", null)`；`data class` 只允许一个 `companion object`；`port` 等跨层类型要显式 `toInt()/toLong()`（V2 用 `Long`、备份 DTO 用 `Int`）。
 
 **迁移器改造易错点**：SQLite 游标取值列名必须与 Room schema JSON（`app/src/main/.../schemas/**/N.json`）精确一致；`SQLiteDatabase.query(table)` 无单参重载，须用 `rawQuery("SELECT * FROM t", null)`；`data class` 只允许一个 `companion object`，否则常量全 unresolved；`port` 等跨层类型要显式 `toInt()/toLong()`（V2 用 `Long`、备份 DTO 用 `Int`）。
 
