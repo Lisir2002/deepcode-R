@@ -14,10 +14,13 @@ import org.junit.Test
 /**
  * v2-full-takeover P1-3：[V2ParityChecker] 行数比对逻辑单测。
  *
- * 用 JdbcSqliteDriver 起真实 SQLite（内存库）做 V2 侧，fake [V1RowCountProvider] 做 V1 侧：
+ * 用 JdbcSqliteDriver 起真实 SQLite（内存库）做 V2 侧，fake [V1RowCountProvider] 做 V1 侧。
+ * 表清单与 [V2ParityChecker.mappings] 对齐：V1 侧用 V1 表名（chat_sessions…），V2 侧物理表用 V2 表名（agent_session…）。
+ *
  *  1. V1/V2 行数一致 → match=true；
  *  2. 任一表行数不一致 → 该表 match=false；
- *  3. V1 读不到（null）→ 不误判为 match。
+ *  3. V1 读不到（null）→ 不误判为 match；
+ *  4. V2 表缺失 → v2Count=null 且 mismatch。
  */
 class V2ParityCheckerTest {
 
@@ -31,78 +34,65 @@ class V2ParityCheckerTest {
         override fun create(lib: LibName): SqlDriver = driver
     }
 
-    private fun setupPool(
-        tableDdl: List<Pair<LibName, List<String>>>,
-        seed: Map<String, Int>,
-    ): ConnectionPool {
+    /** (V1 表名, V2 域库, V2 表名)——与 [V2ParityChecker.mappings] 一一对应。 */
+    private data class Tb(val v1: String, val lib: LibName, val v2: String)
+
+    private val TABLES: List<Tb> = listOf(
+        Tb("ai_providers", LibName.SETTINGS, "ai_providers"),
+        Tb("git_credentials", LibName.CREDENTIALS, "git_credentials"),
+        Tb("remote_connections", LibName.WORKSPACE, "remote_connections"),
+        Tb("remote_mounts", LibName.WORKSPACE, "remote_mounts"),
+        Tb("remote_audit_logs", LibName.WORKSPACE, "remote_audit_logs"),
+        Tb("credential_encryption_state", LibName.WORKSPACE, "credential_encryption_state"),
+        Tb("t2i_providers", LibName.T2I, "t2i_providers"),
+        Tb("t2i_provider_models", LibName.T2I, "t2i_provider_models"),
+        Tb("t2i_tasks", LibName.T2I, "t2i_task"),
+        Tb("chat_sessions", LibName.AGENT, "agent_session"),
+        Tb("agent_messages", LibName.AGENT, "agent_message"),
+        Tb("todo_items", LibName.AGENT, "todo_items"),
+        Tb("session_checkpoints", LibName.AGENT, "session_checkpoints"),
+        Tb("checkpoint_file_snapshots", LibName.AGENT, "checkpoint_file_snapshots"),
+        Tb("zth_user_confirmed_sentinels", LibName.AGENT, "zth_user_confirmed_sentinels"),
+        Tb("zth_hallucination_fuses", LibName.AGENT, "zth_hallucination_fuses"),
+        Tb("zth_sentinel_plan_rejection_audits", LibName.AGENT, "zth_sentinel_plan_rejection_audits"),
+        Tb("zth_hard_constraint_delete_audits", LibName.AGENT, "zth_hard_constraint_delete_audits"),
+        Tb("zth_l0_soft_compact_restore_logs", LibName.AGENT, "zth_l0_soft_compact_restore_logs"),
+        Tb("zth_telemetry_events", LibName.AGENT, "zth_telemetry_events"),
+    )
+
+    private fun seedAll(): Map<String, Int> = TABLES.associate { it.v2 to 3 }
+    private fun v1All(): Map<String, Long> = TABLES.associate { it.v1 to 3L }
+
+    private fun setupPool(seed: Map<String, Int>): ConnectionPool {
         val pool = ConnectionPool(MemoryDriverFactory())
-        for ((lib, ddl) in tableDdl) {
-            val d = pool.driver(lib)
-            ddl.forEach { d.execute(null, it, 0) }
+        for (t in TABLES) {
+            pool.driver(t.lib).execute(null, "CREATE TABLE IF NOT EXISTS `${t.v2}` (id TEXT PRIMARY KEY, name TEXT)", 0)
         }
-        // 种子数据：每张表插 seed[table] 行
-        for ((table, rows) in seed) {
-            val d = pool.driver(libOf(table))
+        for ((v2, rows) in seed) {
+            val lib = TABLES.first { it.v2 == v2 }.lib
+            val d = pool.driver(lib)
             repeat(rows) { i ->
-                d.execute(null, "INSERT INTO `$table` (id, name) VALUES ('$i', 'row$i')", 0)
+                d.execute(null, "INSERT INTO `$v2` (id, name) VALUES ('$i', 'row$i')", 0)
             }
         }
         return pool
     }
 
-    private fun libOf(table: String): LibName = when (table) {
-        "ai_providers" -> LibName.SETTINGS
-        "git_credentials" -> LibName.CREDENTIALS
-        "remote_connections", "remote_mounts", "remote_audit_logs", "credential_encryption_state" -> LibName.WORKSPACE
-        "t2i_providers", "t2i_provider_models", "t2i_task" -> LibName.T2I
-        "agent_session", "agent_message", "todo_items" -> LibName.AGENT
-        else -> throw IllegalArgumentException("unknown table $table")
-    }
-
-    private fun tableDdl(): List<Pair<LibName, List<String>>> = listOf(
-        LibName.SETTINGS to listOf("CREATE TABLE ai_providers (id TEXT PRIMARY KEY, name TEXT)"),
-        LibName.CREDENTIALS to listOf("CREATE TABLE git_credentials (id TEXT PRIMARY KEY, name TEXT)"),
-        LibName.WORKSPACE to listOf(
-            "CREATE TABLE remote_connections (id TEXT PRIMARY KEY, name TEXT)",
-            "CREATE TABLE remote_mounts (id TEXT PRIMARY KEY, name TEXT)",
-            "CREATE TABLE remote_audit_logs (id TEXT PRIMARY KEY, name TEXT)",
-            "CREATE TABLE credential_encryption_state (id INTEGER PRIMARY KEY, name TEXT)",
-        ),
-        LibName.T2I to listOf(
-            "CREATE TABLE t2i_providers (id TEXT PRIMARY KEY, name TEXT)",
-            "CREATE TABLE t2i_provider_models (id TEXT PRIMARY KEY, name TEXT)",
-            "CREATE TABLE t2i_task (id TEXT PRIMARY KEY, name TEXT)",
-        ),
-        LibName.AGENT to listOf(
-            "CREATE TABLE agent_session (id TEXT PRIMARY KEY, name TEXT)",
-            "CREATE TABLE agent_message (id TEXT PRIMARY KEY, name TEXT)",
-            "CREATE TABLE todo_items (id TEXT PRIMARY KEY, name TEXT)",
-        ),
-    )
-
-    private val allTables = listOf(
-        "ai_providers", "git_credentials",
-        "remote_connections", "remote_mounts", "remote_audit_logs", "credential_encryption_state",
-        "t2i_providers", "t2i_provider_models", "t2i_task",
-        "agent_session", "agent_message", "todo_items",
-    )
-
     @Test
     fun `matching row counts all pass`() {
-        val pool = setupPool(tableDdl(), seed = allTables.associateWith { 3 })
-        val v1 = FakeV1RowCount(allTables.associateWith { 3L })
-        val checker = V2ParityChecker(pool, v1)
+        val pool = setupPool(seedAll())
+        val checker = V2ParityChecker(pool, FakeV1RowCount(v1All()))
 
         val results = runBlocking { checker.checkAll() }
-        assertTrue("所有表应匹配", results.all { it.match })
-        assertEquals(allTables.size, results.size)
+        assertTrue("所有表应匹配: ${results.filter { !it.match }.map { it.summary }}", results.all { it.match })
+        assertEquals(TABLES.size, results.size)
     }
 
     @Test
     fun `mismatch in one table fails only that table`() {
-        val pool = setupPool(tableDdl(), seed = allTables.associateWith { 3 })
-        val v1 = FakeV1RowCount(allTables.associateWith { 3L } + ("ai_providers" to 5L))
-        val checker = V2ParityChecker(pool, v1)
+        val pool = setupPool(seedAll())
+        val v1 = v1All() + ("ai_providers" to 5L)
+        val checker = V2ParityChecker(pool, FakeV1RowCount(v1))
 
         val results = runBlocking { checker.checkAll() }
         val bad = results.first { !it.match }
@@ -114,10 +104,9 @@ class V2ParityCheckerTest {
 
     @Test
     fun `v1 unavailable counts as mismatch not match`() {
-        val pool = setupPool(tableDdl(), seed = allTables.associateWith { 3 })
+        val pool = setupPool(seedAll())
         // V1 侧完全读不到（null）→ 任何表都不该被当作 match
-        val v1 = FakeV1RowCount(emptyMap())
-        val checker = V2ParityChecker(pool, v1)
+        val checker = V2ParityChecker(pool, FakeV1RowCount(emptyMap()))
 
         val results = runBlocking { checker.checkAll() }
         assertTrue(results.none { it.match })
@@ -126,11 +115,10 @@ class V2ParityCheckerTest {
 
     @Test
     fun `v2 table missing yields null v2 count and mismatch`() {
-        val pool = setupPool(tableDdl(), seed = allTables.associateWith { 3 })
+        val pool = setupPool(seedAll())
         // 人为删一张 V2 表（模拟迁移没建出来）
         pool.driver(LibName.SETTINGS).execute(null, "DROP TABLE ai_providers", 0)
-        val v1 = FakeV1RowCount(allTables.associateWith { 3L })
-        val checker = V2ParityChecker(pool, v1)
+        val checker = V2ParityChecker(pool, FakeV1RowCount(v1All()))
 
         val results = runBlocking { checker.checkAll() }
         val bad = results.first { !it.match }
