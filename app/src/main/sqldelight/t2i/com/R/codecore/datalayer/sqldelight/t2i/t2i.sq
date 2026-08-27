@@ -89,6 +89,10 @@ insertT2iProvider:
 INSERT INTO t2i_providers (id, name, type, base_url, encrypted_api_key, endpoint_mode, is_active, priority, is_enabled, extra_headers_json, created_at_ms, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+insertOrReplaceT2iProvider:
+INSERT OR REPLACE INTO t2i_providers (id, name, type, base_url, encrypted_api_key, endpoint_mode, is_active, priority, is_enabled, extra_headers_json, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 selectT2iProviderById:
 SELECT * FROM t2i_providers WHERE id = ?;
 
@@ -101,11 +105,24 @@ SELECT * FROM t2i_providers WHERE is_active = 1 LIMIT 1;
 deactivateAllT2iProviders:
 UPDATE t2i_providers SET is_active = 0;
 
+setT2iProviderActive:
+UPDATE t2i_providers SET is_active = 1 WHERE id = ?;
+
+setT2iProviderEnabled:
+UPDATE t2i_providers SET is_enabled = ?, updated_at_ms = ? WHERE id = ?;
+
+updateT2iProviderEncryptedApiKey:
+UPDATE t2i_providers SET encrypted_api_key = ?, updated_at_ms = ? WHERE id = ?;
+
 deleteT2iProvider:
 DELETE FROM t2i_providers WHERE id = ?;
 
 insertT2iProviderModel:
 INSERT INTO t2i_provider_models (id, provider_id, model_id, display_name, supports_hd, supports_inpaint, default_width, default_height, max_steps, default_steps, cost_per_image_tokens, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertOrReplaceT2iProviderModel:
+INSERT OR REPLACE INTO t2i_provider_models (id, provider_id, model_id, display_name, supports_hd, supports_inpaint, default_width, default_height, max_steps, default_steps, cost_per_image_tokens, created_at_ms, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectT2iModelsByProvider:

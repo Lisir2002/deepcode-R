@@ -53,6 +53,14 @@ class T2iRepository(private val db: T2iDb) {
         q.insertT2iProvider(id, name, type, baseUrl, encryptedApiKey, endpointMode, isActive, priority, isEnabled, extraHeadersJson, createdAtMs, updatedAtMs)
     }
 
+    suspend fun upsertT2iProvider(
+        id: String, name: String, type: String, baseUrl: String, encryptedApiKey: String,
+        endpointMode: String, isActive: Long, priority: Long, isEnabled: Long,
+        extraHeadersJson: String, createdAtMs: Long, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertOrReplaceT2iProvider(id, name, type, baseUrl, encryptedApiKey, endpointMode, isActive, priority, isEnabled, extraHeadersJson, createdAtMs, updatedAtMs)
+    }
+
     suspend fun getT2iProvider(id: String): com.R.codecore.datalayer.sqldelight.t2i.T2i_providers? =
         withContext(Dispatchers.IO) { q.selectT2iProviderById(id).executeAsOneOrNull() }
 
@@ -65,6 +73,15 @@ class T2iRepository(private val db: T2iDb) {
     suspend fun deactivateAllT2iProviders() =
         withContext(Dispatchers.IO) { q.deactivateAllT2iProviders() }
 
+    suspend fun setActiveT2iProvider(id: String) =
+        withContext(Dispatchers.IO) { q.setT2iProviderActive(id) }
+
+    suspend fun setT2iProviderEnabled(id: String, isEnabled: Boolean, updatedAtMs: Long) =
+        withContext(Dispatchers.IO) { q.setT2iProviderEnabled(if (isEnabled) 1L else 0L, updatedAtMs, id) }
+
+    suspend fun updateT2iProviderEncryptedApiKey(id: String, encryptedApiKey: String, updatedAtMs: Long) =
+        withContext(Dispatchers.IO) { q.updateT2iProviderEncryptedApiKey(encryptedApiKey, updatedAtMs, id) }
+
     suspend fun deleteT2iProvider(id: String) =
         withContext(Dispatchers.IO) { q.deleteT2iProvider(id) }
 
@@ -74,6 +91,14 @@ class T2iRepository(private val db: T2iDb) {
         defaultSteps: Long, costPerImageTokens: Long, createdAtMs: Long, updatedAtMs: Long,
     ) = withContext(Dispatchers.IO) {
         q.insertT2iProviderModel(id, providerId, modelId, displayName, supportsHd, supportsInpaint, defaultWidth, defaultHeight, maxSteps, defaultSteps, costPerImageTokens, createdAtMs, updatedAtMs)
+    }
+
+    suspend fun upsertT2iProviderModel(
+        id: String, providerId: String, modelId: String, displayName: String, supportsHd: Long,
+        supportsInpaint: Long, defaultWidth: Long, defaultHeight: Long, maxSteps: Long,
+        defaultSteps: Long, costPerImageTokens: Long, createdAtMs: Long, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertOrReplaceT2iProviderModel(id, providerId, modelId, displayName, supportsHd, supportsInpaint, defaultWidth, defaultHeight, maxSteps, defaultSteps, costPerImageTokens, createdAtMs, updatedAtMs)
     }
 
     suspend fun listT2iModels(providerId: String): List<com.R.codecore.datalayer.sqldelight.t2i.T2i_provider_models> =
