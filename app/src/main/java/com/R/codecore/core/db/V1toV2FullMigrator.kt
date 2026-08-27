@@ -129,15 +129,18 @@ class V1toV2FullMigrator @Inject constructor(
             try {
                 val providers = db.aiProviderDao().getAllProvidersOnce()
                 for (p in providers) {
-                    settingsRepo.insertProvider(
+                    // saveProvider 内含 RC68 active 互斥（isActive 时先清全部）；
+                    // 按 id 升序移植（与 V2 selectAllProviders 排序键一致），
+                    // 使最终 active 行落在原 active 上，幂等重跑结果稳定。
+                    settingsRepo.saveProvider(
                         id = p.id, name = p.name, type = p.type,
                         encryptedApiKey = p.encryptedApiKey, baseUrl = p.baseUrl,
                         defaultModel = p.defaultModel,
-                        isActive = if (p.isActive) 1L else 0L,
+                        isActive = p.isActive,
                         models = p.models,
-                        isEnabled = if (p.isEnabled) 1L else 0L,
-                        useFullUrl = if (p.useFullUrl) 1L else 0L,
-                        useResponseApi = if (p.useResponseApi) 1L else 0L,
+                        isEnabled = p.isEnabled,
+                        useFullUrl = p.useFullUrl,
+                        useResponseApi = p.useResponseApi,
                     )
                     rows++
                 }

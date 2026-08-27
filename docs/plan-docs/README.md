@@ -31,4 +31,5 @@
 
 - [design-master-plan-design.md](./design-master-plan-design.md) —— 主设计域总纲（D0–D6 分层）
 - [progress-tracker.md](./progress-tracker.md) —— 实施进度追踪（子任务级状态）
+- [v2-full-takeover-design.md](./v2-full-takeover-design.md) —— V2 数据层全面接管与旧 Room 层剔除（P0–P5 编排）
 - 其余为各专题设计文档，按需查阅。

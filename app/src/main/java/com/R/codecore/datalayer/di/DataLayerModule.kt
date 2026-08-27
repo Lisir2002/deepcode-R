@@ -1,6 +1,7 @@
 package com.R.codecore.datalayer.di
 
 import android.content.Context
+import com.R.codecore.datalayer.engine.AndroidDatabasePathProvider
 import com.R.codecore.datalayer.engine.ConnectionPool
 import com.R.codecore.datalayer.engine.DatabaseDriverFactory
 import com.R.codecore.datalayer.engine.DatabasePathProvider
@@ -49,7 +50,7 @@ object DataLayerModule {
     @Provides
     @Singleton
     fun providePathProvider(@ApplicationContext context: Context): DatabasePathProvider =
-        DatabasePathProvider(context)
+        AndroidDatabasePathProvider(context)
 
     @Provides
     @Singleton

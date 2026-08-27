@@ -94,7 +94,31 @@
 | 任务 | 内容摘要（一行） | 前置 | 状态 |
 |---|---|---|---|
 | D7-1 chunked-message | 长输出分块消息方案细化（细化时再拆子任务） | 独立 | ⬜ |
-| D7-2 data-layer-refactor | 数据层重构方案细化 | 独立 | ⬜ |
+| D7-2 data-layer-refactor | 数据层重构方案细化 | 独立 | ✅ 已实施（V1 拆库已落地，见 §4） |
+| D8 V2 全面接管（v2-full-takeover） | V2 SQLDelight 接管全部业务读写并彻底剔除旧 Room 层，P0–P5 六阶段 | D7-2（V1 拆库） | 🔄 实施中 |
+
+### D8 V2 全面接管与旧层剔除（🔄 实施中 | 前置：D7-2 | 后置：—）
+
+> 详细设计与缺口实测见 [v2-full-takeover-design.md](./v2-full-takeover-design.md)。状态标记同 §2 用法。
+
+| 子任务 | 内容（一行） | 章节 | 状态 |
+|---|---|---|---|
+| P0-1 | V2 五个 Repository 补 `Flow` 响应式读（对齐旧 DAO 34 个 Flow 查询） | 设计 §4 P0 | 🟡 |
+| P0-2 | 各 `.sq` 补 update / 列级 setter / `INSERT OR REPLACE`，排序键与 `LIMIT 1` 对齐旧层 | 设计 §4 P0 | 🟡 |
+| P0-3 | 修 `MigrationEngine.restoreSnapshot` 拷贝方向反转缺陷 + 快照回滚单测 | 设计 §2.4 | 🟡 |
+| P0-4 | 设计文档入库 + 进度登记（本表） | 设计 §4 P0 | ✅ |
+| P1-1 | 切换前强制全量备份钩子（失败阻断 V2 读） | 设计 §4 P1 | ⬜ |
+| P1-2 | `DataReadMode` 读源开关（ROOM / V2，可一键回退） | 设计 §4 P1 | ⬜ |
+| P1-3 | `V2ParityChecker` 逐表行数 + 抽样哈希校验，不一致自动回落 ROOM | 设计 §4 P1 | ⬜ |
+| P1-4 | `DataRegistryModule` 双登记保持（过渡期资产，非清理项） | 设计 §4 P1 | ⬜ |
+| P2-1 | 批 1 单表外围切换（settings / credentials / t2i / remote_audit_logs） | 设计 §4 P2 | ⬜ |
+| P2-2 | 批 2 多表 Repository + Zth 域切换 | 设计 §4 P2 | ⬜ |
+| P2-3 | 批 3 会话/消息热表切换（最高风险） | 设计 §4 P2 | ⬜ |
+| P2-4 | 批 4 事务服务 + 跨域写 + 3 处 ViewModel 直注收敛 | 设计 §4 P2 | ⬜ |
+| P2-5 | 收口：`DataLayerModule` 唯一 DI 入口 + `DatabaseModule` 标 Deprecated + 灰度 | 设计 §4 P2 | ⬜ |
+| P3-1..5 | 剔除旧层：注册表旧条目 → DAO/entity → 域库/DatabaseModule → Room 依赖 → Legacy 迁移链 | 设计 §4 P3 | ⬜ |
+| P4 | 旧库物理文件留底 7 天到期删除 | 设计 §4 P4 | ⬜ |
+| P5 | 文档与纪律同步（模块文档 / AGENTS.md / README / CHANGELOG / sop） | 设计 §4 P5 | ⬜ |
 | D7-3 network-layer-optimization | 网络层性能优化方案细化 | 独立 | ⬜ |
 | D7-4 deepseek-harness 剩余借鉴 | DSH 剩余能力按需取舍后纳入 | 主设计域完成 | ⬜ |
 

@@ -73,9 +73,12 @@ class MigrationEngine(private val pathProvider: DatabasePathProvider) {
         val main = pathProvider.mainDb(lib)
         val bak = pathProvider.snapshotFile(lib)
         if (!bak.exists()) return false
-        main.copyTo(bak, overwrite = true) // 还原主库（注：此处为把快照写回主库路径）
+        // 快照 → 主库（方向不可反：反了会用损坏的主库覆盖掉唯一的安全网快照）
+        bak.copyTo(main, overwrite = true)
         restoreSidecar(bak, main, "wal")
         restoreSidecar(bak, main, "shm")
+        // 主库已被快照内容替换，原 -wal 属于旧内容，必须清掉避免与新主库不一致
+        main.resolveSibling("${main.name}-wal").takeIf { it.exists() && !bak.resolveSibling("${bak.name}-wal").exists() }?.delete()
         return true
     }
 
