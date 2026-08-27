@@ -217,6 +217,27 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 
 **数据注册表（备份/恢复单一事实源）**：`core/data/DataRegistry` 枚举全应用数据域（32 张 Room 表 + DataStore 目录），备份/恢复/自动迁移统一经它全量导出/导入（见 [docs/modules/core.md](./docs/modules/core.md) 与 [docs/modules/backup.md](./docs/modules/backup.md)）。
 
+### V2 (SQLDelight) 数据层接管 & 移除旧 Room（重建进行中，分支 `refactor/v2-full-cleanup`）
+
+三代数据层路线：Room 世代0 巨型单库（`LegacyAgentDatabase` v49）→ Room 世代1（按域拆 5 库）→ **V2（SQLDelight 6 库，`datalayer/sqldelight`/`datalayer/repository` 门面）**。当前业务读写已全部走 V2，正在把旧 Room 完全从程序剔除（双路径 → 纯 V2）。
+
+**V2 分层**：L0 引擎（`datalayer/engine`：ConnectionPool/Plain& CipherDriverFactory）· L1 迁移（`MigrationEngine`/`CodeMigration`）· L2 门面（`datalayer/repository/*`：AgentRepository + 泛型 KV/Document/Queue/Blob/TimeSeries store）。`datalayer/di/DataLayerModule.kt` 提供全部 V2 仓储（Hilt @Provides），如 `provideWorkspaceRepository(db)`。
+
+**去双路径通用模式**：删 `readMode` 构造参数、删 `private suspend fun isV2()`，保留 `if(isV2()) V2分支 else ROOM分支` 的 V2 分支、删 else；未用 import 可保留（无 allWarningsAsErrors）。`DataReadMode/DataReadModeHolder/V2TakeoverGate` 仍保留（供再阅），待最后清理。
+
+**本会话已完成（CI 每批验证通过）**：
+- 第2步去双路径：约 46 文件 / 235 调用点全部纯 V2，已删全部 `isV2()/currentModeSync/readMode.currentMode()`（业务代码）。
+- 第3步局部：`V1toV2FullMigrator` 读端重写为纯 `SQLiteDatabase.openDatabase`+游标（5 旧库 18+ 表），不再依赖 Room；`AndroidV1RowCountProvider` 改 SQLite 直读；`BackupManagerImpl` 去掉 6 个 Room DAO 构造依赖，metadata 4 表（providers/git/connections/mounts）读写改走 V2 repo（`settingsRepo/credentialsRepo/v2WorkspaceRepository`），schema 版本内联为 companion 常量。
+
+**待续（第3步剩余 → 完全剔除 Room）**，均需先扫再改、逐个 CI：
+1. **T2I 双路径清理**：`feature/t2i/data/repository/T2IRepositoryRoomImpl.kt` 仍是纯 Room 实现；`ImageGenerator.kt`/`T2IRepository.kt`/`T2IPermissionPolicyEngine.kt`/UI 仍引用 `T2ITaskEntity/T2IProviderEntity/T2IProviderModelEntity`。需改 V2（`datalayer/repository/T2iRepository.kt`）。
+2. **设置/凭证/一部分 UI 仍用 Room**：`AIProviderRepositoryImpl`、`CredentialRepositoryImpl` 走 Room DAO；`ModelMetadataService`/`Provider*Screen`/`RemoteAuditLogsScreen`/`AboutStatsViewModel` 引用 Room entity。改走 V2 repo。
+3. **DB 初始化/迁移/救援基础设施仍绑 Room**：`AIEditorApp.kt`（初始化 5 Room 库）、`di/DatabaseModule.kt`（Room Hilt 提供，量大）、`DataRegistryModule.kt`、`DbSplitMigrator.kt`、`MigrationLoader.kt`、`LightweightSchemaRescue.kt`、`V1toV2MigrationWorker.kt`、`CredentialRotationWorker.kt`。这些是一键拆链的难点，需逐文件解耦。
+4. **`BackupManagerImpl` 残留 Room Entity 桥**：`toDto/toEntity/toV2` 转换仍经 `ChatSessionEntity/AgentMessageEntity/TodoItemEntity/AIProviderEntity/...` 中转（如 158 行 `session.toDto()`、messages 走 `V2AgentMessage.toEntity()` 后 `toDto()`）。删 Room 前须重写为 V2↔DTO 直连（`V2AgentSession.toV2Dto()` 等）。
+5. 最后删除 5 个 Room Database 类 + 32 个 DAO + 所有 `@Entity`，移除 `app/build.gradle.kts` 的 `room`/`ksp` 依赖与 schema 目录，清 `core/data/DataRegistry` 旧路径。
+
+**迁移器改造易错点**：SQLite 游标取值列名必须与 Room schema JSON（`app/src/main/.../schemas/**/N.json`）精确一致；`SQLiteDatabase.query(table)` 无单参重载，须用 `rawQuery("SELECT * FROM t", null)`；`data class` 只允许一个 `companion object`，否则常量全 unresolved；`port` 等跨层类型要显式 `toInt()/toLong()`（V2 用 `Long`、备份 DTO 用 `Int`）。
+
 ## 常见坑
 
 | 症状 | 原因 | 处理 |
