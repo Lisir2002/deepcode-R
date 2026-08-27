@@ -8,11 +8,6 @@ import com.R.codecore.datalayer.repository.CredentialsRepository
 import com.R.codecore.datalayer.repository.SettingsRepository
 import com.R.codecore.datalayer.repository.T2iRepository
 import com.R.codecore.datalayer.repository.WorkspaceRepository
-import com.R.codecore.feature.agent.data.local.database.AgentDatabase
-import com.R.codecore.feature.credentials.data.local.database.CredentialsDatabase
-import com.R.codecore.feature.settings.data.local.database.SettingsDatabase
-import com.R.codecore.feature.t2i.data.local.database.T2IDatabase
-import com.R.codecore.feature.workspace.data.local.database.WorkspaceDatabase
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -89,152 +84,206 @@ class V1toV2FullMigrator @Inject constructor(
         // ── agent 域 ──
         val agentDb = context.getDatabasePath("rcodecore_agent_db_v1")
         if (agentDb.exists()) {
-            val db = androidx.room.Room.databaseBuilder(
-                context, AgentDatabase::class.java, "rcodecore_agent_db_v1"
-            ).build()
+            val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                agentDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            )
             try {
-                val sessions = db.chatSessionDao().getAllOnce()
-                for (s in sessions) {
-                    agentRepo.upsertSession(
-                        id = s.id, title = s.title, mode = s.mode, model = s.model, status = "active",
-                        createdAtMs = s.createdAtMs, updatedAtMs = s.updatedAtMs,
-                        workspacePath = s.workspacePath, reasoningEffort = s.reasoningEffort,
-                        providerId = s.providerId, totalInputTokens = s.totalInputTokens.toLong(),
-                        totalOutputTokens = s.totalOutputTokens.toLong(), lastInputTokens = s.lastInputTokens.toLong(),
-                    )
-                    rows++
+                db.query("chat_sessions").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.upsertSession(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            title = c.getString(c.getColumnIndexOrThrow("title")),
+                            mode = c.getString(c.getColumnIndexOrThrow("mode")),
+                            model = c.getString(c.getColumnIndexOrThrow("model")),
+                            status = "active",
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                            updatedAtMs = c.getLong(c.getColumnIndexOrThrow("updatedAtMs")),
+                            workspacePath = c.getString(c.getColumnIndexOrThrow("workspacePath")),
+                            reasoningEffort = c.getString(c.getColumnIndexOrThrow("reasoningEffort")),
+                            providerId = c.getString(c.getColumnIndexOrThrow("providerId")),
+                            totalInputTokens = c.getLong(c.getColumnIndexOrThrow("totalInputTokens")),
+                            totalOutputTokens = c.getLong(c.getColumnIndexOrThrow("totalOutputTokens")),
+                            lastInputTokens = c.getLong(c.getColumnIndexOrThrow("lastInputTokens")),
+                        )
+                        rows++
+                    }
                 }
                 // P2-3 热表回填：agent_message 全列（content/toolCallsJson/分块/压缩/token 等）。
-                // 旧迁移把 content 拆进了 agent_message_part，现重建热表后直接从 Room 全列回填。
-                val messages = db.agentMessageDao().getAllOnce()
-                for (m in messages) {
-                    agentRepo.insertMessage(
-                        com.R.codecore.datalayer.sqldelight.agent.Agent_message(
-                            id = m.id,
-                            session_id = m.sessionId,
-                            role = m.role,
-                            seq = m.timestamp,
-                            created_at = m.timestamp,
-                            task_id = m.taskId,
-                            content = m.content,
-                            tool_calls_json = m.toolCallsJson,
-                            tool_call_id = m.toolCallId,
-                            tool_name = m.toolName,
-                            tool_args = m.toolArgs,
-                            is_error = if (m.isError) 1L else 0L,
-                            reasoning = m.reasoning,
-                            signature = m.signature,
-                            attachments_json = m.attachmentsJson,
-                            is_compacted = if (m.isCompacted) 1L else 0L,
-                            is_context_summary = if (m.isContextSummary) 1L else 0L,
-                            is_compaction_marker = if (m.isCompactionMarker) 1L else 0L,
-                            input_tokens = m.inputTokens.toLong(),
-                            output_tokens = m.outputTokens.toLong(),
-                            chunk_group_id = m.chunkGroupId,
-                            chunk_index = m.chunkIndex.toLong(),
+                db.query("agent_messages").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.insertMessage(
+                            com.R.codecore.datalayer.sqldelight.agent.Agent_message(
+                                id = c.getString(c.getColumnIndexOrThrow("id")),
+                                session_id = c.getString(c.getColumnIndexOrThrow("sessionId")),
+                                role = c.getString(c.getColumnIndexOrThrow("role")),
+                                seq = c.getLong(c.getColumnIndexOrThrow("timestamp")),
+                                created_at = c.getLong(c.getColumnIndexOrThrow("timestamp")),
+                                task_id = c.getString(c.getColumnIndexOrThrow("taskId")),
+                                content = c.getString(c.getColumnIndexOrThrow("content")),
+                                tool_calls_json = c.getString(c.getColumnIndexOrThrow("toolCallsJson")),
+                                tool_call_id = c.getString(c.getColumnIndexOrThrow("toolCallId")),
+                                tool_name = c.getString(c.getColumnIndexOrThrow("toolName")),
+                                tool_args = c.getString(c.getColumnIndexOrThrow("toolArgs")),
+                                is_error = if (c.getInt(c.getColumnIndexOrThrow("isError")) != 0) 1L else 0L,
+                                reasoning = c.getString(c.getColumnIndexOrThrow("reasoning")),
+                                signature = c.getString(c.getColumnIndexOrThrow("signature")),
+                                attachments_json = c.getString(c.getColumnIndexOrThrow("attachmentsJson")),
+                                is_compacted = if (c.getInt(c.getColumnIndexOrThrow("isCompacted")) != 0) 1L else 0L,
+                                is_context_summary = if (c.getInt(c.getColumnIndexOrThrow("isContextSummary")) != 0) 1L else 0L,
+                                is_compaction_marker = if (c.getInt(c.getColumnIndexOrThrow("isCompactionMarker")) != 0) 1L else 0L,
+                                input_tokens = c.getLong(c.getColumnIndexOrThrow("inputTokens")),
+                                output_tokens = c.getLong(c.getColumnIndexOrThrow("outputTokens")),
+                                chunk_group_id = c.getString(c.getColumnIndexOrThrow("chunkGroupId")),
+                                chunk_index = c.getLong(c.getColumnIndexOrThrow("chunkIndex")),
+                            )
                         )
-                    )
-                    rows++
+                        rows++
+                    }
                 }
                 // P2-2：todo / checkpoint / Zth 域表全量移植（V2 读源后这些表不能为空）
-                for (t in db.todoItemDao().getAllOnce()) {
-                    agentRepo.insertTodo(
-                        id = t.id, sessionId = t.sessionId, subject = t.subject,
-                        description = t.description, status = t.status, priority = t.priority.toLong(),
-                        order = t.order.toLong(),
-                        createdAtMs = t.createdAtMs, updatedAtMs = t.updatedAtMs,
-                    )
+                db.query("todo_items").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.insertTodo(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            sessionId = c.getString(c.getColumnIndexOrThrow("sessionId")),
+                            subject = c.getString(c.getColumnIndexOrThrow("subject")),
+                            description = c.getString(c.getColumnIndexOrThrow("description")),
+                            status = c.getString(c.getColumnIndexOrThrow("status")),
+                            priority = c.getLong(c.getColumnIndexOrThrow("priority")),
+                            order = c.getLong(c.getColumnIndexOrThrow("order")),
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                            updatedAtMs = c.getLong(c.getColumnIndexOrThrow("updatedAtMs")),
+                        )
+                        rows++
+                    }
+                }
+                db.query("session_checkpoints").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.insertCheckpointFull(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            sessionId = c.getString(c.getColumnIndexOrThrow("sessionId")),
+                            userMessageId = c.getString(c.getColumnIndexOrThrow("userMessageId")),
+                            promptSnippet = c.getString(c.getColumnIndexOrThrow("promptSnippet")),
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                        )
+                        rows++
+                    }
+                }
+                db.query("checkpoint_file_snapshots").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.insertCheckpointFileSnapshot(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            checkpointId = c.getString(c.getColumnIndexOrThrow("checkpointId")),
+                            filePath = c.getString(c.getColumnIndexOrThrow("filePath")),
+                            snapshotRelativePath = c.getString(c.getColumnIndexOrThrow("snapshotRelativePath")),
+                            changeType = c.getString(c.getColumnIndexOrThrow("changeType")),
+                            createdAt = c.getLong(c.getColumnIndexOrThrow("createdAt")),
+                        )
                     rows++
                 }
-                for (c in db.checkpointDao().getAllOnce()) {
-                    agentRepo.insertCheckpointFull(
-                        id = c.id, sessionId = c.sessionId, userMessageId = c.userMessageId,
-                        promptSnippet = c.promptSnippet, createdAtMs = c.createdAtMs,
-                    )
-                    rows++
+                db.query("zth_hallucination_fuses").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.upsertFuse(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            scope = c.getString(c.getColumnIndexOrThrow("scope")),
+                            scopeId = c.getString(c.getColumnIndexOrThrow("scopeId")),
+                            state = c.getString(c.getColumnIndexOrThrow("state")),
+                            linkageVersion = c.getLong(c.getColumnIndexOrThrow("linkageVersion")),
+                            failureCount = c.getLong(c.getColumnIndexOrThrow("failureCount")),
+                            openSinceMs = c.getLong(c.getColumnIndexOrThrow("openSinceMs")),
+                            lastProbeAtMs = c.getLong(c.getColumnIndexOrThrow("lastProbeAtMs")),
+                            killSwitch1Triggered = if (c.getInt(c.getColumnIndexOrThrow("killSwitch1Triggered")) != 0) 1L else 0L,
+                            killSwitch2SoftDisabled = if (c.getInt(c.getColumnIndexOrThrow("killSwitch2SoftDisabled")) != 0) 1L else 0L,
+                            lastTripSubclass = c.getString(c.getColumnIndexOrThrow("lastTripSubclass")),
+                            updatedAtMs = c.getLong(c.getColumnIndexOrThrow("updatedAtMs")),
+                        )
+                        rows++
+                    }
                 }
-                for (s in db.checkpointFileSnapshotDao().getAllOnce()) {
-                    agentRepo.insertCheckpointFileSnapshot(
-                        id = s.id, checkpointId = s.checkpointId, filePath = s.filePath,
-                        snapshotRelativePath = s.snapshotRelativePath, changeType = s.changeType,
-                        createdAt = s.createdAt,
-                    )
-                    rows++
+                db.query("zth_user_confirmed_sentinels").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.insertSentinel(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            sessionId = c.getString(c.getColumnIndexOrThrow("sessionId")),
+                            linkageVersion = c.getLong(c.getColumnIndexOrThrow("linkageVersion")),
+                            chainId = c.getString(c.getColumnIndexOrThrow("chainId")),
+                            chainIndex = c.getLong(c.getColumnIndexOrThrow("chainIndex")),
+                            cardTemplateId = c.getString(c.getColumnIndexOrThrow("cardTemplateId")),
+                            triggerSubClass = c.getString(c.getColumnIndexOrThrow("triggerSubClass")),
+                            sPlanPayloadCiphertext = c.getString(c.getColumnIndexOrThrow("s_planPayloadCiphertext")),
+                            sUserTextCiphertext = c.getString(c.getColumnIndexOrThrow("s_userTextCiphertext")),
+                            sCardPayloadCiphertext = c.getString(c.getColumnIndexOrThrow("s_cardPayloadCiphertext")),
+                            userChoice = c.getString(c.getColumnIndexOrThrow("userChoice")),
+                            swipeVerified = if (c.getInt(c.getColumnIndexOrThrow("swipeVerified")) != 0) 1L else 0L,
+                            sModifiedPlanCiphertext = c.getString(c.getColumnIndexOrThrow("s_modifiedPlanCiphertext")),
+                            expireAtMs = c.getLong(c.getColumnIndexOrThrow("expireAtMs")),
+                            rollbackFlag = if (c.getInt(c.getColumnIndexOrThrow("rollbackFlag")) != 0) 1L else 0L,
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                        )
+                        rows++
+                    }
                 }
-                for (f in db.hallucinationFuseDao().getAllOnce()) {
-                    agentRepo.upsertFuse(
-                        id = f.id, scope = f.scope, scopeId = f.scopeId, state = f.state,
-                        linkageVersion = f.linkageVersion, failureCount = f.failureCount.toLong(),
-                        openSinceMs = f.openSinceMs, lastProbeAtMs = f.lastProbeAtMs,
-                        killSwitch1Triggered = if (f.killSwitch1Triggered) 1L else 0L,
-                        killSwitch2SoftDisabled = if (f.killSwitch2SoftDisabled) 1L else 0L,
-                        lastTripSubclass = f.lastTripSubclass, updatedAtMs = f.updatedAtMs,
-                    )
-                    rows++
+                db.query("zth_sentinel_plan_rejection_audits").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.insertRejectionAudit(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            sentinelId = c.getString(c.getColumnIndexOrThrow("sentinelId")),
+                            rejectionType = c.getString(c.getColumnIndexOrThrow("rejectionType")),
+                            sReasonCiphertext = c.getString(c.getColumnIndexOrThrow("s_reasonCiphertext")),
+                            sRejectedPlanSnapshotCiphertext = c.getString(c.getColumnIndexOrThrow("s_rejectedPlanSnapshotCiphertext")),
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                        )
+                        rows++
+                    }
                 }
-                for (se in db.userConfirmedSentinelDao().getAllOnce()) {
-                    agentRepo.insertSentinel(
-                        id = se.id, sessionId = se.sessionId,
-                        linkageVersion = se.linkageVersion, chainId = se.chainId,
-                        chainIndex = se.chainIndex.toLong(), cardTemplateId = se.cardTemplateId,
-                        triggerSubClass = se.triggerSubClass,
-                        sPlanPayloadCiphertext = se.s_planPayloadCiphertext,
-                        sUserTextCiphertext = se.s_userTextCiphertext,
-                        sCardPayloadCiphertext = se.s_cardPayloadCiphertext,
-                        userChoice = se.userChoice,
-                        swipeVerified = if (se.swipeVerified) 1L else 0L,
-                        sModifiedPlanCiphertext = se.s_modifiedPlanCiphertext,
-                        expireAtMs = se.expireAtMs,
-                        rollbackFlag = if (se.rollbackFlag) 1L else 0L,
-                        createdAtMs = se.createdAtMs,
-                    )
-                    rows++
+                db.query("zth_hard_constraint_delete_audits").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.insertDeleteAudit(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            sessionId = c.getString(c.getColumnIndexOrThrow("sessionId")),
+                            affectedTableName = c.getString(c.getColumnIndexOrThrow("affectedTableName")),
+                            sAffectedKeysCiphertext = c.getString(c.getColumnIndexOrThrow("s_affectedKeysCiphertext")),
+                            triggerSubClass = c.getString(c.getColumnIndexOrThrow("triggerSubClass")),
+                            rollbackApplied = if (c.getInt(c.getColumnIndexOrThrow("rollbackApplied")) != 0) 1L else 0L,
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                        )
+                        rows++
+                    }
                 }
-                for (ra in db.sentinelPlanRejectionAuditDao().getAllOnce()) {
-                    agentRepo.insertRejectionAudit(
-                        id = ra.id, sentinelId = ra.sentinelId, rejectionType = ra.rejectionType,
-                        sReasonCiphertext = ra.s_reasonCiphertext,
-                        sRejectedPlanSnapshotCiphertext = ra.s_rejectedPlanSnapshotCiphertext,
-                        createdAtMs = ra.createdAtMs,
-                    )
-                    rows++
+                db.query("zth_l0_soft_compact_restore_logs").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.insertRestoreLog(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            sessionId = c.getString(c.getColumnIndexOrThrow("sessionId")),
+                            firstMessageId = c.getString(c.getColumnIndexOrThrow("firstMessageId")),
+                            lastMessageId = c.getString(c.getColumnIndexOrThrow("lastMessageId")),
+                            originalRowCount = c.getLong(c.getColumnIndexOrThrow("originalRowCount")),
+                            tokensBefore = c.getLong(c.getColumnIndexOrThrow("tokensBefore")),
+                            tokensAfter = c.getLong(c.getColumnIndexOrThrow("tokensAfter")),
+                            sCompactSourceDigestCiphertext = c.getString(c.getColumnIndexOrThrow("s_compactSourceDigestCiphertext")),
+                            expireAtMs = c.getLong(c.getColumnIndexOrThrow("expireAtMs")),
+                            restoredFlag = if (c.getInt(c.getColumnIndexOrThrow("restoredFlag")) != 0) 1L else 0L,
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                        )
+                        rows++
+                    }
                 }
-                for (da in db.hardConstraintDeleteAuditDao().getAllOnce()) {
-                    agentRepo.insertDeleteAudit(
-                        id = da.id, sessionId = da.sessionId,
-                        affectedTableName = da.affectedTableName,
-                        sAffectedKeysCiphertext = da.s_affectedKeysCiphertext,
-                        triggerSubClass = da.triggerSubClass,
-                        rollbackApplied = if (da.rollbackApplied) 1L else 0L,
-                        createdAtMs = da.createdAtMs,
-                    )
-                    rows++
-                }
-                for (rl in db.l0SoftCompactRestoreLogDao().getAllOnce()) {
-                    agentRepo.insertRestoreLog(
-                        id = rl.id, sessionId = rl.sessionId,
-                        firstMessageId = rl.firstMessageId, lastMessageId = rl.lastMessageId,
-                        originalRowCount = rl.originalRowCount.toLong(),
-                        tokensBefore = rl.tokensBefore.toLong(), tokensAfter = rl.tokensAfter.toLong(),
-                        sCompactSourceDigestCiphertext = rl.s_compactSourceDigestCiphertext,
-                        expireAtMs = rl.expireAtMs,
-                        restoredFlag = if (rl.restoredFlag) 1L else 0L,
-                        createdAtMs = rl.createdAtMs,
-                    )
-                    rows++
-                }
-                for (te in db.zthTelemetryEventDao().getAllOnce()) {
-                    agentRepo.insertTelemetryEvent(
-                        eventKind = te.eventKind, eventSubKind = te.eventSubKind,
-                        severityTier = te.severityTier.toLong(),
-                        sessionSha256Prefix = te.sessionSha256Prefix,
-                        latencyMs = te.latencyMs,
-                        flagA = te.flagA?.let { if (it) 1L else 0L },
-                        flagB = te.flagB?.let { if (it) 1L else 0L },
-                        metricA = te.metricA, metricB = te.metricB,
-                        createdAtMs = te.createdAtMs,
-                    )
-                    rows++
+                db.query("zth_telemetry_events").use { c ->
+                    while (c.moveToNext()) {
+                        agentRepo.insertTelemetryEvent(
+                            eventKind = c.getString(c.getColumnIndexOrThrow("eventKind")),
+                            eventSubKind = c.getString(c.getColumnIndexOrThrow("eventSubKind")),
+                            severityTier = c.getLong(c.getColumnIndexOrThrow("severityTier")),
+                            sessionSha256Prefix = c.getString(c.getColumnIndexOrThrow("sessionSha256Prefix")),
+                            latencyMs = c.getLong(c.getColumnIndexOrThrow("latencyMs")),
+                            flagA = if (c.isNull(c.getColumnIndexOrThrow("flagA"))) null else if (c.getInt(c.getColumnIndexOrThrow("flagA")) != 0) 1L else 0L,
+                            flagB = if (c.isNull(c.getColumnIndexOrThrow("flagB"))) null else if (c.getInt(c.getColumnIndexOrThrow("flagB")) != 0) 1L else 0L,
+                            metricA = c.getString(c.getColumnIndexOrThrow("metricA")),
+                            metricB = c.getString(c.getColumnIndexOrThrow("metricB")),
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                        )
+                        rows++
+                    }
                 }
             } finally {
                 db.close()
@@ -244,26 +293,30 @@ class V1toV2FullMigrator @Inject constructor(
         // ── settings 域 ──
         val settingsDb = context.getDatabasePath("rcodecore_settings_db")
         if (settingsDb.exists()) {
-            val db = androidx.room.Room.databaseBuilder(
-                context, SettingsDatabase::class.java, "rcodecore_settings_db"
-            ).build()
+            val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                settingsDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            )
             try {
-                val providers = db.aiProviderDao().getAllProvidersOnce()
-                for (p in providers) {
-                    // saveProvider 内含 RC68 active 互斥（isActive 时先清全部）；
-                    // 按 id 升序移植（与 V2 selectAllProviders 排序键一致），
-                    // 使最终 active 行落在原 active 上，幂等重跑结果稳定。
-                    settingsRepo.saveProvider(
-                        id = p.id, name = p.name, type = p.type,
-                        encryptedApiKey = p.encryptedApiKey, baseUrl = p.baseUrl,
-                        defaultModel = p.defaultModel,
-                        isActive = p.isActive,
-                        models = p.models,
-                        isEnabled = p.isEnabled,
-                        useFullUrl = p.useFullUrl,
-                        useResponseApi = p.useResponseApi,
-                    )
-                    rows++
+                db.query("ai_providers").use { c ->
+                    while (c.moveToNext()) {
+                        // saveProvider 内含 RC68 active 互斥（isActive 时先清全部）；
+                        // 按 id 升序移植（与 V2 selectAllProviders 排序键一致），
+                        // 使最终 active 行落在原 active 上，幂等重跑结果稳定。
+                        settingsRepo.saveProvider(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            name = c.getString(c.getColumnIndexOrThrow("name")),
+                            type = c.getString(c.getColumnIndexOrThrow("type")),
+                            encryptedApiKey = c.getString(c.getColumnIndexOrThrow("encryptedApiKey")),
+                            baseUrl = c.getString(c.getColumnIndexOrThrow("baseUrl")),
+                            defaultModel = c.getString(c.getColumnIndexOrThrow("defaultModel")),
+                            isActive = c.getInt(c.getColumnIndexOrThrow("isActive")) != 0,
+                            models = c.getString(c.getColumnIndexOrThrow("models")),
+                            isEnabled = c.getInt(c.getColumnIndexOrThrow("isEnabled")) != 0,
+                            useFullUrl = c.getInt(c.getColumnIndexOrThrow("useFullUrl")) != 0,
+                            useResponseApi = c.getInt(c.getColumnIndexOrThrow("useResponseApi")) != 0,
+                        )
+                        rows++
+                    }
                 }
             } finally {
                 db.close()
@@ -273,19 +326,24 @@ class V1toV2FullMigrator @Inject constructor(
         // ── credentials 域 ──
         val credDb = context.getDatabasePath("rcodecore_credentials_db")
         if (credDb.exists()) {
-            val db = androidx.room.Room.databaseBuilder(
-                context, CredentialsDatabase::class.java, "rcodecore_credentials_db"
-            ).build()
+            val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                credDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            )
             try {
-                val creds = db.gitCredentialDao().getAllOnce()
-                for (c in creds) {
-                    credentialsRepo.insertGitCredential(
-                        id = c.id, host = c.host, username = c.username,
-                        encryptedToken = c.encryptedToken, label = c.label,
-                        isDefault = if (c.isDefault) 1L else 0L,
-                        createdAtMs = c.createdAtMs, updatedAtMs = c.updatedAtMs,
-                    )
-                    rows++
+                db.query("git_credentials").use { c ->
+                    while (c.moveToNext()) {
+                        credentialsRepo.insertGitCredential(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            host = c.getString(c.getColumnIndexOrThrow("host")),
+                            username = c.getString(c.getColumnIndexOrThrow("username")),
+                            encryptedToken = c.getString(c.getColumnIndexOrThrow("encryptedToken")),
+                            label = c.getString(c.getColumnIndexOrThrow("label")),
+                            isDefault = if (c.getInt(c.getColumnIndexOrThrow("isDefault")) != 0) 1L else 0L,
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                            updatedAtMs = c.getLong(c.getColumnIndexOrThrow("updatedAtMs")),
+                        )
+                        rows++
+                    }
                 }
             } finally {
                 db.close()
@@ -295,28 +353,38 @@ class V1toV2FullMigrator @Inject constructor(
         // ── workspace 域 ──
         val wsDb = context.getDatabasePath("rcodecore_workspace_db")
         if (wsDb.exists()) {
-            val db = androidx.room.Room.databaseBuilder(
-                context, WorkspaceDatabase::class.java, "rcodecore_workspace_db"
-            ).build()
+            val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                wsDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            )
             try {
-                val conns = db.remoteConnectionDao().getAllConnectionsOnce()
-                for (c in conns) {
-                    workspaceRepo.insertRemoteConnection(
-                        id = c.id, name = c.name, protocol = c.protocol.name,
-                        host = c.host, port = c.port.toLong(), username = c.username,
-                        authType = c.authType, authData = c.authData, passphrase = c.passphrase,
-                    )
-                    rows++
+                db.query("remote_connections").use { c ->
+                    while (c.moveToNext()) {
+                        workspaceRepo.insertRemoteConnection(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            name = c.getString(c.getColumnIndexOrThrow("name")),
+                            protocol = c.getString(c.getColumnIndexOrThrow("protocol")),
+                            host = c.getString(c.getColumnIndexOrThrow("host")),
+                            port = c.getLong(c.getColumnIndexOrThrow("port")),
+                            username = c.getString(c.getColumnIndexOrThrow("username")),
+                            authType = c.getString(c.getColumnIndexOrThrow("authType")),
+                            authData = c.getString(c.getColumnIndexOrThrow("authData")),
+                            passphrase = c.getString(c.getColumnIndexOrThrow("passphrase")),
+                        )
+                        rows++
+                    }
                 }
-                val mounts = db.remoteConnectionDao().getAllMountsOnce()
-                for (m in mounts) {
-                    workspaceRepo.insertRemoteMount(
-                        id = m.id, connectionId = m.connectionId, remotePath = m.remotePath,
-                        localMountPath = m.localMountPath,
-                        isActive = if (m.isActive) 1L else 0L,
-                        autoConnect = if (m.autoConnect) 1L else 0L,
-                    )
-                    rows++
+                db.query("remote_mounts").use { c ->
+                    while (c.moveToNext()) {
+                        workspaceRepo.insertRemoteMount(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            connectionId = c.getString(c.getColumnIndexOrThrow("connectionId")),
+                            remotePath = c.getString(c.getColumnIndexOrThrow("remotePath")),
+                            localMountPath = c.getString(c.getColumnIndexOrThrow("localMountPath")),
+                            isActive = if (c.getInt(c.getColumnIndexOrThrow("isActive")) != 0) 1L else 0L,
+                            autoConnect = if (c.getInt(c.getColumnIndexOrThrow("autoConnect")) != 0) 1L else 0L,
+                        )
+                        rows++
+                    }
                 }
             } finally {
                 db.close()
@@ -326,58 +394,84 @@ class V1toV2FullMigrator @Inject constructor(
         // ── t2i 域 ──
         val t2iDb = context.getDatabasePath("rcodecore_t2i_db")
         if (t2iDb.exists()) {
-            val db = androidx.room.Room.databaseBuilder(
-                context, T2IDatabase::class.java, "rcodecore_t2i_db"
-            ).build()
+            val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                t2iDb.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            )
             try {
-                val providers = db.t2iProviderDao().getAllProvidersOnce()
-                for (p in providers) {
-                    t2iRepo.insertT2iProvider(
-                        id = p.id, name = p.name, type = p.type, baseUrl = p.baseUrl,
-                        encryptedApiKey = p.encryptedApiKey, endpointMode = p.endpointMode,
-                        isActive = if (p.isActive) 1L else 0L,
-                        priority = p.priority.toLong(),
-                        isEnabled = if (p.isEnabled) 1L else 0L,
-                        extraHeadersJson = p.extraHeadersJson,
-                        createdAtMs = p.createdAtMs, updatedAtMs = p.updatedAtMs,
-                    )
-                    rows++
+                db.query("t2i_providers").use { c ->
+                    while (c.moveToNext()) {
+                        t2iRepo.insertT2iProvider(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            name = c.getString(c.getColumnIndexOrThrow("name")),
+                            type = c.getString(c.getColumnIndexOrThrow("type")),
+                            baseUrl = c.getString(c.getColumnIndexOrThrow("baseUrl")),
+                            encryptedApiKey = c.getString(c.getColumnIndexOrThrow("encryptedApiKey")),
+                            endpointMode = c.getString(c.getColumnIndexOrThrow("endpointMode")),
+                            isActive = if (c.getInt(c.getColumnIndexOrThrow("isActive")) != 0) 1L else 0L,
+                            priority = c.getLong(c.getColumnIndexOrThrow("priority")),
+                            isEnabled = if (c.getInt(c.getColumnIndexOrThrow("isEnabled")) != 0) 1L else 0L,
+                            extraHeadersJson = c.getString(c.getColumnIndexOrThrow("extraHeadersJson")),
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                            updatedAtMs = c.getLong(c.getColumnIndexOrThrow("updatedAtMs")),
+                        )
+                        rows++
+                    }
                 }
-                val models = db.t2iProviderModelDao().getAllModelsOnce()
-                for (m in models) {
-                    t2iRepo.insertT2iProviderModel(
-                        id = m.id, providerId = m.providerId, modelId = m.modelId,
-                        displayName = m.displayName,
-                        supportsHd = if (m.supportsHd) 1L else 0L,
-                        supportsInpaint = if (m.supportsInpaint) 1L else 0L,
-                        defaultWidth = m.defaultWidth.toLong(),
-                        defaultHeight = m.defaultHeight.toLong(),
-                        maxSteps = m.maxSteps.toLong(),
-                        defaultSteps = m.defaultSteps.toLong(),
-                        costPerImageTokens = m.costPerImageTokens.toLong(),
-                        createdAtMs = m.createdAtMs, updatedAtMs = m.updatedAtMs,
-                    )
-                    rows++
+                db.query("t2i_provider_models").use { c ->
+                    while (c.moveToNext()) {
+                        t2iRepo.insertT2iProviderModel(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            providerId = c.getString(c.getColumnIndexOrThrow("providerId")),
+                            modelId = c.getString(c.getColumnIndexOrThrow("modelId")),
+                            displayName = c.getString(c.getColumnIndexOrThrow("displayName")),
+                            supportsHd = if (c.getInt(c.getColumnIndexOrThrow("supportsHd")) != 0) 1L else 0L,
+                            supportsInpaint = if (c.getInt(c.getColumnIndexOrThrow("supportsInpaint")) != 0) 1L else 0L,
+                            defaultWidth = c.getLong(c.getColumnIndexOrThrow("defaultWidth")),
+                            defaultHeight = c.getLong(c.getColumnIndexOrThrow("defaultHeight")),
+                            maxSteps = c.getLong(c.getColumnIndexOrThrow("maxSteps")),
+                            defaultSteps = c.getLong(c.getColumnIndexOrThrow("defaultSteps")),
+                            costPerImageTokens = c.getLong(c.getColumnIndexOrThrow("costPerImageTokens")),
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                            updatedAtMs = c.getLong(c.getColumnIndexOrThrow("updatedAtMs")),
+                        )
+                        rows++
+                    }
                 }
                 // P2-2：t2i_task 全列对齐 Room T2ITaskEntity（30 列），补迁任务表。
-                for (t in db.t2iTaskDao().getAllTasksOnce()) {
-                    t2iRepo.insertTask(
-                        id = t.id, sessionId = t.sessionId, messageId = t.messageId,
-                        prompt = t.prompt, negativePrompt = t.negativePrompt,
-                        width = t.width.toLong(), height = t.height.toLong(), steps = t.steps.toLong(),
-                        seed = t.seed.toLong(), hd = if (t.hd) 1L else 0L,
-                        providerId = t.providerId, modelId = t.modelId,
-                        providerRef = t.providerRef, endpointModeRef = t.endpointModeRef,
-                        status = t.status, imagePath = t.imagePath, thumbnailPath = t.thumbnailPath,
-                        remoteTaskId = t.remoteTaskId, progressPercent = t.progressPercent.toLong(),
-                        retryCount = t.retryCount.toLong(), maxRetries = t.maxRetries.toLong(),
-                        errorCode = t.errorCode, errorMessage = t.errorMessage,
-                        permissionDecision = t.permissionDecision,
-                        quotaDeductedTokens = t.quotaDeductedTokens.toLong(),
-                        createdAtMs = t.createdAtMs, updatedAtMs = t.updatedAtMs,
-                        completedAtMs = t.completedAtMs,
-                    )
-                    rows++
+                db.query("t2i_tasks").use { c ->
+                    while (c.moveToNext()) {
+                        t2iRepo.insertTask(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            sessionId = c.getString(c.getColumnIndexOrThrow("sessionId")),
+                            messageId = c.getString(c.getColumnIndexOrThrow("messageId")),
+                            prompt = c.getString(c.getColumnIndexOrThrow("prompt")),
+                            negativePrompt = c.getString(c.getColumnIndexOrThrow("negativePrompt")),
+                            width = c.getLong(c.getColumnIndexOrThrow("width")),
+                            height = c.getLong(c.getColumnIndexOrThrow("height")),
+                            steps = c.getLong(c.getColumnIndexOrThrow("steps")),
+                            seed = c.getLong(c.getColumnIndexOrThrow("seed")),
+                            hd = if (c.getInt(c.getColumnIndexOrThrow("hd")) != 0) 1L else 0L,
+                            providerId = c.getString(c.getColumnIndexOrThrow("providerId")),
+                            modelId = c.getString(c.getColumnIndexOrThrow("modelId")),
+                            providerRef = c.getString(c.getColumnIndexOrThrow("providerRef")),
+                            endpointModeRef = c.getString(c.getColumnIndexOrThrow("endpointModeRef")),
+                            status = c.getString(c.getColumnIndexOrThrow("status")),
+                            imagePath = c.getString(c.getColumnIndexOrThrow("imagePath")),
+                            thumbnailPath = c.getString(c.getColumnIndexOrThrow("thumbnailPath")),
+                            remoteTaskId = c.getString(c.getColumnIndexOrThrow("remoteTaskId")),
+                            progressPercent = c.getLong(c.getColumnIndexOrThrow("progressPercent")),
+                            retryCount = c.getLong(c.getColumnIndexOrThrow("retryCount")),
+                            maxRetries = c.getLong(c.getColumnIndexOrThrow("maxRetries")),
+                            errorCode = c.getString(c.getColumnIndexOrThrow("errorCode")),
+                            errorMessage = c.getString(c.getColumnIndexOrThrow("errorMessage")),
+                            permissionDecision = c.getString(c.getColumnIndexOrThrow("permissionDecision")),
+                            quotaDeductedTokens = c.getLong(c.getColumnIndexOrThrow("quotaDeductedTokens")),
+                            createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
+                            updatedAtMs = c.getLong(c.getColumnIndexOrThrow("updatedAtMs")),
+                            completedAtMs = c.getLong(c.getColumnIndexOrThrow("completedAtMs")),
+                        )
+                        rows++
+                    }
                 }
             } finally {
                 db.close()
