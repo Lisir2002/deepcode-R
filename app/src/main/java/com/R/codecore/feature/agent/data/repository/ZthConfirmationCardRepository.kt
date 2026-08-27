@@ -1,10 +1,6 @@
 package com.R.codecore.feature.agent.data.repository
 
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
-import com.R.codecore.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
-import com.R.codecore.feature.agent.data.local.dao.UserConfirmedSentinelDao
 import com.R.codecore.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
 import com.R.codecore.feature.agent.data.local.entity.UserConfirmedSentinelEntity
 import kotlinx.coroutines.flow.Flow
@@ -31,8 +27,6 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthConfirmationCardRepository @Inject constructor(
-    private val sentinelDao: UserConfirmedSentinelDao,
-    private val rejectionAuditDao: SentinelPlanRejectionAuditDao,
     private val v2Agent: V2AgentRepository,
     private val telemetry: ZthTelemetryRepository
 ) {

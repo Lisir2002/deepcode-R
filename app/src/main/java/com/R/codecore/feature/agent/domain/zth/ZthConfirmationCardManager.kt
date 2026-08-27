@@ -2,13 +2,9 @@ package com.R.codecore.feature.agent.domain.zth
 
 import com.R.codecore.core.security.ZthSensitiveColumnCrypto
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.agent.data.local.dao.HallucinationFuseDao
-import com.R.codecore.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
-import com.R.codecore.feature.agent.data.local.dao.UserConfirmedSentinelDao
-import com.R.codecore.feature.agent.data.local.entity.HallucinationFuseEntity
-import com.R.codecore.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
-import com.R.codecore.feature.agent.data.local.entity.UserConfirmedSentinelEntity
+import com.R.codecore.datalayer.repository.AgentRepository
 import com.R.codecore.feature.agent.domain.permission.FailureSubClass
+import com.R.codecore.feature.agent.domain.permission.FuseState
 import com.R.codecore.feature.agent.domain.tool.mode.PlanApprovalChoice
 import com.R.codecore.feature.agent.domain.tool.mode.PlanApprovalManager
 import javax.inject.Inject
@@ -38,9 +34,7 @@ import java.util.UUID
  */
 @Singleton
 class ZthConfirmationCardManager @Inject constructor(
-    private val fuseDao: HallucinationFuseDao,
-    private val sentinelDao: UserConfirmedSentinelDao,
-    private val rejectionAuditDao: SentinelPlanRejectionAuditDao,
+    private val agentRepo: AgentRepository,
     private val planApprovalManager: PlanApprovalManager,
     private val crypto: ZthSensitiveColumnCrypto
 ) {
@@ -101,29 +95,34 @@ class ZthConfirmationCardManager @Inject constructor(
                 else -> {}
             }
 
-            val sessionFuseId = HallucinationFuseEntity.composeSessionId(req.sessionId)
+            val sessionFuseId = composeSessionId(req.sessionId)
             val nowMs = System.currentTimeMillis()
             // Step 1：LINK-INV CAS 会话级 fuse linkageVersion + 1（确保整个 4 写只有一个赢家）
-            val version = fuseDao.getVersion(sessionFuseId) ?: run {
+            val version = agentRepo.getFuseVersion(sessionFuseId) ?: run {
                 // Session 级 fuse 还没创建 → 先插（linkageVersion=0）
-                fuseDao.upsert(
-                    HallucinationFuseEntity(
-                        id = sessionFuseId,
-                        scope = "SESSION",
-                        scopeId = req.sessionId,
-                        state = com.R.codecore.feature.agent.domain.permission.FuseState.CLOSED.name,
-                        linkageVersion = 0L
-                    )
+                agentRepo.upsertFuse(
+                    id = sessionFuseId,
+                    scope = "SESSION",
+                    scopeId = req.sessionId,
+                    state = FuseState.CLOSED.name,
+                    linkageVersion = 0L,
+                    failureCount = 0L,
+                    openSinceMs = 0L,
+                    lastProbeAtMs = 0L,
+                    killSwitch1Triggered = 0L,
+                    killSwitch2SoftDisabled = 0L,
+                    lastTripSubclass = null,
+                    updatedAtMs = nowMs
                 )
                 0L
             }
-            val rows = fuseDao.casUpdateState(
+            val rows = agentRepo.casUpdateFuseState(
                 id = sessionFuseId,
                 expectedVersion = version,
-                newState = com.R.codecore.feature.agent.domain.permission.FuseState.CLOSED.name,
+                newState = FuseState.CLOSED.name,
                 nowMs = nowMs
             )
-            check(rows == 1) { "LINK-INV CAS fuse 失败：预期 version=$version rows=0（并发冲突），请重试。" }
+            check(rows == 1L) { "LINK-INV CAS fuse 失败：预期 version=$version rows=0（并发冲突），请重试。" }
 
             // Step 2：加密 sentinel 3 列 + 可选 modifiedPlan
             crypto.assertSensitiveColumnName("s_planPayloadCiphertext")
@@ -133,30 +132,31 @@ class ZthConfirmationCardManager @Inject constructor(
             val s_card = crypto.encrypt(req.cardPayloadPlaintext)
             val s_mod = req.modifiedPlanPlaintext?.let { crypto.encrypt(it) }
 
-            val sentinelId = UserConfirmedSentinelEntity.composeId(req.sessionId, req.chainId, req.chainIndex)
+            val sentinelId = composeSentinelId(req.sessionId, req.chainId, req.chainIndex)
             val userChoiceStr = when (req.choice) {
                 UserCardChoice.CONFIRM -> "CONFIRM"
                 UserCardChoice.MODIFY_AND_CONFIRM -> "MODIFY_AND_CONFIRM"
                 UserCardChoice.REJECT -> "REJECT"
                 UserCardChoice.CANCEL_TIER1_OR_LOWER -> "CANCEL"
             }
-            val sentinel = UserConfirmedSentinelEntity(
+            agentRepo.insertSentinel(
                 id = sentinelId,
                 sessionId = req.sessionId,
                 linkageVersion = version + 1,
                 chainId = req.chainId,
-                chainIndex = req.chainIndex,
+                chainIndex = req.chainIndex.toLong(),
                 cardTemplateId = req.cardTemplateId,
                 triggerSubClass = req.triggerSubClass.name,
-                s_planPayloadCiphertext = s_plan,
-                s_userTextCiphertext = s_user,
-                s_cardPayloadCiphertext = s_card,
+                sPlanPayloadCiphertext = s_plan,
+                sUserTextCiphertext = s_user,
+                sCardPayloadCiphertext = s_card,
                 userChoice = userChoiceStr,
-                swipeVerified = req.swipeVerified,
-                s_modifiedPlanCiphertext = s_mod,
+                swipeVerified = if (req.swipeVerified) 1L else 0L,
+                sModifiedPlanCiphertext = s_mod,
+                expireAtMs = -1L,
+                rollbackFlag = 0L,
                 createdAtMs = nowMs
             )
-            sentinelDao.upsert(sentinel)
             FileLogger.i(TAG, "Sentinel 写入 id=$sentinelId choice=$userChoiceStr subClass=${req.triggerSubClass.name}")
 
             // Step 3：Reject / Modify → 写审计（LINK-INV-4 sentinelId 已存在）
@@ -165,14 +165,14 @@ class ZthConfirmationCardManager @Inject constructor(
                 val s_reason = req.rejectionReasonPlaintext?.let { crypto.encrypt(it) }
                 crypto.assertSensitiveColumnName("s_rejectedPlanSnapshotCiphertext")
                 val s_snapshot = s_mod ?: crypto.encrypt(req.planPayloadPlaintext) // 没修改则存原
-                val audit = SentinelPlanRejectionAuditEntity(
+                agentRepo.insertRejectionAudit(
                     id = "AUD:${UUID.randomUUID()}",
                     sentinelId = sentinelId,
                     rejectionType = userChoiceStr,
-                    s_reasonCiphertext = s_reason,
-                    s_rejectedPlanSnapshotCiphertext = s_snapshot
+                    sReasonCiphertext = s_reason,
+                    sRejectedPlanSnapshotCiphertext = s_snapshot,
+                    createdAtMs = nowMs
                 )
-                rejectionAuditDao.upsert(audit)
                 FileLogger.i(TAG, "RejectAudit 写入 sentinelId=$sentinelId type=$userChoiceStr")
             }
 
@@ -193,4 +193,9 @@ class ZthConfirmationCardManager @Inject constructor(
             CommitResult(false, PlanApprovalChoice.REFINE, errorMessage = t.message)
         }
     }
+
+    private fun composeSessionId(sessionId: String) = "SESSION:$sessionId"
+
+    private fun composeSentinelId(sessionId: String, chainId: String, chainIndex: Int) =
+        "$sessionId:$chainId:$chainIndex"
 }
