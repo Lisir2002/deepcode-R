@@ -496,16 +496,6 @@ class BackupManagerImpl @Inject constructor(
         }
     }
 
-    companion object {
-        /**
-         * 拆库后 agent 拆分库的当前 schema 版本（v1）。旧版备份可能携带旧单库 v49
-         * （LEGACY_AGENT_SCHEMA_VERSION）的 schemaVersion——那同样可读可迁移，不能按当前
-         * v1 上界误拒。因此上界取「已知最大版本」，超过才拒绝。
-         */
-        private const val AGENT_SCHEMA_VERSION = 1
-        private const val LEGACY_AGENT_SCHEMA_VERSION = 49
-    }
-
     /** 旧格式（单文件 snapshot.json 完整快照）还原。 */
     private suspend fun restoreLegacy(snapshot: BackupSnapshot): RestoreStats {
         var stats = restoreMeta(snapshot.toMetadata())
@@ -945,6 +935,8 @@ class BackupManagerImpl @Inject constructor(
     )
 
     private companion object {
+        private const val AGENT_SCHEMA_VERSION = 1
+        private const val LEGACY_AGENT_SCHEMA_VERSION = 49
         const val TAG = "BackupManagerImpl"
         const val PAGE_SIZE = 500
         const val FILE_METADATA = "metadata.json"
