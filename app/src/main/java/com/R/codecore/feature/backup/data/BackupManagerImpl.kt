@@ -47,6 +47,7 @@ import com.R.codecore.feature.workspace.data.local.dao.RemoteConnectionDao
 import com.R.codecore.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.R.codecore.feature.workspace.data.local.entity.RemoteMountEntity
 import com.R.codecore.feature.workspace.data.repository.WorkspaceRepository
+import com.R.codecore.datalayer.repository.WorkspaceRepository as V2WorkspaceRepository
 import com.R.codecore.feature.workspace.domain.model.RemoteProtocol
 import com.R.codecore.core.security.CredentialEncryptor
 import com.R.codecore.core.util.FileLogger
@@ -85,6 +86,7 @@ class BackupManagerImpl @Inject constructor(
     private val settingsRepo: com.R.codecore.datalayer.repository.SettingsRepository,
     private val credentialsRepo: com.R.codecore.datalayer.repository.CredentialsRepository,
     private val workspaceRepository: WorkspaceRepository,
+    private val v2WorkspaceRepository: V2WorkspaceRepository,
     private val encryptor: CredentialEncryptor,
     private val dataRegistry: DataRegistry,
     private val v2Agent: V2AgentRepository,
@@ -320,8 +322,8 @@ class BackupManagerImpl @Inject constructor(
         createdAt = System.currentTimeMillis(),
         providers = if (options.providers) safeDaoSuspend("getAllProviders", emptyList()) { settingsRepo.listProviders().map { it.toV2Dto() } } else emptyList(),
         gitCredentials = if (options.gitCredentials) safeDaoSuspend("getAllGitCred", emptyList()) { credentialsRepo.listGitCredentials().map { it.toV2Dto() } } else emptyList(),
-        remoteConnections = if (options.remoteConnections) safeDaoSuspend("getAllRemoteConn", emptyList()) { workspaceRepository.listRemoteConnections().map { it.toV2Dto() } } else emptyList(),
-        remoteMounts = if (options.remoteConnections) safeDaoSuspend("getAllRemoteMounts", emptyList()) { workspaceRepository.listAllRemoteMounts().map { it.toV2Dto() } } else emptyList(),
+        remoteConnections = if (options.remoteConnections) safeDaoSuspend("getAllRemoteConn", emptyList()) { v2WorkspaceRepository.listRemoteConnections().map { it.toV2Dto() } } else emptyList(),
+        remoteMounts = if (options.remoteConnections) safeDaoSuspend("getAllRemoteMounts", emptyList()) { v2WorkspaceRepository.listAllRemoteMounts().map { it.toV2Dto() } } else emptyList(),
         mcpServers = if (options.mcpServers) mcpConfigRepository.getServers() else emptyList(),
         globalPermissionRules = if (options.permissionRules) permissionRulesRepository.getGlobalRulesOnce() else emptyList(),
         themeMode = if (options.appSettings) themeSettingsRepository.snapshot() else null,
@@ -570,7 +572,7 @@ class BackupManagerImpl @Inject constructor(
                     val isPwd = c.authType.equals("PASSWORD", ignoreCase = true)
                     val authData = if (isPwd && c.authData.isNotEmpty()) encryptor.encrypt(c.authData) else c.authData
                     val pass = c.passphrase?.takeIf { it.isNotBlank() }?.let { encryptor.encrypt(it) }
-                    workspaceRepository.upsertRemoteConnection(
+                    v2WorkspaceRepository.upsertRemoteConnection(
                         id = c.id, name = c.name, protocol = c.protocol, host = c.host,
                         port = c.port.toLong(), username = c.username, authType = c.authType,
                         authData = authData, passphrase = pass,
@@ -581,7 +583,7 @@ class BackupManagerImpl @Inject constructor(
         if (meta.remoteMounts.isNotEmpty()) {
             safeDaoSuspend("insertRemoteMounts", Unit) {
                 meta.remoteMounts.forEach { m ->
-                    workspaceRepository.upsertRemoteMount(
+                    v2WorkspaceRepository.upsertRemoteMount(
                         id = m.id, connectionId = m.connectionId, remotePath = m.remotePath,
                         localMountPath = m.localMountPath,
                         isActive = if (m.isActive) 1L else 0L,
