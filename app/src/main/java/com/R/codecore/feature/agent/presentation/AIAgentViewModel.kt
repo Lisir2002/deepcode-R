@@ -10,7 +10,6 @@ import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_message as V2AgentMessage
 import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
 import com.R.codecore.datalayer.sqldelight.agent.SelectAllSessionsWithCount as V2SessionWithCount
-import com.R.codecore.feature.agent.data.local.entity.ChatSession
 import com.R.codecore.feature.agent.domain.checkpoint.CheckpointManager
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionWithCount
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
