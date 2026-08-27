@@ -100,6 +100,25 @@ class WorkspaceRepository(private val db: WorkspaceDb) {
         q.upsertEncryptionState(masterKeyFingerprint, dekCiphertext, encScheme, lastRotatedAt, rotationCounter, biometricRequired, migratedFromV1)
     }
 
+    // ── P0-2 补齐列级 setter 与 REPLACE 语义 ──
+
+    suspend fun upsertRemoteConnection(
+        id: String, name: String, protocol: String, host: String, port: Long, username: String,
+        authType: String, authData: String, passphrase: String?,
+    ) = withContext(Dispatchers.IO) {
+        q.insertOrReplaceRemoteConnection(id, name, protocol, host, port, username, authType, authData, passphrase)
+    }
+
+    suspend fun updateRemoteConnectionCredentials(id: String, authData: String, passphrase: String?) =
+        withContext(Dispatchers.IO) { q.updateConnectionCredentials(authData, passphrase, id) }
+
+    suspend fun upsertRemoteMount(
+        id: String, connectionId: String, remotePath: String, localMountPath: String,
+        isActive: Long, autoConnect: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertOrReplaceRemoteMount(id, connectionId, remotePath, localMountPath, isActive, autoConnect)
+    }
+
     // ── P0-1 Flow 响应式读（对齐 Room DAO 的 5 个 Flow 查询）──
 
     fun observeAllProjects(): Flow<List<Workspace_project>> =

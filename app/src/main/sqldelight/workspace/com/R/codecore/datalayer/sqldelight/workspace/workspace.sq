@@ -115,6 +115,11 @@ insertRemoteConnection:
 INSERT INTO remote_connections (id, name, protocol, host, port, username, auth_type, auth_data, passphrase)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- P0-2：对齐 Room `@Insert(onConflict = REPLACE)` 语义。
+insertOrReplaceRemoteConnection:
+INSERT OR REPLACE INTO remote_connections (id, name, protocol, host, port, username, auth_type, auth_data, passphrase)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 selectRemoteConnectionById:
 SELECT * FROM remote_connections WHERE id = ?;
 
@@ -124,8 +129,18 @@ SELECT * FROM remote_connections ORDER BY name ASC;
 deleteRemoteConnection:
 DELETE FROM remote_connections WHERE id = ?;
 
+-- P0-2：补齐 Room 侧列级 setter（缺这些则批 1 无法切换业务）──
+
+updateConnectionCredentials:
+UPDATE remote_connections SET auth_data = ?, passphrase = ? WHERE id = ?;
+
 insertRemoteMount:
 INSERT INTO remote_mounts (id, connection_id, remote_path, local_mount_path, is_active, auto_connect)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- P0-2：对齐 Room `@Insert(onConflict = REPLACE)` 语义。
+insertOrReplaceRemoteMount:
+INSERT OR REPLACE INTO remote_mounts (id, connection_id, remote_path, local_mount_path, is_active, auto_connect)
 VALUES (?, ?, ?, ?, ?, ?);
 
 selectRemoteMountsByConnection:
