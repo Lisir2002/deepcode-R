@@ -7,15 +7,15 @@ import com.R.codecore.feature.agent.domain.tool.ToolResult
 import com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
 
 private data class TrajectoryAggregate(
     val tokensIn: Long,
     val tokensOut: Long,
     val count: Long,
 )
-import java.util.UUID
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * 运行轨迹服务（D2-3/D2-5，对齐 norm-chain-design.md §3.8）。
