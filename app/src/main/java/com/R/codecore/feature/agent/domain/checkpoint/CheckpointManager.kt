@@ -5,6 +5,7 @@ import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Checkpoint_file_snapshots as V2Snapshot
 import com.R.codecore.datalayer.sqldelight.agent.Session_checkpoints as V2Checkpoint
 import com.R.codecore.feature.agent.data.local.entity.CheckpointEntity
+import com.R.codecore.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
 import com.R.codecore.feature.workspace.domain.FileAccessProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
