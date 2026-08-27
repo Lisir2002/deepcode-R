@@ -683,8 +683,9 @@ class AgentRepository(private val db: AgentDb) : WakeQueueStore {
     override suspend fun upsertWakeItem(
         wakeId: String, sessionId: String, source: String, type: String, content: String,
         status: String, createdAtMs: Long,
-    ) = withContext(Dispatchers.IO) {
+    ): Unit = withContext(Dispatchers.IO) {
         q.upsertWakeItem(wakeId, sessionId, source, type, content, status, createdAtMs)
+        Unit
     }
 
     override suspend fun listPendingWakeItems(): List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue> =
@@ -696,8 +697,11 @@ class AgentRepository(private val db: AgentDb) : WakeQueueStore {
     suspend fun markWakeItemConsumed(wakeId: String) =
         withContext(Dispatchers.IO) { q.markWakeItemConsumed(wakeId) }
 
-    override suspend fun markWakeItemsConsumedBatch(ids: List<String>, status: String) =
-        withContext(Dispatchers.IO) { q.markWakeItemsConsumedBatch(status, ids) }
+    override suspend fun markWakeItemsConsumedBatch(ids: List<String>, status: String): Unit =
+        withContext(Dispatchers.IO) {
+            q.markWakeItemsConsumedBatch(status, ids)
+            Unit
+        }
 
     suspend fun insertSentinel(
         id: String, sessionId: String, linkageVersion: Long, chainId: String, chainIndex: Long,

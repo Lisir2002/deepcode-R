@@ -3,8 +3,6 @@ package com.R.codecore.feature.backup.data
 import android.content.Context
 import com.R.codecore.core.data.DataBlob
 import com.R.codecore.core.data.DataRegistry
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_message as V2AgentMessage
 import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
@@ -94,7 +92,6 @@ class BackupManagerImpl @Inject constructor(
     private val encryptor: CredentialEncryptor,
     private val dataRegistry: DataRegistry,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) : BackupManager {
 
     private val json = Json {
@@ -120,9 +117,6 @@ class BackupManagerImpl @Inject constructor(
             FileLogger.e("BackupMgr", "safeDaoSuspend[$tag] 失败，返回兜底值 failValue=$failValue", it)
         }.getOrDefault(failValue)
     }
-
-    /** v2-full-takeover：当前数据读模式是否为 V2。写操作与一次性读按模式分发。 */
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     private fun currentSchemaVersion(): Int = AgentDatabase.SCHEMA_VERSION
 
@@ -151,11 +145,9 @@ class BackupManagerImpl @Inject constructor(
 
     override suspend fun exportSession(sessionId: String, output: OutputStream) {
         withContext(Dispatchers.IO) {
-            val session = if (isV2()) {
+            val session =
                 safeDaoSuspend("getSessionById", null) { v2Agent.getSessionById(sessionId) }?.toEntity()
-            } else {
-                safeDaoSuspend("getSessionById", null) { chatSessionDao.getById(sessionId) }
-            } ?: error("Session not found: $sessionId")
+                    ?: error("Session not found: $sessionId")
             val temp = createTempFile()
             try {
                 FileOutputStream(temp).use { fos ->
@@ -173,18 +165,11 @@ class BackupManagerImpl @Inject constructor(
                                 var lastTs = 0L
                                 var lastId = ""
                                 while (true) {
-                                    val batch = if (isV2()) {
-                                        safeDaoSuspend(
-                                            "getMsgPageAfter_$sessionId",
-                                            emptyList()
-                                        ) { v2Agent.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE.toLong()) }
-                                            .map { it.toEntity() }
-                                    } else {
-                                        safeDaoSuspend(
-                                            "getMsgPageAfter_$sessionId",
-                                            emptyList()
-                                        ) { agentMessageDao.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE) }
-                                    }
+                                    val batch = safeDaoSuspend(
+                                        "getMsgPageAfter_$sessionId",
+                                        emptyList()
+                                    ) { v2Agent.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
                                     if (batch.isEmpty()) break
                                     batch.forEach { writer.writeLine(json.encodeToString(AgentMessageDto.serializer(), it.toDto())) }
                                     lastTs = batch.last().timestamp
@@ -195,18 +180,11 @@ class BackupManagerImpl @Inject constructor(
                                 var lastCreatedAtMs = 0L
                                 var lastId = ""
                                 while (true) {
-                                    val batch = if (isV2()) {
-                                        safeDaoSuspend(
-                                            "getTodoPageAfter_$sessionId",
-                                            emptyList()
-                                        ) { v2Agent.getTodoPageBySessionAfter(sessionId, lastCreatedAtMs, lastId, PAGE_SIZE.toLong()) }
-                                            .map { it.toEntity() }
-                                    } else {
-                                        safeDaoSuspend(
-                                            "getTodoPageAfter_$sessionId",
-                                            emptyList()
-                                        ) { todoItemDao.getBySessionPageAfter(sessionId, lastCreatedAtMs, lastId, PAGE_SIZE) }
-                                    }
+                                    val batch = safeDaoSuspend(
+                                        "getTodoPageAfter_$sessionId",
+                                        emptyList()
+                                    ) { v2Agent.getTodoPageBySessionAfter(sessionId, lastCreatedAtMs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
                                     if (batch.isEmpty()) break
                                     batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
                                     lastCreatedAtMs = batch.last().createdAtMs
@@ -277,18 +255,11 @@ class BackupManagerImpl @Inject constructor(
                             var lastUpdatedAtMs = 0L
                             var lastId = ""
                             while (true) {
-                                val batch = if (isV2()) {
-                                    safeDaoSuspend(
+                                val batch = safeDaoSuspend(
                                         "getSessionPageAfter",
                                         emptyList()
                                     ) { v2Agent.getSessionPageAfter(lastUpdatedAtMs, lastId, PAGE_SIZE.toLong()) }
                                         .map { it.toEntity() }
-                                } else {
-                                    safeDaoSuspend(
-                                        "getSessionPageAfter",
-                                        emptyList()
-                                    ) { chatSessionDao.getPageAfter(lastUpdatedAtMs, lastId, PAGE_SIZE) }
-                                }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(ChatSessionDto.serializer(), it.toDto())) }
                                 lastUpdatedAtMs = batch.last().updatedAtMs
@@ -299,18 +270,11 @@ class BackupManagerImpl @Inject constructor(
                             var lastTs = 0L
                             var lastId = ""
                             while (true) {
-                                val batch = if (isV2()) {
-                                    safeDaoSuspend(
+                                val batch = safeDaoSuspend(
                                         "getMsgPageAfter",
                                         emptyList()
                                     ) { v2Agent.getMessagePageAfter(lastTs, lastId, PAGE_SIZE.toLong()) }
                                         .map { it.toEntity() }
-                                } else {
-                                    safeDaoSuspend(
-                                        "getMsgPageAfter",
-                                        emptyList()
-                                    ) { agentMessageDao.getPageAfter(lastTs, lastId, PAGE_SIZE) }
-                                }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(AgentMessageDto.serializer(), it.toDto())) }
                                 lastTs = batch.last().timestamp
@@ -321,18 +285,11 @@ class BackupManagerImpl @Inject constructor(
                             var lastCreatedAtMs = 0L
                             var lastId = ""
                             while (true) {
-                                val batch = if (isV2()) {
-                                    safeDaoSuspend(
+                                val batch = safeDaoSuspend(
                                         "getTodoPageAfter",
                                         emptyList()
                                     ) { v2Agent.getTodoPageAfter(lastCreatedAtMs, lastId, PAGE_SIZE.toLong()) }
                                         .map { it.toEntity() }
-                                } else {
-                                    safeDaoSuspend(
-                                        "getTodoPageAfter",
-                                        emptyList()
-                                    ) { todoItemDao.getPageAfter(lastCreatedAtMs, lastId, PAGE_SIZE) }
-                                }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
                                 lastCreatedAtMs = batch.last().createdAtMs
@@ -444,8 +401,7 @@ class BackupManagerImpl @Inject constructor(
                     stats += RestoreStats(chatSessions = restoreJsonl(tar, ChatSessionDto.serializer(), "upsertSessions") { dtos ->
                         safeDaoSuspend("upsertSessions", 0) {
                             val mapped = dtos.map { it.copy(workspacePath = currentWorkspacePath).toEntity() }
-                            if (isV2()) v2Agent.upsertAllSessions(mapped.map { it.toV2() })
-                            else chatSessionDao.upsertAll(mapped)
+                            v2Agent.upsertAllSessions(mapped.map { it.toV2() })
                             dtos.size
                         }
                     })
@@ -454,8 +410,7 @@ class BackupManagerImpl @Inject constructor(
                     stats += RestoreStats(agentMessages = restoreJsonl(tar, AgentMessageDto.serializer(), "insertMessages") { dtos ->
                         safeDaoSuspend("insertMessages", 0) {
                             val mapped = dtos.map { it.toEntity() }
-                            if (isV2()) v2Agent.insertAllMessages(mapped.map { it.toV2() })
-                            else agentMessageDao.insertAll(mapped)
+                            v2Agent.insertAllMessages(mapped.map { it.toV2() })
                             dtos.size
                         }
                     })
@@ -464,8 +419,7 @@ class BackupManagerImpl @Inject constructor(
                     stats += RestoreStats(todoItems = restoreJsonl(tar, TodoItemDto.serializer(), "upsertTodos") { dtos ->
                         safeDaoSuspend("upsertTodos", 0) {
                             val mapped = dtos.map { it.toEntity() }
-                            if (isV2()) v2Agent.upsertAllTodos(mapped.map { it.toV2() })
-                            else todoItemDao.upsertAll(mapped)
+                            v2Agent.upsertAllTodos(mapped.map { it.toV2() })
                             dtos.size
                         }
                     })
@@ -555,22 +509,19 @@ class BackupManagerImpl @Inject constructor(
                 .getOrDefault("")
             safeDaoSuspend("legacyUpsertSessions", Unit) {
                 val mapped = snapshot.chatSessions.map { it.copy(workspacePath = currentWorkspacePath).toEntity() }
-                if (isV2()) v2Agent.upsertAllSessions(mapped.map { it.toV2() })
-                else chatSessionDao.upsertAll(mapped)
+                v2Agent.upsertAllSessions(mapped.map { it.toV2() })
             }
         }
         if (snapshot.agentMessages.isNotEmpty()) {
             safeDaoSuspend("legacyInsertMessages", Unit) {
                 val mapped = snapshot.agentMessages.map { it.toEntity() }
-                if (isV2()) v2Agent.insertAllMessages(mapped.map { it.toV2() })
-                else agentMessageDao.insertAll(mapped)
+                v2Agent.insertAllMessages(mapped.map { it.toV2() })
             }
         }
         if (snapshot.todoItems.isNotEmpty()) {
             safeDaoSuspend("legacyUpsertTodos", Unit) {
                 val mapped = snapshot.todoItems.map { it.toEntity() }
-                if (isV2()) v2Agent.upsertAllTodos(mapped.map { it.toV2() })
-                else todoItemDao.upsertAll(mapped)
+                v2Agent.upsertAllTodos(mapped.map { it.toV2() })
             }
         }
         return stats + RestoreStats(
