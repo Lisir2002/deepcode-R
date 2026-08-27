@@ -27,13 +27,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthCheckpointRepository @Inject constructor(
-    private val dao: CheckpointDao,
-    private val snapshotDao: CheckpointFileSnapshotDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) {
-
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** prePlan：新建 checkpoint（若该 messageId 已有则复用）。 */
     suspend fun createOrGet(
@@ -42,23 +37,12 @@ class ZthCheckpointRepository @Inject constructor(
         userMessageId: String,
         promptSnippet: String
     ): String {
-        val existing =
-            if (isV2()) v2Agent.getCheckpointByMessageId(userMessageId)?.toEntity()
-            else dao.getCheckpointByMessageId(userMessageId)
+        val existing = v2Agent.getCheckpointByMessageId(userMessageId)?.toEntity()
         if (existing != null) return existing.id
-        if (isV2()) {
-            v2Agent.insertCheckpointFull(
-                id = checkpointId, sessionId = sessionId, userMessageId = userMessageId,
-                promptSnippet = promptSnippet, createdAtMs = System.currentTimeMillis(),
-            )
-        } else {
-            dao.insertCheckpoint(
-                CheckpointEntity(
-                    id = checkpointId, sessionId = sessionId,
-                    userMessageId = userMessageId, promptSnippet = promptSnippet
-                )
-            )
-        }
+        v2Agent.insertCheckpointFull(
+            id = checkpointId, sessionId = sessionId, userMessageId = userMessageId,
+            promptSnippet = promptSnippet, createdAtMs = System.currentTimeMillis(),
+        )
         return checkpointId
     }
 
@@ -67,62 +51,38 @@ class ZthCheckpointRepository @Inject constructor(
         snapshotId: String, checkpointId: String,
         filePath: String, snapshotRelativePath: String, changeType: String
     ) {
-        val exists =
-            if (isV2()) v2Agent.countCheckpointFileSnapshot(checkpointId, filePath) > 0
-            else snapshotDao.countSnapshot(checkpointId, filePath) > 0
+        val exists = v2Agent.countCheckpointFileSnapshot(checkpointId, filePath) > 0
         if (exists) return
-        if (isV2()) {
-            v2Agent.insertCheckpointFileSnapshot(
-                id = snapshotId, checkpointId = checkpointId, filePath = filePath,
-                snapshotRelativePath = snapshotRelativePath, changeType = changeType,
-                createdAt = System.currentTimeMillis(),
-            )
-        } else {
-            snapshotDao.insertFileSnapshot(
-                CheckpointFileSnapshotEntity(
-                    id = snapshotId, checkpointId = checkpointId, filePath = filePath,
-                    snapshotRelativePath = snapshotRelativePath, changeType = changeType
-                )
-            )
-        }
+        v2Agent.insertCheckpointFileSnapshot(
+            id = snapshotId, checkpointId = checkpointId, filePath = filePath,
+            snapshotRelativePath = snapshotRelativePath, changeType = changeType,
+            createdAt = System.currentTimeMillis(),
+        )
     }
 
     /** Phase 5 Postflight 失败：列出 checkpoint + 所有快照（用于文件还原）。 */
     suspend fun getCheckpointWithSnapshots(checkpointId: String):
             Pair<CheckpointEntity, List<CheckpointFileSnapshotEntity>>? {
-        val ck =
-            (if (isV2()) v2Agent.getCheckpointById(checkpointId)?.toEntity()
-            else dao.getCheckpointById(checkpointId))
-            ?: return null
-        val snaps =
-            if (isV2()) v2Agent.listCheckpointFileSnapshots(checkpointId).map { it.toEntity() }
-            else snapshotDao.getFileSnapshotsForCheckpoint(checkpointId)
+        val ck = v2Agent.getCheckpointById(checkpointId)?.toEntity() ?: return null
+        val snaps = v2Agent.listCheckpointFileSnapshots(checkpointId).map { it.toEntity() }
         return ck to snaps
     }
 
     suspend fun getByMessageId(messageId: String): CheckpointEntity? =
-        if (isV2()) v2Agent.getCheckpointByMessageId(messageId)?.toEntity()
-        else dao.getCheckpointByMessageId(messageId)
+        v2Agent.getCheckpointByMessageId(messageId)?.toEntity()
 
     suspend fun listForSession(sessionId: String): List<CheckpointEntity> =
-        if (isV2()) v2Agent.listCheckpointsForSession(sessionId).map { it.toEntity() }
-        else dao.getCheckpointsForSession(sessionId)
+        v2Agent.listCheckpointsForSession(sessionId).map { it.toEntity() }
 
     /** 会话关闭 / 用户手动：清空 session 所有 checkpoint + 快照。 */
     suspend fun clearSession(sessionId: String) {
-        if (isV2()) {
-            v2Agent.deleteCheckpointFileSnapshotsBySession(sessionId)
-            v2Agent.deleteCheckpointsBySession(sessionId)
-        } else {
-            snapshotDao.deleteFileSnapshotsForSession(sessionId)
-            dao.deleteCheckpointsForSession(sessionId)
-        }
+        v2Agent.deleteCheckpointFileSnapshotsBySession(sessionId)
+        v2Agent.deleteCheckpointsBySession(sessionId)
     }
 
     /** 后台 job：清理 cutoff 之前的 checkpoint（防止 DB 膨胀）。 */
     suspend fun clearBefore(cutoffTimestamp: Long) {
-        if (isV2()) v2Agent.deleteCheckpointsBefore(cutoffTimestamp)
-        else dao.deleteCheckpointsBefore(cutoffTimestamp)
+        v2Agent.deleteCheckpointsBefore(cutoffTimestamp)
     }
 
     // ── Phase 4.2 Firestore：Entity ↔ Dto 映射入口 ─────────────────
