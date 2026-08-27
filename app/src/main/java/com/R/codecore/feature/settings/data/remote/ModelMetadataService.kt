@@ -2,11 +2,8 @@ package com.R.codecore.feature.settings.data.remote
 
 import android.content.Context
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Model_capability_overrides as V2ModelCapabilityOverride
-import com.R.codecore.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.R.codecore.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.R.codecore.feature.proxy.domain.ClashProxyManager
 import com.R.codecore.feature.settings.data.repository.CompatibilityPolicyRepository
@@ -48,11 +45,6 @@ class ModelMetadataService @Inject constructor(
      */
     private val compatibilityPolicyRepository: CompatibilityPolicyRepository,
     /**
-     * 单模型能力复选框覆盖 Dao（RC63 备选方案④）。
-     * 仅在最后一步 merge 时读入，优先级最高；用户一旦手动覆盖，覆盖值就是最终决策。
-     */
-    private val modelCapabilityOverrideDao: ModelCapabilityOverrideDao,
-    /**
      * 共享 OkHttp（AgentModule 注入）。以 newBuilder 派生 metadataClient：
      * 继承其 ProxySelector（代理启用时 models.dev 也走 mihomo mixed-port，而非直连），
      * 同时覆写回短超时，避免占用共享 client 的 120s 流式超时语义。
@@ -64,11 +56,8 @@ class ModelMetadataService @Inject constructor(
      */
     private val proxyManager: ClashProxyManager,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** 独立协程作用域：监听代理状态，不占模型请求链路。 */
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -326,8 +315,7 @@ class ModelMetadataService @Inject constructor(
 
         // 阶段 4 ④：单模型复选框覆盖（优先级最高）。MODELS_DEV 与 INFERRED 源都允许。
         val overrideRow = runCatching {
-            if (isV2()) v2Agent.getCapabilityOverride(type.name, modelId)?.toEntity()
-            else modelCapabilityOverrideDao.getByProviderAndModel(type.name, modelId)
+            v2Agent.getCapabilityOverride(type.name, modelId)?.toEntity()
         }.onFailure {
             FileLogger.w(TAG, "读取单模型能力覆盖失败(type=${type.name}, id=$modelId)", it)
         }.getOrNull() ?: return afterPolicy
@@ -367,34 +355,25 @@ class ModelMetadataService @Inject constructor(
             overrideTools = tools,
             overrideReasoning = reasoning
         )
-        if (isV2()) {
-            v2Agent.upsertCapabilityOverride(
-                id = entity.id,
-                providerType = entity.providerType,
-                modelId = entity.modelId,
-                overrideVision = entity.overrideVision?.let { if (it) 1L else 0L },
-                overrideTools = entity.overrideTools?.let { if (it) 1L else 0L },
-                overrideReasoning = entity.overrideReasoning?.let { if (it) 1L else 0L },
-                updatedAtMs = System.currentTimeMillis()
-            )
-        } else {
-            modelCapabilityOverrideDao.upsert(entity)
-        }
+        v2Agent.upsertCapabilityOverride(
+            id = entity.id,
+            providerType = entity.providerType,
+            modelId = entity.modelId,
+            overrideVision = entity.overrideVision?.let { if (it) 1L else 0L },
+            overrideTools = entity.overrideTools?.let { if (it) 1L else 0L },
+            overrideReasoning = entity.overrideReasoning?.let { if (it) 1L else 0L },
+            updatedAtMs = System.currentTimeMillis()
+        )
     }
 
     /** 删除单个模型的覆盖（恢复到「启发式 + 兼容端点策略」的自动路径）。 */
     suspend fun clearOverride(type: ProviderType, modelId: String) = withContext(Dispatchers.IO) {
-        if (isV2()) v2Agent.deleteCapabilityOverride(type.name, modelId)
-        else modelCapabilityOverrideDao.deleteByProviderAndModel(type.name, modelId)
+        v2Agent.deleteCapabilityOverride(type.name, modelId)
     }
 
     /** 流式观察单模型覆盖（设置页 UI 观察后实时刷新标签角标）。 */
     fun observeOverride(type: ProviderType, modelId: String): Flow<ModelCapabilityOverrideEntity?> =
-        if (readMode.currentModeSync() == DataReadMode.V2) {
-            v2Agent.observeCapabilityOverride(type.name, modelId).map { list -> list.firstOrNull()?.toEntity() }
-        } else {
-            modelCapabilityOverrideDao.observeByProviderAndModel(type.name, modelId)
-        }
+        v2Agent.observeCapabilityOverride(type.name, modelId).map { list -> list.firstOrNull()?.toEntity() }
 
     private fun findMetadata(
         catalog: Map<String, Map<String, ModelMetadata>>,

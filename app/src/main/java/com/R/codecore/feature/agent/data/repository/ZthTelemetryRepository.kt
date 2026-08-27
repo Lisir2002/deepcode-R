@@ -1,9 +1,6 @@
 package com.R.codecore.feature.agent.data.repository
 
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
-import com.R.codecore.feature.agent.data.local.dao.ZthTelemetryEventDao
 import com.R.codecore.feature.agent.data.local.entity.ZthTelemetryEventEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -29,12 +26,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthTelemetryRepository @Inject constructor(
-    private val dao: ZthTelemetryEventDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) {
-
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     // ── 写入：14 指标路径（Phase 5 Facade 逐个调）────────────────────────
 
@@ -93,24 +86,19 @@ class ZthTelemetryRepository @Inject constructor(
 
     // ── 读取：4 张 Canvas 图表（设置页 ZTH 卡片 自绘柱状/折线/饼图） ────────
 
-    fun observeAll(): Flow<List<ZthTelemetryEventEntity>> {
-        if (readMode.currentModeSync() == DataReadMode.V2) {
-            return v2Agent.observeAllTelemetry().map { list -> list.map { it.toEntity() } }
-        }
-        return dao.observeAll()
-    }
+    fun observeAll(): Flow<List<ZthTelemetryEventEntity>> =
+        v2Agent.observeAllTelemetry().map { list -> list.map { it.toEntity() } }
 
     suspend fun getRange(fromMs: Long, toMs: Long): List<ZthTelemetryEventEntity> =
-        if (isV2()) v2Agent.listTelemetryRange(fromMs, toMs).map { it.toEntity() }
-        else dao.getRange(fromMs, toMs)
+        v2Agent.listTelemetryRange(fromMs, toMs).map { it.toEntity() }
 
     suspend fun countAll(): Long =
-        if (isV2()) v2Agent.countAllTelemetry() else dao.countAll()
+        v2Agent.countAllTelemetry()
 
     /** 后台 job：清理 > 90d 的遥测事件（避免 DB 无限膨胀）。 */
     suspend fun deleteOlderThan(days: Int = 90) {
         val cutoff = System.currentTimeMillis() - days * 86_400_000L
-        if (isV2()) v2Agent.deleteTelemetryOlderThan(cutoff) else dao.deleteOld(cutoff)
+        v2Agent.deleteTelemetryOlderThan(cutoff)
     }
 
     // ── Phase 4.2 Firestore：Entity ↔ Dto 映射入口（SyncManager 调） ────────
@@ -147,24 +135,14 @@ class ZthTelemetryRepository @Inject constructor(
     ) {
         val sha = sessionId?.let { sha256Prefix16(it) }
         val sk = if (eventSubKindExtra == null) subKind else "${subKind}_$eventSubKindExtra"
-        if (isV2()) {
-            v2Agent.insertTelemetryEvent(
-                eventKind = kind, eventSubKind = sk, severityTier = tier.toLong(),
-                sessionSha256Prefix = sha, latencyMs = latencyMs,
-                flagA = flagA?.let { if (it) 1L else 0L },
-                flagB = flagB?.let { if (it) 1L else 0L },
-                metricA = metricA, metricB = metricB,
-                createdAtMs = System.currentTimeMillis(),
-            )
-        } else {
-            dao.insertEvent(
-                ZthTelemetryEventEntity(
-                    eventKind = kind, eventSubKind = sk, severityTier = tier,
-                    sessionSha256Prefix = sha, latencyMs = latencyMs,
-                    flagA = flagA, flagB = flagB, metricA = metricA, metricB = metricB
-                )
-            )
-        }
+        v2Agent.insertTelemetryEvent(
+            eventKind = kind, eventSubKind = sk, severityTier = tier.toLong(),
+            sessionSha256Prefix = sha, latencyMs = latencyMs,
+            flagA = flagA?.let { if (it) 1L else 0L },
+            flagB = flagB?.let { if (it) 1L else 0L },
+            metricA = metricA, metricB = metricB,
+            createdAtMs = System.currentTimeMillis(),
+        )
     }
 
     private fun sha256Prefix16(plain: String): String {
