@@ -77,6 +77,23 @@ class AgentRepository(private val db: AgentDb) {
         q.insertCheckpointFull(id, sessionId, userMessageId, promptSnippet, createdAtMs)
     }
 
+    suspend fun getCheckpointById(checkpointId: String): com.R.codecore.datalayer.sqldelight.agent.Session_checkpoints? =
+        withContext(Dispatchers.IO) { q.selectCheckpointById(checkpointId).executeAsOneOrNull() }
+
+    suspend fun getCheckpointByMessageId(messageId: String): com.R.codecore.datalayer.sqldelight.agent.Session_checkpoints? =
+        withContext(Dispatchers.IO) { q.selectCheckpointByMessageId(messageId).executeAsOneOrNull() }
+
+    suspend fun listCheckpointsForSession(sessionId: String): List<com.R.codecore.datalayer.sqldelight.agent.Session_checkpoints> =
+        withContext(Dispatchers.IO) { q.selectSessionCheckpoints(sessionId).executeAsList() }
+
+    suspend fun deleteCheckpointsBySession(sessionId: String) {
+        withContext(Dispatchers.IO) { q.deleteCheckpointsBySession(sessionId) }
+    }
+
+    suspend fun deleteCheckpointsBefore(cutoffTimestamp: Long) {
+        withContext(Dispatchers.IO) { q.deleteCheckpointsBefore(cutoffTimestamp) }
+    }
+
     suspend fun insertCheckpointFileSnapshot(
         id: String, checkpointId: String, filePath: String, snapshotRelativePath: String,
         changeType: String, createdAt: Long,
@@ -86,6 +103,13 @@ class AgentRepository(private val db: AgentDb) {
 
     suspend fun listCheckpointFileSnapshots(checkpointId: String): List<com.R.codecore.datalayer.sqldelight.agent.Checkpoint_file_snapshots> =
         withContext(Dispatchers.IO) { q.selectCheckpointFileSnapshots(checkpointId).executeAsList() }
+
+    suspend fun countCheckpointFileSnapshot(checkpointId: String, filePath: String): Long =
+        withContext(Dispatchers.IO) { q.countCheckpointFileSnapshot(checkpointId, filePath).executeAsOne() }
+
+    suspend fun deleteCheckpointFileSnapshotsBySession(sessionId: String) {
+        withContext(Dispatchers.IO) { q.deleteCheckpointFileSnapshotsBySession(sessionId) }
+    }
 
     suspend fun insertFileEditHunk(
         id: String, sessionId: String, filePath: String, operation: String, hunk: String,
@@ -255,6 +279,23 @@ class AgentRepository(private val db: AgentDb) {
     suspend fun listSentinels(sessionId: String): List<com.R.codecore.datalayer.sqldelight.agent.Zth_user_confirmed_sentinels> =
         withContext(Dispatchers.IO) { q.selectSentinelsBySession(sessionId).executeAsList() }
 
+    suspend fun listSentinelsByChain(chainId: String): List<com.R.codecore.datalayer.sqldelight.agent.Zth_user_confirmed_sentinels> =
+        withContext(Dispatchers.IO) { q.selectSentinelsByChain(chainId).executeAsList() }
+
+    suspend fun listSentinelsUnexpiredBySession(sessionId: String, nowMs: Long): List<com.R.codecore.datalayer.sqldelight.agent.Zth_user_confirmed_sentinels> =
+        withContext(Dispatchers.IO) { q.selectSentinelsUnexpiredBySession(sessionId, nowMs).executeAsList() }
+
+    suspend fun listAllSentinels(): List<com.R.codecore.datalayer.sqldelight.agent.Zth_user_confirmed_sentinels> =
+        withContext(Dispatchers.IO) { q.selectAllSentinels().executeAsList() }
+
+    suspend fun markAllSentinelsRollbackBySession(sessionId: String) {
+        withContext(Dispatchers.IO) { q.updateAllSentinelsRollbackBySession(sessionId) }
+    }
+
+    suspend fun deleteSentinelById(id: String) {
+        withContext(Dispatchers.IO) { q.deleteSentinelById(id) }
+    }
+
     suspend fun updateSentinelChoice(
         id: String, userChoice: String, swipeVerified: Long, sModifiedPlanCiphertext: String?,
     ) = withContext(Dispatchers.IO) { q.updateSentinelChoice(userChoice, swipeVerified, sModifiedPlanCiphertext, id) }
@@ -290,11 +331,24 @@ class AgentRepository(private val db: AgentDb) {
     suspend fun listRejectionAudits(sentinelId: String): List<com.R.codecore.datalayer.sqldelight.agent.Zth_sentinel_plan_rejection_audits> =
         withContext(Dispatchers.IO) { q.selectRejectionAuditsBySentinel(sentinelId).executeAsList() }
 
+    suspend fun listAllRejectionAudits(): List<com.R.codecore.datalayer.sqldelight.agent.Zth_sentinel_plan_rejection_audits> =
+        withContext(Dispatchers.IO) { q.selectRejectionAuditsAll().executeAsList() }
+
     suspend fun insertDeleteAudit(
         id: String, sessionId: String, affectedTableName: String, sAffectedKeysCiphertext: String,
         triggerSubClass: String, rollbackApplied: Long, createdAtMs: Long,
     ) = withContext(Dispatchers.IO) {
         q.insertDeleteAudit(id, sessionId, affectedTableName, sAffectedKeysCiphertext, triggerSubClass, rollbackApplied, createdAtMs)
+    }
+
+    suspend fun listDeleteAuditsPendingRollback(): List<com.R.codecore.datalayer.sqldelight.agent.Zth_hard_constraint_delete_audits> =
+        withContext(Dispatchers.IO) { q.selectDeleteAuditsPendingRollback().executeAsList() }
+
+    suspend fun listAllDeleteAudits(): List<com.R.codecore.datalayer.sqldelight.agent.Zth_hard_constraint_delete_audits> =
+        withContext(Dispatchers.IO) { q.selectAllDeleteAudits().executeAsList() }
+
+    suspend fun markDeleteAuditRolledBack(id: String) {
+        withContext(Dispatchers.IO) { q.updateDeleteAuditRolledBack(id) }
     }
 
     suspend fun insertRestoreLog(
@@ -308,6 +362,16 @@ class AgentRepository(private val db: AgentDb) {
     suspend fun listRestoreLogs(sessionId: String): List<com.R.codecore.datalayer.sqldelight.agent.Zth_l0_soft_compact_restore_logs> =
         withContext(Dispatchers.IO) { q.selectRestoreLogsBySession(sessionId).executeAsList() }
 
+    suspend fun listRestoreLogsExpiredNotRestored(nowMs: Long): List<com.R.codecore.datalayer.sqldelight.agent.Zth_l0_soft_compact_restore_logs> =
+        withContext(Dispatchers.IO) { q.selectRestoreLogsExpiredNotRestored(nowMs).executeAsList() }
+
+    suspend fun listAllRestoreLogs(): List<com.R.codecore.datalayer.sqldelight.agent.Zth_l0_soft_compact_restore_logs> =
+        withContext(Dispatchers.IO) { q.selectAllRestoreLogs().executeAsList() }
+
+    suspend fun markRestoreLogRestored(id: String) {
+        withContext(Dispatchers.IO) { q.updateRestoreLogRestored(id) }
+    }
+
     suspend fun insertTelemetryEvent(
         eventKind: String, eventSubKind: String, severityTier: Long, sessionSha256Prefix: String?,
         latencyMs: Long?, flagA: Long?, flagB: Long?, metricA: Long?, metricB: Long?, createdAtMs: Long,
@@ -320,6 +384,19 @@ class AgentRepository(private val db: AgentDb) {
 
     suspend fun countTelemetryByKind(eventKind: String): Long =
         withContext(Dispatchers.IO) { q.countTelemetryByKind(eventKind).executeAsOne() }
+
+    suspend fun listAllTelemetry(): List<com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events> =
+        withContext(Dispatchers.IO) { q.selectAllTelemetry().executeAsList() }
+
+    suspend fun listTelemetryRange(fromMs: Long, toMs: Long): List<com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events> =
+        withContext(Dispatchers.IO) { q.selectTelemetryRange(fromMs, toMs).executeAsList() }
+
+    suspend fun countAllTelemetry(): Long =
+        withContext(Dispatchers.IO) { q.countAllTelemetry().executeAsOne() }
+
+    suspend fun deleteTelemetryOlderThan(beforeMs: Long) {
+        withContext(Dispatchers.IO) { q.deleteTelemetryOlderThan(beforeMs) }
+    }
 
     // ── P0-1 Flow 响应式读（对齐 Room DAO 的 22 个 Flow 查询）──
 
@@ -385,4 +462,7 @@ class AgentRepository(private val db: AgentDb) {
 
     fun observeTelemetryByKind(eventKind: String, limit: Long): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events>> =
         q.selectTelemetryByKind(eventKind, limit).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeAllTelemetry(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events>> =
+        q.selectAllTelemetry().asFlow().mapToList(Dispatchers.IO)
 }

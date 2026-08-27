@@ -1,6 +1,9 @@
 package com.R.codecore.feature.agent.data.repository
 
 import com.R.codecore.core.security.ZthSensitiveColumnCrypto
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.dao.HardConstraintDeleteAuditDao
 import com.R.codecore.feature.agent.data.local.entity.HardConstraintDeleteAuditEntity
 import java.util.UUID
@@ -9,6 +12,8 @@ import javax.inject.Singleton
 
 /**
  * C.4.5 PlanApproval + C.4.11 LINK-INV 删除审计 Repository。
+ *
+ * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  *
  * 两个独立子功能：
  *   1) HardConstraintDeleteAuditDao：写「AI 删除了用户保留行/sentinel/checkpoint」审计
@@ -23,9 +28,13 @@ import javax.inject.Singleton
 @Singleton
 class ZthPlanApprovalRepository @Inject constructor(
     private val deleteAuditDao: HardConstraintDeleteAuditDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
     private val crypto: ZthSensitiveColumnCrypto,
     private val telemetry: ZthTelemetryRepository
 ) {
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** Phase 5 onFailure：AI 删除了 sentinel/checkpoint/保留行 → 写审计表（加密 keys JSON）。 */
     suspend fun recordHardConstraintDelete(
@@ -35,14 +44,25 @@ class ZthPlanApprovalRepository @Inject constructor(
         crypto.assertSensitiveColumnName("s_affectedKeysCiphertext")
         val cipher = crypto.encrypt(affectedKeysJsonPlaintext)
         val id = "HCD:${UUID.randomUUID()}"
-        deleteAuditDao.upsert(
-            HardConstraintDeleteAuditEntity(
+        if (isV2()) {
+            v2Agent.insertDeleteAudit(
                 id = id, sessionId = sessionId,
                 affectedTableName = affectedTableName,
-                s_affectedKeysCiphertext = cipher,
-                triggerSubClass = triggerSubClass
+                sAffectedKeysCiphertext = cipher,
+                triggerSubClass = triggerSubClass,
+                rollbackApplied = 0L,
+                createdAtMs = System.currentTimeMillis(),
             )
-        )
+        } else {
+            deleteAuditDao.upsert(
+                HardConstraintDeleteAuditEntity(
+                    id = id, sessionId = sessionId,
+                    affectedTableName = affectedTableName,
+                    s_affectedKeysCiphertext = cipher,
+                    triggerSubClass = triggerSubClass
+                )
+            )
+        }
         telemetry.recordCapabilityAudit(
             sessionId, tier = 3, subKind = "HARD_CONSTRAINT_DELETE",
             batchSize = 1L, hitCount = 1L, latencyMs = 0L
@@ -52,11 +72,12 @@ class ZthPlanApprovalRepository @Inject constructor(
 
     /** C.4.11 DB Migration 兜底：扫所有 rollbackApplied=0 的删除审计 → 调用者做回滚。 */
     suspend fun listPendingRollbacks(): List<HardConstraintDeleteAuditEntity> =
-        deleteAuditDao.getPendingRollbacks()
+        if (isV2()) v2Agent.listDeleteAuditsPendingRollback().map { it.toEntity() }
+        else deleteAuditDao.getPendingRollbacks()
 
     /** 回滚成功后：标记 rollbackApplied=1（PA-INV-2 单向）。 */
     suspend fun markRolledBack(auditId: String) {
-        deleteAuditDao.markRolledBack(auditId)
+        if (isV2()) v2Agent.markDeleteAuditRolledBack(auditId) else deleteAuditDao.markRolledBack(auditId)
     }
 
     // ── Phase 4.2 Firestore：HardConstraintDelete ↔ Dto 映射 ──────────
@@ -82,4 +103,14 @@ class ZthPlanApprovalRepository @Inject constructor(
             rollbackApplied = (m["rollbackApplied"] as? Boolean) ?: false,
             createdAtMs = (m["createdAtMs"] as? Number)?.toLong() ?: System.currentTimeMillis()
         )
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Zth_hard_constraint_delete_audits.toEntity() = HardConstraintDeleteAuditEntity(
+        id = id,
+        sessionId = session_id,
+        affectedTableName = affected_table_name,
+        s_affectedKeysCiphertext = s_affectedKeysCiphertext,
+        triggerSubClass = trigger_sub_class,
+        rollbackApplied = rollback_applied == 1L,
+        createdAtMs = created_at_ms,
+    )
 }

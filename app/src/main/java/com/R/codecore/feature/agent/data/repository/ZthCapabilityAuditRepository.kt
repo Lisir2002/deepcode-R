@@ -1,5 +1,8 @@
 package com.R.codecore.feature.agent.data.repository
 
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
 import com.R.codecore.feature.agent.data.local.entity.L0SoftCompactRestoreLogEntity
 import com.R.codecore.feature.agent.domain.zth.ZthCapabilityAuditResult
@@ -9,6 +12,8 @@ import javax.inject.Singleton
 
 /**
  * C.4.9 CapabilityGuard + C.3.1 L0 压缩 审计 Repository。
+ *
+ * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  *
  * 两个独立子功能（不同表，不共享事务）：
  *   1) CapabilityGuard auditBatch 结果 → 转 Telemetry 事件（调用 ZthTelemetryRepository）
@@ -21,8 +26,12 @@ import javax.inject.Singleton
 @Singleton
 class ZthCapabilityAuditRepository @Inject constructor(
     private val l0Dao: L0SoftCompactRestoreLogDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
     private val telemetry: ZthTelemetryRepository
 ) {
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** preTool：把 ZthCapabilityGuard.auditBatch 结果写入遥测（14 指标之 CAPABILITY 类）。 */
     suspend fun writeAuditBatchTelemetry(
@@ -67,24 +76,44 @@ class ZthCapabilityAuditRepository @Inject constructor(
     // ── L0 软压缩还原日志（崩溃恢复 + LINK-INV 校验） ────────────────
 
     suspend fun insertL0Log(log: L0SoftCompactRestoreLogEntity) {
-        l0Dao.upsert(log) // DAO 名是 upsert（OnConflict.REPLACE）
+        if (isV2()) {
+            v2Agent.insertRestoreLog(
+                id = log.id, sessionId = log.sessionId,
+                firstMessageId = log.firstMessageId, lastMessageId = log.lastMessageId,
+                originalRowCount = log.originalRowCount.toLong(),
+                tokensBefore = log.tokensBefore.toLong(), tokensAfter = log.tokensAfter.toLong(),
+                sCompactSourceDigestCiphertext = log.s_compactSourceDigestCiphertext,
+                expireAtMs = log.expireAtMs,
+                restoredFlag = if (log.restoredFlag) 1L else 0L,
+                createdAtMs = log.createdAtMs,
+            )
+        } else {
+            l0Dao.upsert(log) // DAO 名是 upsert（OnConflict.REPLACE）
+        }
     }
 
     suspend fun markRestored(logId: String) {
-        l0Dao.markRestored(logId)
+        if (isV2()) v2Agent.markRestoreLogRestored(logId) else l0Dao.markRestored(logId)
     }
 
     /** C.4.3 崩溃恢复：列出会话下所有未过期 L0 压缩（用 getBySession 再 filter，DAO 未提供专用查询）。 */
     suspend fun listUnexpiredL0(sessionId: String, nowMs: Long = System.currentTimeMillis()):
             List<L0SoftCompactRestoreLogEntity> =
-        l0Dao.getBySession(sessionId).filter {
-            it.expireAtMs == -1L || it.expireAtMs > nowMs
+        if (isV2()) {
+            v2Agent.listRestoreLogs(sessionId).map { it.toEntity() }.filter {
+                it.expireAtMs == -1L || it.expireAtMs > nowMs
+            }
+        } else {
+            l0Dao.getBySession(sessionId).filter {
+                it.expireAtMs == -1L || it.expireAtMs > nowMs
+            }
         }
 
     /** 崩溃恢复专用：列出已过期但未 restoredFlag=1 的（DAO 已有此查询）。 */
     suspend fun listExpiredNotRestored(nowMs: Long = System.currentTimeMillis()):
             List<L0SoftCompactRestoreLogEntity> =
-        l0Dao.getExpiredAndNotRestored(nowMs)
+        if (isV2()) v2Agent.listRestoreLogsExpiredNotRestored(nowMs).map { it.toEntity() }
+        else l0Dao.getExpiredAndNotRestored(nowMs)
 
 
     // ── Phase 4.2 Firestore：L0 ↔ Dto 映射 ──────────────────────────
@@ -114,4 +143,18 @@ class ZthCapabilityAuditRepository @Inject constructor(
             restoredFlag = (m["restoredFlag"] as? Boolean) ?: false,
             createdAtMs = (m["createdAtMs"] as? Number)?.toLong() ?: System.currentTimeMillis()
         )
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Zth_l0_soft_compact_restore_logs.toEntity() = L0SoftCompactRestoreLogEntity(
+        id = id,
+        sessionId = session_id,
+        firstMessageId = first_message_id,
+        lastMessageId = last_message_id,
+        originalRowCount = original_row_count.toInt(),
+        tokensBefore = tokens_before.toInt(),
+        tokensAfter = tokens_after.toInt(),
+        s_compactSourceDigestCiphertext = s_compactSourceDigestCiphertext,
+        expireAtMs = expire_at_ms,
+        restoredFlag = restored_flag == 1L,
+        createdAtMs = created_at_ms,
+    )
 }

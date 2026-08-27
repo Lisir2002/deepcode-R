@@ -26,4 +26,7 @@ interface ZthTelemetryEventDao {
 
     @Query("SELECT COUNT(*) FROM zth_telemetry_events")
     suspend fun countAll(): Long
+
+    @Query("SELECT * FROM zth_telemetry_events")
+    suspend fun getAllOnce(): List<ZthTelemetryEventEntity>
 }

@@ -115,6 +115,106 @@ class V1toV2FullMigrator @Inject constructor(
                     )
                     rows += 2
                 }
+                // P2-2：todo / checkpoint / Zth 域表全量移植（V2 读源后这些表不能为空）
+                for (t in db.todoItemDao().getAllOnce()) {
+                    agentRepo.insertTodo(
+                        id = t.id, sessionId = t.sessionId, subject = t.subject,
+                        description = t.description, status = t.status, priority = t.priority.toLong(),
+                        order = t.order.toLong(),
+                        createdAtMs = t.createdAtMs, updatedAtMs = t.updatedAtMs,
+                    )
+                    rows++
+                }
+                for (c in db.checkpointDao().getAllOnce()) {
+                    agentRepo.insertCheckpointFull(
+                        id = c.id, sessionId = c.sessionId, userMessageId = c.userMessageId,
+                        promptSnippet = c.promptSnippet, createdAtMs = c.createdAtMs,
+                    )
+                    rows++
+                }
+                for (s in db.checkpointFileSnapshotDao().getAllOnce()) {
+                    agentRepo.insertCheckpointFileSnapshot(
+                        id = s.id, checkpointId = s.checkpointId, filePath = s.filePath,
+                        snapshotRelativePath = s.snapshotRelativePath, changeType = s.changeType,
+                        createdAt = s.createdAt,
+                    )
+                    rows++
+                }
+                for (f in db.hallucinationFuseDao().getAllOnce()) {
+                    agentRepo.upsertFuse(
+                        id = f.id, scope = f.scope, scopeId = f.scopeId, state = f.state,
+                        linkageVersion = f.linkageVersion, failureCount = f.failureCount.toLong(),
+                        openSinceMs = f.openSinceMs, lastProbeAtMs = f.lastProbeAtMs,
+                        killSwitch1Triggered = if (f.killSwitch1Triggered) 1L else 0L,
+                        killSwitch2SoftDisabled = if (f.killSwitch2SoftDisabled) 1L else 0L,
+                        lastTripSubclass = f.lastTripSubclass, updatedAtMs = f.updatedAtMs,
+                    )
+                    rows++
+                }
+                for (se in db.userConfirmedSentinelDao().getAllOnce()) {
+                    agentRepo.insertSentinel(
+                        id = se.id, sessionId = se.sessionId,
+                        linkageVersion = se.linkageVersion, chainId = se.chainId,
+                        chainIndex = se.chainIndex.toLong(), cardTemplateId = se.cardTemplateId,
+                        triggerSubClass = se.triggerSubClass,
+                        sPlanPayloadCiphertext = se.s_planPayloadCiphertext,
+                        sUserTextCiphertext = se.s_userTextCiphertext,
+                        sCardPayloadCiphertext = se.s_cardPayloadCiphertext,
+                        userChoice = se.userChoice,
+                        swipeVerified = if (se.swipeVerified) 1L else 0L,
+                        sModifiedPlanCiphertext = se.s_modifiedPlanCiphertext,
+                        expireAtMs = se.expireAtMs,
+                        rollbackFlag = if (se.rollbackFlag) 1L else 0L,
+                        createdAtMs = se.createdAtMs,
+                    )
+                    rows++
+                }
+                for (ra in db.sentinelPlanRejectionAuditDao().getAllOnce()) {
+                    agentRepo.insertRejectionAudit(
+                        id = ra.id, sentinelId = ra.sentinelId, rejectionType = ra.rejectionType,
+                        sReasonCiphertext = ra.s_reasonCiphertext,
+                        sRejectedPlanSnapshotCiphertext = ra.s_rejectedPlanSnapshotCiphertext,
+                        createdAtMs = ra.createdAtMs,
+                    )
+                    rows++
+                }
+                for (da in db.hardConstraintDeleteAuditDao().getAllOnce()) {
+                    agentRepo.insertDeleteAudit(
+                        id = da.id, sessionId = da.sessionId,
+                        affectedTableName = da.affectedTableName,
+                        sAffectedKeysCiphertext = da.s_affectedKeysCiphertext,
+                        triggerSubClass = da.triggerSubClass,
+                        rollbackApplied = if (da.rollbackApplied) 1L else 0L,
+                        createdAtMs = da.createdAtMs,
+                    )
+                    rows++
+                }
+                for (rl in db.l0SoftCompactRestoreLogDao().getAllOnce()) {
+                    agentRepo.insertRestoreLog(
+                        id = rl.id, sessionId = rl.sessionId,
+                        firstMessageId = rl.firstMessageId, lastMessageId = rl.lastMessageId,
+                        originalRowCount = rl.originalRowCount.toLong(),
+                        tokensBefore = rl.tokensBefore.toLong(), tokensAfter = rl.tokensAfter.toLong(),
+                        sCompactSourceDigestCiphertext = rl.s_compactSourceDigestCiphertext,
+                        expireAtMs = rl.expireAtMs,
+                        restoredFlag = if (rl.restoredFlag) 1L else 0L,
+                        createdAtMs = rl.createdAtMs,
+                    )
+                    rows++
+                }
+                for (te in db.zthTelemetryEventDao().getAllOnce()) {
+                    agentRepo.insertTelemetryEvent(
+                        eventKind = te.eventKind, eventSubKind = te.eventSubKind,
+                        severityTier = te.severityTier.toLong(),
+                        sessionSha256Prefix = te.sessionSha256Prefix,
+                        latencyMs = te.latencyMs,
+                        flagA = te.flagA?.let { if (it) 1L else 0L },
+                        flagB = te.flagB?.let { if (it) 1L else 0L },
+                        metricA = te.metricA, metricB = te.metricB,
+                        createdAtMs = te.createdAtMs,
+                    )
+                    rows++
+                }
             } finally {
                 db.close()
             }

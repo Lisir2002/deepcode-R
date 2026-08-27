@@ -1,5 +1,8 @@
 package com.R.codecore.feature.agent.data.repository
 
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.dao.CheckpointDao
 import com.R.codecore.feature.agent.data.local.dao.CheckpointFileSnapshotDao
 import com.R.codecore.feature.agent.data.local.entity.CheckpointEntity
@@ -9,6 +12,8 @@ import javax.inject.Singleton
 
 /**
  * C.4.12 Context Checkpoint Repository（四方联动第 4 方；薄封装 DAO）。
+ *
+ * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  *
  * 职责：
  *   prePlan：为「AI 即将写代码」创建 checkpoint（含所有要修改文件的 hash 快照）
@@ -23,8 +28,12 @@ import javax.inject.Singleton
 @Singleton
 class ZthCheckpointRepository @Inject constructor(
     private val dao: CheckpointDao,
-    private val snapshotDao: CheckpointFileSnapshotDao
+    private val snapshotDao: CheckpointFileSnapshotDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) {
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** prePlan：新建 checkpoint（若该 messageId 已有则复用）。 */
     suspend fun createOrGet(
@@ -33,14 +42,23 @@ class ZthCheckpointRepository @Inject constructor(
         userMessageId: String,
         promptSnippet: String
     ): String {
-        val existing = dao.getCheckpointByMessageId(userMessageId)
+        val existing =
+            if (isV2()) v2Agent.getCheckpointByMessageId(userMessageId)?.toEntity()
+            else dao.getCheckpointByMessageId(userMessageId)
         if (existing != null) return existing.id
-        dao.insertCheckpoint(
-            CheckpointEntity(
-                id = checkpointId, sessionId = sessionId,
-                userMessageId = userMessageId, promptSnippet = promptSnippet
+        if (isV2()) {
+            v2Agent.insertCheckpointFull(
+                id = checkpointId, sessionId = sessionId, userMessageId = userMessageId,
+                promptSnippet = promptSnippet, createdAtMs = System.currentTimeMillis(),
             )
-        )
+        } else {
+            dao.insertCheckpoint(
+                CheckpointEntity(
+                    id = checkpointId, sessionId = sessionId,
+                    userMessageId = userMessageId, promptSnippet = promptSnippet
+                )
+            )
+        }
         return checkpointId
     }
 
@@ -49,39 +67,62 @@ class ZthCheckpointRepository @Inject constructor(
         snapshotId: String, checkpointId: String,
         filePath: String, snapshotRelativePath: String, changeType: String
     ) {
-        val exists = snapshotDao.countSnapshot(checkpointId, filePath) > 0
+        val exists =
+            if (isV2()) v2Agent.countCheckpointFileSnapshot(checkpointId, filePath) > 0
+            else snapshotDao.countSnapshot(checkpointId, filePath) > 0
         if (exists) return
-        snapshotDao.insertFileSnapshot(
-            CheckpointFileSnapshotEntity(
+        if (isV2()) {
+            v2Agent.insertCheckpointFileSnapshot(
                 id = snapshotId, checkpointId = checkpointId, filePath = filePath,
-                snapshotRelativePath = snapshotRelativePath, changeType = changeType
+                snapshotRelativePath = snapshotRelativePath, changeType = changeType,
+                createdAt = System.currentTimeMillis(),
             )
-        )
+        } else {
+            snapshotDao.insertFileSnapshot(
+                CheckpointFileSnapshotEntity(
+                    id = snapshotId, checkpointId = checkpointId, filePath = filePath,
+                    snapshotRelativePath = snapshotRelativePath, changeType = changeType
+                )
+            )
+        }
     }
 
     /** Phase 5 Postflight 失败：列出 checkpoint + 所有快照（用于文件还原）。 */
     suspend fun getCheckpointWithSnapshots(checkpointId: String):
             Pair<CheckpointEntity, List<CheckpointFileSnapshotEntity>>? {
-        val ck = dao.getCheckpointById(checkpointId) ?: return null
-        val snaps = snapshotDao.getFileSnapshotsForCheckpoint(checkpointId)
+        val ck =
+            (if (isV2()) v2Agent.getCheckpointById(checkpointId)?.toEntity()
+            else dao.getCheckpointById(checkpointId))
+            ?: return null
+        val snaps =
+            if (isV2()) v2Agent.listCheckpointFileSnapshots(checkpointId).map { it.toEntity() }
+            else snapshotDao.getFileSnapshotsForCheckpoint(checkpointId)
         return ck to snaps
     }
 
     suspend fun getByMessageId(messageId: String): CheckpointEntity? =
-        dao.getCheckpointByMessageId(messageId)
+        if (isV2()) v2Agent.getCheckpointByMessageId(messageId)?.toEntity()
+        else dao.getCheckpointByMessageId(messageId)
 
     suspend fun listForSession(sessionId: String): List<CheckpointEntity> =
-        dao.getCheckpointsForSession(sessionId)
+        if (isV2()) v2Agent.listCheckpointsForSession(sessionId).map { it.toEntity() }
+        else dao.getCheckpointsForSession(sessionId)
 
     /** 会话关闭 / 用户手动：清空 session 所有 checkpoint + 快照。 */
     suspend fun clearSession(sessionId: String) {
-        snapshotDao.deleteFileSnapshotsForSession(sessionId)
-        dao.deleteCheckpointsForSession(sessionId)
+        if (isV2()) {
+            v2Agent.deleteCheckpointFileSnapshotsBySession(sessionId)
+            v2Agent.deleteCheckpointsBySession(sessionId)
+        } else {
+            snapshotDao.deleteFileSnapshotsForSession(sessionId)
+            dao.deleteCheckpointsForSession(sessionId)
+        }
     }
 
     /** 后台 job：清理 cutoff 之前的 checkpoint（防止 DB 膨胀）。 */
     suspend fun clearBefore(cutoffTimestamp: Long) {
-        dao.deleteCheckpointsBefore(cutoffTimestamp)
+        if (isV2()) v2Agent.deleteCheckpointsBefore(cutoffTimestamp)
+        else dao.deleteCheckpointsBefore(cutoffTimestamp)
     }
 
     // ── Phase 4.2 Firestore：Entity ↔ Dto 映射入口 ─────────────────
@@ -115,4 +156,23 @@ class ZthCheckpointRepository @Inject constructor(
             changeType = m["changeType"] as? String ?: "MODIFY",
             createdAt = (m["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
         )
+
+    // ── 内部映射 ─────────────────────────────────────────────────────
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Session_checkpoints.toEntity() = CheckpointEntity(
+        id = id,
+        sessionId = session_id,
+        userMessageId = user_message_id,
+        promptSnippet = prompt_snippet,
+        createdAtMs = created_at_ms,
+    )
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Checkpoint_file_snapshots.toEntity() = CheckpointFileSnapshotEntity(
+        id = id,
+        checkpointId = checkpoint_id,
+        filePath = file_path,
+        snapshotRelativePath = snapshot_relative_path,
+        changeType = change_type,
+        createdAt = created_at,
+    )
 }

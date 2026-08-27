@@ -1,14 +1,20 @@
 package com.R.codecore.feature.agent.data.repository
 
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.dao.ZthTelemetryEventDao
 import com.R.codecore.feature.agent.data.local.entity.ZthTelemetryEventEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * C.4.16 埋点 Repository（薄封装 DAO；无业务判断）。
+ *
+ * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  *
  * 14 指标写入路径（eventKind 枚举严格 5 大类）：
  *   FUSE       → 熔断 OPEN / HALF_OPEN / kill-switch-1 激活
@@ -23,8 +29,12 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthTelemetryRepository @Inject constructor(
-    private val dao: ZthTelemetryEventDao
+    private val dao: ZthTelemetryEventDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) {
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     // ── 写入：14 指标路径（Phase 5 Facade 逐个调）────────────────────────
 
@@ -83,17 +93,24 @@ class ZthTelemetryRepository @Inject constructor(
 
     // ── 读取：4 张 Canvas 图表（设置页 ZTH 卡片 自绘柱状/折线/饼图） ────────
 
-    fun observeAll(): Flow<List<ZthTelemetryEventEntity>> = dao.observeAll()
+    fun observeAll(): Flow<List<ZthTelemetryEventEntity>> {
+        if (readMode.currentModeSync() == DataReadMode.V2) {
+            return v2Agent.observeAllTelemetry().map { list -> list.map { it.toEntity() } }
+        }
+        return dao.observeAll()
+    }
 
     suspend fun getRange(fromMs: Long, toMs: Long): List<ZthTelemetryEventEntity> =
-        dao.getRange(fromMs, toMs)
+        if (isV2()) v2Agent.listTelemetryRange(fromMs, toMs).map { it.toEntity() }
+        else dao.getRange(fromMs, toMs)
 
-    suspend fun countAll(): Long = dao.countAll()
+    suspend fun countAll(): Long =
+        if (isV2()) v2Agent.countAllTelemetry() else dao.countAll()
 
     /** 后台 job：清理 > 90d 的遥测事件（避免 DB 无限膨胀）。 */
     suspend fun deleteOlderThan(days: Int = 90) {
         val cutoff = System.currentTimeMillis() - days * 86_400_000L
-        dao.deleteOld(cutoff)
+        if (isV2()) v2Agent.deleteTelemetryOlderThan(cutoff) else dao.deleteOld(cutoff)
     }
 
     // ── Phase 4.2 Firestore：Entity ↔ Dto 映射入口（SyncManager 调） ────────
@@ -130,17 +147,42 @@ class ZthTelemetryRepository @Inject constructor(
     ) {
         val sha = sessionId?.let { sha256Prefix16(it) }
         val sk = if (eventSubKindExtra == null) subKind else "${subKind}_$eventSubKindExtra"
-        dao.insertEvent(
-            ZthTelemetryEventEntity(
-                eventKind = kind, eventSubKind = sk, severityTier = tier,
+        if (isV2()) {
+            v2Agent.insertTelemetryEvent(
+                eventKind = kind, eventSubKind = sk, severityTier = tier.toLong(),
                 sessionSha256Prefix = sha, latencyMs = latencyMs,
-                flagA = flagA, flagB = flagB, metricA = metricA, metricB = metricB
+                flagA = flagA?.let { if (it) 1L else 0L },
+                flagB = flagB?.let { if (it) 1L else 0L },
+                metricA = metricA, metricB = metricB,
+                createdAtMs = System.currentTimeMillis(),
             )
-        )
+        } else {
+            dao.insertEvent(
+                ZthTelemetryEventEntity(
+                    eventKind = kind, eventSubKind = sk, severityTier = tier,
+                    sessionSha256Prefix = sha, latencyMs = latencyMs,
+                    flagA = flagA, flagB = flagB, metricA = metricA, metricB = metricB
+                )
+            )
+        }
     }
 
     private fun sha256Prefix16(plain: String): String {
         val bytes = MessageDigest.getInstance("SHA-256").digest(plain.toByteArray())
         return bytes.joinToString("") { "%02x".format(it) }.take(16)
     }
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events.toEntity() = ZthTelemetryEventEntity(
+        id = id,
+        eventKind = event_kind,
+        eventSubKind = event_sub_kind,
+        severityTier = severity_tier.toInt(),
+        sessionSha256Prefix = session_sha256_prefix,
+        latencyMs = latency_ms,
+        flagA = flag_a?.let { it == 1L },
+        flagB = flag_b?.let { it == 1L },
+        metricA = metric_a,
+        metricB = metric_b,
+        createdAtMs = created_at_ms,
+    )
 }

@@ -26,4 +26,7 @@ interface CheckpointDao {
 
     @Query("DELETE FROM session_checkpoints WHERE createdAtMs < :cutoffTimestamp")
     suspend fun deleteCheckpointsBefore(cutoffTimestamp: Long)
+
+    @Query("SELECT * FROM session_checkpoints")
+    suspend fun getAllOnce(): List<CheckpointEntity>
 }

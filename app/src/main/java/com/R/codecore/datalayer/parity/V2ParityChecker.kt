@@ -58,6 +58,14 @@ class V2ParityChecker @Inject constructor(
         Mapping("chat_sessions", LibName.AGENT, "agent_session"),
         Mapping("agent_messages", LibName.AGENT, "agent_message"),
         Mapping("todo_items", LibName.AGENT, "todo_items"),
+        Mapping("session_checkpoints", LibName.AGENT, "session_checkpoints"),
+        Mapping("checkpoint_file_snapshots", LibName.AGENT, "checkpoint_file_snapshots"),
+        Mapping("zth_user_confirmed_sentinels", LibName.AGENT, "zth_user_confirmed_sentinels"),
+        Mapping("zth_hallucination_fuses", LibName.AGENT, "zth_hallucination_fuses"),
+        Mapping("zth_sentinel_plan_rejection_audits", LibName.AGENT, "zth_sentinel_plan_rejection_audits"),
+        Mapping("zth_hard_constraint_delete_audits", LibName.AGENT, "zth_hard_constraint_delete_audits"),
+        Mapping("zth_l0_soft_compact_restore_logs", LibName.AGENT, "zth_l0_soft_compact_restore_logs"),
+        Mapping("zth_telemetry_events", LibName.AGENT, "zth_telemetry_events"),
     )
 
     /** 执行全部登记表的行数比对。 */

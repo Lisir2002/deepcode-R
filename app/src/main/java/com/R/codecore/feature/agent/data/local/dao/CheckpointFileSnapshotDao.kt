@@ -25,4 +25,7 @@ interface CheckpointFileSnapshotDao {
 
     @Query("DELETE FROM checkpoint_file_snapshots WHERE checkpointId IN (SELECT id FROM session_checkpoints WHERE sessionId = :sessionId)")
     suspend fun deleteFileSnapshotsForSession(sessionId: String)
+
+    @Query("SELECT * FROM checkpoint_file_snapshots")
+    suspend fun getAllOnce(): List<CheckpointFileSnapshotEntity>
 }
