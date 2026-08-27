@@ -6,15 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.R.codecore.R
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.core.util.toUserMessage
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_message as V2AgentMessage
 import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
 import com.R.codecore.datalayer.sqldelight.agent.SelectAllSessionsWithCount as V2SessionWithCount
-import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
+import com.R.codecore.feature.agent.data.local.entity.ChatSession
 import com.R.codecore.feature.agent.domain.checkpoint.CheckpointManager
-import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionWithCount
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
@@ -95,10 +92,7 @@ class AIAgentViewModel @Inject constructor(
     private val agentWorkflow: AgentWorkflow,
     private val toolRegistry: ToolRegistry,
     private val codeChangeTracker: CodeChangeTracker,
-    private val agentMessageDao: AgentMessageDao,
-    private val chatSessionDao: ChatSessionDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
     private val aiProviderRepository: AIProviderRepository,
     private val defaultModelSettingsRepository: DefaultModelSettingsRepository,
     private val toolPermissionManager: ToolPermissionManager,
@@ -127,9 +121,6 @@ class AIAgentViewModel @Inject constructor(
 ) : ViewModel(), SlashCommandContext {
 
     private val sessionJobs = mutableMapOf<String, Job>()
-
-    private fun isV2Sync(): Boolean = readMode.currentModeSync() == DataReadMode.V2
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** 已向调度循环注册过到点投递回调的会话 id 集合（去重 + onCleared 注销用）。 */
     private val registeredScheduleSessions = mutableSetOf<String>()
@@ -228,12 +219,8 @@ class AIAgentViewModel @Inject constructor(
     val sessions: StateFlow<List<ChatSession>> = _currentWorkspace
         .flatMapLatest { path ->
             if (path.isBlank()) flowOf(emptyList())
-            else (if (isV2Sync()) {
-                v2Agent.observeAllSessions().map { list -> list.map { it.toEntity() } }
-            } else {
-                chatSessionDao.getAll()
-            }).map { list ->
-                list.filter { it.workspacePath.isBlank() || it.workspacePath == path }
+            else v2Agent.observeAllSessions().map { list ->
+                list.map { it.toEntity() }.filter { it.workspacePath.isBlank() || it.workspacePath == path }
                     .map { it.toDomain() }
             }
         }
@@ -243,12 +230,8 @@ class AIAgentViewModel @Inject constructor(
     val sessionsWithCount: StateFlow<List<ChatSessionWithCount>> = _currentWorkspace
         .flatMapLatest { path ->
             if (path.isBlank()) flowOf(emptyList())
-            else (if (isV2Sync()) {
-                v2Agent.observeAllSessionsWithCount().map { list -> list.map { it.toEntity() } }
-            } else {
-                chatSessionDao.getAllWithCount()
-            }).map { list ->
-                list.filter { it.workspacePath.isBlank() || it.workspacePath == path }
+            else v2Agent.observeAllSessionsWithCount().map { list ->
+                list.map { it.toEntity() }.filter { it.workspacePath.isBlank() || it.workspacePath == path }
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -286,11 +269,9 @@ class AIAgentViewModel @Inject constructor(
     ) { id, limitMap -> id to (limitMap[id] ?: defaultLimit) }
         .flatMapLatest { (id, limit) ->
             if (id == null) flowOf(ChatMessagesState(null, emptyList(), loaded = false))
-            else (if (isV2Sync()) {
-                v2Agent.observeMessagesBySessionPaged(id, limit.toLong()).map { list -> list.map { it.toEntity() } }
-            } else {
-                agentMessageDao.getMessagesBySessionPaged(id, limit)
-            }).map { list ->
+            else v2Agent.observeMessagesBySessionPaged(id, limit.toLong()).map { list ->
+                list.map { it.toEntity() }
+            }.map { list ->
                 ChatMessagesState(
                     sessionId = id,
                     // 先拼接分块消息（chunk 行按 chunk_index 序合并为单条完整消息），再走既有过滤/映射。
@@ -955,16 +936,9 @@ class AIAgentViewModel @Inject constructor(
                         if (event.inputTokens > 0 || event.outputTokens > 0) {
                             viewModelScope.launch {
                                 runCatching {
-                                    if (isV2()) {
-                                        v2Agent.addTokenUsage(sessionId, event.inputTokens.toLong(), event.outputTokens.toLong())
-                                        if (event.inputTokens > 0) {
-                                            v2Agent.updateLastInputTokens(sessionId, event.inputTokens.toLong())
-                                        }
-                                    } else {
-                                        chatSessionDao.addTokenUsage(sessionId, event.inputTokens, event.outputTokens)
-                                        if (event.inputTokens > 0) {
-                                            chatSessionDao.updateLastInputTokens(sessionId, event.inputTokens)
-                                        }
+                                    v2Agent.addTokenUsage(sessionId, event.inputTokens.toLong(), event.outputTokens.toLong())
+                                    if (event.inputTokens > 0) {
+                                        v2Agent.updateLastInputTokens(sessionId, event.inputTokens.toLong())
                                     }
                                 }
                             }
@@ -1694,8 +1668,7 @@ class AIAgentViewModel @Inject constructor(
         // 删除前缓存会话 + 消息，供 Snackbar「撤销」恢复（re-insert）
         val entity = sessionUseCase.getSessionById(id)
         val messages = if (entity != null) {
-            if (isV2()) v2Agent.getMessagesBySessionOnce(id).map { it.toEntity() }
-            else agentMessageDao.getMessagesBySessionOnce(id)
+            v2Agent.getMessagesBySessionOnce(id).map { it.toEntity() }
         } else emptyList()
         lastDeletedSession = entity?.let { it to messages }
 
@@ -1735,8 +1708,7 @@ class AIAgentViewModel @Inject constructor(
         lastDeletedSession = null
         sessionUseCase.upsertSession(entity)
         if (messages.isNotEmpty()) {
-            if (isV2()) v2Agent.insertAllMessages(messages.map { it.toV2() })
-            else agentMessageDao.insertAll(messages)
+            v2Agent.insertAllMessages(messages.map { it.toV2() })
         }
         _currentSessionId.value = entity.id
     }
@@ -1762,8 +1734,7 @@ class AIAgentViewModel @Inject constructor(
      * 会话与工作区一对一绑定、不可中途切换；一个工作区可绑定多个会话。
      */
     suspend fun sessionsBoundToWorkspace(workspacePath: String): List<ChatSession> =
-        if (isV2()) v2Agent.getAllSessionsByWorkspaceOnce(workspacePath).map { it.toEntity().toDomain() }
-        else chatSessionDao.getAllSessionsByWorkspaceOnce(workspacePath).map { it.toDomain() }
+        v2Agent.getAllSessionsByWorkspaceOnce(workspacePath).map { it.toEntity().toDomain() }
 
     /** 导出单个会话为无密码备份格式（tar.gz），流式写入 [output]（调用方打开，本方法负责关闭）。成功回调 true，失败回调 false。 */
     fun exportSession(sessionId: String, output: OutputStream, onResult: (Boolean) -> Unit) = viewModelScope.launch {
@@ -1892,12 +1863,11 @@ class AIAgentViewModel @Inject constructor(
      */
     fun editAndResend(messageId: String, newContent: String) = viewModelScope.launch {
         try {
-            val msg = (if (isV2()) v2Agent.getMessageById(messageId)?.toEntity() else agentMessageDao.getMessageById(messageId)) ?: return@launch
+            val msg = v2Agent.getMessageById(messageId)?.toEntity() ?: return@launch
             if (msg.role != MessageRole.USER.name) return@launch
             // 1) 保留原对话：把该消息及其之后的所有消息标记为已截断（isCompacted=1），
             //    不删除，UI 仍可见；仅不再参与新一轮上下文回放。
-            if (isV2()) v2Agent.markMessagesCompactedInclusiveFromTimestamp(msg.sessionId, msg.timestamp)
-            else agentMessageDao.markMessagesCompactedInclusiveFromTimestamp(msg.sessionId, msg.timestamp)
+            v2Agent.markMessagesCompactedInclusiveFromTimestamp(msg.sessionId, msg.timestamp)
             // 2) 以新内容作为新一轮对话重新执行（enqueueAgentRequest 会插入新的用户消息并开启新任务分组）
             enqueueAgentRequest(
                 request = newContent,

@@ -2,12 +2,8 @@ package com.R.codecore.feature.settings.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
-import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
-import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.domain.container.ContainerInstaller
 import com.R.codecore.feature.proxy.domain.ClashProxyManager
 import com.R.codecore.feature.proxy.domain.ProxyRuntimeState
@@ -33,10 +29,7 @@ internal data class UsageStats(
 
 @HiltViewModel
 internal class AboutStatsViewModel @Inject constructor(
-    private val sessionDao: ChatSessionDao,
-    private val messageDao: AgentMessageDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
     private val proxyManager: ClashProxyManager,
     private val containerInstaller: ContainerInstaller
 ) : ViewModel() {
@@ -74,16 +67,8 @@ internal class AboutStatsViewModel @Inject constructor(
     }
 
     private suspend fun load(): UsageStats = withContext(Dispatchers.IO) {
-        val sessions = if (readMode.currentMode() == DataReadMode.V2) {
-            v2Agent.getAllOnce().map { it.toEntity() }
-        } else {
-            sessionDao.getAllOnce()
-        }
-        val messages = if (readMode.currentMode() == DataReadMode.V2) {
-            v2Agent.getAllMessagesOnce().map { it.toEntity() }
-        } else {
-            messageDao.getAllOnce()
-        }
+        val sessions = v2Agent.getAllOnce().map { it.toEntity() }
+        val messages = v2Agent.getAllMessagesOnce().map { it.toEntity() }
 
         val totalSessions = sessions.size
         val totalMessages = messages.size
