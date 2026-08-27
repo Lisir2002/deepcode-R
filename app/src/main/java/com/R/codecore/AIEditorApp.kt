@@ -162,6 +162,10 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var v1toV2FullMigrator: com.R.codecore.core.db.V1toV2FullMigrator
 
+    /** V1→V2 切换前置安全闸：迁移完成后经「备份→parity 校验→置位 V2」把业务读源切到 V2。 */
+    @Inject
+    lateinit var v2TakeoverGate: com.R.codecore.datalayer.migration.V2TakeoverGate
+
     /**
      * 数据保全通知器：启动即跑哨兵（D4）+ 升级前双保险自动备份（D5），并把判定结果发布给
      * MainActivity 的启动级全局告警弹窗（解决「数据消失却不报错」，数据保全防线 D8b）。
@@ -192,6 +196,10 @@ class AIEditorApp : Application() {
             // 阶段 3：旧 Room 域库 → V2 全量移植（幂等；失败下次启动重试，不阻断启动）
             runCatching { v1toV2FullMigrator.migrateIfNeeded() }
                 .onFailure { FileLogger.w(TAG, "V1→V2 全量移植失败（忽略，下次启动重试）", it) }
+            // V2 接管闸门：迁移完成后，经「全量备份 → parity 逐表行数一致 → 置位 V2」把业务读源
+            // 切到 V2。任一前置失败则保持 ROOM（安全回退），下次启动重试；绝不跳过校验强制切换。
+            runCatching { v2TakeoverGate.tryEnableV2(filesDir) }
+                .onFailure { FileLogger.w(TAG, "V2 接管闸门执行失败（保持 ROOM 读，下次启动重试）", it) }
         }
         // 主线程启动凭据请求监听（FileObserver 必须主线程创建与 startWatching），
         // 监听容器内 credential helper 写来的 cred-req-* → 全局弹窗回填 → 回喂 git 续跑。
