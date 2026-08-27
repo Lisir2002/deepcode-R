@@ -1,10 +1,7 @@
 package com.R.codecore.feature.agent.domain.session
 
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_message as V2AgentMessage
-import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.domain.model.AgentMessage
 import com.R.codecore.feature.agent.domain.model.CONTEXT_COMPACTION_MARKER
@@ -21,13 +18,9 @@ import javax.inject.Singleton
 
 @Singleton
 class MessagePersistenceUseCase @Inject constructor(
-    private val agentMessageDao: AgentMessageDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     // 单调递增时间戳：保证同毫秒内多次落库的顺序稳定（assistant 永远在其 tool 结果之前）。
     @Volatile
@@ -88,8 +81,7 @@ class MessagePersistenceUseCase @Inject constructor(
                 outputTokens = outputTokens,
                 isCompacted = isCompacted
             )
-            if (isV2()) v2Agent.insertMessage(entity.toV2())
-            else agentMessageDao.insert(entity)
+            v2Agent.insertMessage(entity.toV2())
         } else {
             // 超长内容分块落库：主行（chunk 0）携带全部元数据，续块行仅携带内容。
             // 全组共享同一 timestamp（块号递增），保证按时间序查询时块与块邻接、不被其它消息穿插，
@@ -120,8 +112,7 @@ class MessagePersistenceUseCase @Inject constructor(
                     isCompacted = isCompacted
                 )
             }
-            if (isV2()) v2Agent.insertAllMessages(rows.map { it.toV2() })
-            else agentMessageDao.insertAll(rows)
+            v2Agent.insertAllMessages(rows.map { it.toV2() })
         }
     }
 
@@ -168,8 +159,7 @@ class MessagePersistenceUseCase @Inject constructor(
     )
 
     suspend fun updateContent(messageId: String, newContent: String) {
-        if (isV2()) v2Agent.updateMessageContent(messageId, newContent)
-        else agentMessageDao.updateMessageContent(messageId, newContent)
+        v2Agent.updateMessageContent(messageId, newContent)
     }
 
     companion object {
@@ -268,11 +258,7 @@ class MessagePersistenceUseCase @Inject constructor(
      */
     suspend fun buildHistory(sessionId: String, pendingToolMarker: String): List<AgentMessage> {
         // 先按 chunk_index 拼接分块消息（chunk 行共享 timestamp，压缩标记也是全组一致），再过滤已压缩行。
-        val raw = if (isV2()) {
-            v2Agent.getMessagesBySessionOnce(sessionId).map { it.toEntity() }
-        } else {
-            agentMessageDao.getMessagesBySessionOnce(sessionId)
-        }
+        val raw = v2Agent.getMessagesBySessionOnce(sessionId).map { it.toEntity() }
         val entities = mergeChunks(raw).filter { !it.isCompacted }
 
         // 第一遍：求 assistant 声明的 toolCallId 与 tool 结果 toolCallId 的交集。

@@ -1,11 +1,8 @@
 package com.R.codecore.feature.agent.domain.workflow
 
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_message as V2AgentMessage
-import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.domain.model.AgentMessage
 import com.R.codecore.feature.agent.domain.model.CONTEXT_COMPACTION_MARKER
@@ -22,9 +19,7 @@ import javax.inject.Singleton
 
 @Singleton
 class ContextCompactor @Inject constructor(
-    private val agentMessageDao: AgentMessageDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
     private val modelMetadataService: ModelMetadataService
 ) {
 
@@ -33,8 +28,6 @@ class ContextCompactor @Inject constructor(
 
         const val TOOL_OUTPUT_MAX_CHARS = 2_000
     }
-
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /**
      * 如果消息体总长度超过阈值，则将早期的消息（Head）提取出来，
@@ -134,19 +127,13 @@ class ContextCompactor @Inject constructor(
         // 持久化压缩结果到数据库
         if (sessionId != null) {
             try {
-                val dbEntities = if (isV2()) {
-                    v2Agent.getMessagesBySessionOnce(sessionId).map { it.toEntity() }
-                } else {
-                    agentMessageDao.getMessagesBySessionOnce(sessionId
-                    )
-                }
+                val dbEntities = v2Agent.getMessagesBySessionOnce(sessionId).map { it.toEntity() }
                 val firstTailId = tail.firstOrNull { msg -> msg.id.isNotEmpty() }?.id
                 val tailEntity = if (firstTailId != null) dbEntities.find { it.id == firstTailId } else null
                 val cutoffTimestamp = tailEntity?.timestamp ?: System.currentTimeMillis()
 
                 // 将 head 部分的消息标记为已压缩（不删除，保留数据完整性）
-                if (isV2()) v2Agent.markMessagesCompactedBeforeTimestamp(sessionId, cutoffTimestamp)
-                else agentMessageDao.markMessagesCompactedBeforeTimestamp(sessionId, cutoffTimestamp)
+                v2Agent.markMessagesCompactedBeforeTimestamp(sessionId, cutoffTimestamp)
 
                 // 插入内部 compaction user marker + assistant summary，时间戳放在 head 和 tail 之间。
                 val markerEntity = AgentMessageEntity(
@@ -167,13 +154,8 @@ class ContextCompactor @Inject constructor(
                     timestamp = cutoffTimestamp - 1,
                     isContextSummary = true
                 )
-                if (isV2()) {
-                    v2Agent.insertMessage(markerEntity.toV2())
-                    v2Agent.insertMessage(summaryEntity.toV2())
-                } else {
-                    agentMessageDao.insert(markerEntity)
-                    agentMessageDao.insert(summaryEntity)
-                }
+                v2Agent.insertMessage(markerEntity.toV2())
+                v2Agent.insertMessage(summaryEntity.toV2())
                 FileLogger.i(TAG, "已持久化压缩结果到数据库，会话 $sessionId")
             } catch (e: Exception) {
                 FileLogger.e(TAG, "持久化压缩结果失败", e)

@@ -1,6 +1,7 @@
 package com.R.codecore.feature.agent.domain.wake
 
-import com.R.codecore.feature.agent.data.local.dao.WakeQueueDao
+import com.R.codecore.datalayer.repository.WakeQueueStore
+import com.R.codecore.datalayer.sqldelight.agent.Wake_queue as V2WakeItem
 import com.R.codecore.feature.agent.data.local.entity.WakeItemEntity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -13,31 +14,34 @@ import org.junit.Test
  */
 class WakeQueueManagerTest {
 
-    private class FakeWakeQueueDao(
+    private class FakeWakeQueueStore(
         private val failOnUpdate: Boolean = false
-    ) : WakeQueueDao {
-        val store = mutableListOf<WakeItemEntity>()
-        override suspend fun insert(entity: WakeItemEntity) { store += entity }
-        override suspend fun insertAll(entities: List<WakeItemEntity>) { store += entities }
-        override suspend fun getBySessionAndStatus(sessionId: String, status: String): List<WakeItemEntity> =
-            store.filter { it.sessionId == sessionId && it.status == status }.sortedBy { it.createdAtMs }
-        override suspend fun getByStatus(status: String): List<WakeItemEntity> =
-            store.filter { it.status == status }.sortedBy { it.createdAtMs }
-        override suspend fun updateStatus(ids: List<String>, status: String) {
+    ) : WakeQueueStore {
+        val store = mutableListOf<V2WakeItem>()
+        override suspend fun upsertWakeItem(
+            wakeId: String, sessionId: String, source: String, type: String, content: String,
+            status: String, createdAtMs: Long,
+        ) { store += V2WakeItem(wakeId, sessionId, source, type, content, status, createdAtMs) }
+
+        override suspend fun listWakeBySessionAndStatus(sessionId: String, status: String): List<V2WakeItem> =
+            store.filter { it.session_id == sessionId && it.status == status }.sortedBy { it.created_at_ms }
+
+        override suspend fun markWakeItemsConsumedBatch(ids: List<String>, status: String) {
             if (failOnUpdate) throw IllegalStateException("update failed")
             store.indices.forEach { i ->
-                if (store[i].wakeId in ids) store[i] = store[i].copy(status = status)
+                if (store[i].wake_id in ids) store[i] = store[i].copy(status = status)
             }
         }
-        override suspend fun deleteByIds(ids: List<String>) { store.removeAll { it.wakeId in ids } }
-        override suspend fun deleteBySession(sessionId: String) { store.removeAll { it.sessionId == sessionId } }
+
+        override suspend fun listPendingWakeItems(): List<V2WakeItem> =
+            store.filter { it.status == WakeItemEntity.STATUS_PENDING }.sortedBy { it.created_at_ms }
     }
 
     // ---------- 写入 ----------
 
     @Test
     fun enqueue_thenPendingForSession_returnsItem() = runBlocking {
-        val manager = WakeQueueManager(FakeWakeQueueDao())
+        val manager = WakeQueueManager(FakeWakeQueueStore())
 
         manager.enqueue("s1", "hook.commit-discipline", "post-tool-use", "commit 不符合规范")
 
@@ -49,18 +53,18 @@ class WakeQueueManagerTest {
 
     @Test
     fun enqueue_blankContent_skipped() = runBlocking {
-        val dao = FakeWakeQueueDao()
-        val manager = WakeQueueManager(dao)
+        val store = FakeWakeQueueStore()
+        val manager = WakeQueueManager(store)
 
         manager.enqueue("s1", "src", "type", "   ")
 
-        assertEquals(0, dao.store.size)
+        assertEquals(0, store.store.size)
         assertEquals(0, manager.pendingForSession("s1").size)
     }
 
     @Test
     fun enqueue_sessionIsolated() = runBlocking {
-        val manager = WakeQueueManager(FakeWakeQueueDao())
+        val manager = WakeQueueManager(FakeWakeQueueStore())
 
         manager.enqueue("s1", "src", "type", "a")
         manager.enqueue("s2", "src", "type", "b")
@@ -76,7 +80,7 @@ class WakeQueueManagerTest {
 
     @Test
     fun pendingForSession_ordersByCreatedAt() = runBlocking {
-        val manager = WakeQueueManager(FakeWakeQueueDao())
+        val manager = WakeQueueManager(FakeWakeQueueStore())
 
         manager.enqueue("s1", "src-a", "type", "first")
         Thread.sleep(2)
@@ -90,7 +94,7 @@ class WakeQueueManagerTest {
 
     @Test
     fun markConsumed_removesFromPending() = runBlocking {
-        val manager = WakeQueueManager(FakeWakeQueueDao())
+        val manager = WakeQueueManager(FakeWakeQueueStore())
         manager.enqueue("s1", "src", "type", "content")
         val ids = manager.pendingForSession("s1").map { it.wakeId }
 
@@ -101,7 +105,7 @@ class WakeQueueManagerTest {
 
     @Test
     fun markConsumed_emptyIds_isSafe() = runBlocking {
-        val manager = WakeQueueManager(FakeWakeQueueDao())
+        val manager = WakeQueueManager(FakeWakeQueueStore())
 
         manager.markConsumed(emptyList())
 
@@ -112,14 +116,14 @@ class WakeQueueManagerTest {
 
     @Test
     fun markConsumed_failureKeepsPending() = runBlocking {
-        val dao = FakeWakeQueueDao(failOnUpdate = true)
-        val manager = WakeQueueManager(dao)
+        val store = FakeWakeQueueStore(failOnUpdate = true)
+        val manager = WakeQueueManager(store)
         manager.enqueue("s1", "src", "type", "content")
         val ids = manager.pendingForSession("s1").map { it.wakeId }
 
         try {
             manager.markConsumed(ids)
-            fail("markConsumed 应抛出 DAO 异常")
+            fail("markConsumed 应抛出存储异常")
         } catch (e: IllegalStateException) {
             // 预期：消费确认失败向上传播（workflow 层捕获并保留待下轮重扫）
         }
@@ -134,14 +138,14 @@ class WakeQueueManagerTest {
 
     @Test
     fun enqueueAsync_eventuallyPersists() = runBlocking {
-        val dao = FakeWakeQueueDao()
-        val manager = WakeQueueManager(dao)
+        val store = FakeWakeQueueStore()
+        val manager = WakeQueueManager(store)
 
         manager.enqueueAsync("s1", "hook.commit-discipline", "post-tool-use", "push 前需跑单测")
 
         // 异步写入：等待独立 IO scope 完成
         repeat(50) {
-            if (dao.store.isNotEmpty()) return@repeat
+            if (store.store.isNotEmpty()) return@repeat
             delay(10)
         }
         delay(20)
@@ -150,11 +154,11 @@ class WakeQueueManagerTest {
 
     @Test
     fun enqueueAsync_blankContent_skipped() {
-        val dao = FakeWakeQueueDao()
-        val manager = WakeQueueManager(dao)
+        val store = FakeWakeQueueStore()
+        val manager = WakeQueueManager(store)
 
         manager.enqueueAsync("s1", "src", "type", "")
 
-        assertEquals(0, dao.store.size)
+        assertEquals(0, store.store.size)
     }
 }

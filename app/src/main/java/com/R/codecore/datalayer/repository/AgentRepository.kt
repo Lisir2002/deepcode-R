@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
  * v2-full-takeover P2-3：agent_session / agent_message 对齐 Room 实体全列，
  *  本门面补齐 ChatSessionDao(22) + AgentMessageDao(25) 全部等价方法。
  */
-class AgentRepository(private val db: AgentDb) {
+class AgentRepository(private val db: AgentDb) : WakeQueueStore {
 
     private val q get() = db.agentQueries
 

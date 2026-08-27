@@ -1,11 +1,8 @@
 package com.R.codecore.feature.agent.domain.wake
 
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
-import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
+import com.R.codecore.datalayer.repository.WakeQueueStore
 import com.R.codecore.datalayer.sqldelight.agent.Wake_queue as V2WakeItem
-import com.R.codecore.feature.agent.data.local.dao.WakeQueueDao
 import com.R.codecore.feature.agent.data.local.entity.WakeItemEntity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -32,14 +29,10 @@ import javax.inject.Singleton
  */
 @Singleton
 class WakeQueueManager @Inject constructor(
-    private val dao: WakeQueueDao,
-    private val v2Agent: V2AgentRepository? = null,
-    private val readMode: DataReadModeHolder? = null,
+    private val wakeQueueStore: WakeQueueStore,
 ) {
     // 异步写入用独立 scope（SupervisorJob 隔离单个任务失败），风格对齐 FtpServerManager/SyncEngine。
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    private suspend fun isV2(): Boolean = readMode?.currentMode() == DataReadMode.V2
 
     /** 写入一条待注入唤醒。content 空白时跳过（无内容不入队）。 */
     suspend fun enqueue(sessionId: String?, source: String, type: String, content: String) {
@@ -53,19 +46,15 @@ class WakeQueueManager @Inject constructor(
             status = WakeItemEntity.STATUS_PENDING,
             createdAtMs = System.currentTimeMillis()
         )
-        if (isV2()) {
-            requireNotNull(v2Agent).upsertWakeItem(
-                wakeId = item.wakeId,
-                sessionId = item.sessionId,
-                source = item.source,
-                type = item.type,
-                content = item.content,
-                status = item.status,
-                createdAtMs = item.createdAtMs
-            )
-        } else {
-            dao.insert(item)
-        }
+        wakeQueueStore.upsertWakeItem(
+            wakeId = item.wakeId,
+            sessionId = item.sessionId,
+            source = item.source,
+            type = item.type,
+            content = item.content,
+            status = item.status,
+            createdAtMs = item.createdAtMs
+        )
     }
 
     /**
@@ -87,20 +76,17 @@ class WakeQueueManager @Inject constructor(
 
     /** 读取某会话的全部待注入唤醒（按入队时间升序）。sessionId 为 null/空串时仅匹配全局唤醒。 */
     suspend fun pendingForSession(sessionId: String?): List<WakeItemEntity> =
-        if (isV2()) requireNotNull(v2Agent).listWakeBySessionAndStatus(sessionId.orEmpty(), WakeItemEntity.STATUS_PENDING).map { it.toEntity() }
-        else dao.getBySessionAndStatus(sessionId.orEmpty(), WakeItemEntity.STATUS_PENDING)
+        wakeQueueStore.listWakeBySessionAndStatus(sessionId.orEmpty(), WakeItemEntity.STATUS_PENDING).map { it.toEntity() }
 
     /** 消费确认：把已成功注入的唤醒标记为 CONSUMED（防重复注入）。空列表安全返回。 */
     suspend fun markConsumed(ids: List<String>) {
         if (ids.isEmpty()) return
-        if (isV2()) requireNotNull(v2Agent).markWakeItemsConsumedBatch(ids, WakeItemEntity.STATUS_CONSUMED)
-        else dao.updateStatus(ids, WakeItemEntity.STATUS_CONSUMED)
+        wakeQueueStore.markWakeItemsConsumedBatch(ids, WakeItemEntity.STATUS_CONSUMED)
     }
 
     /** 全部待注入唤醒（启动重扫用）。 */
     suspend fun allPending(): List<WakeItemEntity> =
-        if (isV2()) requireNotNull(v2Agent).listPendingWakeItems().map { it.toEntity() }
-        else dao.getByStatus(WakeItemEntity.STATUS_PENDING)
+        wakeQueueStore.listPendingWakeItems().map { it.toEntity() }
 
     // ── V2（SQLDelight）↔ Room Entity 映射 ──────────────────────────────
 
