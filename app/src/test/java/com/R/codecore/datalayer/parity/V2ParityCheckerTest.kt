@@ -8,6 +8,7 @@ import com.R.codecore.datalayer.engine.LibName
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
 /**
@@ -92,7 +93,7 @@ class V2ParityCheckerTest {
         val v1 = FakeV1RowCount(allTables.associateWith { 3L })
         val checker = V2ParityChecker(pool, v1)
 
-        val results = checker.checkAll()
+        val results = runBlocking { checker.checkAll() }
         assertTrue("所有表应匹配", results.all { it.match })
         assertEquals(allTables.size, results.size)
     }
@@ -103,12 +104,12 @@ class V2ParityCheckerTest {
         val v1 = FakeV1RowCount(allTables.associateWith { 3L } + ("ai_providers" to 5L))
         val checker = V2ParityChecker(pool, v1)
 
-        val results = checker.checkAll()
+        val results = runBlocking { checker.checkAll() }
         val bad = results.first { !it.match }
         assertEquals("ai_providers", bad.table)
         assertEquals(5L, bad.v1Count)
         assertEquals(3L, bad.v2Count)
-        assertFalse(checker.allMatch())
+        assertFalse(runBlocking { checker.allMatch() })
     }
 
     @Test
@@ -118,9 +119,9 @@ class V2ParityCheckerTest {
         val v1 = FakeV1RowCount(emptyMap())
         val checker = V2ParityChecker(pool, v1)
 
-        val results = checker.checkAll()
+        val results = runBlocking { checker.checkAll() }
         assertTrue(results.none { it.match })
-        assertFalse(checker.allMatch())
+        assertFalse(runBlocking { checker.allMatch() })
     }
 
     @Test
@@ -131,7 +132,7 @@ class V2ParityCheckerTest {
         val v1 = FakeV1RowCount(allTables.associateWith { 3L })
         val checker = V2ParityChecker(pool, v1)
 
-        val results = checker.checkAll()
+        val results = runBlocking { checker.checkAll() }
         val bad = results.first { !it.match }
         assertEquals("ai_providers", bad.table)
         assertEquals(3L, bad.v1Count)

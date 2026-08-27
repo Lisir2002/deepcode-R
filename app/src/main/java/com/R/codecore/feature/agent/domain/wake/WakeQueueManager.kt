@@ -33,13 +33,13 @@ import javax.inject.Singleton
 @Singleton
 class WakeQueueManager @Inject constructor(
     private val dao: WakeQueueDao,
-    private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
+    private val v2Agent: V2AgentRepository? = null,
+    private val readMode: DataReadModeHolder? = null,
 ) {
     // 异步写入用独立 scope（SupervisorJob 隔离单个任务失败），风格对齐 FtpServerManager/SyncEngine。
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
+    private suspend fun isV2(): Boolean = readMode?.currentMode() == DataReadMode.V2
 
     /** 写入一条待注入唤醒。content 空白时跳过（无内容不入队）。 */
     suspend fun enqueue(sessionId: String?, source: String, type: String, content: String) {
