@@ -270,6 +270,9 @@ class AgentRepository(private val db: AgentDb) {
     suspend fun getFuse(scope: String, scopeId: String): com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses? =
         withContext(Dispatchers.IO) { q.selectFuse(scope, scopeId).executeAsOneOrNull() }
 
+    suspend fun listAllFuses(): List<com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses> =
+        withContext(Dispatchers.IO) { q.selectAllFuses().executeAsList() }
+
     suspend fun updateFuseState(
         scope: String, scopeId: String, state: String, failureCount: Long, lastProbeAtMs: Long,
         killSwitch1Triggered: Long, killSwitch2SoftDisabled: Long, lastTripSubclass: String?, updatedAtMs: Long,
@@ -370,6 +373,9 @@ class AgentRepository(private val db: AgentDb) {
 
     fun observeFuse(scope: String, scopeId: String): Flow<com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses?> =
         q.selectFuse(scope, scopeId).asFlow().mapToOneOrNull(Dispatchers.IO)
+
+    fun observeAllFuses(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses>> =
+        q.selectAllFuses().asFlow().mapToList(Dispatchers.IO)
 
     fun observeRejectionAuditsBySentinel(sentinelId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_sentinel_plan_rejection_audits>> =
         q.selectRejectionAuditsBySentinel(sentinelId).asFlow().mapToList(Dispatchers.IO)

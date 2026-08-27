@@ -511,6 +511,9 @@ insertFuse:
 INSERT OR REPLACE INTO zth_hallucination_fuses (id, scope, scope_id, state, linkage_version, failure_count, open_since_ms, last_probe_at_ms, kill_switch1_triggered, kill_switch2_soft_disabled, last_trip_subclass, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+selectAllFuses:
+SELECT * FROM zth_hallucination_fuses;
+
 selectFuse:
 SELECT * FROM zth_hallucination_fuses WHERE scope = ? AND scope_id = ?;
 
