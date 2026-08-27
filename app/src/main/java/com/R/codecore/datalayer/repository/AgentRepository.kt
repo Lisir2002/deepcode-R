@@ -1,12 +1,18 @@
 package com.R.codecore.datalayer.repository
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.R.codecore.datalayer.sqldelight.AgentDb
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 /**
  * agent 域 Repository（设计 §11.1 / L2）：会话/消息/子块/工具调用/检查点 的访问门面。
  * 业务只依赖本门面，不直接写 SQL。
+ *
+ * v2-full-takeover P0-1：补 Flow 响应式读，对齐 Room DAO 的 22 个 Flow 查询。
  */
 class AgentRepository(private val db: AgentDb) {
 
@@ -311,4 +317,66 @@ class AgentRepository(private val db: AgentDb) {
 
     suspend fun countTelemetryByKind(eventKind: String): Long =
         withContext(Dispatchers.IO) { q.countTelemetryByKind(eventKind).executeAsOne() }
+
+    // ── P0-1 Flow 响应式读（对齐 Room DAO 的 22 个 Flow 查询）──
+
+    fun observeAllSessions(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_session>> =
+        q.selectAllSessions().asFlow().mapToList(Dispatchers.IO)
+
+    fun observeSessionById(id: String): Flow<com.R.codecore.datalayer.sqldelight.agent.Agent_session?> =
+        q.selectSessionById(id).asFlow().mapToOneOrNull(Dispatchers.IO)
+
+    fun observeMessagesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_message>> =
+        q.selectMessagesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeCheckpointsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_checkpoint>> =
+        q.selectCheckpointsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeTodoItemsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Todo_items>> =
+        q.selectTodoItemsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeFileEditHunksBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.File_edit_hunks>> =
+        q.selectFileEditHunksBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeModeSwitchesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Mode_switch_history>> =
+        q.selectModeSwitchesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeGoalsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_goals>> =
+        q.selectGoalsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observePlansBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_plans>> =
+        q.selectPlansBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeJobsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_jobs>> =
+        q.selectJobsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeSchedulesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_schedules>> =
+        q.selectSchedulesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeTrajectoriesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_trajectories>> =
+        q.selectTrajectoriesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observePlaybookRunsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_playbook_runs>> =
+        q.selectPlaybookRunsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeAllSkillStates(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Skill_state>> =
+        q.selectAllSkillStates().asFlow().mapToList(Dispatchers.IO)
+
+    fun observePendingWakeItems(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue>> =
+        q.selectPendingWakeItems().asFlow().mapToList(Dispatchers.IO)
+
+    fun observeSentinelsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_user_confirmed_sentinels>> =
+        q.selectSentinelsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeFuse(scope: String, scopeId: String): Flow<com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses?> =
+        q.selectFuse(scope, scopeId).asFlow().mapToOneOrNull(Dispatchers.IO)
+
+    fun observeRejectionAuditsBySentinel(sentinelId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_sentinel_plan_rejection_audits>> =
+        q.selectRejectionAuditsBySentinel(sentinelId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeRestoreLogsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_l0_soft_compact_restore_logs>> =
+        q.selectRestoreLogsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeTelemetryByKind(eventKind: String, limit: Long): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events>> =
+        q.selectTelemetryByKind(eventKind, limit).asFlow().mapToList(Dispatchers.IO)
 }

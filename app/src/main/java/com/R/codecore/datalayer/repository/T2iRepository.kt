@@ -1,14 +1,19 @@
 package com.R.codecore.datalayer.repository
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
 import com.R.codecore.datalayer.sqldelight.T2iDb
 import com.R.codecore.datalayer.sqldelight.t2i.T2i_result
 import com.R.codecore.datalayer.sqldelight.t2i.T2i_task
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 /**
  * t2i 域 Repository（设计 §11.5 / L2）：文生图任务 + 多结果门面。
  * 结果图字节存 BlobStore，本域只留 blob_ref 引用。
+ *
+ * v2-full-takeover P0-1：补 Flow 响应式读，对齐 Room DAO 的 4 个 Flow 查询。
  */
 class T2iRepository(private val db: T2iDb) {
 
@@ -76,4 +81,18 @@ class T2iRepository(private val db: T2iDb) {
 
     suspend fun deleteT2iProviderModels(providerId: String) =
         withContext(Dispatchers.IO) { q.deleteT2iProviderModels(providerId) }
+
+    // ── P0-1 Flow 响应式读（对齐 Room DAO 的 4 个 Flow 查询）──
+
+    fun observeAllTasks(): Flow<List<T2i_task>> =
+        q.selectAllTasks().asFlow().mapToList(Dispatchers.IO)
+
+    fun observeResultsByTask(taskId: String): Flow<List<T2i_result>> =
+        q.selectResultsByTask(taskId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeAllT2iProviders(): Flow<List<com.R.codecore.datalayer.sqldelight.t2i.T2i_providers>> =
+        q.selectAllT2iProviders().asFlow().mapToList(Dispatchers.IO)
+
+    fun observeT2iModelsByProvider(providerId: String): Flow<List<com.R.codecore.datalayer.sqldelight.t2i.T2i_provider_models>> =
+        q.selectT2iModelsByProvider(providerId).asFlow().mapToList(Dispatchers.IO)
 }

@@ -1,13 +1,18 @@
 package com.R.codecore.datalayer.repository
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
 import com.R.codecore.datalayer.sqldelight.WorkspaceDb
 import com.R.codecore.datalayer.sqldelight.workspace.Workspace_file
 import com.R.codecore.datalayer.sqldelight.workspace.Workspace_project
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 /**
  * workspace 域 Repository（设计 §11.4 / L2）：工程 + 文件索引门面。
+ *
+ * v2-full-takeover P0-1：补 Flow 响应式读，对齐 Room DAO 的 5 个 Flow 查询。
  */
 class WorkspaceRepository(private val db: WorkspaceDb) {
 
@@ -94,4 +99,21 @@ class WorkspaceRepository(private val db: WorkspaceDb) {
     ) = withContext(Dispatchers.IO) {
         q.upsertEncryptionState(masterKeyFingerprint, dekCiphertext, encScheme, lastRotatedAt, rotationCounter, biometricRequired, migratedFromV1)
     }
+
+    // ── P0-1 Flow 响应式读（对齐 Room DAO 的 5 个 Flow 查询）──
+
+    fun observeAllProjects(): Flow<List<Workspace_project>> =
+        q.selectAllProjects().asFlow().mapToList(Dispatchers.IO)
+
+    fun observeFilesByProject(projectId: String): Flow<List<Workspace_file>> =
+        q.selectFilesByProject(projectId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeAllRemoteConnections(): Flow<List<com.R.codecore.datalayer.sqldelight.workspace.Remote_connections>> =
+        q.selectAllRemoteConnections().asFlow().mapToList(Dispatchers.IO)
+
+    fun observeRemoteMountsByConnection(connectionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.workspace.Remote_mounts>> =
+        q.selectRemoteMountsByConnection(connectionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeAllAuditLogs(): Flow<List<com.R.codecore.datalayer.sqldelight.workspace.Remote_audit_logs>> =
+        q.selectAllAuditLogs().asFlow().mapToList(Dispatchers.IO)
 }
