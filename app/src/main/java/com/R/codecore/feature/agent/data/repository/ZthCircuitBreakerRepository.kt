@@ -1,9 +1,7 @@
 package com.R.codecore.feature.agent.data.repository
 
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
+
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
-import com.R.codecore.feature.agent.data.local.dao.HallucinationFuseDao
 import com.R.codecore.feature.agent.data.local.entity.HallucinationFuseEntity
 import com.R.codecore.feature.agent.domain.permission.FuseState
 import kotlinx.coroutines.flow.Flow
@@ -28,24 +26,16 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthCircuitBreakerRepository @Inject constructor(
-    private val dao: HallucinationFuseDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) {
 
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
-
     /** UI Red Banner：实时观察全局 + 会话级 fuse。 */
-    fun observeGlobalAndSession(sessionId: String): Flow<List<HallucinationFuseEntity>> {
-        if (readMode.currentModeSync() == DataReadMode.V2) {
-            return v2Agent.observeAllFuses().map { list -> list.map { it.toEntity() } }
-        }
-        return dao.observeGlobalAndSession(sessionId)
-    }
+    fun observeGlobalAndSession(sessionId: String): Flow<List<HallucinationFuseEntity>> =
+        v2Agent.observeAllFuses().map { list -> list.map { it.toEntity() } }
 
     /** Phase 4.2 Sync：全量拉取本地（push 到 Firestore）。 */
     suspend fun getAll(): List<HallucinationFuseEntity> =
-        if (isV2()) v2Agent.listAllFuses().map { it.toEntity() } else dao.getAllOnce()
+        v2Agent.listAllFuses().map { it.toEntity() }
 
     /** Phase 4.2 Sync：Firestore pull → 本地合并（按 KILL-1 不变性过滤 killSwitch1=true）。 */
     suspend fun mergeFromRemote(remoteList: List<HallucinationFuseEntity>) {
@@ -64,19 +54,15 @@ class ZthCircuitBreakerRepository @Inject constructor(
             toUpsert.add(merged)
         }
         if (toUpsert.isNotEmpty()) {
-            if (isV2()) {
-                for (e in toUpsert) {
-                    v2Agent.upsertFuse(
-                        id = e.id, scope = e.scope, scopeId = e.scopeId, state = e.state,
-                        linkageVersion = e.linkageVersion, failureCount = e.failureCount.toLong(),
-                        openSinceMs = e.openSinceMs, lastProbeAtMs = e.lastProbeAtMs,
-                        killSwitch1Triggered = if (e.killSwitch1Triggered) 1L else 0L,
-                        killSwitch2SoftDisabled = if (e.killSwitch2SoftDisabled) 1L else 0L,
-                        lastTripSubclass = e.lastTripSubclass, updatedAtMs = e.updatedAtMs,
-                    )
-                }
-            } else {
-                dao.upsertAll(toUpsert)
+            for (e in toUpsert) {
+                v2Agent.upsertFuse(
+                    id = e.id, scope = e.scope, scopeId = e.scopeId, state = e.state,
+                    linkageVersion = e.linkageVersion, failureCount = e.failureCount.toLong(),
+                    openSinceMs = e.openSinceMs, lastProbeAtMs = e.lastProbeAtMs,
+                    killSwitch1Triggered = if (e.killSwitch1Triggered) 1L else 0L,
+                    killSwitch2SoftDisabled = if (e.killSwitch2SoftDisabled) 1L else 0L,
+                    lastTripSubclass = e.lastTripSubclass, updatedAtMs = e.updatedAtMs,
+                )
             }
         }
     }

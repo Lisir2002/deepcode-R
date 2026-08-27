@@ -25,13 +25,9 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthCapabilityAuditRepository @Inject constructor(
-    private val l0Dao: L0SoftCompactRestoreLogDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
     private val telemetry: ZthTelemetryRepository
 ) {
-
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** preTool：把 ZthCapabilityGuard.auditBatch 结果写入遥测（14 指标之 CAPABILITY 类）。 */
     suspend fun writeAuditBatchTelemetry(
@@ -76,44 +72,33 @@ class ZthCapabilityAuditRepository @Inject constructor(
     // ── L0 软压缩还原日志（崩溃恢复 + LINK-INV 校验） ────────────────
 
     suspend fun insertL0Log(log: L0SoftCompactRestoreLogEntity) {
-        if (isV2()) {
-            v2Agent.insertRestoreLog(
-                id = log.id, sessionId = log.sessionId,
-                firstMessageId = log.firstMessageId, lastMessageId = log.lastMessageId,
-                originalRowCount = log.originalRowCount.toLong(),
-                tokensBefore = log.tokensBefore.toLong(), tokensAfter = log.tokensAfter.toLong(),
-                sCompactSourceDigestCiphertext = log.s_compactSourceDigestCiphertext,
-                expireAtMs = log.expireAtMs,
-                restoredFlag = if (log.restoredFlag) 1L else 0L,
-                createdAtMs = log.createdAtMs,
-            )
-        } else {
-            l0Dao.upsert(log) // DAO 名是 upsert（OnConflict.REPLACE）
-        }
+        v2Agent.insertRestoreLog(
+            id = log.id, sessionId = log.sessionId,
+            firstMessageId = log.firstMessageId, lastMessageId = log.lastMessageId,
+            originalRowCount = log.originalRowCount.toLong(),
+            tokensBefore = log.tokensBefore.toLong(), tokensAfter = log.tokensAfter.toLong(),
+            sCompactSourceDigestCiphertext = log.s_compactSourceDigestCiphertext,
+            expireAtMs = log.expireAtMs,
+            restoredFlag = if (log.restoredFlag) 1L else 0L,
+            createdAtMs = log.createdAtMs,
+        )
     }
 
     suspend fun markRestored(logId: String) {
-        if (isV2()) v2Agent.markRestoreLogRestored(logId) else l0Dao.markRestored(logId)
+        v2Agent.markRestoreLogRestored(logId)
     }
 
     /** C.4.3 崩溃恢复：列出会话下所有未过期 L0 压缩（用 getBySession 再 filter，DAO 未提供专用查询）。 */
     suspend fun listUnexpiredL0(sessionId: String, nowMs: Long = System.currentTimeMillis()):
             List<L0SoftCompactRestoreLogEntity> =
-        if (isV2()) {
-            v2Agent.listRestoreLogs(sessionId).map { it.toEntity() }.filter {
-                it.expireAtMs == -1L || it.expireAtMs > nowMs
-            }
-        } else {
-            l0Dao.getBySession(sessionId).filter {
-                it.expireAtMs == -1L || it.expireAtMs > nowMs
-            }
+        v2Agent.listRestoreLogs(sessionId).map { it.toEntity() }.filter {
+            it.expireAtMs == -1L || it.expireAtMs > nowMs
         }
 
     /** 崩溃恢复专用：列出已过期但未 restoredFlag=1 的（DAO 已有此查询）。 */
     suspend fun listExpiredNotRestored(nowMs: Long = System.currentTimeMillis()):
             List<L0SoftCompactRestoreLogEntity> =
-        if (isV2()) v2Agent.listRestoreLogsExpiredNotRestored(nowMs).map { it.toEntity() }
-        else l0Dao.getExpiredAndNotRestored(nowMs)
+        v2Agent.listRestoreLogsExpiredNotRestored(nowMs).map { it.toEntity() }
 
 
     // ── Phase 4.2 Firestore：L0 ↔ Dto 映射 ──────────────────────────

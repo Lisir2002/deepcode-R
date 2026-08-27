@@ -34,41 +34,30 @@ class ZthConfirmationCardRepository @Inject constructor(
     private val sentinelDao: UserConfirmedSentinelDao,
     private val rejectionAuditDao: SentinelPlanRejectionAuditDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
     private val telemetry: ZthTelemetryRepository
 ) {
 
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
-
     /** Phase 5 Facade：弹卡前查询 chainId 是否已决策（已存在 → 直接复用 choice，不重复弹卡）。 */
     suspend fun getSentinelsByChain(chainId: String): List<UserConfirmedSentinelEntity> =
-        if (isV2()) v2Agent.listSentinelsByChain(chainId).map { it.toEntity() }
-        else sentinelDao.getByChain(chainId)
+        v2Agent.listSentinelsByChain(chainId).map { it.toEntity() }
 
     /** UI 时间线：流式观察会话内所有 sentinel（新→旧）。 */
-    fun observeSentinelsBySession(sessionId: String): Flow<List<UserConfirmedSentinelEntity>> {
-        if (readMode.currentModeSync() == DataReadMode.V2) {
-            return v2Agent.observeSentinelsBySession(sessionId).map { list -> list.map { it.toEntity() } }
-        }
-        return sentinelDao.observeBySession(sessionId)
-    }
+    fun observeSentinelsBySession(sessionId: String): Flow<List<UserConfirmedSentinelEntity>> =
+        v2Agent.observeSentinelsBySession(sessionId).map { list -> list.map { it.toEntity() } }
 
     /** C.4.3 崩溃恢复：会话下所有未过期 sentinel（expireAtMs=-1 永不过期）。 */
     suspend fun listUnexpiredBySession(sessionId: String, nowMs: Long = System.currentTimeMillis()):
             List<UserConfirmedSentinelEntity> =
-        if (isV2()) v2Agent.listSentinelsUnexpiredBySession(sessionId, nowMs).map { it.toEntity() }
-        else sentinelDao.getUnexpiredBySession(sessionId, nowMs)
+        v2Agent.listSentinelsUnexpiredBySession(sessionId, nowMs).map { it.toEntity() }
 
     /** C.4.2 Red Banner 一键回滚：标记会话内所有 sentinel rollbackFlag=true。 */
     suspend fun markAllRollbackBySession(sessionId: String) {
-        if (isV2()) v2Agent.markAllSentinelsRollbackBySession(sessionId)
-        else sentinelDao.markAllRollbackBySession(sessionId)
+        v2Agent.markAllSentinelsRollbackBySession(sessionId)
     }
 
     /** 审计查询：某 sentinel 的拒绝/修改理由（外键）。 */
     suspend fun getRejectionAudit(sentinelId: String): SentinelPlanRejectionAuditEntity? =
-        if (isV2()) v2Agent.listRejectionAudits(sentinelId).firstOrNull()?.toEntity()
-        else rejectionAuditDao.getBySentinel(sentinelId)
+        v2Agent.listRejectionAudits(sentinelId).firstOrNull()?.toEntity()
 
     /** Manager 写入成功后，打一条 CARD.DECISION 遥测（Phase 4.1 14 指标写入路径之一）。 */
     suspend fun recordDecisionTelemetry(
@@ -131,10 +120,10 @@ class ZthConfirmationCardRepository @Inject constructor(
     // ── Phase 4.2 Sync 辅助：批量全量拉（push 到 Firestore） ─────────
 
     suspend fun getAllSentinels(): List<UserConfirmedSentinelEntity> =
-        if (isV2()) v2Agent.listAllSentinels().map { it.toEntity() } else sentinelDao.getAllOnce()
+        v2Agent.listAllSentinels().map { it.toEntity() }
 
     suspend fun getAllRejectionAudits(): List<SentinelPlanRejectionAuditEntity> =
-        if (isV2()) v2Agent.listAllRejectionAudits().map { it.toEntity() } else rejectionAuditDao.getAllOnce()
+        v2Agent.listAllRejectionAudits().map { it.toEntity() }
 
     // ── 内部映射 ─────────────────────────────────────────────────────
 
