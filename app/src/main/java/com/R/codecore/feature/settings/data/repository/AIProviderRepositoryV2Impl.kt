@@ -32,7 +32,9 @@ class AIProviderRepositoryV2Impl @Inject constructor(
     }
 
     override fun getAllProviders(): Flow<List<AIProviderConfig>> {
-        return v2.observeProviders().map { rows -> rows.map { it.toDomainModel() } }
+        return v2.observeProviders().map { rows ->
+            buildList { for (row in rows) add(row.toDomainModel()) }
+        }
     }
 
     override fun getActiveProvider(): Flow<AIProviderConfig?> {
@@ -106,7 +108,7 @@ class AIProviderRepositoryV2Impl @Inject constructor(
      * RC71：apiKey 非空 → 必须加密成功，失败抛异常中止保存（绝不写空串覆盖已有密文）；
      * apiKey 为空但已有密文 → 保留已有密文；都无 → 空串。
      */
-    private fun encryptApiKeyOrThrow(apiKey: String, existingEncrypted: String): String = when {
+    private suspend fun encryptApiKeyOrThrow(apiKey: String, existingEncrypted: String): String = when {
         apiKey.isNotBlank() -> {
             runCatching { encryptor.encrypt(apiKey) }
                 .onFailure {
@@ -120,14 +122,14 @@ class AIProviderRepositoryV2Impl @Inject constructor(
     }
 
     /** 只从密文列解密；解密失败 → 空串 + 日志，不崩 UI（RC68 SCHEMA 38）。 */
-    private fun decryptApiKey(encryptedApiKey: String): String {
+    private suspend fun decryptApiKey(encryptedApiKey: String): String {
         if (encryptedApiKey.isEmpty()) return ""
         return runCatching { encryptor.decrypt(encryptedApiKey) }
             .onFailure { FileLogger.w(TAG, "解密 apiKey 失败，返回空串: ${it.message}") }
             .getOrDefault("")
     }
 
-    private fun com.R.codecore.datalayer.sqldelight.settings.Ai_providers.toDomainModel(): AIProviderConfig {
+    private suspend fun com.R.codecore.datalayer.sqldelight.settings.Ai_providers.toDomainModel(): AIProviderConfig {
         val modelList = models.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         return AIProviderConfig(
             id = id,

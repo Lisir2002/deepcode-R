@@ -8,6 +8,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,4 +46,10 @@ class DataReadModeHolder @Inject constructor(
         val prefs = context.settingsDataStore.data.firstOrNull() ?: return DataReadMode.ROOM
         return if (prefs[key] == true) DataReadMode.V2 else DataReadMode.ROOM
     }
+
+    /**
+     * 进程启动期的一次性同步快照（DI Provider 用）。
+     * DataStore 首次初始化会做磁盘读 + 可能触发 takeover gate 前置的 IO，但仅在进程启动执行一次。
+     */
+    fun currentModeSync(): DataReadMode = runBlocking { currentMode() }
 }
