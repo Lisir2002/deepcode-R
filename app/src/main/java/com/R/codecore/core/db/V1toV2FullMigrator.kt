@@ -279,8 +279,8 @@ class V1toV2FullMigrator @Inject constructor(
                             latencyMs = c.getLong(c.getColumnIndexOrThrow("latencyMs")),
                             flagA = if (c.isNull(c.getColumnIndexOrThrow("flagA"))) null else if (c.getInt(c.getColumnIndexOrThrow("flagA")) != 0) 1L else 0L,
                             flagB = if (c.isNull(c.getColumnIndexOrThrow("flagB"))) null else if (c.getInt(c.getColumnIndexOrThrow("flagB")) != 0) 1L else 0L,
-                            metricA = c.getString(c.getColumnIndexOrThrow("metricA")),
-                            metricB = c.getString(c.getColumnIndexOrThrow("metricB")),
+                            metricA = if (c.isNull(c.getColumnIndexOrThrow("metricA"))) null else c.getLong(c.getColumnIndexOrThrow("metricA")),
+                            metricB = if (c.isNull(c.getColumnIndexOrThrow("metricB"))) null else c.getLong(c.getColumnIndexOrThrow("metricB")),
                             createdAtMs = c.getLong(c.getColumnIndexOrThrow("createdAtMs")),
                         )
                         rows++
