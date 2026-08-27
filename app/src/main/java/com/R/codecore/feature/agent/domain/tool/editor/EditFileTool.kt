@@ -11,10 +11,7 @@ import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
 import com.R.codecore.feature.agent.domain.tool.ToolResult
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.core.util.LineDiff
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
-import com.R.codecore.feature.agent.data.local.dao.FileEditHunkDao
 import com.R.codecore.feature.agent.data.local.entity.FileEditHunkEntity
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.workspace.domain.FileAccessProvider
@@ -58,9 +55,7 @@ private const val MAX_LCS_CELLS = 4_000_000L
  */
 class EditFileTool @Inject constructor(
     private val fileAccess: FileAccessProvider,
-    private val fileEditHunkDao: FileEditHunkDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) : AgentTool() {
     override val name = "editFile"
     override val description =
@@ -234,8 +229,7 @@ class EditFileTool @Inject constructor(
                         newContent = content.take(HUNK_SNAPSHOT_MAX_CHARS),
                         createdAtMs = System.currentTimeMillis()
                     )
-                    if (readMode.currentMode() == DataReadMode.V2) {
-                        v2Agent.insertFileEditHunk(
+                    v2Agent.insertFileEditHunk(
                             id = hunkEntity.id,
                             sessionId = hunkEntity.sessionId,
                             filePath = hunkEntity.filePath,
@@ -245,10 +239,7 @@ class EditFileTool @Inject constructor(
                             newContent = hunkEntity.newContent,
                             createdAtMs = hunkEntity.createdAtMs
                         )
-                    } else {
-                        fileEditHunkDao.upsert(hunkEntity)
-                    }
-                } catch (e: Exception) {
+                    } catch (e: Exception) {
                     FileLogger.w(TAG, "记录文件 hunk 失败: $path", e)
                 }
             }

@@ -1,13 +1,8 @@
 package com.R.codecore.feature.agent.domain.tool.mode
 
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
-import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
-import com.R.codecore.feature.agent.data.local.dao.ModeSwitchHistoryDao
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
-import com.R.codecore.feature.agent.data.local.entity.ModeSwitchHistoryEntity
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.tool.AbstractContextualTool
@@ -29,10 +24,7 @@ import javax.inject.Inject
  * 让 AI 可以主动申请切换当前会话的模式（PLAN / BUILD）。
  */
 class SwitchModeTool @Inject constructor(
-    private val chatSessionDao: ChatSessionDao,
-    private val modeSwitchHistoryDao: ModeSwitchHistoryDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) : AbstractContextualTool() {
 
     private companion object {
@@ -42,8 +34,6 @@ class SwitchModeTool @Inject constructor(
         /** G-3：窗口内允许的最大切换次数 */
         const val RATE_LIMIT_MAX = 2
     }
-
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** G-3：同会话切换频率限流记录（sessionId -> 最近切换时间戳列表），仅内存态，会话重启即重置。 */
     private val switchHistory = mutableMapOf<String, MutableList<Long>>()
@@ -106,7 +96,7 @@ class SwitchModeTool @Inject constructor(
             return ToolResult.Error("未关联会话 ID，无法切换模式", "NO_SESSION")
         }
 
-        val sessionEntity = (if (isV2()) v2Agent.getSessionById(sessionId)?.toEntity() else chatSessionDao.getById(sessionId))
+        val sessionEntity = v2Agent.getSessionById(sessionId)?.toEntity()
             ?: return ToolResult.Error("找不到会话记录", "SESSION_NOT_FOUND")
 
         // G-3：频率限制——同会话 5 分钟内最多允许 2 次切换，防止 PLAN↔BUILD 抖动。
@@ -114,35 +104,19 @@ class SwitchModeTool @Inject constructor(
         checkAndRecordSwitch(sessionId, context.mode)?.let { return it }
 
         // 切换模式并保存到数据库。UI 层通过 flow 监听，会自动更新外观与后续流程的上下文
-        if (isV2()) {
-            v2Agent.upsertSession(
-                id = sessionEntity.id, title = sessionEntity.title, mode = targetMode.name,
-                model = sessionEntity.model, status = "active",
-                createdAtMs = sessionEntity.createdAtMs, updatedAtMs = sessionEntity.updatedAtMs,
-                workspacePath = sessionEntity.workspacePath, reasoningEffort = sessionEntity.reasoningEffort,
-                providerId = sessionEntity.providerId,
-                totalInputTokens = sessionEntity.totalInputTokens.toLong(),
-                totalOutputTokens = sessionEntity.totalOutputTokens.toLong(),
-                lastInputTokens = sessionEntity.lastInputTokens.toLong(),
-            )
-        } else {
-            chatSessionDao.upsert(sessionEntity.copy(mode = targetMode.name))
-        }
+        v2Agent.upsertSession(
+            id = sessionEntity.id, title = sessionEntity.title, mode = targetMode.name,
+            model = sessionEntity.model, status = "active",
+            createdAtMs = sessionEntity.createdAtMs, updatedAtMs = sessionEntity.updatedAtMs,
+            workspacePath = sessionEntity.workspacePath, reasoningEffort = sessionEntity.reasoningEffort,
+            providerId = sessionEntity.providerId,
+            totalInputTokens = sessionEntity.totalInputTokens.toLong(),
+            totalOutputTokens = sessionEntity.totalOutputTokens.toLong(),
+            lastInputTokens = sessionEntity.lastInputTokens.toLong(),
+        )
 
         // G-1：记录本次切换历史到数据库（持久化，可用于回溯和频率统计）
-        if (isV2()) {
-            v2Agent.insertModeSwitch(sessionId, context.mode.name, targetMode.name, reason, System.currentTimeMillis())
-        } else {
-            modeSwitchHistoryDao.insert(
-                ModeSwitchHistoryEntity(
-                    sessionId = sessionId,
-                    fromMode = context.mode.name,
-                    toMode = targetMode.name,
-                    reason = reason,
-                    timestampMs = System.currentTimeMillis()
-                )
-            )
-        }
+        v2Agent.insertModeSwitch(sessionId, context.mode.name, targetMode.name, reason, System.currentTimeMillis())
 
         return ToolResult.Success(JsonPrimitive("成功切换至 ${targetMode.name} 模式。"))
     }

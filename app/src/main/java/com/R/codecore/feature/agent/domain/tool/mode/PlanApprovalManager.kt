@@ -1,10 +1,7 @@
 package com.R.codecore.feature.agent.domain.tool.mode
 
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
-import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,9 +20,7 @@ import kotlinx.coroutines.launch
  */
 @Singleton
 class PlanApprovalManager @Inject constructor(
-    private val chatSessionDao: ChatSessionDao,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) {
     private val _pendingApproval = MutableStateFlow<PlanApprovalRequest?>(null)
     val pendingApproval: StateFlow<PlanApprovalRequest?> = _pendingApproval.asStateFlow()
@@ -34,23 +29,17 @@ class PlanApprovalManager @Inject constructor(
     private var currentDecision: CompletableDeferred<PlanApprovalChoice>? = null
     private var currentSessionId: String? = null
 
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
-
     private suspend fun getSessionEntity(sid: String): ChatSessionEntity? =
-        if (isV2()) v2Agent.getSessionById(sid)?.toEntity() else chatSessionDao.getById(sid)
+        v2Agent.getSessionById(sid)?.toEntity()
 
     private suspend fun upsertMode(sid: String, entity: ChatSessionEntity, mode: String) {
-        if (isV2()) {
-            v2Agent.upsertSession(
-                id = entity.id, title = entity.title, mode = mode, model = entity.model, status = "active",
-                createdAtMs = entity.createdAtMs, updatedAtMs = entity.updatedAtMs,
-                workspacePath = entity.workspacePath, reasoningEffort = entity.reasoningEffort,
-                providerId = entity.providerId, totalInputTokens = entity.totalInputTokens.toLong(),
-                totalOutputTokens = entity.totalOutputTokens.toLong(), lastInputTokens = entity.lastInputTokens.toLong(),
-            )
-        } else {
-            chatSessionDao.upsert(entity.copy(mode = mode))
-        }
+        v2Agent.upsertSession(
+            id = entity.id, title = entity.title, mode = mode, model = entity.model, status = "active",
+            createdAtMs = entity.createdAtMs, updatedAtMs = entity.updatedAtMs,
+            workspacePath = entity.workspacePath, reasoningEffort = entity.reasoningEffort,
+            providerId = entity.providerId, totalInputTokens = entity.totalInputTokens.toLong(),
+            totalOutputTokens = entity.totalOutputTokens.toLong(), lastInputTokens = entity.lastInputTokens.toLong(),
+        )
     }
 
     /** 挂起等待用户在计划审查面板中的决策。 */
