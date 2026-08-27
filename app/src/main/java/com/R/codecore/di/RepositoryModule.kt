@@ -8,6 +8,9 @@ import com.R.codecore.feature.credentials.domain.repository.CredentialRepository
 import com.R.codecore.feature.settings.data.repository.AIProviderRepositoryImpl
 import com.R.codecore.feature.settings.data.repository.AIProviderRepositoryV2Impl
 import com.R.codecore.feature.settings.domain.repository.AIProviderRepository
+import com.R.codecore.feature.t2i.data.repository.T2IRepositoryRoomImpl
+import com.R.codecore.feature.t2i.data.repository.T2IRepositoryV2Impl
+import com.R.codecore.feature.t2i.domain.repository.T2IRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -44,6 +47,17 @@ object RepositoryModule {
         roomImpl: CredentialRepositoryImpl,
         v2Impl: CredentialRepositoryV2Impl,
     ): CredentialRepository = when (readMode.currentModeSync()) {
+        DataReadMode.V2 -> v2Impl
+        DataReadMode.ROOM -> roomImpl
+    }
+
+    @Provides
+    @Singleton
+    fun provideT2IRepository(
+        readMode: DataReadModeHolder,
+        roomImpl: T2IRepositoryRoomImpl,
+        v2Impl: T2IRepositoryV2Impl,
+    ): T2IRepository = when (readMode.currentModeSync()) {
         DataReadMode.V2 -> v2Impl
         DataReadMode.ROOM -> roomImpl
     }

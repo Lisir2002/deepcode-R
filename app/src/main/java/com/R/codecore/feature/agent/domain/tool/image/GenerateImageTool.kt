@@ -12,12 +12,10 @@ import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
 import com.R.codecore.feature.agent.domain.tool.ToolResult
 import com.R.codecore.feature.agent.domain.tool.ToolStreamEvent
 import com.R.codecore.feature.agent.domain.tool.StreamingAgentTool
-import com.R.codecore.feature.t2i.data.local.dao.T2IProviderDao
-import com.R.codecore.feature.t2i.data.local.dao.T2IProviderModelDao
-import com.R.codecore.feature.t2i.data.local.dao.T2ITaskDao
 import com.R.codecore.feature.t2i.data.local.entity.T2ITaskEntity
 import com.R.codecore.feature.t2i.data.remote.ImageGenerator
 import com.R.codecore.feature.t2i.domain.permission.T2IPermissionPolicyEngine
+import com.R.codecore.feature.t2i.domain.repository.T2IRepository
 import com.R.codecore.feature.workspace.domain.WorkspacePathMapper
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -42,9 +40,7 @@ import javax.inject.Singleton
 @Singleton
 class GenerateImageTool @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val providerDao: T2IProviderDao,
-    private val modelDao: T2IProviderModelDao,
-    private val taskDao: T2ITaskDao,
+    private val t2iRepository: T2IRepository,
     private val permission: T2IPermissionPolicyEngine,
     private val imageGenerator: ImageGenerator,
     private val credentialEncryptor: CredentialEncryptor,
@@ -142,8 +138,8 @@ class GenerateImageTool @Inject constructor(
         val desiredModel = args["model"]?.asStringOrNull().orEmpty()
 
         emit(ToolStreamEvent.Progress("选择文生图 Provider..."))
-        val activeProvider = providerDao.getActiveProviderSync()
-            ?: providerDao.getEnabledProvidersOnce().sortedByDescending { it.priority }.firstOrNull()
+        val activeProvider = t2iRepository.getActiveProvider()
+            ?: t2iRepository.getEnabledProviders().sortedByDescending { it.priority }.firstOrNull()
             ?: run {
                 emit(ToolStreamEvent.Completed(ToolResult.Error(
                     "未配置文生图 Provider：请到设置页「文生图」添加一个 T2I Provider（API Key + BaseUrl）。",
@@ -164,9 +160,9 @@ class GenerateImageTool @Inject constructor(
             ))); return@flow
         }
 
-        val firstModel = modelDao.getModelsForProviderOnce(activeProvider.id).firstOrNull()
+        val firstModel = t2iRepository.getModelsForProvider(activeProvider.id).firstOrNull()
         val targetModel = if (desiredModel.isNotBlank()) {
-            modelDao.getModel(activeProvider.id, desiredModel) ?: firstModel
+            t2iRepository.getModel(activeProvider.id, desiredModel) ?: firstModel
         } else {
             firstModel
         }
@@ -227,7 +223,7 @@ class GenerateImageTool @Inject constructor(
             createdAtMs = now,
             updatedAtMs = now,
         )
-        taskDao.insertTask(pending)
+        t2iRepository.insertTask(pending)
 
         emit(ToolStreamEvent.Progress(buildString {
             append("正在生成（").append(width).append("x").append(height)
@@ -248,9 +244,9 @@ class GenerateImageTool @Inject constructor(
                     outputDir = outputDir, taskId = taskId,
                 )
             )
-            taskDao.markSuccess(taskId, res.imagePath, res.thumbnailPath, System.currentTimeMillis())
+            t2iRepository.markTaskSuccess(taskId, res.imagePath, res.thumbnailPath, System.currentTimeMillis())
             if (activeProvider.endpointMode == "AUTO" && res.modeUsed != ImageGenerator.EndpointMode.AUTO) {
-                runCatching { providerDao.updateEndpointMode(activeProvider.id, res.modeUsed.name) }
+                runCatching { t2iRepository.updateProviderEndpointMode(activeProvider.id, res.modeUsed.name) }
                     .onFailure { FileLogger.w(TAG, "写回 endpointMode 失败: ${it.message}") }
             }
             refundable = false
@@ -302,7 +298,7 @@ class GenerateImageTool @Inject constructor(
         } finally {
             if (refundable && perm.tokensToDeduct > 0) {
                 runCatching {
-                    taskDao.setPermissionDecision(
+                    t2iRepository.setTaskPermissionDecision(
                         taskId,
                         decision = "REFUNDED_${pending.permissionDecision}",
                         deducted = 0,
@@ -323,7 +319,7 @@ class GenerateImageTool @Inject constructor(
     ): Int {
         val nextRetry = pending.retryCount + 1
         val finalStatus = if (nextRetry < maxRetries) "PENDING_RETRY" else "FAILED"
-        taskDao.markFailedOrRetry(
+        t2iRepository.markTaskFailedOrRetry(
             id = taskId,
             finalStatus = finalStatus,
             errorCode = code,

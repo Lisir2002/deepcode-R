@@ -19,19 +19,90 @@ class T2iRepository(private val db: T2iDb) {
 
     private val q get() = db.t2iQueries
 
-    suspend fun createTask(
-        id: String, prompt: String, paramsJson: String?, status: String,
-        now: Long = System.currentTimeMillis(),
-    ) = withContext(Dispatchers.IO) { q.insertTask(id, prompt, paramsJson, status, now, now) }
+    // ── 任务（t2i_task，P2-2 对齐 Room T2ITaskDao 全集）──
 
-    suspend fun updateTaskStatus(id: String, status: String, now: Long = System.currentTimeMillis()) =
-        withContext(Dispatchers.IO) { q.updateTaskStatus(status, now, id) }
+    suspend fun insertTask(
+        id: String, sessionId: String, messageId: String, prompt: String, negativePrompt: String,
+        width: Long, height: Long, steps: Long, seed: Long, hd: Long,
+        providerId: String, modelId: String, providerRef: String, endpointModeRef: String,
+        status: String, imagePath: String, thumbnailPath: String, remoteTaskId: String,
+        progressPercent: Long, retryCount: Long, maxRetries: Long,
+        errorCode: String, errorMessage: String, permissionDecision: String, quotaDeductedTokens: Long,
+        createdAtMs: Long, updatedAtMs: Long, completedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertTask(id, sessionId, messageId, prompt, negativePrompt, width, height, steps, seed, hd,
+            providerId, modelId, providerRef, endpointModeRef, status, imagePath, thumbnailPath, remoteTaskId,
+            progressPercent, retryCount, maxRetries, errorCode, errorMessage, permissionDecision, quotaDeductedTokens,
+            createdAtMs, updatedAtMs, completedAtMs)
+    }
+
+    suspend fun upsertTask(
+        id: String, sessionId: String, messageId: String, prompt: String, negativePrompt: String,
+        width: Long, height: Long, steps: Long, seed: Long, hd: Long,
+        providerId: String, modelId: String, providerRef: String, endpointModeRef: String,
+        status: String, imagePath: String, thumbnailPath: String, remoteTaskId: String,
+        progressPercent: Long, retryCount: Long, maxRetries: Long,
+        errorCode: String, errorMessage: String, permissionDecision: String, quotaDeductedTokens: Long,
+        createdAtMs: Long, updatedAtMs: Long, completedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertOrReplaceTask(id, sessionId, messageId, prompt, negativePrompt, width, height, steps, seed, hd,
+            providerId, modelId, providerRef, endpointModeRef, status, imagePath, thumbnailPath, remoteTaskId,
+            progressPercent, retryCount, maxRetries, errorCode, errorMessage, permissionDecision, quotaDeductedTokens,
+            createdAtMs, updatedAtMs, completedAtMs)
+    }
 
     suspend fun getTask(id: String): T2i_task? =
         withContext(Dispatchers.IO) { q.selectTaskById(id).executeAsOneOrNull() }
 
+    suspend fun getTaskByMessageId(messageId: String): T2i_task? =
+        withContext(Dispatchers.IO) { q.selectTaskByMessageId(messageId).executeAsOneOrNull() }
+
     suspend fun listTasks(): List<T2i_task> =
         withContext(Dispatchers.IO) { q.selectAllTasks().executeAsList() }
+
+    suspend fun listTasksBySession(sessionId: String): List<T2i_task> =
+        withContext(Dispatchers.IO) { q.selectTasksBySession(sessionId).executeAsList() }
+
+    suspend fun listDanglingTasks(cutoffMs: Long): List<T2i_task> =
+        withContext(Dispatchers.IO) { q.selectDanglingTasks(cutoffMs).executeAsList() }
+
+    suspend fun updateTaskStatus(id: String, status: String, now: Long = System.currentTimeMillis()) =
+        withContext(Dispatchers.IO) { q.updateTaskStatus(status, now, id) }
+
+    suspend fun updateTaskStatusAndProgress(id: String, status: String, progress: Long, now: Long) =
+        withContext(Dispatchers.IO) { q.updateTaskStatusAndProgress(status, progress, now, id) }
+
+    suspend fun markTaskSuccess(id: String, imagePath: String, thumbnailPath: String, now: Long) =
+        withContext(Dispatchers.IO) { q.markTaskSuccess(imagePath, thumbnailPath, now, now, id) }
+
+    suspend fun markTaskFailedOrRetry(
+        id: String, finalStatus: String, errorCode: String, errorMessage: String, retryCount: Long, now: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.markTaskFailedOrRetry(finalStatus, errorCode, errorMessage, retryCount, now, id)
+    }
+
+    suspend fun setTaskRemoteId(id: String, remoteTaskId: String, now: Long) =
+        withContext(Dispatchers.IO) { q.setTaskRemoteId(remoteTaskId, now, id) }
+
+    suspend fun setTaskPermissionDecision(id: String, decision: String, deducted: Long, now: Long) =
+        withContext(Dispatchers.IO) { q.setTaskPermissionDecision(decision, deducted, now, id) }
+
+    suspend fun deleteTask(id: String) =
+        withContext(Dispatchers.IO) { q.deleteTask(id) }
+
+    suspend fun deleteTasksBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deleteTasksBySession(sessionId) }
+
+    suspend fun sumDeductedTokensSince(dayStartMs: Long): Long =
+        withContext(Dispatchers.IO) { q.sumDeductedTokensSince(dayStartMs).executeAsOne() }
+
+    suspend fun sumDeductedTokensForSession(sessionId: String): Long =
+        withContext(Dispatchers.IO) { q.sumDeductedTokensForSession(sessionId).executeAsOne() }
+
+    suspend fun countSuccessfulImagesSince(dayStartMs: Long): Long =
+        withContext(Dispatchers.IO) { q.countSuccessfulImagesSince(dayStartMs).executeAsOne() }
+
+    // ── 结果（t2i_result）──
 
     suspend fun addResult(
         id: String, taskId: String, blobRef: String, seed: Long?, width: Long?, height: Long?, seq: Long,
@@ -39,9 +110,6 @@ class T2iRepository(private val db: T2iDb) {
 
     suspend fun listResults(taskId: String): List<T2i_result> =
         withContext(Dispatchers.IO) { q.selectResultsByTask(taskId).executeAsList() }
-
-    suspend fun deleteTask(id: String) =
-        withContext(Dispatchers.IO) { q.deleteTask(id) }
 
     // ── 阶段 1 补表方法（t2i_providers / t2i_provider_models）──
 
@@ -78,6 +146,9 @@ class T2iRepository(private val db: T2iDb) {
 
     suspend fun setT2iProviderEnabled(id: String, isEnabled: Boolean, updatedAtMs: Long) =
         withContext(Dispatchers.IO) { q.setT2iProviderEnabled(if (isEnabled) 1L else 0L, updatedAtMs, id) }
+
+    suspend fun setT2iProviderEndpointMode(id: String, mode: String, updatedAtMs: Long) =
+        withContext(Dispatchers.IO) { q.setT2iProviderEndpointMode(mode, updatedAtMs, id) }
 
     suspend fun updateT2iProviderEncryptedApiKey(id: String, encryptedApiKey: String, updatedAtMs: Long) =
         withContext(Dispatchers.IO) { q.updateT2iProviderEncryptedApiKey(encryptedApiKey, updatedAtMs, id) }

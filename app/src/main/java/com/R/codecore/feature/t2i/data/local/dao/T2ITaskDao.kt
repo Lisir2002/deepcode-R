@@ -17,6 +17,9 @@ interface T2ITaskDao {
     @Query("SELECT * FROM t2i_tasks WHERE sessionId = :sessionId ORDER BY createdAtMs DESC")
     suspend fun getTasksForSessionOnce(sessionId: String): List<T2ITaskEntity>
 
+    @Query("SELECT * FROM t2i_tasks ORDER BY createdAtMs DESC")
+    suspend fun getAllTasksOnce(): List<T2ITaskEntity>
+
     @Query("SELECT * FROM t2i_tasks WHERE id = :id")
     suspend fun getTaskById(id: String): T2ITaskEntity?
 

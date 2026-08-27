@@ -238,6 +238,26 @@ class V1toV2FullMigrator @Inject constructor(
                     )
                     rows++
                 }
+                // P2-2：t2i_task 全列对齐 Room T2ITaskEntity（30 列），补迁任务表。
+                for (t in db.t2iTaskDao().getAllTasksOnce()) {
+                    t2iRepo.insertTask(
+                        id = t.id, sessionId = t.sessionId, messageId = t.messageId,
+                        prompt = t.prompt, negativePrompt = t.negativePrompt,
+                        width = t.width.toLong(), height = t.height.toLong(), steps = t.steps.toLong(),
+                        seed = t.seed.toLong(), hd = if (t.hd) 1L else 0L,
+                        providerId = t.providerId, modelId = t.modelId,
+                        providerRef = t.providerRef, endpointModeRef = t.endpointModeRef,
+                        status = t.status, imagePath = t.imagePath, thumbnailPath = t.thumbnailPath,
+                        remoteTaskId = t.remoteTaskId, progressPercent = t.progressPercent.toLong(),
+                        retryCount = t.retryCount.toLong(), maxRetries = t.maxRetries.toLong(),
+                        errorCode = t.errorCode, errorMessage = t.errorMessage,
+                        permissionDecision = t.permissionDecision,
+                        quotaDeductedTokens = t.quotaDeductedTokens.toLong(),
+                        createdAtMs = t.createdAtMs, updatedAtMs = t.updatedAtMs,
+                        completedAtMs = t.completedAtMs,
+                    )
+                    rows++
+                }
             } finally {
                 db.close()
             }
