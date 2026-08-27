@@ -112,7 +112,7 @@
 | P1-3 | `V2ParityChecker` 逐表行数 + 抽样哈希校验，不一致自动回落 ROOM | 设计 §4 P1 | ✅ |
 | P1-4 | `DataRegistryModule` 双登记保持（过渡期资产，非清理项） | 设计 §4 P1 | ✅ |
 | P2-1 | 批 1 单表外围切换（settings / credentials / t2i / remote_audit_logs） | 设计 §4 P2 | 🟡 |
-| P2-2 | 批 2 多表 Repository + Zth 域切换 | 设计 §4 P2 | ⬜ |
+| P2-2 | 批 2 多表 Repository + Zth 域切换 | 设计 §4 P2 | 🟡 |
 | P2-3 | 批 3 会话/消息热表切换（最高风险） | 设计 §4 P2 | ⬜ |
 | P2-4 | 批 4 事务服务 + 跨域写 + 3 处 ViewModel 直注收敛 | 设计 §4 P2 | ⬜ |
 | P2-5 | 收口：`DataLayerModule` 唯一 DI 入口 + `DatabaseModule` 标 Deprecated + 灰度 | 设计 §4 P2 | ⬜ |
