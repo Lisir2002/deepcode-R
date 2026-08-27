@@ -3,8 +3,6 @@ package com.R.codecore.feature.agent.data.repository
 import com.R.codecore.datalayer.DataReadMode
 import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
-import com.R.codecore.feature.agent.data.local.dao.CheckpointDao
-import com.R.codecore.feature.agent.data.local.dao.CheckpointFileSnapshotDao
 import com.R.codecore.feature.agent.data.local.entity.CheckpointEntity
 import com.R.codecore.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
 import javax.inject.Inject

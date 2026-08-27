@@ -7,9 +7,6 @@ import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_message as V2AgentMessage
 import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
 import com.R.codecore.datalayer.sqldelight.agent.Todo_items as V2TodoItem
-import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
-import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
-import com.R.codecore.feature.agent.data.local.dao.TodoItemDao
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
 import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
@@ -31,9 +28,7 @@ import com.R.codecore.feature.backup.domain.RemoteMountDto
 import com.R.codecore.feature.backup.domain.RestoreStats
 import com.R.codecore.feature.backup.domain.TodoItemDto
 import com.R.codecore.feature.backup.domain.toMetadata
-import com.R.codecore.feature.credentials.data.local.dao.GitCredentialDao
 import com.R.codecore.feature.credentials.data.local.entity.GitCredentialEntity
-import com.R.codecore.feature.settings.data.local.dao.AIProviderDao
 import com.R.codecore.feature.settings.data.local.entity.AIProviderEntity
 import com.R.codecore.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.R.codecore.feature.settings.data.repository.KeepaliveSettingsRepository
@@ -41,7 +36,6 @@ import com.R.codecore.feature.settings.data.repository.LogSettingsRepository
 import com.R.codecore.feature.settings.data.repository.SyncSettingsRepository
 import com.R.codecore.feature.settings.data.repository.ThemeSettingsRepository
 import com.R.codecore.feature.settings.data.repository.VisionModelSettingsRepository
-import com.R.codecore.feature.workspace.data.local.dao.RemoteConnectionDao
 import com.R.codecore.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.R.codecore.feature.workspace.data.local.entity.RemoteMountEntity
 import com.R.codecore.feature.workspace.data.repository.WorkspaceRepository

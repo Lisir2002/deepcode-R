@@ -2,12 +2,17 @@ package com.R.codecore.feature.agent.domain.trajectory
 
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_trajectories as V2Trajectory
-import com.R.codecore.feature.agent.data.local.dao.TrajectoryAggregate
 import com.R.codecore.feature.agent.data.local.entity.TrajectoryEntity
 import com.R.codecore.feature.agent.domain.tool.ToolResult
 import com.R.codecore.feature.agent.domain.tool.ToolResultTypeRegistry
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+
+private data class TrajectoryAggregate(
+    val tokensIn: Long,
+    val tokensOut: Long,
+    val count: Long,
+)
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton

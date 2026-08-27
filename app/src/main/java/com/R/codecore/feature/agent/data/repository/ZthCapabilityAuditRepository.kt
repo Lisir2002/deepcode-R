@@ -3,7 +3,6 @@ package com.R.codecore.feature.agent.data.repository
 import com.R.codecore.datalayer.DataReadMode
 import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
-import com.R.codecore.feature.agent.data.local.dao.L0SoftCompactRestoreLogDao
 import com.R.codecore.feature.agent.data.local.entity.L0SoftCompactRestoreLogEntity
 import com.R.codecore.feature.agent.domain.zth.ZthCapabilityAuditResult
 import com.R.codecore.feature.agent.domain.zth.ZthPresetTier

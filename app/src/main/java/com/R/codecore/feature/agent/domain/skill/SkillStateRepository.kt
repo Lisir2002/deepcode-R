@@ -4,8 +4,6 @@ import com.R.codecore.core.util.FileLogger
 import com.R.codecore.datalayer.DataReadMode
 import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
-import com.R.codecore.feature.agent.data.local.dao.SkillConversationStateDao
-import com.R.codecore.feature.agent.data.local.dao.SkillStateDao
 import com.R.codecore.feature.agent.data.local.entity.SkillConversationStateEntity
 import com.R.codecore.feature.agent.data.local.entity.SkillStateEntity
 import kotlinx.coroutines.Dispatchers
