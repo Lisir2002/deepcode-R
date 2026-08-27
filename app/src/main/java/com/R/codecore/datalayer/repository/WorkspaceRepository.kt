@@ -71,6 +71,22 @@ class WorkspaceRepository(private val db: WorkspaceDb) {
     suspend fun listRemoteMounts(connectionId: String): List<com.R.codecore.datalayer.sqldelight.workspace.Remote_mounts> =
         withContext(Dispatchers.IO) { q.selectRemoteMountsByConnection(connectionId).executeAsList() }
 
+    suspend fun getRemoteMount(id: String): com.R.codecore.datalayer.sqldelight.workspace.Remote_mounts? =
+        withContext(Dispatchers.IO) { q.selectRemoteMountById(id).executeAsOneOrNull() }
+
+    suspend fun listAllRemoteMounts(): List<com.R.codecore.datalayer.sqldelight.workspace.Remote_mounts> =
+        withContext(Dispatchers.IO) { q.selectAllRemoteMounts().executeAsList() }
+
+    suspend fun updateRemoteMount(
+        id: String, connectionId: String, remotePath: String, localMountPath: String,
+        isActive: Long, autoConnect: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.updateRemoteMount(connectionId, remotePath, localMountPath, isActive, autoConnect, id)
+    }
+
+    suspend fun deleteRemoteMount(id: String) =
+        withContext(Dispatchers.IO) { q.deleteRemoteMount(id) }
+
     suspend fun deleteRemoteMounts(connectionId: String) =
         withContext(Dispatchers.IO) { q.deleteRemoteMountsByConnection(connectionId) }
 
@@ -157,6 +173,9 @@ class WorkspaceRepository(private val db: WorkspaceDb) {
 
     fun observeRemoteMountsByConnection(connectionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.workspace.Remote_mounts>> =
         q.selectRemoteMountsByConnection(connectionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeAllRemoteMounts(): Flow<List<com.R.codecore.datalayer.sqldelight.workspace.Remote_mounts>> =
+        q.selectAllRemoteMounts().asFlow().mapToList(Dispatchers.IO)
 
     fun observeAllAuditLogs(): Flow<List<com.R.codecore.datalayer.sqldelight.workspace.Remote_audit_logs>> =
         q.selectAllAuditLogs().asFlow().mapToList(Dispatchers.IO)

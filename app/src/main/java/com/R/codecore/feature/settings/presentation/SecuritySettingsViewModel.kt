@@ -8,7 +8,6 @@ import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.agent.domain.zth.ZthPerformanceClass
 import com.R.codecore.feature.agent.domain.zth.ZthPresetTier
 import com.R.codecore.feature.settings.data.repository.ZthTierRepository
-import com.R.codecore.feature.workspace.data.local.dao.CredentialEncryptionStateDao
 import com.R.codecore.feature.workspace.domain.RemoteAuditAction
 import com.R.codecore.feature.workspace.domain.RemoteAuditCategory
 import com.R.codecore.feature.workspace.domain.repository.RemoteAuditLogRepository
@@ -42,7 +41,6 @@ data class SecurityUiState(
 @HiltViewModel
 class SecuritySettingsViewModel @Inject constructor(
     private val encryptor: CredentialEncryptor,
-    private val stateDao: CredentialEncryptionStateDao,
     private val auditLogRepo: RemoteAuditLogRepository,
     private val zthTierRepository: ZthTierRepository
 ) : ViewModel() {
@@ -72,7 +70,7 @@ class SecuritySettingsViewModel @Inject constructor(
     private fun loadState() {
         viewModelScope.launch {
             try {
-                val state = stateDao.getSingleOrNull()
+                val state = encryptor.encryptionState()
                 if (state != null) {
                     val cur = _baseState.value
                     _baseState.value = cur.copy(

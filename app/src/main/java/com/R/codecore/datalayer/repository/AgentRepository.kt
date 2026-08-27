@@ -254,6 +254,56 @@ class AgentRepository(private val db: AgentDb) {
     suspend fun getSkillConversationState(skillId: String, sessionId: String): com.R.codecore.datalayer.sqldelight.agent.Skill_conversation_state? =
         withContext(Dispatchers.IO) { q.selectSkillConversationState(skillId, sessionId).executeAsOneOrNull() }
 
+    suspend fun listSkillConversationStates(sessionId: String): List<com.R.codecore.datalayer.sqldelight.agent.Skill_conversation_state> =
+        withContext(Dispatchers.IO) { q.selectSkillConversationStatesBySession(sessionId).executeAsList() }
+
+    suspend fun listEnabledSkillIds(sessionId: String): List<String> =
+        withContext(Dispatchers.IO) { q.selectSkillConversationStatesEnabledBySession(sessionId).executeAsList() }
+
+    suspend fun listDisabledSkillIds(sessionId: String): List<String> =
+        withContext(Dispatchers.IO) { q.selectSkillConversationStatesDisabledBySession(sessionId).executeAsList() }
+
+    fun observeSkillConversationStatesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Skill_conversation_state>> =
+        q.observeSkillConversationStatesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    suspend fun setSkillStateEnabled(id: String, enabled: Long) {
+        withContext(Dispatchers.IO) { q.updateSkillStateEnabled(enabled, id) }
+    }
+
+    suspend fun setSkillStateScopeOverride(id: String, scope: String?, agentType: String?) {
+        withContext(Dispatchers.IO) { q.updateSkillStateScopeOverride(scope, agentType, id) }
+    }
+
+    suspend fun listScopedSkillStates(): List<com.R.codecore.datalayer.sqldelight.agent.Skill_state> =
+        withContext(Dispatchers.IO) { q.selectScopedSkillStates().executeAsList() }
+            .map { row ->
+                com.R.codecore.datalayer.sqldelight.agent.Skill_state(
+                    id = row.id,
+                    enabled = row.enabled,
+                    version = row.version,
+                    source = row.source,
+                    installed_at_ms = row.installed_at_ms,
+                    scope_override = row.scope_override,
+                    agent_type_override = row.agent_type_override,
+                )
+            }
+
+    suspend fun deleteSkillStateById(id: String) {
+        withContext(Dispatchers.IO) { q.deleteSkillStateById(id) }
+    }
+
+    suspend fun deleteSkillConversationState(skillId: String, sessionId: String) {
+        withContext(Dispatchers.IO) { q.deleteSkillConversationState(skillId, sessionId) }
+    }
+
+    suspend fun deleteSkillConversationStatesBySkill(skillId: String) {
+        withContext(Dispatchers.IO) { q.deleteSkillConversationStatesBySkill(skillId) }
+    }
+
+    suspend fun deleteSkillConversationStatesBySession(sessionId: String) {
+        withContext(Dispatchers.IO) { q.deleteSkillConversationStatesBySession(sessionId) }
+    }
+
     suspend fun insertWakeItem(
         wakeId: String, sessionId: String, source: String, type: String, content: String,
         status: String, createdAtMs: Long,

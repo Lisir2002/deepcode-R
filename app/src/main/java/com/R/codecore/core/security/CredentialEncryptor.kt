@@ -3,6 +3,9 @@ package com.R.codecore.core.security
 import android.content.Context
 import com.R.codecore.core.db.entity.CredentialEncryptionStateEntity
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.WorkspaceRepository as V2WorkspaceRepository
 import com.R.codecore.feature.workspace.data.local.dao.CredentialEncryptionStateDao
 import com.R.codecore.feature.workspace.domain.RemoteAuditAction
 import com.R.codecore.feature.workspace.domain.RemoteAuditCategory
@@ -45,6 +48,8 @@ import javax.inject.Singleton
 class CredentialEncryptor @Inject constructor(
     @ApplicationContext private val context: Context,
     private val stateDao: CredentialEncryptionStateDao,
+    private val v2Workspace: V2WorkspaceRepository,
+    private val readMode: DataReadModeHolder,
     private val auditLogRepo: RemoteAuditLogRepository
 ) {
     private companion object {
@@ -53,6 +58,30 @@ class CredentialEncryptor @Inject constructor(
         const val GCM_TAG_BITS = 128
         const val IV_LEN = 12
         const val SCHEME_V2 = "V2:"
+    }
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
+
+    private suspend fun getState(): CredentialEncryptionStateEntity? =
+        if (isV2()) v2Workspace.getEncryptionState()?.toEntity() else stateDao.getSingleOrNull()
+
+    /** 供 UI 读取当前加密状态（按 DataReadMode 选择读源）。 */
+    suspend fun encryptionState(): CredentialEncryptionStateEntity? = getState()
+
+    private suspend fun upsertState(e: CredentialEncryptionStateEntity) {
+        if (isV2()) {
+            v2Workspace.upsertEncryptionState(
+                masterKeyFingerprint = e.masterKeyFingerprint,
+                dekCiphertext = e.dekCiphertext,
+                encScheme = e.encScheme,
+                lastRotatedAt = e.lastRotatedAt,
+                rotationCounter = e.rotationCounter.toLong(),
+                biometricRequired = if (e.biometricRequired) 1L else 0L,
+                migratedFromV1 = if (e.migratedFromV1) 1L else 0L,
+            )
+        } else {
+            stateDao.upsert(e)
+        }
     }
 
     // DEKManager.getInstance 是纯 volatile+双检锁，构造函数里直接赋值无阻塞
@@ -113,7 +142,7 @@ class CredentialEncryptor @Inject constructor(
             if (initialized && dekCached != null) return@withLock
 
             val result = runCatching {
-                val existing = stateDao.getSingleOrNull()
+                val existing = getState()
                 val masterKey = dekManager.getOrCreateMasterKey()
 
                 if (existing == null) {
@@ -121,7 +150,7 @@ class CredentialEncryptor @Inject constructor(
                     val dek = dekManager.generateDek()
                     val dekCiphertext = dekManager.wrapDek(masterKey, dek)
                     val fingerprint = dekManager.getMasterKeyFingerprint(masterKey)
-                    stateDao.upsert(
+                    upsertState(
                         CredentialEncryptionStateEntity(
                             masterKeyFingerprint = fingerprint,
                             dekCiphertext = dekCiphertext,
@@ -156,7 +185,7 @@ class CredentialEncryptor @Inject constructor(
                         )
                         val newDek = dekManager.generateDek()
                         val newCiphertext = dekManager.wrapDek(masterKey, newDek)
-                        stateDao.upsert(
+                        upsertState(
                             existing.copy(
                                 dekCiphertext = newCiphertext,
                                 rotationCounter = (existing.rotationCounter ?: 0) + 1,
@@ -276,8 +305,8 @@ class CredentialEncryptor @Inject constructor(
             val fingerprint = dekManager.getMasterKeyFingerprint(masterKey)
             val startMs = System.currentTimeMillis()
 
-            val existing = stateDao.getSingleOrNull()
-            stateDao.upsert(
+            val existing = getState()
+            upsertState(
                 CredentialEncryptionStateEntity(
                     masterKeyFingerprint = fingerprint,
                     dekCiphertext = newDekCiphertext,
@@ -343,8 +372,8 @@ class CredentialEncryptor @Inject constructor(
                 val newDekCiphertext = dekManager.wrapDek(newMasterKey, currentDek)
                 val fingerprint = dekManager.getMasterKeyFingerprint(newMasterKey)
 
-                val existing = stateDao.getSingleOrNull()
-                stateDao.upsert(
+                val existing = getState()
+                upsertState(
                     CredentialEncryptionStateEntity(
                         masterKeyFingerprint = fingerprint,
                         dekCiphertext = newDekCiphertext,
@@ -399,7 +428,7 @@ class CredentialEncryptor @Inject constructor(
         val newDekCiphertext = dekManager.wrapDek(newMasterKey, newDek)
         val fingerprint = dekManager.getMasterKeyFingerprint(newMasterKey)
 
-        stateDao.upsert(
+        upsertState(
             CredentialEncryptionStateEntity(
                 masterKeyFingerprint = fingerprint,
                 dekCiphertext = newDekCiphertext,
@@ -476,6 +505,19 @@ class CredentialEncryptor @Inject constructor(
             false
         }
     }
+
+    // ── V2 映射 ──────────────────────────────────────────────────────
+
+    private fun com.R.codecore.datalayer.sqldelight.workspace.Credential_encryption_state.toEntity() = CredentialEncryptionStateEntity(
+        id = id.toInt(),
+        masterKeyFingerprint = master_key_fingerprint,
+        dekCiphertext = dek_ciphertext,
+        encScheme = enc_scheme,
+        lastRotatedAt = last_rotated_at,
+        rotationCounter = rotation_counter.toInt(),
+        biometricRequired = biometric_required == 1L,
+        migratedFromV1 = migrated_from_v1 == 1L,
+    )
 
     // ============== 数据类 ==============
 

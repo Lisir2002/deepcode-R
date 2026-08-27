@@ -508,6 +508,39 @@ VALUES (?, ?, ?);
 selectSkillConversationState:
 SELECT * FROM skill_conversation_state WHERE skill_id = ? AND session_id = ?;
 
+selectSkillConversationStatesBySession:
+SELECT * FROM skill_conversation_state WHERE session_id = ?;
+
+selectSkillConversationStatesEnabledBySession:
+SELECT skill_id FROM skill_conversation_state WHERE session_id = ? AND enabled = 1;
+
+selectSkillConversationStatesDisabledBySession:
+SELECT skill_id FROM skill_conversation_state WHERE session_id = ? AND enabled = 0;
+
+observeSkillConversationStatesBySession:
+SELECT * FROM skill_conversation_state WHERE session_id = ?;
+
+updateSkillStateEnabled:
+UPDATE skill_state SET enabled = ? WHERE id = ?;
+
+updateSkillStateScopeOverride:
+UPDATE skill_state SET scope_override = ?, agent_type_override = ? WHERE id = ?;
+
+selectScopedSkillStates:
+SELECT id, enabled, version, source, installed_at_ms, scope_override, agent_type_override FROM skill_state WHERE scope_override IS NOT NULL;
+
+deleteSkillStateById:
+DELETE FROM skill_state WHERE id = ?;
+
+deleteSkillConversationState:
+DELETE FROM skill_conversation_state WHERE skill_id = ? AND session_id = ?;
+
+deleteSkillConversationStatesBySkill:
+DELETE FROM skill_conversation_state WHERE skill_id = ?;
+
+deleteSkillConversationStatesBySession:
+DELETE FROM skill_conversation_state WHERE session_id = ?;
+
 insertWakeItem:
 INSERT INTO wake_queue (wake_id, session_id, source, type, content, status, created_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?);

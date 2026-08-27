@@ -146,6 +146,19 @@ VALUES (?, ?, ?, ?, ?, ?);
 selectRemoteMountsByConnection:
 SELECT * FROM remote_mounts WHERE connection_id = ? ORDER BY remote_path ASC;
 
+-- P2-2 批 2：对齐 Room RemoteMountDao 剩余方法（getMountById/getAllMountsOnce Flow/update/delete）。
+selectRemoteMountById:
+SELECT * FROM remote_mounts WHERE id = ?;
+
+selectAllRemoteMounts:
+SELECT * FROM remote_mounts ORDER BY remote_path ASC;
+
+updateRemoteMount:
+UPDATE remote_mounts SET connection_id = ?, remote_path = ?, local_mount_path = ?, is_active = ?, auto_connect = ? WHERE id = ?;
+
+deleteRemoteMount:
+DELETE FROM remote_mounts WHERE id = ?;
+
 deleteRemoteMountsByConnection:
 DELETE FROM remote_mounts WHERE connection_id = ?;
 

@@ -1,6 +1,9 @@
 package com.R.codecore.feature.agent.domain.skill
 
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.dao.SkillConversationStateDao
 import com.R.codecore.feature.agent.data.local.dao.SkillStateDao
 import com.R.codecore.feature.agent.data.local.entity.SkillConversationStateEntity
@@ -44,25 +47,57 @@ data class SkillResolution(
 class SkillStateRepository @Inject constructor(
     private val localDirectorySkillSource: LocalDirectorySkillSource,
     private val skillStateDao: SkillStateDao,
-    private val skillConversationStateDao: SkillConversationStateDao
+    private val skillConversationStateDao: SkillConversationStateDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) {
     private companion object {
         const val TAG = "SkillStateRepository"
         const val DEFAULT_AGENT_TYPE = "coding" // 当前单 Agent 场景；多 Agent 演进后由调用方传入动态值
     }
 
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
+
+    private suspend fun getSkillStates(): List<SkillStateEntity> =
+        if (isV2()) v2Agent.listSkillStates().map { it.toEntity() } else skillStateDao.getAllOnce()
+
+    private fun getSkillStatesSync(): List<SkillStateEntity> =
+        if (readMode.currentModeSync() == DataReadMode.V2) {
+            runBlocking(Dispatchers.IO) { v2Agent.listSkillStates().map { it.toEntity() } }
+        } else {
+            runBlocking(Dispatchers.IO) { skillStateDao.getAllOnce() }
+        }
+
+    private suspend fun getConvStates(sessionId: String): List<SkillConversationStateEntity> =
+        if (isV2()) v2Agent.listSkillConversationStates(sessionId).map { it.toEntity() }
+        else skillConversationStateDao.getBySession(sessionId)
+
+    private fun getConvStatesSync(sessionId: String): List<SkillConversationStateEntity> =
+        if (readMode.currentModeSync() == DataReadMode.V2) {
+            runBlocking(Dispatchers.IO) { v2Agent.listSkillConversationStates(sessionId).map { it.toEntity() } }
+        } else {
+            runBlocking(Dispatchers.IO) { skillConversationStateDao.getBySession(sessionId) }
+        }
+
     /** 磁盘技能变更刷新触发器（UI 在安装/卸载/更新后自增以触发重扫）。 */
     private val refreshTrigger = MutableStateFlow(0)
 
     /** 响应式技能列表：磁盘扫描 + Room 启用状态与作用域覆盖合并。 */
     val skillsFlow: Flow<List<Skill>> =
-        combine(refreshTrigger, skillStateDao.getAll()) { _, states ->
+        combine(
+            refreshTrigger,
+            if (readMode.currentModeSync() == DataReadMode.V2) {
+                v2Agent.observeAllSkillStates().map { list -> list.map { it.toEntity() } }
+            } else {
+                skillStateDao.getAll()
+            }
+        ) { _, states ->
             mergeWithState(localDirectorySkillSource.listSkills(), states)
         }
 
     /** 一次性技能列表（含启用状态与作用域覆盖）。 */
     suspend fun listSkills(): List<Skill> {
-        val states = skillStateDao.getAllOnce()
+        val states = getSkillStates()
         return mergeWithState(localDirectorySkillSource.listSkills(), states)
     }
 
@@ -76,7 +111,7 @@ class SkillStateRepository @Inject constructor(
      * 读取技能清单；内部用 [runBlocking] 在 IO 线程读取 Room 状态，避免阻塞调用线程。
      */
     fun listSkillsSync(): List<Skill> {
-        val states = runBlocking(Dispatchers.IO) { skillStateDao.getAllOnce() }
+        val states = getSkillStatesSync()
         return mergeWithState(localDirectorySkillSource.listSkills(), states)
     }
 
@@ -100,7 +135,10 @@ class SkillStateRepository @Inject constructor(
 
     /** 启用/禁用技能（即时生效，写 Room）。 */
     suspend fun setEnabled(id: String, enabled: Boolean) {
-        runCatching { skillStateDao.setEnabled(id, enabled) }
+        runCatching {
+            if (isV2()) v2Agent.setSkillStateEnabled(id, if (enabled) 1L else 0L)
+            else skillStateDao.setEnabled(id, enabled)
+        }
             .onFailure { FileLogger.e(TAG, "更新技能启用状态失败: $id", it) }
         refreshTrigger.value++
     }
@@ -108,14 +146,22 @@ class SkillStateRepository @Inject constructor(
     /** 安装技能：复制到技能目录 + 写 Room 状态。 */
     suspend fun install(sourceDir: java.io.File): Skill? {
         val installed = localDirectorySkillSource.install(sourceDir) ?: return null
-        skillStateDao.upsert(
-            SkillStateEntity(
-                id = installed.id,
-                enabled = true,
-                version = installed.version,
-                source = SkillSourceType.LOCAL.name
+        if (isV2()) {
+            v2Agent.upsertSkillState(
+                id = installed.id, enabled = 1L, version = installed.version,
+                source = SkillSourceType.LOCAL.name,
+                installedAtMs = System.currentTimeMillis(), scopeOverride = null, agentTypeOverride = null,
             )
-        )
+        } else {
+            skillStateDao.upsert(
+                SkillStateEntity(
+                    id = installed.id,
+                    enabled = true,
+                    version = installed.version,
+                    source = SkillSourceType.LOCAL.name
+                )
+            )
+        }
         refreshTrigger.value++
         return installed
     }
@@ -124,10 +170,16 @@ class SkillStateRepository @Inject constructor(
     suspend fun uninstall(id: String): Boolean {
         val ok = localDirectorySkillSource.uninstall(id)
         if (ok) {
-            runCatching { skillStateDao.deleteById(id) }
+            runCatching {
+                if (isV2()) {
+                    v2Agent.deleteSkillStateById(id)
+                    v2Agent.deleteSkillConversationStatesBySkill(id)
+                } else {
+                    skillStateDao.deleteById(id)
+                    skillConversationStateDao.deleteBySkill(id)
+                }
+            }
                 .onFailure { FileLogger.e(TAG, "删除技能状态失败: $id", it) }
-            runCatching { skillConversationStateDao.deleteBySkill(id) }
-                .onFailure { FileLogger.e(TAG, "清理技能对话绑定失败: $id", it) }
             refreshTrigger.value++
         }
         return ok
@@ -136,16 +188,28 @@ class SkillStateRepository @Inject constructor(
     /** 更新技能：覆盖目录 + 更新 Room 版本。 */
     suspend fun update(id: String, sourceDir: java.io.File): Skill? {
         val updated = localDirectorySkillSource.update(id, sourceDir) ?: return null
-        val existing = skillStateDao.getById(id)
-        skillStateDao.upsert(
-            SkillStateEntity(
+        val existing = if (isV2()) v2Agent.getSkillState(id)?.toEntity() else skillStateDao.getById(id)
+        if (isV2()) {
+            v2Agent.upsertSkillState(
                 id = updated.id,
-                enabled = existing?.enabled ?: true,
+                enabled = if (existing?.enabled ?: true) 1L else 0L,
                 version = updated.version,
                 source = existing?.source ?: SkillSourceType.LOCAL.name,
-                installedAtMs = existing?.installedAtMs ?: System.currentTimeMillis()
+                installedAtMs = existing?.installedAtMs ?: System.currentTimeMillis(),
+                scopeOverride = existing?.scopeOverride,
+                agentTypeOverride = existing?.agentTypeOverride,
             )
-        )
+        } else {
+            skillStateDao.upsert(
+                SkillStateEntity(
+                    id = updated.id,
+                    enabled = existing?.enabled ?: true,
+                    version = updated.version,
+                    source = existing?.source ?: SkillSourceType.LOCAL.name,
+                    installedAtMs = existing?.installedAtMs ?: System.currentTimeMillis()
+                )
+            )
+        }
         refreshTrigger.value++
         return updated
     }
@@ -153,7 +217,11 @@ class SkillStateRepository @Inject constructor(
     /** 设置作用域用户覆盖（NULL=清除覆盖，跟随 frontmatter 声明）。AGENT 级可同时设置绑定的 agentType。 */
     suspend fun setScopeOverride(id: String, scope: SkillScope?, agentType: String? = null) {
         runCatching {
-            skillStateDao.setScopeOverride(id, scope?.name, if (scope == SkillScope.AGENT) agentType else null)
+            if (isV2()) {
+                v2Agent.setSkillStateScopeOverride(id, scope?.name, if (scope == SkillScope.AGENT) agentType else null)
+            } else {
+                skillStateDao.setScopeOverride(id, scope?.name, if (scope == SkillScope.AGENT) agentType else null)
+            }
         }.onFailure { FileLogger.e(TAG, "更新技能作用域覆盖失败: $id", it) }
         refreshTrigger.value++
     }
@@ -161,25 +229,30 @@ class SkillStateRepository @Inject constructor(
     /** 对话级双向控制：设置技能在某对话内的生效状态（true=添加/启用，false=本对话临时禁用）。 */
     suspend fun setConversationEnabled(skillId: String, sessionId: String, enabled: Boolean) {
         runCatching {
-            skillConversationStateDao.upsert(SkillConversationStateEntity(skillId, sessionId, enabled))
+            if (isV2()) v2Agent.upsertSkillConversationState(skillId, sessionId, if (enabled) 1L else 0L)
+            else skillConversationStateDao.upsert(SkillConversationStateEntity(skillId, sessionId, enabled))
         }.onFailure { FileLogger.e(TAG, "更新技能对话状态失败: $skillId / $sessionId", it) }
         refreshTrigger.value++
     }
 
     /** 移除技能在某对话的绑定记录（恢复跟随声明）。 */
     suspend fun removeConversationBinding(skillId: String, sessionId: String) {
-        runCatching { skillConversationStateDao.delete(skillId, sessionId) }
+        runCatching {
+            if (isV2()) v2Agent.deleteSkillConversationState(skillId, sessionId)
+            else skillConversationStateDao.delete(skillId, sessionId)
+        }
             .onFailure { FileLogger.e(TAG, "移除技能对话绑定失败: $skillId / $sessionId", it) }
         refreshTrigger.value++
     }
 
     /** 某对话内全部技能关系（供对话技能面板展示）。 */
     suspend fun listConversationStates(sessionId: String): List<SkillConversationStateEntity> =
-        skillConversationStateDao.getBySession(sessionId)
+        getConvStates(sessionId)
 
     /** 某对话内某技能的绑定状态（无绑定返回 null = 跟随声明）。 */
     suspend fun getConversationState(skillId: String, sessionId: String): SkillConversationStateEntity? =
-        skillConversationStateDao.getBySkillAndSession(skillId, sessionId)
+        if (isV2()) v2Agent.getSkillConversationState(skillId, sessionId)?.toEntity()
+        else skillConversationStateDao.getBySkillAndSession(skillId, sessionId)
 
     /**
      * 作用域严格隐藏过滤：返回在「当前 agent + 当前会话」下可见的技能。
@@ -198,7 +271,7 @@ class SkillStateRepository @Inject constructor(
         agentType: String = DEFAULT_AGENT_TYPE
     ): List<Skill> {
         if (sessionId == null) return skills.filter { it.enabled }
-        val convStates = skillConversationStateDao.getBySession(sessionId).associateBy { it.skillId }
+        val convStates = getConvStates(sessionId).associateBy { it.skillId }
         return filterByConvStates(skills, convStates, agentType)
     }
 
@@ -212,9 +285,7 @@ class SkillStateRepository @Inject constructor(
         agentType: String = DEFAULT_AGENT_TYPE
     ): List<Skill> {
         if (sessionId == null) return skills.filter { it.enabled }
-        val convStates = runBlocking(Dispatchers.IO) {
-            skillConversationStateDao.getBySession(sessionId)
-        }.associateBy { it.skillId }
+        val convStates = getConvStatesSync(sessionId).associateBy { it.skillId }
         return filterByConvStates(skills, convStates, agentType)
     }
 
@@ -288,4 +359,22 @@ class SkillStateRepository @Inject constructor(
             disabledDependencies = disabled.distinct()
         )
     }
+
+    // ── V2 映射 ──────────────────────────────────────────────────────
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Skill_state.toEntity() = SkillStateEntity(
+        id = id,
+        enabled = enabled == 1L,
+        version = version,
+        source = source,
+        installedAtMs = installed_at_ms,
+        scopeOverride = scope_override,
+        agentTypeOverride = agent_type_override,
+    )
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Skill_conversation_state.toEntity() = SkillConversationStateEntity(
+        skillId = skill_id,
+        sessionId = session_id,
+        enabled = enabled == 1L,
+    )
 }

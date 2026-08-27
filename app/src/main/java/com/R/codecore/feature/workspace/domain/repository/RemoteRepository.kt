@@ -2,6 +2,9 @@ package com.R.codecore.feature.workspace.domain.repository
 
 import com.R.codecore.core.security.CredentialEncryptor
 import com.R.codecore.core.security.HostKeyManager
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.WorkspaceRepository as V2WorkspaceRepository
 import com.R.codecore.feature.workspace.data.local.dao.RemoteConnectionDao
 import com.R.codecore.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.R.codecore.feature.workspace.data.local.entity.RemoteMountEntity
@@ -27,6 +30,8 @@ import javax.inject.Singleton
 @Singleton
 class RemoteRepository @Inject constructor(
     private val dao: RemoteConnectionDao,
+    private val v2Workspace: V2WorkspaceRepository,
+    private val readMode: DataReadModeHolder,
     private val syncSettings: com.R.codecore.feature.settings.data.repository.SyncSettingsRepository,
     private val hostKeyManager: HostKeyManager,
     private val encryptor: CredentialEncryptor,
@@ -34,13 +39,28 @@ class RemoteRepository @Inject constructor(
     private val activeEngines = ConcurrentHashMap<String, SyncEngine>()
     private val activeEngineIds = MutableStateFlow<Set<String>>(emptySet())
 
-    fun getConnections(): Flow<List<RemoteConnection>> = dao.getAllConnections().map { list ->
-        list.map { it.toDomainModel() }
-    }
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
+
+    private fun isV2Sync(): Boolean = readMode.currentModeSync() == DataReadMode.V2
+
+    private suspend fun getConnectionEntity(id: String): RemoteConnectionEntity? =
+        if (isV2()) v2Workspace.getRemoteConnection(id)?.toEntity() else dao.getConnectionById(id)
+
+    private suspend fun getMountEntity(id: String): RemoteMountEntity? =
+        if (isV2()) v2Workspace.getRemoteMount(id)?.toEntity() else dao.getMountById(id)
+
+    fun getConnections(): Flow<List<RemoteConnection>> =
+        if (isV2Sync()) {
+            v2Workspace.observeAllRemoteConnections().map { list ->
+                list.map { it.toEntity().toDomainModel() }
+            }
+        } else {
+            dao.getAllConnections().map { list -> list.map { it.toDomainModel() } }
+        }
 
     /** 按 id 一次性读（用于冷启动 SSH 连接组装、Profile 激活时查主机配置）。 */
     suspend fun getConnectionById(id: String): RemoteConnection? {
-        val entity = dao.getConnectionById(id) ?: return null
+        val entity = getConnectionEntity(id) ?: return null
         return entity.toDomainModel()
     }
 
@@ -52,19 +72,34 @@ class RemoteRepository @Inject constructor(
      * authType 兼容：rc60 之前存小写 "password"/"key"，rc60+ 统一写大写
      * "PASSWORD"/"PRIVATE_KEY"；读取时两种都认，老用户升级不丢认证。 */
     suspend fun getAuthById(id: String): RemoteAuth? {
-        val entity = dao.getConnectionById(id) ?: return null
+        val entity = getConnectionEntity(id) ?: return null
         return resolveAuth(entity.authType, entity.authData, entity.passphrase)
     }
-    
-    fun getMounts(): Flow<List<RemoteMount>> = combine(
-        dao.getAllMounts(),
-        activeEngineIds
-    ) { list, activeIds ->
-        list.map { mountEntity ->
-            val connEntity = dao.getConnectionById(mountEntity.connectionId)
-            mountEntity.toDomainModel(connEntity?.toDomainModel()).copy(
-                isActive = activeIds.contains(mountEntity.id)
-            )
+
+    fun getMounts(): Flow<List<RemoteMount>> = if (isV2Sync()) {
+        combine(
+            v2Workspace.observeAllRemoteMounts(),
+            activeEngineIds
+        ) { list, activeIds ->
+            list.map { row ->
+                val entity = row.toEntity()
+                val connEntity = v2Workspace.getRemoteConnection(entity.connectionId)?.toEntity()
+                entity.toDomainModel(connEntity?.toDomainModel()).copy(
+                    isActive = activeIds.contains(entity.id)
+                )
+            }
+        }
+    } else {
+        combine(
+            dao.getAllMounts(),
+            activeEngineIds
+        ) { list, activeIds ->
+            list.map { mountEntity ->
+                val connEntity = dao.getConnectionById(mountEntity.connectionId)
+                mountEntity.toDomainModel(connEntity?.toDomainModel()).copy(
+                    isActive = activeIds.contains(mountEntity.id)
+                )
+            }
         }
     }
 
@@ -99,18 +134,33 @@ class RemoteRepository @Inject constructor(
         val passphrase = (auth as? RemoteAuth.PrivateKey)?.passphrase
         val passphraseEnc = if (passphrase.isNullOrBlank()) null else encryptCredential(passphrase)
 
-        val entity = RemoteConnectionEntity(
-            id = conn.id,
-            name = conn.name,
-            protocol = conn.protocol,
-            host = conn.host,
-            port = conn.port,
-            username = conn.username,
-            authType = authType,
-            authData = authData,
-            passphrase = passphraseEnc,
-        )
-        dao.insertConnection(entity)
+        if (isV2()) {
+            v2Workspace.upsertRemoteConnection(
+                id = conn.id,
+                name = conn.name,
+                protocol = conn.protocol.name,
+                host = conn.host,
+                port = conn.port.toLong(),
+                username = conn.username,
+                authType = authType,
+                authData = authData,
+                passphrase = passphraseEnc,
+            )
+        } else {
+            dao.insertConnection(
+                RemoteConnectionEntity(
+                    id = conn.id,
+                    name = conn.name,
+                    protocol = conn.protocol,
+                    host = conn.host,
+                    port = conn.port,
+                    username = conn.username,
+                    authType = authType,
+                    authData = authData,
+                    passphrase = passphraseEnc,
+                )
+            )
+        }
     }
 
     suspend fun updateConnection(conn: RemoteConnection, auth: RemoteAuth) {
@@ -119,49 +169,73 @@ class RemoteRepository @Inject constructor(
     }
 
     suspend fun deleteConnection(id: String) {
-        val entity = dao.getConnectionById(id)
+        val entity = getConnectionEntity(id)
         if (entity != null) {
             // Associated mounts will cascade delete in DB, but we should disconnect them
-            val mounts = dao.getMountsByConnectionId(id)
-            // Just disconnect everything from memory to be safe, cascading handles DB
             activeEngines.keys.forEach { mountId -> disconnectMount(mountId) }
-            dao.deleteConnection(entity)
+            if (isV2()) v2Workspace.deleteRemoteConnection(id)
+            else dao.deleteConnection(entity)
         }
     }
 
     suspend fun addMount(mount: RemoteMount) {
-        dao.insertMount(RemoteMountEntity(
+        val entity = RemoteMountEntity(
             id = mount.id,
             connectionId = mount.connectionId,
             remotePath = mount.remotePath,
             localMountPath = mount.localMountPath,
             autoConnect = mount.autoConnect
-        ))
+        )
+        if (isV2()) {
+            v2Workspace.upsertRemoteMount(
+                id = entity.id,
+                connectionId = entity.connectionId,
+                remotePath = entity.remotePath,
+                localMountPath = entity.localMountPath,
+                isActive = if (entity.isActive) 1L else 0L,
+                autoConnect = if (entity.autoConnect) 1L else 0L,
+            )
+        } else {
+            dao.insertMount(entity)
+        }
     }
-    
+
     suspend fun updateMount(mount: RemoteMount) {
-        dao.updateMount(RemoteMountEntity(
+        val entity = RemoteMountEntity(
             id = mount.id,
             connectionId = mount.connectionId,
             remotePath = mount.remotePath,
             localMountPath = mount.localMountPath,
             autoConnect = mount.autoConnect
-        ))
+        )
+        if (isV2()) {
+            v2Workspace.updateRemoteMount(
+                id = entity.id,
+                connectionId = entity.connectionId,
+                remotePath = entity.remotePath,
+                localMountPath = entity.localMountPath,
+                isActive = if (entity.isActive) 1L else 0L,
+                autoConnect = if (entity.autoConnect) 1L else 0L,
+            )
+        } else {
+            dao.updateMount(entity)
+        }
     }
-    
+
     suspend fun deleteMount(mountId: String) {
         disconnectMount(mountId)
-        val entity = dao.getMountById(mountId)
+        val entity = getMountEntity(mountId)
         if (entity != null) {
-            dao.deleteMount(entity)
+            if (isV2()) v2Workspace.deleteRemoteMount(mountId)
+            else dao.deleteMount(entity)
         }
     }
 
     suspend fun connectMount(mountId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val mountEntity = dao.getMountById(mountId) ?: return@withContext Result.failure(Exception("Mount not found"))
-            val connEntity = dao.getConnectionById(mountEntity.connectionId) ?: return@withContext Result.failure(Exception("Connection not found"))
-            
+            val mountEntity = getMountEntity(mountId) ?: return@withContext Result.failure(Exception("Mount not found"))
+            val connEntity = getConnectionEntity(mountEntity.connectionId) ?: return@withContext Result.failure(Exception("Connection not found"))
+
             val conn = connEntity.toDomainModel()
             val mount = mountEntity.toDomainModel(conn)
 
@@ -176,9 +250,9 @@ class RemoteRepository @Inject constructor(
             client.connect(conn.host, conn.port, conn.username, auth)
 
             val engine = SyncEngine(
-                mount = mount, 
-                connection = conn, 
-                syncClient = client, 
+                mount = mount,
+                connection = conn,
+                syncClient = client,
                 ignoredPatternsStr = syncSettings.ignoredPatterns.value,
                 useGitIgnore = syncSettings.useGitIgnore.value,
                 maxSyncBatchSize = syncSettings.maxSyncBatchSize.value
@@ -246,16 +320,16 @@ class RemoteRepository @Inject constructor(
 
     suspend fun listRemoteDirectories(connectionId: String, path: String): Result<List<String>> = withContext(Dispatchers.IO) {
         try {
-            val connEntity = dao.getConnectionById(connectionId) ?: return@withContext Result.failure(Exception("Connection not found"))
+            val connEntity = getConnectionEntity(connectionId) ?: return@withContext Result.failure(Exception("Connection not found"))
             val conn = connEntity.toDomainModel()
-            
+
             val client = when (conn.protocol) {
                 RemoteProtocol.SFTP -> SftpSyncClient(hostKeyManager.createVerifier())
                 RemoteProtocol.FTP -> FtpSyncClient()
                 RemoteProtocol.LOCAL -> LocalSyncClient()
             }
             val auth = resolveAuth(connEntity.authType, connEntity.authData, connEntity.passphrase)
-            
+
             client.connect(conn.host, conn.port, conn.username, auth)
             val files = client.listFiles(path).filter { it.isDirectory }.map { it.name }
             client.disconnect()
@@ -291,6 +365,29 @@ class RemoteRepository @Inject constructor(
         isActive = isActive,
         autoConnect = autoConnect,
         connection = conn
+    )
+
+    // ── V2 行 → Room Entity 映射 ────────────────────────────────────────
+
+    private fun com.R.codecore.datalayer.sqldelight.workspace.Remote_connections.toEntity() = RemoteConnectionEntity(
+        id = id,
+        name = name,
+        protocol = runCatching { RemoteProtocol.valueOf(protocol) }.getOrDefault(RemoteProtocol.SFTP),
+        host = host,
+        port = port.toInt(),
+        username = username,
+        authType = auth_type,
+        authData = auth_data,
+        passphrase = passphrase,
+    )
+
+    private fun com.R.codecore.datalayer.sqldelight.workspace.Remote_mounts.toEntity() = RemoteMountEntity(
+        id = id,
+        connectionId = connection_id,
+        remotePath = remote_path,
+        localMountPath = local_mount_path,
+        isActive = is_active == 1L,
+        autoConnect = auto_connect == 1L,
     )
 
     // ── authType 新旧值兼容辅助 ──────────────────────────────────────────
