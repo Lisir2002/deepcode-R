@@ -10,8 +10,6 @@ import com.R.codecore.datalayer.sqldelight.agent.Todo_items as V2TodoItem
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.data.local.dao.TodoItemDao
-import com.R.codecore.feature.agent.data.local.database.AgentDatabase
-import com.R.codecore.feature.agent.data.local.database.LegacyAgentDatabase
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
 import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
