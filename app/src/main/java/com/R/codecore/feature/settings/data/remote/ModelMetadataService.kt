@@ -18,6 +18,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -387,9 +389,9 @@ class ModelMetadataService @Inject constructor(
     }
 
     /** 流式观察单模型覆盖（设置页 UI 观察后实时刷新标签角标）。 */
-    fun observeOverride(type: ProviderType, modelId: String) =
+    fun observeOverride(type: ProviderType, modelId: String): Flow<ModelCapabilityOverrideEntity?> =
         if (readMode.currentModeSync() == DataReadMode.V2) {
-            v2Agent.observeCapabilityOverride(type.name, modelId).map { it?.toEntity() }
+            v2Agent.observeCapabilityOverride(type.name, modelId).map { list -> list.firstOrNull()?.toEntity() }
         } else {
             modelCapabilityOverrideDao.observeByProviderAndModel(type.name, modelId)
         }
