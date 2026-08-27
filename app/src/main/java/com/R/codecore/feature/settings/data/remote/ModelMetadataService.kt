@@ -2,6 +2,10 @@ package com.R.codecore.feature.settings.data.remote
 
 import android.content.Context
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
+import com.R.codecore.datalayer.sqldelight.agent.Model_capability_overrides as V2ModelCapabilityOverride
 import com.R.codecore.feature.agent.data.local.dao.ModelCapabilityOverrideDao
 import com.R.codecore.feature.agent.data.local.entity.ModelCapabilityOverrideEntity
 import com.R.codecore.feature.proxy.domain.ClashProxyManager
@@ -57,8 +61,12 @@ class ModelMetadataService @Inject constructor(
      * 解决「App 启动即拉取、此时代理尚未自动恢复完成 → 直连 models.dev 超时 → 永不重试」的问题。
      */
     private val proxyManager: ClashProxyManager,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** 独立协程作用域：监听代理状态，不占模型请求链路。 */
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -315,12 +323,14 @@ class ModelMetadataService @Inject constructor(
         }
 
         // 阶段 4 ④：单模型复选框覆盖（优先级最高）。MODELS_DEV 与 INFERRED 源都允许。
-        val override = runCatching {
-            modelCapabilityOverrideDao.getByProviderAndModel(type.name, modelId)
+        val overrideRow = runCatching {
+            if (isV2()) v2Agent.getCapabilityOverride(type.name, modelId)?.toEntity()
+            else modelCapabilityOverrideDao.getByProviderAndModel(type.name, modelId)
         }.onFailure {
             FileLogger.w(TAG, "读取单模型能力覆盖失败(type=${type.name}, id=$modelId)", it)
         }.getOrNull() ?: return afterPolicy
 
+        val override = overrideRow
         val vision = override.overrideVision ?: afterPolicy.supportsVision
         val tools = override.overrideTools ?: afterPolicy.supportsTools
         val reasoning = override.overrideReasoning ?: afterPolicy.supportsReasoning
@@ -355,17 +365,34 @@ class ModelMetadataService @Inject constructor(
             overrideTools = tools,
             overrideReasoning = reasoning
         )
-        modelCapabilityOverrideDao.upsert(entity)
+        if (isV2()) {
+            v2Agent.upsertCapabilityOverride(
+                id = entity.id,
+                providerType = entity.providerType,
+                modelId = entity.modelId,
+                overrideVision = entity.overrideVision?.let { if (it) 1L else 0L },
+                overrideTools = entity.overrideTools?.let { if (it) 1L else 0L },
+                overrideReasoning = entity.overrideReasoning?.let { if (it) 1L else 0L },
+                updatedAtMs = System.currentTimeMillis()
+            )
+        } else {
+            modelCapabilityOverrideDao.upsert(entity)
+        }
     }
 
     /** 删除单个模型的覆盖（恢复到「启发式 + 兼容端点策略」的自动路径）。 */
     suspend fun clearOverride(type: ProviderType, modelId: String) = withContext(Dispatchers.IO) {
-        modelCapabilityOverrideDao.deleteByProviderAndModel(type.name, modelId)
+        if (isV2()) v2Agent.deleteCapabilityOverride(type.name, modelId)
+        else modelCapabilityOverrideDao.deleteByProviderAndModel(type.name, modelId)
     }
 
     /** 流式观察单模型覆盖（设置页 UI 观察后实时刷新标签角标）。 */
     fun observeOverride(type: ProviderType, modelId: String) =
-        modelCapabilityOverrideDao.observeByProviderAndModel(type.name, modelId)
+        if (readMode.currentModeSync() == DataReadMode.V2) {
+            v2Agent.observeCapabilityOverride(type.name, modelId).map { it?.toEntity() }
+        } else {
+            modelCapabilityOverrideDao.observeByProviderAndModel(type.name, modelId)
+        }
 
     private fun findMetadata(
         catalog: Map<String, Map<String, ModelMetadata>>,
@@ -417,6 +444,18 @@ class ModelMetadataService @Inject constructor(
     private data class Cache(
         val loadedAtMs: Long,
         val catalog: Map<String, Map<String, ModelMetadata>>
+    )
+
+    // ── V2（SQLDelight）↔ Room Entity 映射 ──────────────────────────────
+
+    private fun V2ModelCapabilityOverride.toEntity() = ModelCapabilityOverrideEntity(
+        id = id,
+        providerType = provider_type,
+        modelId = model_id,
+        overrideVision = override_vision?.let { it != 0L },
+        overrideTools = override_tools?.let { it != 0L },
+        overrideReasoning = override_reasoning?.let { it != 0L },
+        updatedAtMs = updated_at_ms
     )
 
     private companion object {

@@ -1,5 +1,9 @@
 package com.R.codecore.feature.agent.domain.trajectory
 
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
+import com.R.codecore.datalayer.sqldelight.agent.Agent_trajectories as V2Trajectory
 import com.R.codecore.feature.agent.data.local.dao.TrajectoryAggregate
 import com.R.codecore.feature.agent.data.local.dao.TrajectoryDao
 import com.R.codecore.feature.agent.data.local.entity.TrajectoryEntity
@@ -22,7 +26,9 @@ import javax.inject.Singleton
 @Singleton
 class TrajectoryService @Inject constructor(
     private val trajectoryDao: TrajectoryDao,
-    private val toolResultTypeRegistry: ToolResultTypeRegistry
+    private val toolResultTypeRegistry: ToolResultTypeRegistry,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) {
     private companion object {
         /** 轨迹 kind 常量（与 Entity 注释一致）。 */
@@ -37,6 +43,8 @@ class TrajectoryService @Inject constructor(
         const val ACTION_SUMMARY_MAX_ITEMS = 12
         const val ACTION_SUMMARY_CHARS = 80
     }
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** 轨迹摘要提取：成功走注册表定制/通用截断；失败带错误码前缀。 */
     private fun buildSummary(toolName: String, args: Map<String, JsonElement>, result: ToolResult): String {
@@ -68,23 +76,40 @@ class TrajectoryService @Inject constructor(
         tokensOut: Int
     ) {
         if (sessionId == null) return
-        trajectoryDao.insert(
-            TrajectoryEntity(
-                trajectoryId = "trj_${UUID.randomUUID().toString().replace("-", "")}",
-                sessionId = sessionId,
-                taskId = taskId.orEmpty(),
-                turnIndex = turnIndex,
-                kind = KIND_TOOL,
-                toolName = toolName,
-                argsHash = argsHash(args),
-                resultSummary = buildSummary(toolName, args, result),
-                isError = isError,
-                durationMs = durationMs.coerceAtLeast(0),
-                tokensIn = tokensIn,
-                tokensOut = tokensOut,
-                ts = System.currentTimeMillis()
-            )
+        val entity = TrajectoryEntity(
+            trajectoryId = "trj_${UUID.randomUUID().toString().replace("-", "")}",
+            sessionId = sessionId,
+            taskId = taskId.orEmpty(),
+            turnIndex = turnIndex,
+            kind = KIND_TOOL,
+            toolName = toolName,
+            argsHash = argsHash(args),
+            resultSummary = buildSummary(toolName, args, result),
+            isError = isError,
+            durationMs = durationMs.coerceAtLeast(0),
+            tokensIn = tokensIn,
+            tokensOut = tokensOut,
+            ts = System.currentTimeMillis()
         )
+        if (isV2()) {
+            v2Agent.insertTrajectory(
+                trajectoryId = entity.trajectoryId,
+                sessionId = entity.sessionId,
+                taskId = entity.taskId,
+                turnIndex = entity.turnIndex.toLong(),
+                kind = entity.kind,
+                toolName = entity.toolName,
+                argsHash = entity.argsHash,
+                resultSummary = entity.resultSummary,
+                isError = if (entity.isError) 1L else 0L,
+                durationMs = entity.durationMs,
+                tokensIn = entity.tokensIn.toLong(),
+                tokensOut = entity.tokensOut.toLong(),
+                ts = entity.ts
+            )
+        } else {
+            trajectoryDao.insert(entity)
+        }
     }
 
     /** 追加一条轻量标记（turn 边界 / 压缩 / 注入 / 错误 / 超时）。 */
@@ -98,25 +123,43 @@ class TrajectoryService @Inject constructor(
         tokensOut: Int = 0
     ) {
         if (sessionId == null) return
-        trajectoryDao.insert(
-            TrajectoryEntity(
-                trajectoryId = "trj_${UUID.randomUUID().toString().replace("-", "")}",
-                sessionId = sessionId,
-                taskId = taskId.orEmpty(),
-                turnIndex = turnIndex,
-                kind = kind,
-                resultSummary = summary,
-                tokensIn = tokensIn,
-                tokensOut = tokensOut,
-                ts = System.currentTimeMillis()
-            )
+        val entity = TrajectoryEntity(
+            trajectoryId = "trj_${UUID.randomUUID().toString().replace("-", "")}",
+            sessionId = sessionId,
+            taskId = taskId.orEmpty(),
+            turnIndex = turnIndex,
+            kind = kind,
+            resultSummary = summary,
+            tokensIn = tokensIn,
+            tokensOut = tokensOut,
+            ts = System.currentTimeMillis()
         )
+        if (isV2()) {
+            v2Agent.insertTrajectory(
+                trajectoryId = entity.trajectoryId,
+                sessionId = entity.sessionId,
+                taskId = entity.taskId,
+                turnIndex = entity.turnIndex.toLong(),
+                kind = entity.kind,
+                toolName = entity.toolName,
+                argsHash = entity.argsHash,
+                resultSummary = entity.resultSummary,
+                isError = if (entity.isError) 1L else 0L,
+                durationMs = entity.durationMs,
+                tokensIn = entity.tokensIn.toLong(),
+                tokensOut = entity.tokensOut.toLong(),
+                ts = entity.ts
+            )
+        } else {
+            trajectoryDao.insert(entity)
+        }
     }
 
     /** 本回合（taskId 分组）用量：主显每回合增量（D2-4 数据源）。 */
     suspend fun turnUsage(sessionId: String?, taskId: String?): TurnUsage {
         if (sessionId == null || taskId.isNullOrBlank()) return TurnUsage()
-        val entries = trajectoryDao.getByTask(taskId)
+        val entries = (if (isV2()) v2Agent.listTrajectoriesByTask(taskId).map { it.toEntity() }
+            else trajectoryDao.getByTask(taskId))
         if (entries.isEmpty()) return TurnUsage()
         return entries.aggregateUsage()
     }
@@ -124,14 +167,20 @@ class TrajectoryService @Inject constructor(
     /** 会话累计用量：附一行累计（D2-4 数据源）。 */
     suspend fun sessionUsage(sessionId: String?): SessionUsage {
         if (sessionId == null) return SessionUsage()
-        val agg = trajectoryDao.getSessionAggregate(sessionId)
+        val agg = if (isV2()) {
+            val v2 = v2Agent.getTrajectoryAggregate(sessionId)
+            TrajectoryAggregate(tokensIn = v2.tokens_in, tokensOut = v2.tokens_out, count = v2.count)
+        } else {
+            trajectoryDao.getSessionAggregate(sessionId)
+        }
         return SessionUsage(tokensIn = agg.tokensIn, tokensOut = agg.tokensOut, count = agg.count)
     }
 
     /** 已做动作摘要（D2-5：3.7 强制收敛返回 / Playbook 阶段总结 / 审计）。 */
     suspend fun buildActionSummary(sessionId: String?, maxItems: Int = ACTION_SUMMARY_MAX_ITEMS): String {
         if (sessionId == null) return ""
-        val tools = trajectoryDao.getBySession(sessionId).filter { it.kind == KIND_TOOL }.takeLast(maxItems)
+        val tools = (if (isV2()) v2Agent.listTrajectories(sessionId).map { it.toEntity() }
+            else trajectoryDao.getBySession(sessionId)).filter { it.kind == KIND_TOOL }.takeLast(maxItems)
         if (tools.isEmpty()) return ""
         return tools.joinToString("\n") { t ->
             val marker = if (t.isError) "❌" else "•"
@@ -143,14 +192,15 @@ class TrajectoryService @Inject constructor(
     /** 审计回放：按会话查完整轨迹（时间升序）。 */
     suspend fun getTrajectory(sessionId: String?): List<TrajectoryEntity> {
         if (sessionId == null) return emptyList()
-        return trajectoryDao.getBySession(sessionId)
+        return if (isV2()) v2Agent.listTrajectories(sessionId).map { it.toEntity() }
+        else trajectoryDao.getBySession(sessionId)
     }
 
     /** 会话最近一个回合（taskId + turnIndex），供 UI 用量卡片定位。 */
     suspend fun latestTurn(sessionId: String?): Pair<String, Int>? {
         if (sessionId == null) return null
-        val taskId = trajectoryDao.getLatestTaskId(sessionId) ?: return null
-        val turnIndex = trajectoryDao.getMaxTurnIndex(sessionId, taskId) ?: 0
+        val taskId = (if (isV2()) v2Agent.getLatestTaskId(sessionId) else trajectoryDao.getLatestTaskId(sessionId)) ?: return null
+        val turnIndex = (if (isV2()) v2Agent.getMaxTurnIndex(sessionId, taskId) else trajectoryDao.getMaxTurnIndex(sessionId, taskId)) ?: 0
         return taskId to turnIndex
     }
 
@@ -173,6 +223,24 @@ class TrajectoryService @Inject constructor(
             toolCalls = toolCalls
         )
     }
+
+    // ── V2（SQLDelight）↔ Room Entity 映射 ──────────────────────────────
+
+    private fun V2Trajectory.toEntity() = TrajectoryEntity(
+        trajectoryId = trajectory_id,
+        sessionId = session_id,
+        taskId = task_id,
+        turnIndex = turn_index.toInt(),
+        kind = kind,
+        toolName = tool_name,
+        argsHash = args_hash,
+        resultSummary = result_summary,
+        isError = is_error != 0L,
+        durationMs = duration_ms,
+        tokensIn = tokens_in.toInt(),
+        tokensOut = tokens_out.toInt(),
+        ts = ts
+    )
 }
 
 /**

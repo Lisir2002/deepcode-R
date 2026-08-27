@@ -1,5 +1,10 @@
 package com.R.codecore.feature.agent.domain.tool.file
 
+import com.R.codecore.core.util.FileLogger
+import com.R.codecore.core.util.LineDiff
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.dao.FileEditHunkDao
 import com.R.codecore.feature.agent.data.local.entity.FileEditHunkEntity
 import com.R.codecore.feature.agent.domain.model.AgentContext
@@ -12,8 +17,6 @@ import com.R.codecore.feature.agent.domain.tool.ToolParameter
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
 import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
 import com.R.codecore.feature.agent.domain.tool.ToolResult
-import com.R.codecore.core.util.FileLogger
-import com.R.codecore.core.util.LineDiff
 import com.R.codecore.feature.workspace.domain.FileAccessProvider
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -33,7 +36,9 @@ private const val HUNK_SNAPSHOT_MAX_CHARS = 50_000
 
 class ReadFileTool @Inject constructor(
     private val fileAccess: FileAccessProvider,
-    private val fileEditHunkDao: FileEditHunkDao
+    private val fileEditHunkDao: FileEditHunkDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) : AgentTool() {
     override val name = "readFile"
     override val description = "读取指定路径的文件内容。支持工作区文件或容器绝对路径的系统文件。单次读取受文件大小限制，超大文件可通过 start_line 分段读取。"
@@ -156,18 +161,26 @@ class ReadFileTool @Inject constructor(
         newContent: String
     ) {
         try {
-            fileEditHunkDao.upsert(
-                FileEditHunkEntity(
-                    id = "hunk_${UUID.randomUUID().toString().replace("-", "")}",
-                    sessionId = sessionId,
-                    filePath = path,
-                    operation = operation,
-                    hunk = hunk,
-                    oldContent = oldContent.take(HUNK_SNAPSHOT_MAX_CHARS),
-                    newContent = newContent.take(HUNK_SNAPSHOT_MAX_CHARS),
-                    createdAtMs = System.currentTimeMillis()
-                )
+            val entity = FileEditHunkEntity(
+                id = "hunk_${UUID.randomUUID().toString().replace("-", "")}",
+                sessionId = sessionId,
+                filePath = path,
+                operation = operation,
+                hunk = hunk,
+                oldContent = oldContent.take(HUNK_SNAPSHOT_MAX_CHARS),
+                newContent = newContent.take(HUNK_SNAPSHOT_MAX_CHARS),
+                createdAtMs = System.currentTimeMillis()
             )
+            if (readMode.currentMode() == DataReadMode.V2) {
+                v2Agent.insertFileEditHunk(
+                    id = entity.id, sessionId = entity.sessionId, filePath = entity.filePath,
+                    operation = entity.operation, hunk = entity.hunk,
+                    oldContent = entity.oldContent, newContent = entity.newContent,
+                    createdAtMs = entity.createdAtMs
+                )
+            } else {
+                fileEditHunkDao.upsert(entity)
+            }
         } catch (e: Exception) {
             FileLogger.w(TAG, "记录文件 hunk 失败: $path", e)
         }
@@ -191,7 +204,9 @@ class ReadFileTool @Inject constructor(
  */
 class WriteFileTool @Inject constructor(
     private val fileAccess: FileAccessProvider,
-    private val fileEditHunkDao: FileEditHunkDao
+    private val fileEditHunkDao: FileEditHunkDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) : AgentTool() {
     override val name = "writeFile"
     override val description = "向指定路径写入完整文件内容。若文件存在则根据 overwrite 决定是否覆盖。支持写入工作区文件或容器系统文件。局部修改推荐使用 editFile。"
@@ -280,18 +295,26 @@ class WriteFileTool @Inject constructor(
             // F-3：write 落库快照（operation=write，含旧→新差异），支撑「撤销编辑」。
             if (sessionId != null) {
                 try {
-                    fileEditHunkDao.upsert(
-                        FileEditHunkEntity(
-                            id = "hunk_${UUID.randomUUID().toString().replace("-", "")}",
-                            sessionId = sessionId,
-                            filePath = path,
-                            operation = "write",
-                            hunk = diff,
-                            oldContent = oldContent.take(HUNK_SNAPSHOT_MAX_CHARS),
-                            newContent = content.take(HUNK_SNAPSHOT_MAX_CHARS),
-                            createdAtMs = System.currentTimeMillis()
-                        )
+                    val hunkEntity = FileEditHunkEntity(
+                        id = "hunk_${UUID.randomUUID().toString().replace("-", "")}",
+                        sessionId = sessionId,
+                        filePath = path,
+                        operation = "write",
+                        hunk = diff,
+                        oldContent = oldContent.take(HUNK_SNAPSHOT_MAX_CHARS),
+                        newContent = content.take(HUNK_SNAPSHOT_MAX_CHARS),
+                        createdAtMs = System.currentTimeMillis()
                     )
+                    if (readMode.currentMode() == DataReadMode.V2) {
+                        v2Agent.insertFileEditHunk(
+                            id = hunkEntity.id, sessionId = hunkEntity.sessionId, filePath = hunkEntity.filePath,
+                            operation = hunkEntity.operation, hunk = hunkEntity.hunk,
+                            oldContent = hunkEntity.oldContent, newContent = hunkEntity.newContent,
+                            createdAtMs = hunkEntity.createdAtMs
+                        )
+                    } else {
+                        fileEditHunkDao.upsert(hunkEntity)
+                    }
                 } catch (e: Exception) {
                     FileLogger.w(TAG, "记录文件 hunk 失败: $path", e)
                 }

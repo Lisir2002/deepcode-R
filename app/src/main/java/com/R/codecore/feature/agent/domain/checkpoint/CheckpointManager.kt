@@ -1,6 +1,11 @@
 package com.R.codecore.feature.agent.domain.checkpoint
 
 import android.content.Context
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
+import com.R.codecore.datalayer.sqldelight.agent.Checkpoint_file_snapshots as V2Snapshot
+import com.R.codecore.datalayer.sqldelight.agent.Session_checkpoints as V2Checkpoint
 import com.R.codecore.feature.agent.data.local.dao.CheckpointDao
 import com.R.codecore.feature.agent.data.local.dao.CheckpointFileSnapshotDao
 import com.R.codecore.feature.agent.data.local.entity.CheckpointEntity
@@ -19,7 +24,9 @@ class CheckpointManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val checkpointDao: CheckpointDao,
     private val snapshotDao: CheckpointFileSnapshotDao,
-    private val fileAccess: FileAccessProvider
+    private val fileAccess: FileAccessProvider,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder
 ) {
     // 检查点备份根路径: <filesDir>/checkpoints/<sessionId>/<checkpointId>/
     private val baseCheckpointDir: File
@@ -27,6 +34,8 @@ class CheckpointManager @Inject constructor(
 
     @Volatile
     private var activeCheckpointId: String? = null
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /**
      * 在用户发送新消息时调用，创建一个新的 Checkpoint 节点
@@ -38,16 +47,33 @@ class CheckpointManager @Inject constructor(
     ): CheckpointEntity = withContext(Dispatchers.IO) {
         val checkpointId = UUID.randomUUID().toString()
         val snippet = if (prompt.length > 60) prompt.take(60) + "..." else prompt
-        val entity = CheckpointEntity(
+        if (isV2()) {
+            v2Agent.insertCheckpointFull(
+                id = checkpointId,
+                sessionId = sessionId,
+                userMessageId = userMessageId,
+                promptSnippet = snippet,
+                createdAtMs = System.currentTimeMillis()
+            )
+        } else {
+            checkpointDao.insertCheckpoint(
+                CheckpointEntity(
+                    id = checkpointId,
+                    sessionId = sessionId,
+                    userMessageId = userMessageId,
+                    promptSnippet = snippet,
+                    createdAtMs = System.currentTimeMillis()
+                )
+            )
+        }
+        activeCheckpointId = checkpointId
+        CheckpointEntity(
             id = checkpointId,
             sessionId = sessionId,
             userMessageId = userMessageId,
             promptSnippet = snippet,
             createdAtMs = System.currentTimeMillis()
         )
-        checkpointDao.insertCheckpoint(entity)
-        activeCheckpointId = checkpointId
-        entity
     }
 
     fun setActiveCheckpointId(checkpointId: String?) {
@@ -66,7 +92,9 @@ class CheckpointManager @Inject constructor(
         val targetFile = File(filePath)
 
         // 查重：同一个 checkpointId 内对同一文件只保留最原始的一次快照
-        if (snapshotDao.countSnapshot(checkpointId, filePath) > 0) {
+        val existingCount: Long = if (isV2()) v2Agent.countCheckpointFileSnapshot(checkpointId, filePath)
+        else snapshotDao.countSnapshot(checkpointId, filePath).toLong()
+        if (existingCount > 0L) {
             return@withContext
         }
 
@@ -87,14 +115,26 @@ class CheckpointManager @Inject constructor(
             snapshotFile.writeText("") // 标示创建空记录
         }
 
-        val snapshotEntity = CheckpointFileSnapshotEntity(
-            id = UUID.randomUUID().toString(),
-            checkpointId = checkpointId,
-            filePath = filePath,
-            snapshotRelativePath = "$sessionId/$checkpointId/$snapshotFileName",
-            changeType = changeType
-        )
-        snapshotDao.insertFileSnapshot(snapshotEntity)
+        if (isV2()) {
+            v2Agent.insertCheckpointFileSnapshot(
+                id = UUID.randomUUID().toString(),
+                checkpointId = checkpointId,
+                filePath = filePath,
+                snapshotRelativePath = "$sessionId/$checkpointId/$snapshotFileName",
+                changeType = changeType,
+                createdAt = System.currentTimeMillis()
+            )
+        } else {
+            snapshotDao.insertFileSnapshot(
+                CheckpointFileSnapshotEntity(
+                    id = UUID.randomUUID().toString(),
+                    checkpointId = checkpointId,
+                    filePath = filePath,
+                    snapshotRelativePath = "$sessionId/$checkpointId/$snapshotFileName",
+                    changeType = changeType
+                )
+            )
+        }
     }
 
     /**
@@ -104,7 +144,8 @@ class CheckpointManager @Inject constructor(
         sessionId: String,
         targetCheckpointId: String
     ): Int = withContext(Dispatchers.IO) {
-        val allCheckpoints = checkpointDao.getCheckpointsForSession(sessionId)
+        val allCheckpoints = if (isV2()) v2Agent.listCheckpointsForSession(sessionId).map { it.toEntity() }
+        else checkpointDao.getCheckpointsForSession(sessionId)
         val targetIndex = allCheckpoints.indexOfFirst { it.id == targetCheckpointId }
         if (targetIndex == -1) return@withContext 0
 
@@ -113,7 +154,8 @@ class CheckpointManager @Inject constructor(
         var restoredFileCount = 0
 
         for (cp in checkpointsToRollback) {
-            val snapshots = snapshotDao.getFileSnapshotsForCheckpoint(cp.id)
+            val snapshots = if (isV2()) v2Agent.listCheckpointFileSnapshots(cp.id).map { it.toEntity() }
+            else snapshotDao.getFileSnapshotsForCheckpoint(cp.id)
             for (snapshot in snapshots) {
                 val snapshotFile = File(baseCheckpointDir, snapshot.snapshotRelativePath)
 
@@ -139,11 +181,34 @@ class CheckpointManager @Inject constructor(
      * 删除 Session 关联的所有 Checkpoint 快照与记录
      */
     suspend fun clearSessionCheckpoints(sessionId: String) = withContext(Dispatchers.IO) {
-        snapshotDao.deleteFileSnapshotsForSession(sessionId)
-        checkpointDao.deleteCheckpointsForSession(sessionId)
+        if (isV2()) {
+            v2Agent.deleteCheckpointFileSnapshotsBySession(sessionId)
+            v2Agent.deleteCheckpointsBySession(sessionId)
+        } else {
+            snapshotDao.deleteFileSnapshotsForSession(sessionId)
+            checkpointDao.deleteCheckpointsForSession(sessionId)
+        }
         val sessionDir = File(baseCheckpointDir, sessionId)
         if (sessionDir.exists()) {
             sessionDir.deleteRecursively()
         }
     }
+
+    // ── V2（SQLDelight）↔ Room Entity 映射 ──────────────────────────────
+
+    private fun V2Checkpoint.toEntity() = CheckpointEntity(
+        id = id,
+        sessionId = session_id,
+        userMessageId = user_message_id,
+        promptSnippet = prompt_snippet,
+        createdAtMs = created_at_ms
+    )
+
+    private fun V2Snapshot.toEntity() = CheckpointFileSnapshotEntity(
+        id = id,
+        checkpointId = checkpoint_id,
+        filePath = file_path,
+        snapshotRelativePath = snapshot_relative_path,
+        changeType = change_type
+    )
 }

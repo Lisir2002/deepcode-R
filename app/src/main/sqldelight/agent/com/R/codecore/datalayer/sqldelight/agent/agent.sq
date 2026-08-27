@@ -589,6 +589,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?);
 selectCapabilityOverride:
 SELECT * FROM model_capability_overrides WHERE provider_type = ? AND model_id = ?;
 
+observeCapabilityOverride:
+SELECT * FROM model_capability_overrides WHERE provider_type = ? AND model_id = ? LIMIT 1;
+
 deleteCapabilityOverride:
 DELETE FROM model_capability_overrides WHERE provider_type = ? AND model_id = ?;
 
@@ -651,11 +654,24 @@ insertJob:
 INSERT INTO agent_jobs (job_id, session_id, kind, title, status, exit_code, output_locator, created_at_ms, finished_at_ms, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+upsertJob:
+INSERT OR REPLACE INTO agent_jobs (job_id, session_id, kind, title, status, exit_code, output_locator, created_at_ms, finished_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectJobById:
+SELECT * FROM agent_jobs WHERE job_id = ?;
+
 selectJobsBySession:
 SELECT * FROM agent_jobs WHERE session_id = ? ORDER BY created_at_ms ASC;
 
+selectRunningJobs:
+SELECT * FROM agent_jobs WHERE status = 'RUNNING';
+
 updateJobStatus:
 UPDATE agent_jobs SET status = ?, exit_code = ?, output_locator = ?, finished_at_ms = ?, updated_at_ms = ? WHERE job_id = ?;
+
+updateJobResult:
+UPDATE agent_jobs SET status = ?, exit_code = ?, finished_at_ms = ?, updated_at_ms = ? WHERE job_id = ?;
 
 deleteJob:
 DELETE FROM agent_jobs WHERE job_id = ?;
@@ -664,11 +680,24 @@ insertSchedule:
 INSERT INTO agent_schedules (schedule_id, session_id, rule, args, status, enabled, created_at_ms, last_fired_at_ms, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+upsertSchedule:
+INSERT OR REPLACE INTO agent_schedules (schedule_id, session_id, rule, args, status, enabled, created_at_ms, last_fired_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectScheduleById:
+SELECT * FROM agent_schedules WHERE schedule_id = ?;
+
 selectSchedulesBySession:
 SELECT * FROM agent_schedules WHERE session_id = ? ORDER BY created_at_ms ASC;
 
+selectPendingSchedules:
+SELECT * FROM agent_schedules WHERE status = 'PENDING' AND enabled = 1 ORDER BY created_at_ms ASC;
+
 updateScheduleStatus:
 UPDATE agent_schedules SET status = ?, last_fired_at_ms = ?, updated_at_ms = ? WHERE schedule_id = ?;
+
+updateScheduleState:
+UPDATE agent_schedules SET status = ?, enabled = ?, last_fired_at_ms = ?, updated_at_ms = ? WHERE schedule_id = ?;
 
 deleteSchedule:
 DELETE FROM agent_schedules WHERE schedule_id = ?;
@@ -680,6 +709,18 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 selectTrajectoriesBySession:
 SELECT * FROM agent_trajectories WHERE session_id = ? ORDER BY ts ASC;
 
+selectTrajectoriesByTask:
+SELECT * FROM agent_trajectories WHERE task_id = ? ORDER BY ts ASC;
+
+selectLatestTaskIdBySession:
+SELECT task_id FROM agent_trajectories WHERE session_id = ? AND task_id != '' ORDER BY ts DESC LIMIT 1;
+
+selectMaxTurnIndexBySessionTask:
+SELECT MAX(turn_index) FROM agent_trajectories WHERE session_id = ? AND task_id = ?;
+
+selectTrajectoryAggregateBySession:
+SELECT COALESCE(SUM(tokens_in), 0) AS tokens_in, COALESCE(SUM(tokens_out), 0) AS tokens_out, COUNT(*) AS count FROM agent_trajectories WHERE session_id = ?;
+
 deleteTrajectoriesBySession:
 DELETE FROM agent_trajectories WHERE session_id = ?;
 
@@ -687,11 +728,30 @@ insertPlaybookRun:
 INSERT INTO agent_playbook_runs (playbook_run_id, session_id, playbook_name, current_stage_index, stage_statuses, status, created_at_ms, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
+upsertPlaybookRun:
+INSERT OR REPLACE INTO agent_playbook_runs (playbook_run_id, session_id, playbook_name, current_stage_index, stage_statuses, status, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectPlaybookRunById:
+SELECT * FROM agent_playbook_runs WHERE playbook_run_id = ?;
+
 selectPlaybookRunsBySession:
 SELECT * FROM agent_playbook_runs WHERE session_id = ? ORDER BY created_at_ms DESC;
 
+selectLatestPlaybookBySession:
+SELECT * FROM agent_playbook_runs WHERE session_id = ? ORDER BY updated_at_ms DESC LIMIT 1;
+
+selectLatestPlaybookBySessionAndStatus:
+SELECT * FROM agent_playbook_runs WHERE session_id = ? AND status = ? ORDER BY updated_at_ms DESC LIMIT 1;
+
+selectRunningPlaybookRuns:
+SELECT * FROM agent_playbook_runs WHERE status = 'RUNNING';
+
 updatePlaybookRun:
 UPDATE agent_playbook_runs SET current_stage_index = ?, stage_statuses = ?, status = ?, updated_at_ms = ? WHERE playbook_run_id = ?;
+
+deletePlaybookRunsBySession:
+DELETE FROM agent_playbook_runs WHERE session_id = ?;
 
 insertSkillState:
 INSERT OR REPLACE INTO skill_state (id, enabled, version, source, installed_at_ms, scope_override, agent_type_override)
@@ -747,11 +807,21 @@ insertWakeItem:
 INSERT INTO wake_queue (wake_id, session_id, source, type, content, status, created_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
+upsertWakeItem:
+INSERT OR REPLACE INTO wake_queue (wake_id, session_id, source, type, content, status, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
 selectPendingWakeItems:
 SELECT * FROM wake_queue WHERE status = 'PENDING' ORDER BY created_at_ms ASC;
 
+selectWakeBySessionAndStatus:
+SELECT * FROM wake_queue WHERE status = ? AND session_id = ? ORDER BY created_at_ms ASC;
+
 markWakeItemConsumed:
 UPDATE wake_queue SET status = 'CONSUMED' WHERE wake_id = ?;
+
+markWakeItemsConsumedBatch:
+UPDATE wake_queue SET status = ? WHERE wake_id IN ?;
 
 insertSentinel:
 INSERT INTO zth_user_confirmed_sentinels (id, session_id, linkage_version, chain_id, chain_index, card_template_id, trigger_sub_class, s_planPayloadCiphertext, s_userTextCiphertext, s_cardPayloadCiphertext, user_choice, swipe_verified, s_modifiedPlanCiphertext, expire_at_ms, rollback_flag, created_at_ms)
@@ -790,6 +860,15 @@ SELECT * FROM zth_hallucination_fuses;
 
 selectFuse:
 SELECT * FROM zth_hallucination_fuses WHERE scope = ? AND scope_id = ?;
+
+selectFuseVersion:
+SELECT linkage_version FROM zth_hallucination_fuses WHERE id = ? LIMIT 1;
+
+casUpdateFuseState:
+UPDATE zth_hallucination_fuses SET state = ?, linkage_version = linkage_version + 1, updated_at_ms = ? WHERE id = ? AND linkage_version = ?;
+
+triggerFuseKillSwitch1:
+UPDATE zth_hallucination_fuses SET kill_switch1_triggered = 1, state = 'OPEN', updated_at_ms = ? WHERE id = ?;
 
 updateFuseState:
 UPDATE zth_hallucination_fuses SET state = ?, failure_count = ?, last_probe_at_ms = ?, kill_switch1_triggered = ?, kill_switch2_soft_disabled = ?, last_trip_subclass = ?, updated_at_ms = ? WHERE scope = ? AND scope_id = ?;

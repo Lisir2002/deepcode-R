@@ -382,6 +382,9 @@ class AgentRepository(private val db: AgentDb) {
     suspend fun getCapabilityOverride(providerType: String, modelId: String): com.R.codecore.datalayer.sqldelight.agent.Model_capability_overrides? =
         withContext(Dispatchers.IO) { q.selectCapabilityOverride(providerType, modelId).executeAsOneOrNull() }
 
+    fun observeCapabilityOverride(providerType: String, modelId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Model_capability_overrides>> =
+        q.observeCapabilityOverride(providerType, modelId).asFlow().mapToList(Dispatchers.IO)
+
     suspend fun deleteCapabilityOverride(providerType: String, modelId: String) =
         withContext(Dispatchers.IO) { q.deleteCapabilityOverride(providerType, modelId) }
 
@@ -472,14 +475,33 @@ class AgentRepository(private val db: AgentDb) {
         q.insertJob(jobId, sessionId, kind, title, status, exitCode, outputLocator, createdAtMs, finishedAtMs, updatedAtMs)
     }
 
+    suspend fun upsertJob(
+        jobId: String, sessionId: String, kind: String, title: String, status: String,
+        exitCode: Long?, outputLocator: String, createdAtMs: Long, finishedAtMs: Long?, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.upsertJob(jobId, sessionId, kind, title, status, exitCode, outputLocator, createdAtMs, finishedAtMs, updatedAtMs)
+    }
+
+    suspend fun getJobById(jobId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_jobs? =
+        withContext(Dispatchers.IO) { q.selectJobById(jobId).executeAsOneOrNull() }
+
     suspend fun listJobs(sessionId: String): List<com.R.codecore.datalayer.sqldelight.agent.Agent_jobs> =
         withContext(Dispatchers.IO) { q.selectJobsBySession(sessionId).executeAsList() }
+
+    suspend fun listRunningJobs(): List<com.R.codecore.datalayer.sqldelight.agent.Agent_jobs> =
+        withContext(Dispatchers.IO) { q.selectRunningJobs().executeAsList() }
 
     suspend fun updateJobStatus(
         jobId: String, status: String, exitCode: Long?, outputLocator: String,
         finishedAtMs: Long?, updatedAtMs: Long,
     ) = withContext(Dispatchers.IO) {
         q.updateJobStatus(status, exitCode, outputLocator, finishedAtMs, updatedAtMs, jobId)
+    }
+
+    suspend fun updateJobResult(
+        jobId: String, status: String, exitCode: Long?, finishedAtMs: Long?, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.updateJobResult(status, exitCode, finishedAtMs, updatedAtMs, jobId)
     }
 
     suspend fun deleteJob(jobId: String) = withContext(Dispatchers.IO) { q.deleteJob(jobId) }
@@ -491,11 +513,30 @@ class AgentRepository(private val db: AgentDb) {
         q.insertSchedule(scheduleId, sessionId, rule, args, status, enabled, createdAtMs, lastFiredAtMs, updatedAtMs)
     }
 
+    suspend fun upsertSchedule(
+        scheduleId: String, sessionId: String, rule: String, args: String, status: String,
+        enabled: Long, createdAtMs: Long, lastFiredAtMs: Long?, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.upsertSchedule(scheduleId, sessionId, rule, args, status, enabled, createdAtMs, lastFiredAtMs, updatedAtMs)
+    }
+
+    suspend fun getScheduleById(scheduleId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_schedules? =
+        withContext(Dispatchers.IO) { q.selectScheduleById(scheduleId).executeAsOneOrNull() }
+
     suspend fun listSchedules(sessionId: String): List<com.R.codecore.datalayer.sqldelight.agent.Agent_schedules> =
         withContext(Dispatchers.IO) { q.selectSchedulesBySession(sessionId).executeAsList() }
 
+    suspend fun getPendingSchedules(): List<com.R.codecore.datalayer.sqldelight.agent.Agent_schedules> =
+        withContext(Dispatchers.IO) { q.selectPendingSchedules().executeAsList() }
+
     suspend fun updateScheduleStatus(scheduleId: String, status: String, lastFiredAtMs: Long?, updatedAtMs: Long) =
         withContext(Dispatchers.IO) { q.updateScheduleStatus(status, lastFiredAtMs, updatedAtMs, scheduleId) }
+
+    suspend fun updateScheduleState(
+        scheduleId: String, status: String, enabled: Long, lastFiredAtMs: Long?, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.updateScheduleState(status, enabled, lastFiredAtMs, updatedAtMs, scheduleId)
+    }
 
     suspend fun deleteSchedule(scheduleId: String) = withContext(Dispatchers.IO) { q.deleteSchedule(scheduleId) }
 
@@ -510,6 +551,18 @@ class AgentRepository(private val db: AgentDb) {
     suspend fun listTrajectories(sessionId: String): List<com.R.codecore.datalayer.sqldelight.agent.Agent_trajectories> =
         withContext(Dispatchers.IO) { q.selectTrajectoriesBySession(sessionId).executeAsList() }
 
+    suspend fun listTrajectoriesByTask(taskId: String): List<com.R.codecore.datalayer.sqldelight.agent.Agent_trajectories> =
+        withContext(Dispatchers.IO) { q.selectTrajectoriesByTask(taskId).executeAsList() }
+
+    suspend fun getLatestTaskId(sessionId: String): String? =
+        withContext(Dispatchers.IO) { q.selectLatestTaskIdBySession(sessionId).executeAsOneOrNull() }
+
+    suspend fun getMaxTurnIndex(sessionId: String, taskId: String): Int? =
+        withContext(Dispatchers.IO) { q.selectMaxTurnIndexBySessionTask(sessionId, taskId).executeAsOneOrNull()?.MAX?.toInt() }
+
+    suspend fun getTrajectoryAggregate(sessionId: String): com.R.codecore.datalayer.sqldelight.agent.SelectTrajectoryAggregateBySession =
+        withContext(Dispatchers.IO) { q.selectTrajectoryAggregateBySession(sessionId).executeAsOne() }
+
     suspend fun deleteTrajectories(sessionId: String) =
         withContext(Dispatchers.IO) { q.deleteTrajectoriesBySession(sessionId) }
 
@@ -520,14 +573,36 @@ class AgentRepository(private val db: AgentDb) {
         q.insertPlaybookRun(playbookRunId, sessionId, playbookName, currentStageIndex, stageStatuses, status, createdAtMs, updatedAtMs)
     }
 
+    suspend fun upsertPlaybookRun(
+        playbookRunId: String, sessionId: String, playbookName: String, currentStageIndex: Long,
+        stageStatuses: String, status: String, createdAtMs: Long, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.upsertPlaybookRun(playbookRunId, sessionId, playbookName, currentStageIndex, stageStatuses, status, createdAtMs, updatedAtMs)
+    }
+
+    suspend fun getPlaybookRunById(runId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_playbook_runs? =
+        withContext(Dispatchers.IO) { q.selectPlaybookRunById(runId).executeAsOneOrNull() }
+
     suspend fun listPlaybookRuns(sessionId: String): List<com.R.codecore.datalayer.sqldelight.agent.Agent_playbook_runs> =
         withContext(Dispatchers.IO) { q.selectPlaybookRunsBySession(sessionId).executeAsList() }
+
+    suspend fun getLatestPlaybookBySession(sessionId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_playbook_runs? =
+        withContext(Dispatchers.IO) { q.selectLatestPlaybookBySession(sessionId).executeAsOneOrNull() }
+
+    suspend fun getLatestPlaybookBySessionAndStatus(sessionId: String, status: String): com.R.codecore.datalayer.sqldelight.agent.Agent_playbook_runs? =
+        withContext(Dispatchers.IO) { q.selectLatestPlaybookBySessionAndStatus(sessionId, status).executeAsOneOrNull() }
+
+    suspend fun listRunningPlaybookRuns(): List<com.R.codecore.datalayer.sqldelight.agent.Agent_playbook_runs> =
+        withContext(Dispatchers.IO) { q.selectRunningPlaybookRuns().executeAsList() }
 
     suspend fun updatePlaybookRun(
         playbookRunId: String, currentStageIndex: Long, stageStatuses: String, status: String, updatedAtMs: Long,
     ) = withContext(Dispatchers.IO) {
         q.updatePlaybookRun(currentStageIndex, stageStatuses, status, updatedAtMs, playbookRunId)
     }
+
+    suspend fun deletePlaybookRunsBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deletePlaybookRunsBySession(sessionId) }
 
     suspend fun upsertSkillState(
         id: String, enabled: Long, version: String, source: String, installedAtMs: Long,
@@ -605,11 +680,24 @@ class AgentRepository(private val db: AgentDb) {
         q.insertWakeItem(wakeId, sessionId, source, type, content, status, createdAtMs)
     }
 
+    suspend fun upsertWakeItem(
+        wakeId: String, sessionId: String, source: String, type: String, content: String,
+        status: String, createdAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.upsertWakeItem(wakeId, sessionId, source, type, content, status, createdAtMs)
+    }
+
     suspend fun listPendingWakeItems(): List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue> =
         withContext(Dispatchers.IO) { q.selectPendingWakeItems().executeAsList() }
 
+    suspend fun listWakeBySessionAndStatus(sessionId: String, status: String): List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue> =
+        withContext(Dispatchers.IO) { q.selectWakeBySessionAndStatus(status, sessionId).executeAsList() }
+
     suspend fun markWakeItemConsumed(wakeId: String) =
         withContext(Dispatchers.IO) { q.markWakeItemConsumed(wakeId) }
+
+    suspend fun markWakeItemsConsumedBatch(ids: List<String>, status: String) =
+        withContext(Dispatchers.IO) { q.markWakeItemsConsumedBatch(status, ids) }
 
     suspend fun insertSentinel(
         id: String, sessionId: String, linkageVersion: Long, chainId: String, chainIndex: Long,
@@ -654,6 +742,17 @@ class AgentRepository(private val db: AgentDb) {
 
     suspend fun getFuse(scope: String, scopeId: String): com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses? =
         withContext(Dispatchers.IO) { q.selectFuse(scope, scopeId).executeAsOneOrNull() }
+
+    suspend fun getFuseVersion(id: String): Long? =
+        withContext(Dispatchers.IO) { q.selectFuseVersion(id).executeAsOneOrNull() }
+
+    suspend fun casUpdateFuseState(id: String, expectedVersion: Long, newState: String, nowMs: Long): Long =
+        withContext(Dispatchers.IO) {
+            q.casUpdateFuseState(newState, nowMs, id, expectedVersion).value
+        }
+
+    suspend fun triggerFuseKillSwitch1(id: String, nowMs: Long) =
+        withContext(Dispatchers.IO) { q.triggerFuseKillSwitch1(nowMs, id) }
 
     suspend fun listAllFuses(): List<com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses> =
         withContext(Dispatchers.IO) { q.selectAllFuses().executeAsList() }
