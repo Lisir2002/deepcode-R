@@ -3,10 +3,7 @@ package com.R.codecore.core.security
 import android.content.Context
 import com.R.codecore.core.db.entity.CredentialEncryptionStateEntity
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.WorkspaceRepository as V2WorkspaceRepository
-import com.R.codecore.feature.workspace.data.local.dao.CredentialEncryptionStateDao
 import com.R.codecore.feature.workspace.domain.RemoteAuditAction
 import com.R.codecore.feature.workspace.domain.RemoteAuditCategory
 import com.R.codecore.feature.workspace.domain.repository.RemoteAuditLogRepository
@@ -47,9 +44,7 @@ import javax.inject.Singleton
 @Singleton
 class CredentialEncryptor @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val stateDao: CredentialEncryptionStateDao,
     private val v2Workspace: V2WorkspaceRepository,
-    private val readMode: DataReadModeHolder,
     private val auditLogRepo: RemoteAuditLogRepository
 ) {
     private companion object {
@@ -60,28 +55,22 @@ class CredentialEncryptor @Inject constructor(
         const val SCHEME_V2 = "V2:"
     }
 
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
-
     private suspend fun getState(): CredentialEncryptionStateEntity? =
-        if (isV2()) v2Workspace.getEncryptionState()?.toEntity() else stateDao.getSingleOrNull()
+        v2Workspace.getEncryptionState()?.toEntity()
 
-    /** 供 UI 读取当前加密状态（按 DataReadMode 选择读源）。 */
+    /** 供 UI 读取当前加密状态。 */
     suspend fun encryptionState(): CredentialEncryptionStateEntity? = getState()
 
     private suspend fun upsertState(e: CredentialEncryptionStateEntity) {
-        if (isV2()) {
-            v2Workspace.upsertEncryptionState(
-                masterKeyFingerprint = e.masterKeyFingerprint,
-                dekCiphertext = e.dekCiphertext,
-                encScheme = e.encScheme,
-                lastRotatedAt = e.lastRotatedAt,
-                rotationCounter = e.rotationCounter.toLong(),
-                biometricRequired = if (e.biometricRequired) 1L else 0L,
-                migratedFromV1 = if (e.migratedFromV1) 1L else 0L,
-            )
-        } else {
-            stateDao.upsert(e)
-        }
+        v2Workspace.upsertEncryptionState(
+            masterKeyFingerprint = e.masterKeyFingerprint,
+            dekCiphertext = e.dekCiphertext,
+            encScheme = e.encScheme,
+            lastRotatedAt = e.lastRotatedAt,
+            rotationCounter = e.rotationCounter.toLong(),
+            biometricRequired = if (e.biometricRequired) 1L else 0L,
+            migratedFromV1 = if (e.migratedFromV1) 1L else 0L,
+        )
     }
 
     // DEKManager.getInstance 是纯 volatile+双检锁，构造函数里直接赋值无阻塞
