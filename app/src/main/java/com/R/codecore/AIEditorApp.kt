@@ -158,6 +158,10 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var workspaceDataStoreMigrator: com.R.codecore.feature.workspace.data.repository.WorkspaceDataStoreMigrator
 
+    /** 旧 Room 域库 → V2 SQLDelight 全量移植器（阶段 3）：启动时把旧 Room 数据搬到 V2 库。 */
+    @Inject
+    lateinit var v1toV2FullMigrator: com.R.codecore.core.db.V1toV2FullMigrator
+
     /**
      * 数据保全通知器：启动即跑哨兵（D4）+ 升级前双保险自动备份（D5），并把判定结果发布给
      * MainActivity 的启动级全局告警弹窗（解决「数据消失却不报错」，数据保全防线 D8b）。
@@ -185,6 +189,9 @@ class AIEditorApp : Application() {
         runBlocking {
             settingsDataStoreMigrator.migrateIfNeeded()
             workspaceDataStoreMigrator.migrateIfNeeded()
+            // 阶段 3：旧 Room 域库 → V2 全量移植（幂等；失败下次启动重试，不阻断启动）
+            runCatching { v1toV2FullMigrator.migrateIfNeeded() }
+                .onFailure { FileLogger.w(TAG, "V1→V2 全量移植失败（忽略，下次启动重试）", it) }
         }
         // 主线程启动凭据请求监听（FileObserver 必须主线程创建与 startWatching），
         // 监听容器内 credential helper 写来的 cred-req-* → 全局弹窗回填 → 回喂 git 续跑。
