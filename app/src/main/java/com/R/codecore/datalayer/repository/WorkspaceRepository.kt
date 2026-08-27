@@ -87,6 +87,31 @@ class WorkspaceRepository(private val db: WorkspaceDb) {
     suspend fun listAllAuditLogs(): List<com.R.codecore.datalayer.sqldelight.workspace.Remote_audit_logs> =
         withContext(Dispatchers.IO) { q.selectAllAuditLogs().executeAsList() }
 
+    /** 分页：offset/limit 降序。 */
+    suspend fun pageAuditLogs(offset: Long, limit: Long): List<com.R.codecore.datalayer.sqldelight.workspace.Remote_audit_logs> =
+        withContext(Dispatchers.IO) { q.selectAuditLogsPage(limit, offset).executeAsList() }
+
+    /** 按连接分页：取最近 limit 条。 */
+    suspend fun pageAuditLogsByConnection(connectionId: String, limit: Long): List<com.R.codecore.datalayer.sqldelight.workspace.Remote_audit_logs> =
+        withContext(Dispatchers.IO) { q.selectAuditLogsByConnectionPage(connectionId, limit).executeAsList() }
+
+    /** 多维筛选：分类集合 + 成功布尔集合 + 起始时间。 */
+    suspend fun filterAuditLogs(
+        categories: List<String>,
+        successes: List<Boolean>,
+        sinceMs: Long,
+        limit: Long,
+    ): List<com.R.codecore.datalayer.sqldelight.workspace.Remote_audit_logs> =
+        withContext(Dispatchers.IO) {
+            q.selectAuditLogsFiltered(categories, successes.map { if (it) 1L else 0L }, sinceMs, limit).executeAsList()
+        }
+
+    suspend fun countAuditLogs(): Long =
+        withContext(Dispatchers.IO) { q.selectAuditLogCount().executeAsOne() }
+
+    suspend fun listAuditCategories(): List<String> =
+        withContext(Dispatchers.IO) { q.selectAuditCategories().executeAsList() }
+
     suspend fun deleteAuditLogsOlderThan(createdAt: Long) =
         withContext(Dispatchers.IO) { q.deleteAuditLogsOlderThan(createdAt) }
 

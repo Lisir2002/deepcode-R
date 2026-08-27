@@ -1,6 +1,9 @@
 package com.R.codecore.feature.workspace.domain.repository
 
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.WorkspaceRepository as V2WorkspaceRepository
 import com.R.codecore.feature.workspace.data.local.dao.RemoteAuditLogDao
 import com.R.codecore.feature.workspace.data.local.entity.RemoteAuditLogEntity
 import kotlinx.coroutines.Dispatchers
@@ -11,9 +14,18 @@ import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
+/**
+ * 远程审计日志仓储（v2-full-takeover P2-2：按 DataReadMode 在 Room / V2 间选择）。
+ *
+ * 读源切换只影响「日志本体」；对调用方（SkillExecutor / SettingsViewModel /
+ * SecuritySettingsViewModel / RemoteAuditLogsScreen / AuditPurgeWorker）签名完全不变。
+ * Room 侧依赖 [RemoteAuditLogDao]，V2 侧依赖 [V2WorkspaceRepository]（workspace 域 SQLDelight 门面）。
+ */
 @Singleton
 class RemoteAuditLogRepository @Inject constructor(
-    private val dao: RemoteAuditLogDao
+    private val dao: RemoteAuditLogDao,
+    private val v2Workspace: V2WorkspaceRepository,
+    private val readMode: DataReadModeHolder,
 ) {
     private companion object {
         const val TAG = "RemoteAuditLogRepo"
@@ -21,6 +33,9 @@ class RemoteAuditLogRepository @Inject constructor(
         const val RETENTION_MAX_COUNT = 10_000L
         const val RETENTION_DAYS = 90L
     }
+
+    /** 读源判定（Room / V2）；每次调用现读 DataStore 开关，支持运行中热切换。 */
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /**
      * 主写入口：截断 message ≤500 字符，取当前时间。
@@ -39,24 +54,41 @@ class RemoteAuditLogRepository @Inject constructor(
     ): Long = withContext(Dispatchers.IO) {
         val truncated = message?.take(MAX_MESSAGE_LENGTH)
         try {
-            val id = dao.insert(
-                RemoteAuditLogEntity(
+            if (isV2()) {
+                v2Workspace.insertAuditLog(
                     category = category,
                     action = action,
                     connectionId = connectionId,
                     connectionName = connectionName,
                     remoteHost = remoteHost,
-                    success = success,
+                    success = if (success) 1L else 0L,
                     message = truncated,
                     sourceIp = sourceIp,
-                    createdAt = createdAtMs
+                    createdAt = createdAtMs,
                 )
-            )
-            if (id % 50L == 0L) {
-                // 每 50 条检查一次保留上限
-                enforceRetentionIfNeeded()
+                val count = v2Workspace.countAuditLogs()
+                if (count % 50L == 0L) enforceRetentionV2()
+                count
+            } else {
+                val id = dao.insert(
+                    RemoteAuditLogEntity(
+                        category = category,
+                        action = action,
+                        connectionId = connectionId,
+                        connectionName = connectionName,
+                        remoteHost = remoteHost,
+                        success = success,
+                        message = truncated,
+                        sourceIp = sourceIp,
+                        createdAt = createdAtMs
+                    )
+                )
+                if (id % 50L == 0L) {
+                    // 每 50 条检查一次保留上限
+                    enforceRetentionIfNeeded()
+                }
+                id
             }
-            id
         } catch (e: Exception) {
             FileLogger.w(TAG, "写入审计日志失败", e)
             -1L
@@ -65,12 +97,21 @@ class RemoteAuditLogRepository @Inject constructor(
 
     suspend fun pageDesc(page: Int, pageSize: Int = 50): List<RemoteAuditLogEntity> =
         withContext(Dispatchers.IO) {
-            dao.pageDesc(offset = page * pageSize, limit = pageSize)
+            if (isV2()) {
+                v2Workspace.pageAuditLogs(offset = page * pageSize.toLong(), limit = pageSize.toLong())
+                    .map { it.toEntity() }
+            } else {
+                dao.pageDesc(offset = page * pageSize, limit = pageSize)
+            }
         }
 
     suspend fun listByConnection(connectionId: String, limit: Int = 200): List<RemoteAuditLogEntity> =
         withContext(Dispatchers.IO) {
-            dao.listByConnection(connectionId, limit)
+            if (isV2()) {
+                v2Workspace.pageAuditLogsByConnection(connectionId, limit.toLong()).map { it.toEntity() }
+            } else {
+                dao.listByConnection(connectionId, limit)
+            }
         }
 
     suspend fun filter(
@@ -79,13 +120,23 @@ class RemoteAuditLogRepository @Inject constructor(
         sinceMs: Long = 0L,
         limit: Int = 500
     ): List<RemoteAuditLogEntity> = withContext(Dispatchers.IO) {
-        val cats = if (categories.isEmpty()) {
-            dao.listCategories().ifEmpty { listOf("") }
+        if (isV2()) {
+            val cats = if (categories.isEmpty()) {
+                v2Workspace.listAuditCategories().ifEmpty { listOf("") }
+            } else {
+                categories
+            }
+            val successes = if (onlyFailures) listOf(false) else listOf(true, false)
+            v2Workspace.filterAuditLogs(cats, successes, sinceMs, limit.toLong()).map { it.toEntity() }
         } else {
-            categories
+            val cats = if (categories.isEmpty()) {
+                dao.listCategories().ifEmpty { listOf("") }
+            } else {
+                categories
+            }
+            val successes = if (onlyFailures) listOf(false) else listOf(true, false)
+            dao.filter(cats = cats, successes = successes, sinceMs = sinceMs, limit = limit)
         }
-        val successes = if (onlyFailures) listOf(false) else listOf(true, false)
-        dao.filter(cats = cats, successes = successes, sinceMs = sinceMs, limit = limit)
     }
 
     /**
@@ -93,7 +144,13 @@ class RemoteAuditLogRepository @Inject constructor(
      * @return 实际删除条数。
      */
     suspend fun purgeBefore(dateMs: Long): Int = withContext(Dispatchers.IO) {
-        dao.purgeBefore(dateMs)
+        if (isV2()) {
+            val before = v2Workspace.countAuditLogs()
+            v2Workspace.deleteAuditLogsOlderThan(dateMs)
+            (before - v2Workspace.countAuditLogs()).toInt().coerceAtLeast(0)
+        } else {
+            dao.purgeBefore(dateMs)
+        }
     }
 
     /**
@@ -106,7 +163,7 @@ class RemoteAuditLogRepository @Inject constructor(
         val logs = if (filterCategories != null) {
             filter(categories = filterCategories, sinceMs = sinceMs, limit = 5000)
         } else {
-            dao.pageDesc(offset = 0, limit = 5000)
+            pageDesc(page = 0, pageSize = 5000)
         }
         val json = Json { prettyPrint = true }
         json.encodeToString(logs.map { log ->
@@ -125,7 +182,9 @@ class RemoteAuditLogRepository @Inject constructor(
     }
 
     /** 获取当前日志总数。 */
-    suspend fun count(): Long = withContext(Dispatchers.IO) { dao.count() }
+    suspend fun count(): Long = withContext(Dispatchers.IO) {
+        if (isV2()) v2Workspace.countAuditLogs() else dao.count()
+    }
 
     // ============== 保留策略 ==============
 
@@ -134,11 +193,41 @@ class RemoteAuditLogRepository @Inject constructor(
      * 触发条件：10000 条 或 90 天，先到先截断。
      */
     suspend fun enforceRetentionIfNeeded() {
-        val currentCount = dao.count()
+        val currentCount = if (isV2()) v2Workspace.countAuditLogs() else dao.count()
         if (currentCount > RETENTION_MAX_COUNT) {
             val cutoffMs = Instant.now().minusSeconds(RETENTION_DAYS * 86400L).toEpochMilli()
-            val deleted = dao.purgeBefore(cutoffMs)
+            val deleted = if (isV2()) {
+                val before = v2Workspace.countAuditLogs()
+                v2Workspace.deleteAuditLogsOlderThan(cutoffMs)
+                (before - v2Workspace.countAuditLogs()).toInt().coerceAtLeast(0)
+            } else {
+                dao.purgeBefore(cutoffMs)
+            }
             FileLogger.i(TAG, "审计日志保留清理：删除 $deleted 条（保留 ${RETENTION_MAX_COUNT} 条 / ${RETENTION_DAYS} 天）")
         }
     }
+
+    /** V2 专用保留清理（append 内部用，避免重复查 count）。 */
+    private suspend fun enforceRetentionV2() {
+        val currentCount = v2Workspace.countAuditLogs()
+        if (currentCount > RETENTION_MAX_COUNT) {
+            val cutoffMs = Instant.now().minusSeconds(RETENTION_DAYS * 86400L).toEpochMilli()
+            val before = currentCount
+            v2Workspace.deleteAuditLogsOlderThan(cutoffMs)
+            FileLogger.i(TAG, "审计日志保留清理(V2)：删除 ${before - v2Workspace.countAuditLogs()} 条")
+        }
+    }
+
+    private fun com.R.codecore.datalayer.sqldelight.workspace.Remote_audit_logs.toEntity() = RemoteAuditLogEntity(
+        id = id,
+        category = category,
+        action = action,
+        connectionId = connection_id,
+        connectionName = connection_name,
+        remoteHost = remote_host,
+        success = success == 1L,
+        message = message,
+        sourceIp = source_ip,
+        createdAt = created_at,
+    )
 }

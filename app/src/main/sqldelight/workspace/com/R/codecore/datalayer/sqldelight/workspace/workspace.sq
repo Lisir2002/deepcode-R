@@ -156,11 +156,30 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 selectAuditLogsByConnection:
 SELECT * FROM remote_audit_logs WHERE connection_id = ? ORDER BY created_at DESC;
 
+selectAuditLogsPage:
+SELECT * FROM remote_audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?;
+
+selectAuditLogsByConnectionPage:
+SELECT * FROM remote_audit_logs WHERE connection_id = ? ORDER BY created_at DESC LIMIT ?;
+
+-- 多维筛选：category IN (:cats) AND success IN (:successes) AND created_at >= :since。
+-- SQLDelight 需用 ? 占位 + IN 列表，故拆成三个布尔参数的动态 SQL 由业务层拼装。
+selectAuditLogsFiltered:
+SELECT * FROM remote_audit_logs
+WHERE category IN ? AND success IN ? AND created_at >= ?
+ORDER BY created_at DESC LIMIT ?;
+
 selectAllAuditLogs:
 SELECT * FROM remote_audit_logs ORDER BY created_at DESC;
 
 deleteAuditLogsOlderThan:
 DELETE FROM remote_audit_logs WHERE created_at < ?;
+
+selectAuditLogCount:
+SELECT COUNT(1) FROM remote_audit_logs;
+
+selectAuditCategories:
+SELECT DISTINCT category FROM remote_audit_logs ORDER BY category;
 
 selectEncryptionState:
 SELECT * FROM credential_encryption_state WHERE id = 1;
