@@ -1,11 +1,8 @@
 package com.R.codecore.feature.agent.domain.playbook
 
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_playbook_runs as V2PlaybookRun
-import com.R.codecore.feature.agent.data.local.dao.PlaybookRunDao
 import com.R.codecore.feature.agent.data.local.entity.PlaybookRunEntity
 import com.R.codecore.feature.agent.data.local.entity.PlaybookRunStatus
 import com.R.codecore.feature.agent.data.local.entity.PlaybookStageState
@@ -52,13 +49,11 @@ import javax.inject.Singleton
  */
 @Singleton
 class PlaybookExecutor @Inject constructor(
-    private val playbookRunDao: PlaybookRunDao,
     private val playbookRegistry: PlaybookRegistry,
     private val planApprovalManager: PlanApprovalManager,
     private val subAgentRunner: SubAgentRunner,
     private val normFlowSettingsRepository: NormFlowSettingsRepository,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) {
     private companion object {
         const val TAG = "PlaybookExecutor"
@@ -66,8 +61,6 @@ class PlaybookExecutor @Inject constructor(
         /** 完成判定护栏：连续无实质工具动作轮数阈值（§3.3.3，复用 LoopGuard 思路）。 */
         const val IDLE_ROUND_THRESHOLD = 3
     }
-
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** 阶段状态 JSON 编解码（encodeDefaults 保证 status/artifacts 默认值也序列化，往返稳定）。 */
     private val json = Json { encodeDefaults = true; ignoreUnknownKeys = true }
@@ -87,8 +80,7 @@ class PlaybookExecutor @Inject constructor(
      * 无 RUNNING playbook 运行时不置位（幂等）。
      */
     suspend fun markForceApproval(sessionId: String) {
-        val running = if (isV2()) v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.RUNNING.name)
-            else playbookRunDao.getLatestRunningBySession(sessionId)
+        val running = v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.RUNNING.name)
         if (running != null) {
             forceApproval[sessionId] = true
             FileLogger.i(TAG, "markForceApproval: session=$sessionId（`!` 标记跳过 approval gate）")
@@ -118,8 +110,7 @@ class PlaybookExecutor @Inject constructor(
             return PlaybookOpResult.Error("剧本「${asset.name}」没有可执行阶段", "PLAYBOOK_NO_STAGES")
         }
         // 覆盖旧运行：会话既有 RUNNING / INTERRUPTED 运行置 ABORTED。
-        val latest = if (isV2()) v2Agent.getLatestPlaybookBySession(sessionId)?.toEntity()
-            else playbookRunDao.getLatestBySession(sessionId)
+        val latest = v2Agent.getLatestPlaybookBySession(sessionId)?.toEntity()
         latest?.let { existing ->
             if (existing.statusEnum() == PlaybookRunStatus.RUNNING ||
                 existing.statusEnum() == PlaybookRunStatus.INTERRUPTED
@@ -200,8 +191,7 @@ class PlaybookExecutor @Inject constructor(
 
     /** 恢复本会话最近一次 INTERRUPTED 运行（进程回收 / SessionStop 中断后继续）。 */
     suspend fun resume(sessionId: String): PlaybookOpResult {
-        val run = (if (isV2()) v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.INTERRUPTED.name)?.toEntity()
-            else playbookRunDao.getLatestInterruptedBySession(sessionId))
+        val run = v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.INTERRUPTED.name)?.toEntity()
             ?: return PlaybookOpResult.Error("当前会话没有可恢复的中断运行，请先 playbook_start", "PLAYBOOK_NO_INTERRUPTED")
         val asset = playbookRegistry.findByName(run.playbookName)
             ?: return PlaybookOpResult.Error("剧本资产「${run.playbookName}}」不存在", "PLAYBOOK_NOT_FOUND")
@@ -228,8 +218,7 @@ class PlaybookExecutor @Inject constructor(
 
     /** 从本会话最近一次 ABORTED 运行的 FAILED 阶段恢复（该阶段置回 ACTIVE，已完成阶段保留）。 */
     suspend fun retry(sessionId: String): PlaybookOpResult {
-        val run = (if (isV2()) v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.ABORTED.name)?.toEntity()
-            else playbookRunDao.getLatestAbortedBySession(sessionId))
+        val run = v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.ABORTED.name)?.toEntity()
             ?: return PlaybookOpResult.Error("当前会话没有可重试的失败运行，请先 playbook_start", "PLAYBOOK_NO_ABORTED")
         val asset = playbookRegistry.findByName(run.playbookName)
             ?: return PlaybookOpResult.Error("剧本资产「${run.playbookName}}」不存在", "PLAYBOOK_NOT_FOUND")
@@ -286,8 +275,7 @@ class PlaybookExecutor @Inject constructor(
      * 无 RUNNING 运行或已有更旧运行时空操作（幂等）。
      */
     suspend fun interrupt(sessionId: String) {
-        val run = (if (isV2()) v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.RUNNING.name)?.toEntity()
-            else playbookRunDao.getLatestRunningBySession(sessionId)) ?: return
+        val run = v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.RUNNING.name)?.toEntity() ?: return
         val now = System.currentTimeMillis()
         upsertRun(run.copy(status = PlaybookRunStatus.INTERRUPTED.name, updatedAtMs = now))
         idleRounds.remove(sessionId)
@@ -296,13 +284,11 @@ class PlaybookExecutor @Inject constructor(
 
     /** 查询本会话最近一次运行的状态（playbook_status / PlaybookStageSource 用）。 */
     suspend fun status(sessionId: String): PlaybookRunEntity? =
-        if (isV2()) v2Agent.getLatestPlaybookBySession(sessionId)?.toEntity()
-        else playbookRunDao.getLatestBySession(sessionId)
+        v2Agent.getLatestPlaybookBySession(sessionId)?.toEntity()
 
     /** 本会话最近一次运行的人类可读状态文本（/playbook status 用）。 */
     suspend fun statusText(sessionId: String): String {
-        val run = (if (isV2()) v2Agent.getLatestPlaybookBySession(sessionId)?.toEntity()
-            else playbookRunDao.getLatestBySession(sessionId))
+        val run = v2Agent.getLatestPlaybookBySession(sessionId)?.toEntity()
             ?: return "当前会话没有剧本运行记录"
         val stageStates = decodeStages(run.stageStatuses)
         return buildString {
@@ -322,8 +308,7 @@ class PlaybookExecutor @Inject constructor(
 
     /** 本会话最近一次 RUNNING 运行的当前阶段视图（无运行返回 null）。 */
     suspend fun currentStageView(sessionId: String): PlaybookStageView? {
-        val run = (if (isV2()) v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.RUNNING.name)?.toEntity()
-            else playbookRunDao.getLatestRunningBySession(sessionId)) ?: return null
+        val run = v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.RUNNING.name)?.toEntity() ?: return null
         val asset = playbookRegistry.findByName(run.playbookName) ?: return null
         if (run.currentStageIndex >= asset.stages.size) return null
         return stageView(asset.name, asset.stages, run.currentStageIndex)
@@ -482,11 +467,10 @@ class PlaybookExecutor @Inject constructor(
 
     private suspend fun resolveRunning(sessionId: String, runId: String?): PlaybookRunEntity? {
         if (runId != null) {
-            val byId = if (isV2()) v2Agent.getPlaybookRunById(runId)?.toEntity() else playbookRunDao.getById(runId)
+            val byId = v2Agent.getPlaybookRunById(runId)?.toEntity()
             return byId?.takeIf { it.sessionId == sessionId && it.statusEnum() == PlaybookRunStatus.RUNNING }
         }
-        return if (isV2()) v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.RUNNING.name)?.toEntity()
-        else playbookRunDao.getLatestRunningBySession(sessionId)
+        return v2Agent.getLatestPlaybookBySessionAndStatus(sessionId, PlaybookRunStatus.RUNNING.name)?.toEntity()
     }
 
     private suspend fun abortExisting(existing: PlaybookRunEntity) {
@@ -498,22 +482,18 @@ class PlaybookExecutor @Inject constructor(
         )
     }
 
-    /** 双路径 upsert：V2 走 SQLDelight upsert，Room 走 DAO。 */
+    /** V2 upsert。 */
     private suspend fun upsertRun(run: PlaybookRunEntity) {
-        if (isV2()) {
-            v2Agent.upsertPlaybookRun(
-                playbookRunId = run.playbookRunId,
-                sessionId = run.sessionId,
-                playbookName = run.playbookName,
-                currentStageIndex = run.currentStageIndex.toLong(),
-                stageStatuses = run.stageStatuses,
-                status = run.status,
-                createdAtMs = run.createdAtMs,
-                updatedAtMs = run.updatedAtMs
-            )
-        } else {
-            playbookRunDao.upsert(run)
-        }
+        v2Agent.upsertPlaybookRun(
+            playbookRunId = run.playbookRunId,
+            sessionId = run.sessionId,
+            playbookName = run.playbookName,
+            currentStageIndex = run.currentStageIndex.toLong(),
+            stageStatuses = run.stageStatuses,
+            status = run.status,
+            createdAtMs = run.createdAtMs,
+            updatedAtMs = run.updatedAtMs
+        )
     }
 
     private fun stageView(playbookName: String, stages: List<PlaybookStage>, index: Int): PlaybookStageView {

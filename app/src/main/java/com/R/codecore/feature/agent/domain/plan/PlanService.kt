@@ -1,15 +1,10 @@
 package com.R.codecore.feature.agent.domain.plan
 
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.datalayer.sqldelight.agent.Agent_plans as V2AgentPlan
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.agent.data.local.dao.PlanDao
-import com.R.codecore.feature.agent.data.local.database.AgentDatabase
 import com.R.codecore.feature.agent.data.local.entity.PlanEntity
 import com.R.codecore.feature.agent.data.local.entity.PlanStatus
-import androidx.room.withTransaction
 import java.util.UUID
 import javax.inject.Inject
 
@@ -26,40 +21,30 @@ import javax.inject.Inject
  * 供 [plan 工具] 与 workflow（每轮 step 前注入 pendingSelection）共用。
  */
 class PlanService @Inject constructor(
-    private val planDao: PlanDao,
-    private val database: AgentDatabase,
     private val v2Agent: V2AgentRepository,
-    private val readMode: DataReadModeHolder,
 ) {
-
-    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /** 读取会话最近一份计划；无则返回 null。 */
     suspend fun getLatest(sessionId: String): PlanEntity? =
-        if (isV2()) v2Agent.getLatestPlanBySession(sessionId)?.toEntity()
-        else planDao.getLatestBySessionOnce(sessionId)
+        v2Agent.getLatestPlanBySession(sessionId)?.toEntity()
 
     /** 按 id 读取计划；无则返回 null。 */
     suspend fun getById(planId: String): PlanEntity? =
-        if (isV2()) v2Agent.getPlanById(planId)?.toEntity() else planDao.getById(planId)
+        v2Agent.getPlanById(planId)?.toEntity()
 
     /** 按 id 整行更新（供 plan 工具在非终态校验后落库）。目标不存在返回 null。 */
     suspend fun update(planId: String, plan: PlanEntity): PlanEntity? {
         if (getById(planId) == null) return null
-        if (isV2()) {
-            v2Agent.upsertPlan(
-                planId = plan.planId,
-                sessionId = plan.sessionId,
-                title = plan.title,
-                steps = plan.steps,
-                status = plan.status,
-                pendingSelection = plan.pendingSelection,
-                createdAtMs = plan.createdAtMs,
-                updatedAtMs = plan.updatedAtMs
-            )
-        } else {
-            planDao.upsert(plan)
-        }
+        v2Agent.upsertPlan(
+            planId = plan.planId,
+            sessionId = plan.sessionId,
+            title = plan.title,
+            steps = plan.steps,
+            status = plan.status,
+            pendingSelection = plan.pendingSelection,
+            createdAtMs = plan.createdAtMs,
+            updatedAtMs = plan.updatedAtMs
+        )
         return getById(planId)
     }
 
@@ -80,35 +65,18 @@ class PlanService @Inject constructor(
             createdAtMs = now,
             updatedAtMs = now
         )
-        if (isV2()) {
-            v2Agent.runInTx { tx ->
-                tx.proposePlan(
-                    sessionId = sessionId,
-                    old = v2Agent.getLatestPlanBySessionBlocking(sessionId),
-                    planId = entity.planId,
-                    title = entity.title,
-                    steps = entity.steps,
-                    status = entity.status,
-                    pendingSelection = entity.pendingSelection,
-                    createdAtMs = entity.createdAtMs,
-                    updatedAtMs = entity.updatedAtMs
-                )
-            }
-        } else {
-            database.withTransaction {
-                planDao.getLatestBySessionOnce(sessionId)?.let { old ->
-                    if (old.statusEnum() != PlanStatus.COMPLETED && old.statusEnum() != PlanStatus.ABANDONED) {
-                        planDao.updateContent(
-                            planId = old.planId,
-                            status = PlanStatus.ABANDONED.name,
-                            steps = old.steps,
-                            pendingSelection = old.pendingSelection,
-                            updatedAtMs = now
-                        )
-                    }
-                }
-                planDao.upsert(entity)
-            }
+        v2Agent.runInTx { tx ->
+            tx.proposePlan(
+                sessionId = sessionId,
+                old = v2Agent.getLatestPlanBySessionBlocking(sessionId),
+                planId = entity.planId,
+                title = entity.title,
+                steps = entity.steps,
+                status = entity.status,
+                pendingSelection = entity.pendingSelection,
+                createdAtMs = entity.createdAtMs,
+                updatedAtMs = entity.updatedAtMs
+            )
         }
         FileLogger.d(TAG, "propose: session=$sessionId planId=${entity.planId} status=DRAFT")
         return entity
@@ -117,23 +85,13 @@ class PlanService @Inject constructor(
     /** 更新待定选择（用户选中某方案后落库，供下轮注入）。 */
     suspend fun setPendingSelection(planId: String, pendingSelection: String): PlanEntity? {
         val existing = getById(planId) ?: return null
-        if (isV2()) {
-            v2Agent.updatePlanContent(
-                planId = planId,
-                status = existing.status,
-                steps = existing.steps,
-                pendingSelection = pendingSelection,
-                updatedAtMs = System.currentTimeMillis()
-            )
-        } else {
-            planDao.updateContent(
-                planId = planId,
-                status = existing.status,
-                steps = existing.steps,
-                pendingSelection = pendingSelection,
-                updatedAtMs = System.currentTimeMillis()
-            )
-        }
+        v2Agent.updatePlanContent(
+            planId = planId,
+            status = existing.status,
+            steps = existing.steps,
+            pendingSelection = pendingSelection,
+            updatedAtMs = System.currentTimeMillis()
+        )
         return getById(planId)
     }
 
@@ -141,23 +99,13 @@ class PlanService @Inject constructor(
     suspend fun setStatus(planId: String, status: PlanStatus): PlanEntity? {
         val existing = getById(planId) ?: return null
         val nextPending = if (status == PlanStatus.APPROVED) "" else existing.pendingSelection
-        if (isV2()) {
-            v2Agent.updatePlanContent(
-                planId = planId,
-                status = status.name,
-                steps = existing.steps,
-                pendingSelection = nextPending,
-                updatedAtMs = System.currentTimeMillis()
-            )
-        } else {
-            planDao.updateContent(
-                planId = planId,
-                status = status.name,
-                steps = existing.steps,
-                pendingSelection = nextPending,
-                updatedAtMs = System.currentTimeMillis()
-            )
-        }
+        v2Agent.updatePlanContent(
+            planId = planId,
+            status = status.name,
+            steps = existing.steps,
+            pendingSelection = nextPending,
+            updatedAtMs = System.currentTimeMillis()
+        )
         return getById(planId)
     }
 
