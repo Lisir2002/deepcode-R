@@ -1,22 +1,46 @@
 -- agent 域 v1 schema（设计文档 §11.1）
 -- 生成类：AgentDb / AgentQueries（包 com.R.codecore.datalayer.sqldelight.agent）
+-- P2-3：agent_session / agent_message 已对齐 Room 实体全列（旧列保持在前，新列由 1.sqm 追加在后）。
 
 CREATE TABLE agent_session (
-  id         TEXT    NOT NULL PRIMARY KEY,
-  title      TEXT,
-  mode       TEXT    NOT NULL,
-  model      TEXT,
-  status     TEXT    NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  id                  TEXT    NOT NULL PRIMARY KEY,
+  title               TEXT,
+  mode                TEXT    NOT NULL,
+  model               TEXT,
+  status              TEXT    NOT NULL,
+  created_at          INTEGER NOT NULL,
+  updated_at          INTEGER NOT NULL,
+  workspace_path      TEXT    NOT NULL DEFAULT '',
+  reasoning_effort    TEXT    NOT NULL DEFAULT 'MEDIUM',
+  provider_id         TEXT,
+  total_input_tokens  INTEGER NOT NULL DEFAULT 0,
+  total_output_tokens INTEGER NOT NULL DEFAULT 0,
+  last_input_tokens   INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE agent_message (
-  id         TEXT    NOT NULL PRIMARY KEY,
-  session_id TEXT    NOT NULL,
-  role       TEXT    NOT NULL,
-  seq        INTEGER NOT NULL,
-  created_at INTEGER NOT NULL,
+  id                   TEXT    NOT NULL PRIMARY KEY,
+  session_id           TEXT    NOT NULL,
+  role                 TEXT    NOT NULL,
+  seq                  INTEGER NOT NULL,
+  created_at           INTEGER NOT NULL,
+  task_id              TEXT    NOT NULL DEFAULT '',
+  content              TEXT    NOT NULL DEFAULT '',
+  tool_calls_json      TEXT,
+  tool_call_id         TEXT,
+  tool_name            TEXT,
+  tool_args            TEXT,
+  is_error             INTEGER NOT NULL DEFAULT 0,
+  reasoning            TEXT,
+  signature            TEXT,
+  attachments_json     TEXT,
+  is_compacted         INTEGER NOT NULL DEFAULT 0,
+  is_context_summary   INTEGER NOT NULL DEFAULT 0,
+  is_compaction_marker INTEGER NOT NULL DEFAULT 0,
+  input_tokens         INTEGER NOT NULL DEFAULT 0,
+  output_tokens        INTEGER NOT NULL DEFAULT 0,
+  chunk_group_id       TEXT    NOT NULL DEFAULT '',
+  chunk_index          INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (session_id) REFERENCES agent_session(id)
 );
 CREATE INDEX agent_message_session_idx ON agent_message (session_id, seq);
@@ -57,9 +81,15 @@ CREATE TABLE agent_checkpoint (
 CREATE INDEX agent_checkpoint_session_idx ON agent_checkpoint (session_id, created_at);
 
 -- ── queries ──
+-- P2-3：会话/消息查询全部改为全列（对齐 Room 实体），新列按 ALTER 追加顺序。
+
+upsertSession:
+INSERT OR REPLACE INTO agent_session (id, title, mode, model, status, created_at, updated_at, workspace_path, reasoning_effort, provider_id, total_input_tokens, total_output_tokens, last_input_tokens)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 insertSession:
-INSERT INTO agent_session (id, title, mode, model, status, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO agent_session (id, title, mode, model, status, created_at, updated_at, workspace_path, reasoning_effort, provider_id, total_input_tokens, total_output_tokens, last_input_tokens)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateSessionTitle:
 UPDATE agent_session SET title = ?, updated_at = ? WHERE id = ?;
@@ -73,15 +103,117 @@ SELECT * FROM agent_session WHERE id = ?;
 selectAllSessions:
 SELECT * FROM agent_session ORDER BY updated_at DESC;
 
+selectSessionsByWorkspace:
+SELECT * FROM agent_session WHERE workspace_path = ? ORDER BY updated_at DESC;
+
+selectAllSessionsWithCount:
+SELECT s.id, s.title, s.created_at, s.updated_at, s.workspace_path, s.mode, COUNT(m.id) AS message_count
+FROM agent_session s LEFT JOIN agent_message m ON m.session_id = s.id
+GROUP BY s.id
+ORDER BY s.updated_at DESC;
+
+selectMostRecentSession:
+SELECT * FROM agent_session ORDER BY updated_at DESC LIMIT 1;
+
+selectUnboundSessions:
+SELECT * FROM agent_session WHERE workspace_path = '' ORDER BY updated_at DESC;
+
+countSessions:
+SELECT COUNT(*) AS cnt FROM agent_session;
+
+selectSessionPageAfter:
+SELECT * FROM agent_session
+WHERE updated_at > ? OR (updated_at = ? AND id > ?)
+ORDER BY updated_at ASC, id ASC LIMIT ?;
+
+updateSessionWorkspacePath:
+UPDATE agent_session SET workspace_path = ? WHERE workspace_path = ?;
+
+setSessionWorkspacePath:
+UPDATE agent_session SET workspace_path = ? WHERE id = ?;
+
+touchSession:
+UPDATE agent_session SET updated_at = ? WHERE id = ?;
+
 deleteSession:
 DELETE FROM agent_session WHERE id = ?;
 
+updateSessionProviderModel:
+UPDATE agent_session SET provider_id = ?, model = ? WHERE id = ?;
+
+updateSessionReasoningEffort:
+UPDATE agent_session SET reasoning_effort = ? WHERE id = ?;
+
+addSessionTokenUsage:
+UPDATE agent_session SET total_input_tokens = total_input_tokens + ?, total_output_tokens = total_output_tokens + ? WHERE id = ?;
+
+updateSessionLastInputTokens:
+UPDATE agent_session SET last_input_tokens = ? WHERE id = ?;
+
 insertMessage:
-INSERT INTO agent_message (id, session_id, role, seq, created_at)
-VALUES (?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO agent_message (id, session_id, role, seq, created_at, task_id, content, tool_calls_json, tool_call_id, tool_name, tool_args, is_error, reasoning, signature, attachments_json, is_compacted, is_context_summary, is_compaction_marker, input_tokens, output_tokens, chunk_group_id, chunk_index)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertAllMessages:
+INSERT OR REPLACE INTO agent_message (id, session_id, role, seq, created_at, task_id, content, tool_calls_json, tool_call_id, tool_name, tool_args, is_error, reasoning, signature, attachments_json, is_compacted, is_context_summary, is_compaction_marker, input_tokens, output_tokens, chunk_group_id, chunk_index)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectMessagesBySession:
-SELECT * FROM agent_message WHERE session_id = ? ORDER BY seq ASC;
+SELECT * FROM agent_message WHERE session_id = ? ORDER BY seq ASC, created_at ASC;
+
+selectMessagesBySessionPaged:
+SELECT * FROM (
+  SELECT * FROM agent_message WHERE session_id = ? ORDER BY seq DESC, created_at DESC LIMIT ?
+) ORDER BY seq ASC, created_at ASC;
+
+deleteMessagesBySession:
+DELETE FROM agent_message WHERE session_id = ?;
+
+deleteMessagesBeforeTimestamp:
+DELETE FROM agent_message WHERE session_id = ? AND seq < ?;
+
+markMessagesCompactedBeforeTimestamp:
+UPDATE agent_message SET is_compacted = 1 WHERE session_id = ? AND seq < ?;
+
+markMessagesCompactedInclusiveFromTimestamp:
+UPDATE agent_message SET is_compacted = 1 WHERE session_id = ? AND seq >= ?;
+
+deleteAllMessages:
+DELETE FROM agent_message;
+
+selectMessageById:
+SELECT * FROM agent_message WHERE id = ? LIMIT 1;
+
+updateMessageContent:
+UPDATE agent_message SET content = ? WHERE id = ?;
+
+deleteMessageById:
+DELETE FROM agent_message WHERE id = ?;
+
+deleteMessagesInclusiveFromTimestamp:
+DELETE FROM agent_message WHERE session_id = ? AND seq >= ?;
+
+deleteMessagesExclusiveAfterTimestamp:
+DELETE FROM agent_message WHERE session_id = ? AND seq > ?;
+
+markPendingToolsInterrupted:
+UPDATE agent_message SET content = ?, is_error = 1 WHERE role = ? AND content LIKE ?;
+
+searchMessages:
+SELECT * FROM agent_message WHERE content LIKE '%' || ? || '%' ORDER BY seq ASC;
+
+selectAllMessages:
+SELECT * FROM agent_message ORDER BY seq ASC;
+
+selectMessagePageAfter:
+SELECT * FROM agent_message
+WHERE seq > ? OR (seq = ? AND id > ?)
+ORDER BY seq ASC, id ASC LIMIT ?;
+
+selectMessagePageBySessionAfter:
+SELECT * FROM agent_message
+WHERE session_id = ? AND (seq > ? OR (seq = ? AND id > ?))
+ORDER BY seq ASC, id ASC LIMIT ?;
 
 insertMessagePart:
 INSERT INTO agent_message_part (id, message_id, kind, seq, text_content, tool_name, tool_args, tool_result, tool_error)
@@ -363,6 +495,47 @@ UPDATE todo_items SET status = ?, updated_at_ms = ? WHERE id = ?;
 deleteTodoItem:
 DELETE FROM todo_items WHERE id = ?;
 
+-- P2-3 备份流式导出/还原（对齐 TodoItemDao.getPageAfter / getBySessionPageAfter / upsertAll）。
+selectTodoPageAfter:
+SELECT * FROM todo_items
+WHERE created_at_ms > :lastCreatedAtMs OR (created_at_ms = :lastCreatedAtMs AND id > :lastId)
+ORDER BY created_at_ms ASC, id ASC LIMIT :limit;
+
+selectTodoPageBySessionAfter:
+SELECT * FROM todo_items
+WHERE session_id = :sessionId
+  AND (created_at_ms > :lastCreatedAtMs OR (created_at_ms = :lastCreatedAtMs AND id > :lastId))
+ORDER BY created_at_ms ASC, id ASC LIMIT :limit;
+
+upsertTodoItem:
+INSERT OR REPLACE INTO todo_items (id, session_id, subject, description, status, priority, sort_order, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- P2-3 会话级联删除（对齐 SessionUseCase.deleteSession 的 10 张关联表）。
+deleteTodoItemsBySession:
+DELETE FROM todo_items WHERE session_id = ?;
+
+deleteFileEditHunksBySession:
+DELETE FROM file_edit_hunks WHERE session_id = ?;
+
+deleteModeSwitchesBySession:
+DELETE FROM mode_switch_history WHERE session_id = ?;
+
+deleteWakeItemsBySession:
+DELETE FROM wake_queue WHERE session_id = ?;
+
+deleteGoalsBySession:
+DELETE FROM agent_goals WHERE session_id = ?;
+
+deletePlansBySession:
+DELETE FROM agent_plans WHERE session_id = ?;
+
+deleteJobsBySession:
+DELETE FROM agent_jobs WHERE session_id = ?;
+
+deleteSchedulesBySession:
+DELETE FROM agent_schedules WHERE session_id = ?;
+
 insertCheckpointFull:
 INSERT INTO session_checkpoints (id, session_id, user_message_id, prompt_snippet, created_at_ms)
 VALUES (?, ?, ?, ?, ?);
@@ -423,6 +596,21 @@ insertGoal:
 INSERT INTO agent_goals (goal_id, session_id, text, status, revision, parent_goal_id, round_seq, created_at_ms, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- P2-4：GoalService 等价（getById / getActiveBySessionOnce / casUpdateStatusAndText / upsert）
+selectGoalById:
+SELECT * FROM agent_goals WHERE goal_id = ?;
+
+selectActiveGoalBySession:
+SELECT * FROM agent_goals WHERE session_id = ? AND status = 'ACTIVE' ORDER BY updated_at_ms DESC LIMIT 1;
+
+casUpdateGoalStatusAndText:
+UPDATE agent_goals SET status = ?, text = ?, revision = ?, updated_at_ms = ?
+WHERE goal_id = ? AND revision = ?;
+
+upsertGoal:
+INSERT OR REPLACE INTO agent_goals (goal_id, session_id, text, status, revision, parent_goal_id, round_seq, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 selectGoalsBySession:
 SELECT * FROM agent_goals WHERE session_id = ? ORDER BY round_seq ASC;
 
@@ -434,6 +622,20 @@ DELETE FROM agent_goals WHERE goal_id = ?;
 
 insertPlan:
 INSERT INTO agent_plans (plan_id, session_id, title, steps, status, pending_selection, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- P2-4：PlanService 等价（getById / getLatestBySessionOnce / updateContent / upsert）
+selectPlanById:
+SELECT * FROM agent_plans WHERE plan_id = ?;
+
+selectLatestPlanBySession:
+SELECT * FROM agent_plans WHERE session_id = ? ORDER BY updated_at_ms DESC LIMIT 1;
+
+updatePlanContent:
+UPDATE agent_plans SET status = ?, steps = ?, pending_selection = ?, updated_at_ms = ? WHERE plan_id = ?;
+
+upsertPlan:
+INSERT OR REPLACE INTO agent_plans (plan_id, session_id, title, steps, status, pending_selection, created_at_ms, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 selectPlansBySession:

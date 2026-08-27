@@ -1,6 +1,10 @@
 package com.R.codecore.feature.agent.domain.workflow
 
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
+import com.R.codecore.datalayer.sqldelight.agent.Agent_message as V2AgentMessage
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.domain.model.AgentMessage
@@ -19,6 +23,8 @@ import javax.inject.Singleton
 @Singleton
 class ContextCompactor @Inject constructor(
     private val agentMessageDao: AgentMessageDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
     private val modelMetadataService: ModelMetadataService
 ) {
 
@@ -27,6 +33,8 @@ class ContextCompactor @Inject constructor(
 
         const val TOOL_OUTPUT_MAX_CHARS = 2_000
     }
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     /**
      * 如果消息体总长度超过阈值，则将早期的消息（Head）提取出来，
@@ -126,38 +134,46 @@ class ContextCompactor @Inject constructor(
         // 持久化压缩结果到数据库
         if (sessionId != null) {
             try {
-                val dbEntities = agentMessageDao.getMessagesBySessionOnce(sessionId
-                )
+                val dbEntities = if (isV2()) {
+                    v2Agent.getMessagesBySessionOnce(sessionId).map { it.toEntity() }
+                } else {
+                    agentMessageDao.getMessagesBySessionOnce(sessionId
+                    )
+                }
                 val firstTailId = tail.firstOrNull { msg -> msg.id.isNotEmpty() }?.id
                 val tailEntity = if (firstTailId != null) dbEntities.find { it.id == firstTailId } else null
                 val cutoffTimestamp = tailEntity?.timestamp ?: System.currentTimeMillis()
 
                 // 将 head 部分的消息标记为已压缩（不删除，保留数据完整性）
-                agentMessageDao.markMessagesCompactedBeforeTimestamp(sessionId, cutoffTimestamp)
+                if (isV2()) v2Agent.markMessagesCompactedBeforeTimestamp(sessionId, cutoffTimestamp)
+                else agentMessageDao.markMessagesCompactedBeforeTimestamp(sessionId, cutoffTimestamp)
 
                 // 插入内部 compaction user marker + assistant summary，时间戳放在 head 和 tail 之间。
-                agentMessageDao.insert(
-                    AgentMessageEntity(
-                        id = markerId,
-                        sessionId = sessionId,
-                        taskId = "",
-                        role = MessageRole.USER.name,
-                        content = CONTEXT_COMPACTION_MARKER,
-                        timestamp = cutoffTimestamp - 2,
-                        isCompactionMarker = true
-                    )
+                val markerEntity = AgentMessageEntity(
+                    id = markerId,
+                    sessionId = sessionId,
+                    taskId = "",
+                    role = MessageRole.USER.name,
+                    content = CONTEXT_COMPACTION_MARKER,
+                    timestamp = cutoffTimestamp - 2,
+                    isCompactionMarker = true
                 )
-                agentMessageDao.insert(
-                    AgentMessageEntity(
-                        id = compactedId,
-                        sessionId = sessionId,
-                        taskId = "",
-                        role = MessageRole.ASSISTANT.name,
-                        content = compactedMessage.content,
-                        timestamp = cutoffTimestamp - 1,
-                        isContextSummary = true
-                    )
+                val summaryEntity = AgentMessageEntity(
+                    id = compactedId,
+                    sessionId = sessionId,
+                    taskId = "",
+                    role = MessageRole.ASSISTANT.name,
+                    content = compactedMessage.content,
+                    timestamp = cutoffTimestamp - 1,
+                    isContextSummary = true
                 )
+                if (isV2()) {
+                    v2Agent.insertMessage(markerEntity.toV2())
+                    v2Agent.insertMessage(summaryEntity.toV2())
+                } else {
+                    agentMessageDao.insert(markerEntity)
+                    agentMessageDao.insert(summaryEntity)
+                }
                 FileLogger.i(TAG, "已持久化压缩结果到数据库，会话 $sessionId")
             } catch (e: Exception) {
                 FileLogger.e(TAG, "持久化压缩结果失败", e)
@@ -358,4 +374,55 @@ class ContextCompactor @Inject constructor(
         if (length <= TOOL_OUTPUT_MAX_CHARS) return this
         return take(TOOL_OUTPUT_MAX_CHARS) + "\n[Tool output truncated for compaction]"
     }
+
+    // ── V2 映射 ──────────────────────────────────────────────────────
+
+    private fun AgentMessageEntity.toV2() = V2AgentMessage(
+        id = id,
+        session_id = sessionId,
+        role = role,
+        seq = timestamp,
+        created_at = timestamp,
+        task_id = taskId,
+        content = content,
+        tool_calls_json = toolCallsJson,
+        tool_call_id = toolCallId,
+        tool_name = toolName,
+        tool_args = toolArgs,
+        is_error = if (isError) 1L else 0L,
+        reasoning = reasoning,
+        signature = signature,
+        attachments_json = attachmentsJson,
+        is_compacted = if (isCompacted) 1L else 0L,
+        is_context_summary = if (isContextSummary) 1L else 0L,
+        is_compaction_marker = if (isCompactionMarker) 1L else 0L,
+        input_tokens = inputTokens.toLong(),
+        output_tokens = outputTokens.toLong(),
+        chunk_group_id = chunkGroupId,
+        chunk_index = chunkIndex.toLong(),
+    )
+
+    private fun V2AgentMessage.toEntity() = AgentMessageEntity(
+        id = id,
+        sessionId = session_id,
+        taskId = task_id,
+        role = role,
+        content = content,
+        timestamp = seq,
+        toolCallsJson = tool_calls_json,
+        toolCallId = tool_call_id,
+        toolName = tool_name,
+        toolArgs = tool_args,
+        isError = is_error == 1L,
+        reasoning = reasoning,
+        signature = signature,
+        attachmentsJson = attachments_json,
+        isCompacted = is_compacted == 1L,
+        isContextSummary = is_context_summary == 1L,
+        isCompactionMarker = is_compaction_marker == 1L,
+        inputTokens = input_tokens.toInt(),
+        outputTokens = output_tokens.toInt(),
+        chunkGroupId = chunk_group_id,
+        chunkIndex = chunk_index.toInt(),
+    )
 }

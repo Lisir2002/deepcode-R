@@ -3,6 +3,12 @@ package com.R.codecore.feature.backup.data
 import android.content.Context
 import com.R.codecore.core.data.DataBlob
 import com.R.codecore.core.data.DataRegistry
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
+import com.R.codecore.datalayer.sqldelight.agent.Agent_message as V2AgentMessage
+import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
+import com.R.codecore.datalayer.sqldelight.agent.Todo_items as V2TodoItem
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.data.local.dao.TodoItemDao
@@ -87,6 +93,8 @@ class BackupManagerImpl @Inject constructor(
     private val workspaceRepository: WorkspaceRepository,
     private val encryptor: CredentialEncryptor,
     private val dataRegistry: DataRegistry,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) : BackupManager {
 
     private val json = Json {
@@ -112,6 +120,9 @@ class BackupManagerImpl @Inject constructor(
             FileLogger.e("BackupMgr", "safeDaoSuspend[$tag] 失败，返回兜底值 failValue=$failValue", it)
         }.getOrDefault(failValue)
     }
+
+    /** v2-full-takeover：当前数据读模式是否为 V2。写操作与一次性读按模式分发。 */
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
 
     private fun currentSchemaVersion(): Int = AgentDatabase.SCHEMA_VERSION
 
@@ -140,8 +151,11 @@ class BackupManagerImpl @Inject constructor(
 
     override suspend fun exportSession(sessionId: String, output: OutputStream) {
         withContext(Dispatchers.IO) {
-            val session = safeDaoSuspend("getSessionById", null) { chatSessionDao.getById(sessionId) }
-                ?: error("Session not found: $sessionId")
+            val session = if (isV2()) {
+                safeDaoSuspend("getSessionById", null) { v2Agent.getSessionById(sessionId) }?.toEntity()
+            } else {
+                safeDaoSuspend("getSessionById", null) { chatSessionDao.getById(sessionId) }
+            } ?: error("Session not found: $sessionId")
             val temp = createTempFile()
             try {
                 FileOutputStream(temp).use { fos ->
@@ -159,10 +173,18 @@ class BackupManagerImpl @Inject constructor(
                                 var lastTs = 0L
                                 var lastId = ""
                                 while (true) {
-                                    val batch = safeDaoSuspend(
-                                        "getMsgPageAfter_$sessionId",
-                                        emptyList()
-                                    ) { agentMessageDao.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE) }
+                                    val batch = if (isV2()) {
+                                        safeDaoSuspend(
+                                            "getMsgPageAfter_$sessionId",
+                                            emptyList()
+                                        ) { v2Agent.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE.toLong()) }
+                                            .map { it.toEntity() }
+                                    } else {
+                                        safeDaoSuspend(
+                                            "getMsgPageAfter_$sessionId",
+                                            emptyList()
+                                        ) { agentMessageDao.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE) }
+                                    }
                                     if (batch.isEmpty()) break
                                     batch.forEach { writer.writeLine(json.encodeToString(AgentMessageDto.serializer(), it.toDto())) }
                                     lastTs = batch.last().timestamp
@@ -173,10 +195,18 @@ class BackupManagerImpl @Inject constructor(
                                 var lastCreatedAtMs = 0L
                                 var lastId = ""
                                 while (true) {
-                                    val batch = safeDaoSuspend(
-                                        "getTodoPageAfter_$sessionId",
-                                        emptyList()
-                                    ) { todoItemDao.getBySessionPageAfter(sessionId, lastCreatedAtMs, lastId, PAGE_SIZE) }
+                                    val batch = if (isV2()) {
+                                        safeDaoSuspend(
+                                            "getTodoPageAfter_$sessionId",
+                                            emptyList()
+                                        ) { v2Agent.getTodoPageBySessionAfter(sessionId, lastCreatedAtMs, lastId, PAGE_SIZE.toLong()) }
+                                            .map { it.toEntity() }
+                                    } else {
+                                        safeDaoSuspend(
+                                            "getTodoPageAfter_$sessionId",
+                                            emptyList()
+                                        ) { todoItemDao.getBySessionPageAfter(sessionId, lastCreatedAtMs, lastId, PAGE_SIZE) }
+                                    }
                                     if (batch.isEmpty()) break
                                     batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
                                     lastCreatedAtMs = batch.last().createdAtMs
@@ -247,10 +277,18 @@ class BackupManagerImpl @Inject constructor(
                             var lastUpdatedAtMs = 0L
                             var lastId = ""
                             while (true) {
-                                val batch = safeDaoSuspend(
-                                    "getSessionPageAfter",
-                                    emptyList()
-                                ) { chatSessionDao.getPageAfter(lastUpdatedAtMs, lastId, PAGE_SIZE) }
+                                val batch = if (isV2()) {
+                                    safeDaoSuspend(
+                                        "getSessionPageAfter",
+                                        emptyList()
+                                    ) { v2Agent.getSessionPageAfter(lastUpdatedAtMs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
+                                } else {
+                                    safeDaoSuspend(
+                                        "getSessionPageAfter",
+                                        emptyList()
+                                    ) { chatSessionDao.getPageAfter(lastUpdatedAtMs, lastId, PAGE_SIZE) }
+                                }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(ChatSessionDto.serializer(), it.toDto())) }
                                 lastUpdatedAtMs = batch.last().updatedAtMs
@@ -261,10 +299,18 @@ class BackupManagerImpl @Inject constructor(
                             var lastTs = 0L
                             var lastId = ""
                             while (true) {
-                                val batch = safeDaoSuspend(
-                                    "getMsgPageAfter",
-                                    emptyList()
-                                ) { agentMessageDao.getPageAfter(lastTs, lastId, PAGE_SIZE) }
+                                val batch = if (isV2()) {
+                                    safeDaoSuspend(
+                                        "getMsgPageAfter",
+                                        emptyList()
+                                    ) { v2Agent.getMessagePageAfter(lastTs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
+                                } else {
+                                    safeDaoSuspend(
+                                        "getMsgPageAfter",
+                                        emptyList()
+                                    ) { agentMessageDao.getPageAfter(lastTs, lastId, PAGE_SIZE) }
+                                }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(AgentMessageDto.serializer(), it.toDto())) }
                                 lastTs = batch.last().timestamp
@@ -275,10 +321,18 @@ class BackupManagerImpl @Inject constructor(
                             var lastCreatedAtMs = 0L
                             var lastId = ""
                             while (true) {
-                                val batch = safeDaoSuspend(
-                                    "getTodoPageAfter",
-                                    emptyList()
-                                ) { todoItemDao.getPageAfter(lastCreatedAtMs, lastId, PAGE_SIZE) }
+                                val batch = if (isV2()) {
+                                    safeDaoSuspend(
+                                        "getTodoPageAfter",
+                                        emptyList()
+                                    ) { v2Agent.getTodoPageAfter(lastCreatedAtMs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
+                                } else {
+                                    safeDaoSuspend(
+                                        "getTodoPageAfter",
+                                        emptyList()
+                                    ) { todoItemDao.getPageAfter(lastCreatedAtMs, lastId, PAGE_SIZE) }
+                                }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
                                 lastCreatedAtMs = batch.last().createdAtMs
@@ -389,7 +443,9 @@ class BackupManagerImpl @Inject constructor(
                         .getOrDefault("")
                     stats += RestoreStats(chatSessions = restoreJsonl(tar, ChatSessionDto.serializer(), "upsertSessions") { dtos ->
                         safeDaoSuspend("upsertSessions", 0) {
-                            chatSessionDao.upsertAll(dtos.map { it.copy(workspacePath = currentWorkspacePath).toEntity() })
+                            val mapped = dtos.map { it.copy(workspacePath = currentWorkspacePath).toEntity() }
+                            if (isV2()) v2Agent.upsertAllSessions(mapped.map { it.toV2() })
+                            else chatSessionDao.upsertAll(mapped)
                             dtos.size
                         }
                     })
@@ -397,7 +453,9 @@ class BackupManagerImpl @Inject constructor(
                 FILE_MESSAGES -> {
                     stats += RestoreStats(agentMessages = restoreJsonl(tar, AgentMessageDto.serializer(), "insertMessages") { dtos ->
                         safeDaoSuspend("insertMessages", 0) {
-                            agentMessageDao.insertAll(dtos.map { it.toEntity() })
+                            val mapped = dtos.map { it.toEntity() }
+                            if (isV2()) v2Agent.insertAllMessages(mapped.map { it.toV2() })
+                            else agentMessageDao.insertAll(mapped)
                             dtos.size
                         }
                     })
@@ -405,7 +463,9 @@ class BackupManagerImpl @Inject constructor(
                 FILE_TODOS -> {
                     stats += RestoreStats(todoItems = restoreJsonl(tar, TodoItemDto.serializer(), "upsertTodos") { dtos ->
                         safeDaoSuspend("upsertTodos", 0) {
-                            todoItemDao.upsertAll(dtos.map { it.toEntity() })
+                            val mapped = dtos.map { it.toEntity() }
+                            if (isV2()) v2Agent.upsertAllTodos(mapped.map { it.toV2() })
+                            else todoItemDao.upsertAll(mapped)
                             dtos.size
                         }
                     })
@@ -494,17 +554,23 @@ class BackupManagerImpl @Inject constructor(
                 .onFailure { FileLogger.w("BackupMgr", "读取 workspacePath 失败(legacy)", it) }
                 .getOrDefault("")
             safeDaoSuspend("legacyUpsertSessions", Unit) {
-                chatSessionDao.upsertAll(snapshot.chatSessions.map { it.copy(workspacePath = currentWorkspacePath).toEntity() })
+                val mapped = snapshot.chatSessions.map { it.copy(workspacePath = currentWorkspacePath).toEntity() }
+                if (isV2()) v2Agent.upsertAllSessions(mapped.map { it.toV2() })
+                else chatSessionDao.upsertAll(mapped)
             }
         }
         if (snapshot.agentMessages.isNotEmpty()) {
             safeDaoSuspend("legacyInsertMessages", Unit) {
-                agentMessageDao.insertAll(snapshot.agentMessages.map { it.toEntity() })
+                val mapped = snapshot.agentMessages.map { it.toEntity() }
+                if (isV2()) v2Agent.insertAllMessages(mapped.map { it.toV2() })
+                else agentMessageDao.insertAll(mapped)
             }
         }
         if (snapshot.todoItems.isNotEmpty()) {
             safeDaoSuspend("legacyUpsertTodos", Unit) {
-                todoItemDao.upsertAll(snapshot.todoItems.map { it.toEntity() })
+                val mapped = snapshot.todoItems.map { it.toEntity() }
+                if (isV2()) v2Agent.upsertAllTodos(mapped.map { it.toV2() })
+                else todoItemDao.upsertAll(mapped)
             }
         }
         return stats + RestoreStats(
@@ -742,6 +808,63 @@ class BackupManagerImpl @Inject constructor(
         id, sessionId, taskId, role, content, timestamp, toolCallsJson, toolCallId, toolName, toolArgs,
         isError, reasoning, signature, attachmentsJson, isCompacted, isContextSummary, isCompactionMarker,
         inputTokens = 0, outputTokens = 0, chunkGroupId = chunkGroupId, chunkIndex = chunkIndex
+    )
+
+    // ── V2（SQLDelight）↔ Room Entity 映射 ──────────────────────────────
+
+    private fun V2AgentSession.toEntity() = ChatSessionEntity(
+        id = id, title = title ?: "",
+        createdAtMs = created_at, updatedAtMs = updated_at,
+        workspacePath = workspace_path, mode = mode, reasoningEffort = reasoning_effort,
+        providerId = provider_id, model = model,
+        totalInputTokens = total_input_tokens.toInt(),
+        totalOutputTokens = total_output_tokens.toInt(),
+        lastInputTokens = last_input_tokens.toInt()
+    )
+
+    private fun ChatSessionEntity.toV2() = V2AgentSession(
+        id = id, title = title, mode = mode, model = model, status = "active",
+        created_at = createdAtMs, updated_at = updatedAtMs,
+        workspace_path = workspacePath, reasoning_effort = reasoningEffort,
+        provider_id = providerId,
+        total_input_tokens = totalInputTokens.toLong(),
+        total_output_tokens = totalOutputTokens.toLong(),
+        last_input_tokens = lastInputTokens.toLong()
+    )
+
+    private fun V2AgentMessage.toEntity() = AgentMessageEntity(
+        id = id, sessionId = session_id, taskId = task_id, role = role, content = content,
+        timestamp = created_at, toolCallsJson = tool_calls_json, toolCallId = tool_call_id,
+        toolName = tool_name, toolArgs = tool_args, isError = is_error == 1L,
+        reasoning = reasoning, signature = signature, attachmentsJson = attachments_json,
+        isCompacted = is_compacted == 1L, isContextSummary = is_context_summary == 1L,
+        isCompactionMarker = is_compaction_marker == 1L,
+        inputTokens = input_tokens.toInt(), outputTokens = output_tokens.toInt(),
+        chunkGroupId = chunk_group_id, chunkIndex = chunk_index.toInt()
+    )
+
+    private fun AgentMessageEntity.toV2() = V2AgentMessage(
+        id = id, session_id = sessionId, role = role, seq = timestamp, created_at = timestamp,
+        task_id = taskId, content = content, tool_calls_json = toolCallsJson,
+        tool_call_id = toolCallId, tool_name = toolName, tool_args = toolArgs,
+        is_error = if (isError) 1L else 0L, reasoning = reasoning, signature = signature,
+        attachments_json = attachmentsJson, is_compacted = if (isCompacted) 1L else 0L,
+        is_context_summary = if (isContextSummary) 1L else 0L,
+        is_compaction_marker = if (isCompactionMarker) 1L else 0L,
+        input_tokens = inputTokens.toLong(), output_tokens = outputTokens.toLong(),
+        chunk_group_id = chunkGroupId, chunk_index = chunkIndex.toLong()
+    )
+
+    private fun V2TodoItem.toEntity() = TodoItemEntity(
+        id = id, sessionId = session_id, subject = subject, description = description,
+        status = status, priority = priority.toInt(), order = sort_order.toInt(),
+        createdAtMs = created_at_ms, updatedAtMs = updated_at_ms
+    )
+
+    private fun TodoItemEntity.toV2() = V2TodoItem(
+        id = id, session_id = sessionId, subject = subject, description = description,
+        status = status, priority = priority.toLong(), sort_order = order.toLong(),
+        created_at_ms = createdAtMs, updated_at_ms = updatedAtMs
     )
 
     private fun TodoItemEntity.toDto() = TodoItemDto(

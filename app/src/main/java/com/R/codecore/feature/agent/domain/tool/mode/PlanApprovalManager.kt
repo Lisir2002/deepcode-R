@@ -1,6 +1,11 @@
 package com.R.codecore.feature.agent.domain.tool.mode
 
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
+import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
+import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CompletableDeferred
@@ -18,7 +23,9 @@ import kotlinx.coroutines.launch
  */
 @Singleton
 class PlanApprovalManager @Inject constructor(
-    private val chatSessionDao: ChatSessionDao
+    private val chatSessionDao: ChatSessionDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) {
     private val _pendingApproval = MutableStateFlow<PlanApprovalRequest?>(null)
     val pendingApproval: StateFlow<PlanApprovalRequest?> = _pendingApproval.asStateFlow()
@@ -26,6 +33,25 @@ class PlanApprovalManager @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.IO)
     private var currentDecision: CompletableDeferred<PlanApprovalChoice>? = null
     private var currentSessionId: String? = null
+
+    private suspend fun isV2(): Boolean = readMode.currentMode() == DataReadMode.V2
+
+    private suspend fun getSessionEntity(sid: String): ChatSessionEntity? =
+        if (isV2()) v2Agent.getSessionById(sid)?.toEntity() else chatSessionDao.getById(sid)
+
+    private suspend fun upsertMode(sid: String, entity: ChatSessionEntity, mode: String) {
+        if (isV2()) {
+            v2Agent.upsertSession(
+                id = entity.id, title = entity.title, mode = mode, model = entity.model, status = "active",
+                createdAtMs = entity.createdAtMs, updatedAtMs = entity.updatedAtMs,
+                workspacePath = entity.workspacePath, reasoningEffort = entity.reasoningEffort,
+                providerId = entity.providerId, totalInputTokens = entity.totalInputTokens.toLong(),
+                totalOutputTokens = entity.totalOutputTokens.toLong(), lastInputTokens = entity.lastInputTokens.toLong(),
+            )
+        } else {
+            chatSessionDao.upsert(entity.copy(mode = mode))
+        }
+    }
 
     /** 挂起等待用户在计划审查面板中的决策。 */
     suspend fun awaitApproval(reason: String, sessionId: String? = null): PlanApprovalChoice {
@@ -52,9 +78,9 @@ class PlanApprovalManager @Inject constructor(
             val sid = currentSessionId
             if (sid != null) {
                 scope.launch {
-                    val entity = chatSessionDao.getById(sid)
+                    val entity = getSessionEntity(sid)
                     if (entity != null && entity.mode != "PLAN") {
-                        chatSessionDao.upsert(entity.copy(mode = "PLAN"))
+                        upsertMode(sid, entity, "PLAN")
                     }
                 }
             }
@@ -62,6 +88,23 @@ class PlanApprovalManager @Inject constructor(
 
         currentDecision?.complete(choice)
     }
+
+    // ── V2 映射 ──────────────────────────────────────────────────────
+
+    private fun V2AgentSession.toEntity() = ChatSessionEntity(
+        id = id,
+        title = title ?: "",
+        createdAtMs = created_at,
+        updatedAtMs = updated_at,
+        workspacePath = workspace_path,
+        mode = mode,
+        reasoningEffort = reasoning_effort,
+        providerId = provider_id,
+        model = model,
+        totalInputTokens = total_input_tokens.toInt(),
+        totalOutputTokens = total_output_tokens.toInt(),
+        lastInputTokens = last_input_tokens.toInt(),
+    )
 }
 
 data class PlanApprovalRequest(val reason: String)

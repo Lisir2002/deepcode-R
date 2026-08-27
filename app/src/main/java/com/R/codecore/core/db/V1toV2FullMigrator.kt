@@ -95,25 +95,46 @@ class V1toV2FullMigrator @Inject constructor(
             try {
                 val sessions = db.chatSessionDao().getAllOnce()
                 for (s in sessions) {
-                    agentRepo.createSession(
-                        id = s.id, title = s.title, mode = s.mode, model = s.model,
-                        now = s.updatedAtMs
+                    agentRepo.upsertSession(
+                        id = s.id, title = s.title, mode = s.mode, model = s.model, status = "active",
+                        createdAtMs = s.createdAtMs, updatedAtMs = s.updatedAtMs,
+                        workspacePath = s.workspacePath, reasoningEffort = s.reasoningEffort,
+                        providerId = s.providerId, totalInputTokens = s.totalInputTokens.toLong(),
+                        totalOutputTokens = s.totalOutputTokens.toLong(), lastInputTokens = s.lastInputTokens.toLong(),
                     )
                     rows++
                 }
+                // P2-3 热表回填：agent_message 全列（content/toolCallsJson/分块/压缩/token 等）。
+                // 旧迁移把 content 拆进了 agent_message_part，现重建热表后直接从 Room 全列回填。
                 val messages = db.agentMessageDao().getAllOnce()
                 for (m in messages) {
-                    agentRepo.appendMessage(
-                        id = m.id, sessionId = m.sessionId, role = m.role,
-                        seq = m.timestamp, now = m.timestamp
+                    agentRepo.insertMessage(
+                        com.R.codecore.datalayer.sqldelight.agent.Agent_message(
+                            id = m.id,
+                            session_id = m.sessionId,
+                            role = m.role,
+                            seq = m.timestamp,
+                            created_at = m.timestamp,
+                            task_id = m.taskId,
+                            content = m.content,
+                            tool_calls_json = m.toolCallsJson,
+                            tool_call_id = m.toolCallId,
+                            tool_name = m.toolName,
+                            tool_args = m.toolArgs,
+                            is_error = if (m.isError) 1L else 0L,
+                            reasoning = m.reasoning,
+                            signature = m.signature,
+                            attachments_json = m.attachmentsJson,
+                            is_compacted = if (m.isCompacted) 1L else 0L,
+                            is_context_summary = if (m.isContextSummary) 1L else 0L,
+                            is_compaction_marker = if (m.isCompactionMarker) 1L else 0L,
+                            input_tokens = m.inputTokens.toLong(),
+                            output_tokens = m.outputTokens.toLong(),
+                            chunk_group_id = m.chunkGroupId,
+                            chunk_index = m.chunkIndex.toLong(),
+                        )
                     )
-                    // content → message_part.text_content；toolCallsJson → tool_args
-                    agentRepo.appendPart(
-                        id = "part_${m.id}", messageId = m.id, kind = "text", seq = 0,
-                        text = m.content, toolName = m.toolName, toolArgs = m.toolArgs,
-                        toolResult = null, toolError = null
-                    )
-                    rows += 2
+                    rows++
                 }
                 // P2-2：todo / checkpoint / Zth 域表全量移植（V2 读源后这些表不能为空）
                 for (t in db.todoItemDao().getAllOnce()) {

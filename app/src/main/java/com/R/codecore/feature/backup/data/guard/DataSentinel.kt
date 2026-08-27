@@ -2,6 +2,9 @@ package com.R.codecore.feature.backup.data.guard
 
 import android.content.Context
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.backup.data.LegacyPackageDetector
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -29,6 +32,8 @@ class DataSentinel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val appRunMeta: AppRunMeta,
     private val chatSessionDao: ChatSessionDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
     private val legacyPackageDetector: LegacyPackageDetector,
 ) {
     private companion object {
@@ -44,7 +49,8 @@ class DataSentinel @Inject constructor(
             val meta = appRunMeta.snapshot()
             val vc = currentVersionCode()
             val pkg = context.packageName
-            val count = chatSessionDao.count()
+            val count = if (readMode.currentMode() == DataReadMode.V2) v2Agent.countSessions().toInt()
+            else chatSessionDao.count()
             val verdict = SentinelLogic.evaluate(
                 meta = meta,
                 currentVersionCode = vc,

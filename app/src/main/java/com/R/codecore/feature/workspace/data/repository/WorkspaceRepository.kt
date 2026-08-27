@@ -3,7 +3,10 @@ package com.R.codecore.feature.workspace.data.repository
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.core.util.FileLogger
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.domain.container.ConnectionState
 import com.R.codecore.feature.agent.domain.container.RemoteSshConnection
@@ -37,7 +40,9 @@ class WorkspaceRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val executionModeHolder: ExecutionModeHolder,
     private val remoteSshConnection: RemoteSshConnection,
-    private val chatSessionDao: ChatSessionDao
+    private val chatSessionDao: ChatSessionDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
 ) {
     private companion object {
         const val TAG = "WorkspaceRepository"
@@ -274,7 +279,11 @@ class WorkspaceRepository @Inject constructor(
         // 会话绑定路径迁移：旧路径 → 新路径
         val newPath = workspacePathOf(name)
         if (oldPath != null && newPath != null && oldPath != newPath) {
-            chatSessionDao.updateWorkspacePath(oldPath, newPath)
+            if (readMode.currentMode() == DataReadMode.V2) {
+                v2Agent.updateWorkspacePath(oldPath, newPath)
+            } else {
+                chatSessionDao.updateWorkspacePath(oldPath, newPath)
+            }
         }
         if (_current.value?.name == oldName) {
             _current.value = _workspaces.value.firstOrNull { it.name == name }

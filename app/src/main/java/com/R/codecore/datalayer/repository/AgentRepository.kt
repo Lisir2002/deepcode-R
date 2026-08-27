@@ -4,6 +4,9 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.R.codecore.datalayer.sqldelight.AgentDb
+import com.R.codecore.datalayer.sqldelight.agent.Agent_message
+import com.R.codecore.datalayer.sqldelight.agent.Agent_session
+import com.R.codecore.datalayer.sqldelight.agent.SelectAllSessionsWithCount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -13,19 +16,33 @@ import kotlinx.coroutines.withContext
  * 业务只依赖本门面，不直接写 SQL。
  *
  * v2-full-takeover P0-1：补 Flow 响应式读，对齐 Room DAO 的 22 个 Flow 查询。
+ * v2-full-takeover P2-3：agent_session / agent_message 对齐 Room 实体全列，
+ *  本门面补齐 ChatSessionDao(22) + AgentMessageDao(25) 全部等价方法。
  */
 class AgentRepository(private val db: AgentDb) {
 
     private val q get() = db.agentQueries
 
+    // ── 会话（ChatSessionDao 等价）──────────────────────────────────────
+
+    suspend fun upsertSession(
+        id: String, title: String?, mode: String, model: String?, status: String,
+        createdAtMs: Long, updatedAtMs: Long, workspacePath: String, reasoningEffort: String,
+        providerId: String?, totalInputTokens: Long, totalOutputTokens: Long, lastInputTokens: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.upsertSession(id, title, mode, model, status, createdAtMs, updatedAtMs, workspacePath, reasoningEffort, providerId, totalInputTokens, totalOutputTokens, lastInputTokens)
+    }
+
     suspend fun createSession(
         id: String, title: String?, mode: String, model: String?, now: Long = System.currentTimeMillis(),
-    ) = withContext(Dispatchers.IO) { q.insertSession(id, title, mode, model, "active", now, now) }
+    ) = withContext(Dispatchers.IO) {
+        q.insertSession(id, title, mode, model, "active", now, now, "", "MEDIUM", null, 0L, 0L, 0L)
+    }
 
-    suspend fun listSessions(): List<com.R.codecore.datalayer.sqldelight.agent.Agent_session> =
+    suspend fun listSessions(): List<Agent_session> =
         withContext(Dispatchers.IO) { q.selectAllSessions().executeAsList() }
 
-    suspend fun getSession(id: String): com.R.codecore.datalayer.sqldelight.agent.Agent_session? =
+    suspend fun getSession(id: String): Agent_session? =
         withContext(Dispatchers.IO) { q.selectSessionById(id).executeAsOneOrNull() }
 
     suspend fun renameSession(id: String, title: String, now: Long = System.currentTimeMillis()) =
@@ -33,8 +50,132 @@ class AgentRepository(private val db: AgentDb) {
 
     suspend fun deleteSession(id: String) = withContext(Dispatchers.IO) { q.deleteSession(id) }
 
+    suspend fun getAllSessionsByWorkspaceOnce(workspacePath: String): List<Agent_session> =
+        withContext(Dispatchers.IO) { q.selectSessionsByWorkspace(workspacePath).executeAsList() }
+
+    fun observeAllSessionsByWorkspace(workspacePath: String): Flow<List<Agent_session>> =
+        q.selectSessionsByWorkspace(workspacePath).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeAllSessionsWithCount(): Flow<List<SelectAllSessionsWithCount>> =
+        q.selectAllSessionsWithCount().asFlow().mapToList(Dispatchers.IO)
+
+    suspend fun getAllOnce(): List<Agent_session> =
+        withContext(Dispatchers.IO) { q.selectAllSessions().executeAsList() }
+
+    suspend fun getMostRecentOnce(): Agent_session? =
+        withContext(Dispatchers.IO) { q.selectMostRecentSession().executeAsOneOrNull() }
+
+    suspend fun getUnboundSessionsOnce(): List<Agent_session> =
+        withContext(Dispatchers.IO) { q.selectUnboundSessions().executeAsList() }
+
+    suspend fun countSessions(): Long =
+        withContext(Dispatchers.IO) { q.countSessions().executeAsOne() }
+
+    suspend fun getSessionPageAfter(lastUpdatedAtMs: Long, lastId: String, limit: Long): List<Agent_session> =
+        withContext(Dispatchers.IO) { q.selectSessionPageAfter(lastUpdatedAtMs, lastUpdatedAtMs, lastId, limit).executeAsList() }
+
+    suspend fun upsertAllSessions(sessions: List<Agent_session>) = withContext(Dispatchers.IO) {
+        sessions.forEach { s ->
+            q.upsertSession(s.id, s.title, s.mode, s.model, s.status, s.created_at, s.updated_at, s.workspace_path, s.reasoning_effort, s.provider_id, s.total_input_tokens, s.total_output_tokens, s.last_input_tokens)
+        }
+    }
+
+    suspend fun getSessionById(id: String): Agent_session? =
+        withContext(Dispatchers.IO) { q.selectSessionById(id).executeAsOneOrNull() }
+
+    suspend fun updateTitle(id: String, title: String) =
+        withContext(Dispatchers.IO) { q.updateSessionTitle(title, System.currentTimeMillis(), id) }
+
+    suspend fun updateWorkspacePath(oldPath: String, newPath: String) =
+        withContext(Dispatchers.IO) { q.updateSessionWorkspacePath(newPath, oldPath) }
+
+    suspend fun setWorkspacePath(id: String, path: String) =
+        withContext(Dispatchers.IO) { q.setSessionWorkspacePath(path, id) }
+
+    suspend fun touch(id: String, updatedAtMs: Long) =
+        withContext(Dispatchers.IO) { q.touchSession(updatedAtMs, id) }
+
+    suspend fun updateProviderModel(id: String, providerId: String?, model: String?) =
+        withContext(Dispatchers.IO) { q.updateSessionProviderModel(providerId, model, id) }
+
+    suspend fun updateReasoningEffort(id: String, effort: String) =
+        withContext(Dispatchers.IO) { q.updateSessionReasoningEffort(effort, id) }
+
+    suspend fun addTokenUsage(id: String, inputTokens: Long, outputTokens: Long) =
+        withContext(Dispatchers.IO) { q.addSessionTokenUsage(inputTokens, outputTokens, id) }
+
+    suspend fun updateLastInputTokens(id: String, lastInputTokens: Long) =
+        withContext(Dispatchers.IO) { q.updateSessionLastInputTokens(lastInputTokens, id) }
+
+    // ── 消息（AgentMessageDao 等价）──────────────────────────────────────
+
+    suspend fun insertMessage(e: Agent_message) = withContext(Dispatchers.IO) {
+        q.insertMessage(e.id, e.session_id, e.role, e.seq, e.created_at, e.task_id, e.content, e.tool_calls_json, e.tool_call_id, e.tool_name, e.tool_args, e.is_error, e.reasoning, e.signature, e.attachments_json, e.is_compacted, e.is_context_summary, e.is_compaction_marker, e.input_tokens, e.output_tokens, e.chunk_group_id, e.chunk_index)
+    }
+
+    suspend fun insertAllMessages(messages: List<Agent_message>) = withContext(Dispatchers.IO) {
+        messages.forEach { insertMessage(it) }
+    }
+
+    fun observeMessagesBySession(sessionId: String): Flow<List<Agent_message>> =
+        q.selectMessagesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeMessagesBySessionPaged(sessionId: String, limit: Long): Flow<List<Agent_message>> =
+        q.selectMessagesBySessionPaged(sessionId, limit).asFlow().mapToList(Dispatchers.IO)
+
+    suspend fun getMessagesBySessionOnce(sessionId: String): List<Agent_message> =
+        withContext(Dispatchers.IO) { q.selectMessagesBySession(sessionId).executeAsList() }
+
+    suspend fun deleteBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deleteMessagesBySession(sessionId) }
+
+    suspend fun deleteMessagesBeforeTimestamp(sessionId: String, cutoffTimestamp: Long) =
+        withContext(Dispatchers.IO) { q.deleteMessagesBeforeTimestamp(sessionId, cutoffTimestamp) }
+
+    suspend fun markMessagesCompactedBeforeTimestamp(sessionId: String, cutoffTimestamp: Long) =
+        withContext(Dispatchers.IO) { q.markMessagesCompactedBeforeTimestamp(sessionId, cutoffTimestamp) }
+
+    suspend fun markMessagesCompactedInclusiveFromTimestamp(sessionId: String, cutoffTimestamp: Long) =
+        withContext(Dispatchers.IO) { q.markMessagesCompactedInclusiveFromTimestamp(sessionId, cutoffTimestamp) }
+
+    suspend fun deleteAllMessages() = withContext(Dispatchers.IO) { q.deleteAllMessages() }
+
+    suspend fun getMessageById(id: String): Agent_message? =
+        withContext(Dispatchers.IO) { q.selectMessageById(id).executeAsOneOrNull() }
+
+    suspend fun updateMessageContent(id: String, content: String) =
+        withContext(Dispatchers.IO) { q.updateMessageContent(content, id) }
+
+    suspend fun deleteMessageById(id: String) =
+        withContext(Dispatchers.IO) { q.deleteMessageById(id) }
+
+    suspend fun deleteMessagesInclusiveFromTimestamp(sessionId: String, cutoffTimestamp: Long) =
+        withContext(Dispatchers.IO) { q.deleteMessagesInclusiveFromTimestamp(sessionId, cutoffTimestamp) }
+
+    suspend fun deleteMessagesExclusiveAfterTimestamp(sessionId: String, cutoffTimestamp: Long) =
+        withContext(Dispatchers.IO) { q.deleteMessagesExclusiveAfterTimestamp(sessionId, cutoffTimestamp) }
+
+    suspend fun markPendingToolsInterrupted(toolRole: String, pendingPrefix: String, interruptedContent: String): Long =
+        withContext(Dispatchers.IO) { q.markPendingToolsInterrupted(interruptedContent, toolRole, pendingPrefix).value }
+
+    suspend fun searchMessages(query: String): List<Agent_message> =
+        withContext(Dispatchers.IO) { q.searchMessages(query).executeAsList() }
+
+    suspend fun getAllMessagesOnce(): List<Agent_message> =
+        withContext(Dispatchers.IO) { q.selectAllMessages().executeAsList() }
+
+    suspend fun getMessagePageAfter(lastTimestamp: Long, lastId: String, limit: Long): List<Agent_message> =
+        withContext(Dispatchers.IO) { q.selectMessagePageAfter(lastTimestamp, lastTimestamp, lastId, limit).executeAsList() }
+
+    suspend fun getPageBySessionAfter(sessionId: String, lastTimestamp: Long, lastId: String, limit: Long): List<Agent_message> =
+        withContext(Dispatchers.IO) { q.selectMessagePageBySessionAfter(sessionId, lastTimestamp, lastTimestamp, lastId, limit).executeAsList() }
+
+    // ── 旧版（保留：V1toV2FullMigrator 迁移期使用；P3 后删除）───────────────
+
     suspend fun appendMessage(id: String, sessionId: String, role: String, seq: Long, now: Long = System.currentTimeMillis()) =
-        withContext(Dispatchers.IO) { q.insertMessage(id, sessionId, role, seq, now) }
+        withContext(Dispatchers.IO) {
+            q.insertMessage(id, sessionId, role, seq, now, "", "", null, null, null, null, 0L, null, null, null, 0L, 0L, 0L, 0L, 0L, "", 0L)
+        }
 
     suspend fun appendPart(
         id: String, messageId: String, kind: String, seq: Long,
@@ -54,6 +195,69 @@ class AgentRepository(private val db: AgentDb) {
     suspend fun listCheckpoints(sessionId: String): List<com.R.codecore.datalayer.sqldelight.agent.Agent_checkpoint> =
         withContext(Dispatchers.IO) { q.selectCheckpointsBySession(sessionId).executeAsList() }
 
+    fun observeAllSessions(): Flow<List<Agent_session>> =
+        q.selectAllSessions().asFlow().mapToList(Dispatchers.IO)
+
+    fun observeSessionById(id: String): Flow<Agent_session?> =
+        q.selectSessionById(id).asFlow().mapToOneOrNull(Dispatchers.IO)
+
+    fun observeCheckpointsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_checkpoint>> =
+        q.selectCheckpointsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeTodoItemsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Todo_items>> =
+        q.selectTodoItemsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeFileEditHunksBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.File_edit_hunks>> =
+        q.selectFileEditHunksBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeModeSwitchesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Mode_switch_history>> =
+        q.selectModeSwitchesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeGoalsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_goals>> =
+        q.selectGoalsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observePlansBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_plans>> =
+        q.selectPlansBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeJobsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_jobs>> =
+        q.selectJobsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeSchedulesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_schedules>> =
+        q.selectSchedulesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeTrajectoriesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_trajectories>> =
+        q.selectTrajectoriesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observePlaybookRunsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_playbook_runs>> =
+        q.selectPlaybookRunsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeAllSkillStates(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Skill_state>> =
+        q.selectAllSkillStates().asFlow().mapToList(Dispatchers.IO)
+
+    fun observePendingWakeItems(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue>> =
+        q.selectPendingWakeItems().asFlow().mapToList(Dispatchers.IO)
+
+    fun observeSentinelsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_user_confirmed_sentinels>> =
+        q.selectSentinelsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeFuse(scope: String, scopeId: String): Flow<com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses?> =
+        q.selectFuse(scope, scopeId).asFlow().mapToOneOrNull(Dispatchers.IO)
+
+    fun observeAllFuses(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses>> =
+        q.selectAllFuses().asFlow().mapToList(Dispatchers.IO)
+
+    fun observeRejectionAuditsBySentinel(sentinelId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_sentinel_plan_rejection_audits>> =
+        q.selectRejectionAuditsBySentinel(sentinelId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeRestoreLogsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_l0_soft_compact_restore_logs>> =
+        q.selectRestoreLogsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeTelemetryByKind(eventKind: String, limit: Long): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events>> =
+        q.selectTelemetryByKind(eventKind, limit).asFlow().mapToList(Dispatchers.IO)
+
+    fun observeAllTelemetry(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events>> =
+        q.selectAllTelemetry().asFlow().mapToList(Dispatchers.IO)
+
     // ── 阶段 1 补表方法（todo / checkpoint 快照 / 编辑 hunk / 模式切换 / 能力覆盖 / 编排 / 技能 / wake / zth）──
 
     suspend fun insertTodo(
@@ -70,6 +274,46 @@ class AgentRepository(private val db: AgentDb) {
         withContext(Dispatchers.IO) { q.updateTodoItemStatus(status, updatedAtMs, id) }
 
     suspend fun deleteTodo(id: String) = withContext(Dispatchers.IO) { q.deleteTodoItem(id) }
+
+    // ── P2-3 备份流式导出/还原（对齐 TodoItemDao 分页 + upsertAll）─────────
+
+    suspend fun getTodoPageAfter(lastCreatedAtMs: Long, lastId: String, limit: Long): List<com.R.codecore.datalayer.sqldelight.agent.Todo_items> =
+        withContext(Dispatchers.IO) { q.selectTodoPageAfter(lastCreatedAtMs, lastId, limit).executeAsList() }
+
+    suspend fun getTodoPageBySessionAfter(sessionId: String, lastCreatedAtMs: Long, lastId: String, limit: Long): List<com.R.codecore.datalayer.sqldelight.agent.Todo_items> =
+        withContext(Dispatchers.IO) { q.selectTodoPageBySessionAfter(sessionId, lastCreatedAtMs, lastId, limit).executeAsList() }
+
+    suspend fun upsertAllTodos(todos: List<com.R.codecore.datalayer.sqldelight.agent.Todo_items>) = withContext(Dispatchers.IO) {
+        todos.forEach { t ->
+            q.upsertTodoItem(t.id, t.session_id, t.subject, t.description, t.status, t.priority, t.sort_order, t.created_at_ms, t.updated_at_ms)
+        }
+    }
+
+    // ── P2-3 会话级联删除（对齐 SessionUseCase.deleteSession）─────────────
+
+    suspend fun deleteTodosBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deleteTodoItemsBySession(sessionId) }
+
+    suspend fun deleteFileEditHunksBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deleteFileEditHunksBySession(sessionId) }
+
+    suspend fun deleteModeSwitchesBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deleteModeSwitchesBySession(sessionId) }
+
+    suspend fun deleteWakeItemsBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deleteWakeItemsBySession(sessionId) }
+
+    suspend fun deleteGoalsBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deleteGoalsBySession(sessionId) }
+
+    suspend fun deletePlansBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deletePlansBySession(sessionId) }
+
+    suspend fun deleteJobsBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deleteJobsBySession(sessionId) }
+
+    suspend fun deleteSchedulesBySession(sessionId: String) =
+        withContext(Dispatchers.IO) { q.deleteSchedulesBySession(sessionId) }
 
     suspend fun insertCheckpointFull(
         id: String, sessionId: String, userMessageId: String, promptSnippet: String, createdAtMs: Long,
@@ -156,6 +400,31 @@ class AgentRepository(private val db: AgentDb) {
 
     suspend fun deleteGoal(goalId: String) = withContext(Dispatchers.IO) { q.deleteGoal(goalId) }
 
+    // ── P2-4 GoalService 等价 ──────────────────────────────────────────
+
+    suspend fun getGoalById(goalId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_goals? =
+        withContext(Dispatchers.IO) { q.selectGoalById(goalId).executeAsOneOrNull() }
+
+    suspend fun getActiveGoalBySession(sessionId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_goals? =
+        withContext(Dispatchers.IO) { q.selectActiveGoalBySession(sessionId).executeAsOneOrNull() }
+
+    /** 阻塞版（仅供 [runInTx] 事务块内使用，同线程）。 */
+    fun getActiveGoalBySessionBlocking(sessionId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_goals? =
+        q.selectActiveGoalBySession(sessionId).executeAsOneOrNull()
+
+    suspend fun casUpdateGoalStatusAndText(
+        goalId: String, status: String, text: String, newRevision: Long, expectedRevision: Long, updatedAtMs: Long,
+    ): Long = withContext(Dispatchers.IO) {
+        q.casUpdateGoalStatusAndText(status, text, newRevision, updatedAtMs, goalId, expectedRevision).value
+    }
+
+    suspend fun upsertGoal(
+        goalId: String, sessionId: String, text: String, status: String, revision: Long,
+        parentGoalId: String, roundSeq: Long, createdAtMs: Long, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.upsertGoal(goalId, sessionId, text, status, revision, parentGoalId, roundSeq, createdAtMs, updatedAtMs)
+    }
+
     suspend fun insertPlan(
         planId: String, sessionId: String, title: String, steps: String, status: String,
         pendingSelection: String, createdAtMs: Long, updatedAtMs: Long,
@@ -170,6 +439,31 @@ class AgentRepository(private val db: AgentDb) {
         withContext(Dispatchers.IO) { q.updatePlanStatus(status, updatedAtMs, planId) }
 
     suspend fun deletePlan(planId: String) = withContext(Dispatchers.IO) { q.deletePlan(planId) }
+
+    // ── P2-4 PlanService 等价 ──────────────────────────────────────────
+
+    suspend fun getPlanById(planId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_plans? =
+        withContext(Dispatchers.IO) { q.selectPlanById(planId).executeAsOneOrNull() }
+
+    suspend fun getLatestPlanBySession(sessionId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_plans? =
+        withContext(Dispatchers.IO) { q.selectLatestPlanBySession(sessionId).executeAsOneOrNull() }
+
+    /** 阻塞版（仅供 [runInTx] 事务块内使用，同线程）。 */
+    fun getLatestPlanBySessionBlocking(sessionId: String): com.R.codecore.datalayer.sqldelight.agent.Agent_plans? =
+        q.selectLatestPlanBySession(sessionId).executeAsOneOrNull()
+
+    suspend fun updatePlanContent(
+        planId: String, status: String, steps: String, pendingSelection: String, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.updatePlanContent(status, steps, pendingSelection, updatedAtMs, planId)
+    }
+
+    suspend fun upsertPlan(
+        planId: String, sessionId: String, title: String, steps: String, status: String,
+        pendingSelection: String, createdAtMs: Long, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.upsertPlan(planId, sessionId, title, steps, status, pendingSelection, createdAtMs, updatedAtMs)
+    }
 
     suspend fun insertJob(
         jobId: String, sessionId: String, kind: String, title: String, status: String,
@@ -448,71 +742,66 @@ class AgentRepository(private val db: AgentDb) {
         withContext(Dispatchers.IO) { q.deleteTelemetryOlderThan(beforeMs) }
     }
 
-    // ── P0-1 Flow 响应式读（对齐 Room DAO 的 22 个 Flow 查询）──
+    // ── P2-4 事务封装（对齐 Room withTransaction 语义）────────────────────
 
-    fun observeAllSessions(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_session>> =
-        q.selectAllSessions().asFlow().mapToList(Dispatchers.IO)
+    /**
+     * 在单事务内执行 [block]（同线程顺序执行，SQLDelight 2.2.1 的 ThreadLocal 事务）。
+     * 供 SessionUseCase.deleteSession 等「多表原子写」使用；事务块内只能用 [AgentTx] 暴露的
+     * 阻塞方法（不得调用本 Repository 的 suspend 方法，否则 withContext 会跳线程破坏事务绑定）。
+     */
+    fun runInTx(block: (AgentTx) -> Unit) {
+        db.transaction {
+            block(AgentTx(q))
+        }
+    }
+}
 
-    fun observeSessionById(id: String): Flow<com.R.codecore.datalayer.sqldelight.agent.Agent_session?> =
-        q.selectSessionById(id).asFlow().mapToOneOrNull(Dispatchers.IO)
+/** V2 agent 域事务门面：仅供 [AgentRepository.runInTx] 事务块内使用（阻塞执行，同线程）。 */
+class AgentTx internal constructor(private val q: com.R.codecore.datalayer.sqldelight.agent.AgentQueries) {
+    fun deleteBySession(sessionId: String) { q.deleteMessagesBySession(sessionId) }
+    fun deleteTodosBySession(sessionId: String) { q.deleteTodoItemsBySession(sessionId) }
+    fun deleteFileEditHunksBySession(sessionId: String) { q.deleteFileEditHunksBySession(sessionId) }
+    fun deleteModeSwitchesBySession(sessionId: String) { q.deleteModeSwitchesBySession(sessionId) }
+    fun deleteSkillConversationStatesBySession(sessionId: String) { q.deleteSkillConversationStatesBySession(sessionId) }
+    fun deleteWakeItemsBySession(sessionId: String) { q.deleteWakeItemsBySession(sessionId) }
+    fun deleteGoalsBySession(sessionId: String) { q.deleteGoalsBySession(sessionId) }
+    fun deletePlansBySession(sessionId: String) { q.deletePlansBySession(sessionId) }
+    fun deleteJobsBySession(sessionId: String) { q.deleteJobsBySession(sessionId) }
+    fun deleteSchedulesBySession(sessionId: String) { q.deleteSchedulesBySession(sessionId) }
+    fun deleteTrajectories(sessionId: String) { q.deleteTrajectoriesBySession(sessionId) }
+    fun deleteSession(id: String) { q.deleteSession(id) }
 
-    fun observeMessagesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_message>> =
-        q.selectMessagesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+    // TodoTool replaceTodos 事务：delete + upsert 原子替换
+    fun replaceTodos(sessionId: String, todos: List<com.R.codecore.datalayer.sqldelight.agent.Todo_items>) {
+        q.deleteTodoItemsBySession(sessionId)
+        todos.forEach { t ->
+            q.upsertTodoItem(t.id, t.session_id, t.subject, t.description, t.status, t.priority, t.sort_order, t.created_at_ms, t.updated_at_ms)
+        }
+    }
 
-    fun observeCheckpointsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_checkpoint>> =
-        q.selectCheckpointsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
+    // GoalService.activate 事务：CAS 放弃旧 ACTIVE + 插入新目标
+    fun activateGoal(
+        sessionId: String,
+        old: com.R.codecore.datalayer.sqldelight.agent.Agent_goals?,
+        goalId: String, text: String, status: String, revision: Long,
+        parentGoalId: String, roundSeq: Long, createdAtMs: Long, updatedAtMs: Long,
+    ) {
+        old?.let { o ->
+            q.casUpdateGoalStatusAndText("ABANDONED", o.text, o.revision + 1, updatedAtMs, o.goal_id, o.revision)
+        }
+        q.upsertGoal(goalId, sessionId, text, status, revision, parentGoalId, roundSeq, createdAtMs, updatedAtMs)
+    }
 
-    fun observeTodoItemsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Todo_items>> =
-        q.selectTodoItemsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeFileEditHunksBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.File_edit_hunks>> =
-        q.selectFileEditHunksBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeModeSwitchesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Mode_switch_history>> =
-        q.selectModeSwitchesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeGoalsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_goals>> =
-        q.selectGoalsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observePlansBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_plans>> =
-        q.selectPlansBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeJobsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_jobs>> =
-        q.selectJobsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeSchedulesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_schedules>> =
-        q.selectSchedulesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeTrajectoriesBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_trajectories>> =
-        q.selectTrajectoriesBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observePlaybookRunsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Agent_playbook_runs>> =
-        q.selectPlaybookRunsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeAllSkillStates(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Skill_state>> =
-        q.selectAllSkillStates().asFlow().mapToList(Dispatchers.IO)
-
-    fun observePendingWakeItems(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Wake_queue>> =
-        q.selectPendingWakeItems().asFlow().mapToList(Dispatchers.IO)
-
-    fun observeSentinelsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_user_confirmed_sentinels>> =
-        q.selectSentinelsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeFuse(scope: String, scopeId: String): Flow<com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses?> =
-        q.selectFuse(scope, scopeId).asFlow().mapToOneOrNull(Dispatchers.IO)
-
-    fun observeAllFuses(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses>> =
-        q.selectAllFuses().asFlow().mapToList(Dispatchers.IO)
-
-    fun observeRejectionAuditsBySentinel(sentinelId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_sentinel_plan_rejection_audits>> =
-        q.selectRejectionAuditsBySentinel(sentinelId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeRestoreLogsBySession(sessionId: String): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_l0_soft_compact_restore_logs>> =
-        q.selectRestoreLogsBySession(sessionId).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeTelemetryByKind(eventKind: String, limit: Long): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events>> =
-        q.selectTelemetryByKind(eventKind, limit).asFlow().mapToList(Dispatchers.IO)
-
-    fun observeAllTelemetry(): Flow<List<com.R.codecore.datalayer.sqldelight.agent.Zth_telemetry_events>> =
-        q.selectAllTelemetry().asFlow().mapToList(Dispatchers.IO)
+    // PlanService.propose 事务：旧计划置 ABANDONED + 插入新 DRAFT
+    fun proposePlan(
+        sessionId: String,
+        old: com.R.codecore.datalayer.sqldelight.agent.Agent_plans?,
+        planId: String, title: String, steps: String, status: String, pendingSelection: String,
+        createdAtMs: Long, updatedAtMs: Long,
+    ) {
+        old?.let { o ->
+            q.updatePlanContent("ABANDONED", o.steps, o.pending_selection, updatedAtMs, o.plan_id)
+        }
+        q.upsertPlan(planId, sessionId, title, steps, status, pendingSelection, createdAtMs, updatedAtMs)
+    }
 }

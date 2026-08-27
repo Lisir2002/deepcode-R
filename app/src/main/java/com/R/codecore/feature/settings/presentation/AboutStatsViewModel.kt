@@ -2,6 +2,10 @@ package com.R.codecore.feature.settings.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.R.codecore.datalayer.DataReadMode
+import com.R.codecore.datalayer.DataReadModeHolder
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
+import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
 import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
 import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
 import com.R.codecore.feature.agent.domain.container.ContainerInstaller
@@ -31,6 +35,8 @@ internal data class UsageStats(
 internal class AboutStatsViewModel @Inject constructor(
     private val sessionDao: ChatSessionDao,
     private val messageDao: AgentMessageDao,
+    private val v2Agent: V2AgentRepository,
+    private val readMode: DataReadModeHolder,
     private val proxyManager: ClashProxyManager,
     private val containerInstaller: ContainerInstaller
 ) : ViewModel() {
@@ -68,8 +74,16 @@ internal class AboutStatsViewModel @Inject constructor(
     }
 
     private suspend fun load(): UsageStats = withContext(Dispatchers.IO) {
-        val sessions = sessionDao.getAllOnce()
-        val messages = messageDao.getAllOnce()
+        val sessions = if (readMode.currentMode() == DataReadMode.V2) {
+            v2Agent.getAllOnce().map { it.toEntity() }
+        } else {
+            sessionDao.getAllOnce()
+        }
+        val messages = if (readMode.currentMode() == DataReadMode.V2) {
+            v2Agent.getAllMessagesOnce().map { it.toEntity() }
+        } else {
+            messageDao.getAllOnce()
+        }
 
         val totalSessions = sessions.size
         val totalMessages = messages.size
@@ -91,6 +105,47 @@ internal class AboutStatsViewModel @Inject constructor(
             activeDays = activeDays
         )
     }
+
+    // ── V2 映射 ──────────────────────────────────────────────────────
+
+    private fun V2AgentSession.toEntity() = com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity(
+        id = id,
+        title = title ?: "",
+        createdAtMs = created_at,
+        updatedAtMs = updated_at,
+        workspacePath = workspace_path,
+        mode = mode,
+        reasoningEffort = reasoning_effort,
+        providerId = provider_id,
+        model = model,
+        totalInputTokens = total_input_tokens.toInt(),
+        totalOutputTokens = total_output_tokens.toInt(),
+        lastInputTokens = last_input_tokens.toInt(),
+    )
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Agent_message.toEntity() = com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity(
+        id = id,
+        sessionId = session_id,
+        taskId = task_id,
+        role = role,
+        content = content,
+        timestamp = seq,
+        toolCallsJson = tool_calls_json,
+        toolCallId = tool_call_id,
+        toolName = tool_name,
+        toolArgs = tool_args,
+        isError = is_error == 1L,
+        reasoning = reasoning,
+        signature = signature,
+        attachmentsJson = attachments_json,
+        isCompacted = is_compacted == 1L,
+        isContextSummary = is_context_summary == 1L,
+        isCompactionMarker = is_compaction_marker == 1L,
+        inputTokens = input_tokens.toInt(),
+        outputTokens = output_tokens.toInt(),
+        chunkGroupId = chunk_group_id,
+        chunkIndex = chunk_index.toInt(),
+    )
 
     private fun utcDayBucket(ms: Long): Long {
         val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
