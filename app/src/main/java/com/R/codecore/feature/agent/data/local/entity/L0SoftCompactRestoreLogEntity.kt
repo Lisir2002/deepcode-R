@@ -1,23 +1,12 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
 /**
  * C.3.1 L0 软压缩 Context 的还原日志（崩溃恢复和审计还原必须读）。
  * sentinel 过期后 C.4.3 自动失效链路基于本表 expireAtMs 判定。
  */
-@Entity(
-    tableName = "zth_l0_soft_compact_restore_logs",
-    indices = [
-        Index(value = ["sessionId"]),
-        Index(value = ["expireAtMs"]),
-        Index(value = ["createdAtMs"])
-    ]
-)
+
 data class L0SoftCompactRestoreLogEntity(
-    @PrimaryKey(autoGenerate = false)
+    
     val id: String,
     val sessionId: String,
     /** L0 压缩前 MessageId 范围：[firstMessageId, lastMessageId]。 */

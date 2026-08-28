@@ -75,17 +75,49 @@ insertProvider:
 INSERT INTO ai_providers (id, name, type, encrypted_api_key, base_url, default_model, is_active, models, is_enabled, use_full_url, use_response_api)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- v2-full-takeover P0-2：对齐 Room `@Insert(onConflict = REPLACE)` 语义。
+-- 纯 INSERT 在「编辑已存在 Provider」时会抛主键冲突；业务保存路径统一走本查询。
+insertOrReplaceProvider:
+INSERT OR REPLACE INTO ai_providers (id, name, type, encrypted_api_key, base_url, default_model, is_active, models, is_enabled, use_full_url, use_response_api)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 selectProviderById:
 SELECT * FROM ai_providers WHERE id = ?;
 
+-- P0-2：排序键对齐 Room（ORDER BY id）——V1→V2 切换不得改变 Provider 列表既有顺序，
+-- 否则 ensureActiveProvider「自动激活首个」选中的 provider 会变。
 selectAllProviders:
-SELECT * FROM ai_providers ORDER BY name ASC;
+SELECT * FROM ai_providers ORDER BY id;
 
+-- P0-2：补 LIMIT 1，与 Room 一致（多行 active 脏数据下行为确定）。
 selectActiveProvider:
-SELECT * FROM ai_providers WHERE is_active = 1;
+SELECT * FROM ai_providers WHERE is_active = 1 LIMIT 1;
 
 deactivateAllProviders:
 UPDATE ai_providers SET is_active = 0;
 
 deleteProvider:
 DELETE FROM ai_providers WHERE id = ?;
+
+-- ── P0-2：补齐 Room 侧列级 setter（缺这些则批 1 无法切换业务）──
+
+activateProvider:
+UPDATE ai_providers SET is_active = 1 WHERE id = ?;
+
+setDefaultModel:
+UPDATE ai_providers SET default_model = ? WHERE id = ?;
+
+setModels:
+UPDATE ai_providers SET models = ? WHERE id = ?;
+
+setProviderEnabled:
+UPDATE ai_providers SET is_enabled = ? WHERE id = ?;
+
+updateEncryptedApiKey:
+UPDATE ai_providers SET encrypted_api_key = ? WHERE id = ?;
+
+selectProviderCount:
+SELECT COUNT(*) FROM ai_providers;
+
+selectActiveProviderCount:
+SELECT COUNT(*) FROM ai_providers WHERE is_active = 1;

@@ -1,24 +1,13 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
 /**
  * C.4.16 埋点事件表（方案 B 自绘 Canvas，0 导出 0 网络 SDK）。
  * 所有「用户可识别信息」字段禁止存在（BURIED-INV-1：图表不展示明文）。
  * 如需关联 session → 存 sessionSha256（SHA-256 截断前 8 字节 → 展示时 hash 化，不可逆）。
  */
-@Entity(
-    tableName = "zth_telemetry_events",
-    indices = [
-        Index(value = ["eventKind", "eventSubKind"]),
-        Index(value = ["createdAtMs"]),
-        Index(value = ["severityTier"])
-    ]
-)
+
 data class ZthTelemetryEventEntity(
-    @PrimaryKey(autoGenerate = true)
+    
     val id: Long = 0,
     /** C.4.16 5 大类：FUSE / CARD / CAPABILITY / OFFLINE / SYNC。 */
     val eventKind: String,

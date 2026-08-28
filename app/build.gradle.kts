@@ -166,13 +166,6 @@ android {
     sourceSets {
         getByName("main") {
             assets.srcDir("src/_armAssets")
-            // RC94：Room 导出的 schema JSON（app/schemas/<version>.json，KSP 编译期生成）也打进 assets，
-            // 供 LightweightSchemaRescue（Funnel 2）在运行时解析「权威 schema」做轻量抢救。
-            // 背景：Room 的 @Entity/@PrimaryKey/@ColumnInfo/@Index 注解均为 BINARY retention，
-            //   运行时 getAnnotation() 恒返回 null，旧版反射抢救从未真正生效（Release/R8 下必失败）。
-            //   改为解析 Room 官方导出的 schema JSON（createSql 即 Room 生成的精确建表 SQL），
-            //   抢救建出的表与 Room TableInfo 校验期望 100% 一致，Funnel 2 才真正可用。
-            assets.srcDir("schemas")
         }
     }
 
@@ -358,10 +351,7 @@ dependencies {
     ksp("com.google.dagger:hilt-compiler:2.56.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
-    // Room 数据库
-    implementation("androidx.room:room-runtime:2.7.1")
-    implementation("androidx.room:room-ktx:2.7.1")
-    ksp("androidx.room:room-compiler:2.7.1")
+    
 
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.4")
@@ -429,7 +419,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // JSON（TableDataProvider / SqlDelightDataProvider 通用表转储 Provider 使用；main sourceSet 需要）
     implementation("org.json:json:20240303")
-    // MigrationSchemaConsistencyTest：解析 Room 导出的 schema JSON（app/schemas/）做迁移一致性校验
+    // MigrationSchemaConsistencyTest：解析 Room 导出的 schema JSON 做迁移一致性校验（已随旧数据层删除）
     testImplementation("org.json:json:20240303")
 
     // ── 新数据层（data-layer-redesign）─ SQLDelight（设计文档 §2/§12）──
@@ -446,10 +436,6 @@ dependencies {
     androidTestImplementation(composeBom)
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
-}
-
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 // ── 新数据层（data-layer-redesign）─ SQLDelight 6 库拓扑（设计文档 §4 / §12）──

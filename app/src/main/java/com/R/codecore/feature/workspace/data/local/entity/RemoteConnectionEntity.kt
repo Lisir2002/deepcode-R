@@ -1,13 +1,10 @@
 package com.R.codecore.feature.workspace.data.local.entity
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.R.codecore.feature.workspace.domain.model.RemoteProtocol
 import java.util.UUID
 
-@Entity(tableName = "remote_connections")
 data class RemoteConnectionEntity(
-    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val protocol: RemoteProtocol,
     val host: String,

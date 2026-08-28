@@ -17,7 +17,7 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `data/BackupManagerImpl.kt` | `BackupManager` 的实现：数据采集、tar.gz 打包/解包、加密解密编排、DTO↔Entity 转换、旧格式兼容、DAO 安全访问壳 |
+| `data/BackupManagerImpl.kt` | `BackupManager` 的实现：数据采集、tar.gz 打包/解包、加密解密编排、DTO↔Entity 转换、旧格式兼容、数据访问兜底壳 |
 | `domain/BackupManager.kt` | 备份编排接口（`export` / `exportSession` / `import`），以及 `BackupOptions`、`RestoreStats` 数据类 |
 | `domain/BackupCrypto.kt` | 对称加解密工具（PBKDF2WithHmacSHA256 + AES/GCM/NoPadding 流式），含 `BackupDecryptionException` |
 | `domain/BackupEncryptScope.kt` | 加密范围枚举（`CREDENTIALS_ONLY` / `FULL`）——当前实现采用全量加密语义，枚举保留 |
@@ -45,7 +45,7 @@
 | `chatSessions.jsonl` | 会话大表（JSONL，逐行一条 DTO） |
 | `messages.jsonl` | 消息大表（JSONL） |
 | `todoItems.jsonl` | Todo 大表（JSONL） |
-| `registry.tar` | **数据注册表全量段**（数据层重构「新写法」新增）：除上述三个已 jsonl 流式导出的表外，其余全部 Room 表（checkpoint/skill/wake/telemetry/t2i/credentials/…）与 DataStore 目录（`files/datastore/`）经 `DataRegistry.snapshotAll()` 打包，恢复时 `restoreAll` 逐域还原 |
+| `registry.tar` | **数据注册表全量段**：除上述三个已 jsonl 流式导出的表外，其余全部 **V2（SQLDelight）数据域**（checkpoint/skill/wake/telemetry/t2i/credentials/…）与 DataStore 目录（`files/datastore/`）经 `DataRegistry.snapshotAll()` 打包，恢复时 `restoreAll` 逐域还原 |
 | `snapshot.json` | 旧版单文件快照格式（仅导入兼容用，导出不再产生） |
 
 ### 3.2 导出主流程（`export`）
@@ -77,7 +77,7 @@
 
 ### 3.5 DAO 安全访问壳（`safeDao` / `safeDaoSuspend`）
 
-所有 DAO 调用统一经过安全壳：Room 首次 query 触发 onOpen schema 校验，失败会抛 `IllegalStateException` 直接崩进程。安全壳捕获后记 `FileLogger` 并按 `failValue` 兜底返回，保证备份/导入流程失败不外溢到 UI 启动链。
+所有数据读取统一经过该壳（命名沿袭自 Room DAO 时代的历史遗留）：任何一次对 **V2 数据门面（`AgentRepository`）或 SQLDelight 库**的访问异常——如 schema 不匹配、驱动错误——都会被捕获、记 `FileLogger` 并按 `failValue` 兜底返回，保证备份/导入流程失败不外溢到 UI 启动链。
 
 ### 3.6 历史数据恢复横幅（包名变更检测）
 
@@ -121,9 +121,9 @@
 | `DataSafetyNotifier.run()` | 启动检查唯一出口：哨兵 → `UPGRADED` 时双保险备份 → 发布 `verdict: StateFlow<SentinelVerdict?>`；`shouldShowStartupAlert` / `dismissStartupAlert()` 供 MainActivity 全局告警去重 |
 | `AutoBackupManager` | `backupNow()`（本机）/ `backupToExternal()`（外部加密）/ `backupAll()`（双保险）/ `backups()` / `latestBackup()` / `lastBackupTime()` / `externalBackups()` / `latestExternalBackup()` / `lastExternalBackupTime()` / `restoreFromLatestExternal()`（签名密钥解密导入）；`KEEP_MAX=7` |
 | `DataSentinel.check()` | 哨兵检测，返回 `SentinelVerdict`；由 `DataSafetyNotifier.run()` 在启动延后 500ms 调用，`UPGRADED` 时联动 `AutoBackupManager.backupAll()` |
-| `SentinelLogic.evaluate(...)` | 哨兵纯判定（无 Android 依赖），`AppRunMeta`/`ChatSessionDao.count()`/`LegacyPackageDetector` 之外的逻辑均可直接单测 |
+| `SentinelLogic.evaluate(...)` | 哨兵纯判定（无数据库直接访问），所需会话/运行元数据由调用方经 V2 数据门面采集后以参数传入；`AppRunMeta`/`LegacyPackageDetector` 之外的逻辑均可直接单测 |
 
-依赖的外部模块：agent（`AgentMessageDao`/`ChatSessionDao`/`TodoItemDao`/`AgentDatabase`/`McpConfigRepository`/`McpManager`/`PermissionRulesRepository`）、credentials（`GitCredentialDao`）、settings（`AIProviderDao` 及 Theme/Keepalive/Log/Vision/Compaction/Sync 设置仓库）、workspace（`RemoteConnectionDao`/`WorkspaceRepository`）、core.security（`CredentialEncryptor`）、core.util（`FileLogger`）。
+依赖的外部模块：agent（`AgentRepository`(V2)及其 SQLDelight 表、纯 DTO `*Entity`、`McpConfigRepository`/`McpManager`/`PermissionRulesRepository`）、settings（`AIProviderEntity` DTO 及 Theme/Keepalive/Log/Vision/Compaction/Sync 设置仓库）、workspace（feature 层 `WorkspaceRepository`+`RemoteConnection/RemoteMountEntity` DTO、V2 `WorkspaceRepository`）、credentials（`GitCredentialEntity` DTO，随数据注册表段采集）、core.security（`CredentialEncryptor`）、core.util（`FileLogger`）。
 
 ## 5. 关键设计点与约束
 
@@ -144,7 +144,7 @@
   3. 在 `BackupManagerImpl.buildMetadata`/`restoreMeta` 中采集与还原，并补充 Entity↔DTO 转换。
   4. 在 `BackupSection.buildImportSummary` 与 strings.xml 中补充统计展示。
   5. 若含敏感字段，沿用「库内密文 ↔ 备份明文 + 导入重加密」的模式，用 `CredentialEncryptor`。
-- **数据库 schema 升级**：`BackupManagerImpl` 的 DTO↔Entity 转换必须与新 Entity 字段对齐；`currentSchemaVersion()` 自动取自 `AgentDatabase.SCHEMA_VERSION`。
+- **数据库 schema 升级**：`BackupManagerImpl` 的 DTO↔Entity 转换必须与新 Entity 字段对齐；`currentSchemaVersion()` 内联为 `AGENT_SCHEMA_VERSION`（与 V2 schema 版本保持一致）。
 - **格式变更**：优先在现有 tar 条目内扩展字段（`ignoreUnknownKeys`/默认值保证兼容），避免破坏旧备份导入；如引入新条目文件，需同步 `restoreFromTar` 的 `when` 分支。
 - **测试建议**：构造「导出→导入→对比统计」的往返用例，覆盖加密/未加密、新旧格式、版本过高拒绝、口令错误、单会话导出等路径。
 - **数据保全扩展**：

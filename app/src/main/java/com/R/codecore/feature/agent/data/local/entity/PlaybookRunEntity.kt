@@ -1,9 +1,5 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
 import com.R.codecore.core.util.EnumSafe
 
 /**
@@ -18,26 +14,20 @@ import com.R.codecore.core.util.EnumSafe
  *
  * 表名 agent_playbook_runs，agent 库 v3→v4 新增（见 AgentDatabaseMigrations.MIGRATION_3_4）。
  */
-@Entity(
-    tableName = "agent_playbook_runs",
-    indices = [
-        Index(value = ["sessionId"]),
-        Index(value = ["status"])
-    ]
-)
+
 data class PlaybookRunEntity(
-    @PrimaryKey val playbookRunId: String,
+     val playbookRunId: String,
     val sessionId: String,
     /** 剧本资产名（playbook frontmatter name，如 feature-dev）。 */
     val playbookName: String,
     /** 当前阶段下标（0 起）。 */
-    @ColumnInfo(defaultValue = "0")
+    
     val currentStageIndex: Int = 0,
     /** 各阶段状态 JSON（[PlaybookStageState] 列表序列化，含产物清单），设计为 TEXT。 */
-    @ColumnInfo(defaultValue = "''")
+    
     val stageStatuses: String = "",
     /** [PlaybookRunStatus] 名称。 */
-    @ColumnInfo(defaultValue = "'RUNNING'")
+    
     val status: String = PlaybookRunStatus.RUNNING.name,
     /** 创建时间毫秒。 */
     val createdAtMs: Long,

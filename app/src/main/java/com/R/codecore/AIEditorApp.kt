@@ -9,11 +9,6 @@ import android.content.SharedPreferences
 import android.os.Build
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.agent.data.local.database.AgentDatabase
-import com.R.codecore.feature.credentials.data.local.database.CredentialsDatabase
-import com.R.codecore.feature.settings.data.local.database.SettingsDatabase
-import com.R.codecore.feature.workspace.data.local.database.WorkspaceDatabase
-import com.R.codecore.feature.t2i.data.local.database.T2IDatabase
 import net.schmizz.sshj.common.SecurityUtils
 import com.R.codecore.feature.agent.domain.container.ContainerInstaller
 import com.R.codecore.feature.credentials.data.GitCredentialsFileSync
@@ -130,21 +125,6 @@ class AIEditorApp : Application() {
 
     /** Room 数据库（数据层重构后为 5 个域库）：启动期后台做完整性检查，提前暴露损坏
      * （损坏的 DB 会触发 SQLite 原生崩溃，绕过 Java CrashHandler，正是「模型输出时闪退却无日志」的典型盲区）。 */
-    @Inject
-    lateinit var agentDatabase: AgentDatabase
-
-    @Inject
-    lateinit var settingsDatabase: SettingsDatabase
-
-    @Inject
-    lateinit var credentialsDatabase: CredentialsDatabase
-
-    @Inject
-    lateinit var workspaceDatabase: WorkspaceDatabase
-
-    @Inject
-    lateinit var t2iDatabase: T2IDatabase
-
     /** 内置服务浏览器控制器（@Singleton）：低内存临界时释放其持有的页面快照大对象缓存，
      *  降低 LMKD 静默杀进程概率（LMKD 杀绕过 Java CrashHandler，是「模型输出时闪退却无日志」高概率根因）。 */
     @Inject
@@ -161,6 +141,8 @@ class AIEditorApp : Application() {
     /** 旧 Room 域库 → V2 SQLDelight 全量移植器（阶段 3）：启动时把旧 Room 数据搬到 V2 库。 */
     @Inject
     lateinit var v1toV2FullMigrator: com.R.codecore.core.db.V1toV2FullMigrator
+
+    
 
     /**
      * 数据保全通知器：启动即跑哨兵（D4）+ 升级前双保险自动备份（D5），并把判定结果发布给
@@ -234,10 +216,6 @@ class AIEditorApp : Application() {
         // 完全绕过 Java CrashHandler，表现为「模型输出/写入时突然闪退、日志无报错」。
         // 这里提前把损坏状态写进日志（并在崩溃时随快照导出），让下次闪退有迹可循。
         // 失败仅记日志，不阻断启动；integrity_check 在 IO 线程跑，不抢首帧。
-        appScope.launch {
-            runCatching { checkDatabaseIntegrity() }
-                .onFailure { FileLogger.w(TAG, "数据库完整性检查异常（忽略，不影响启动）", it) }
-        }
         // 预防闸门（异常退出自诊断）：上次运行若触发过内存临界（RUNNING_CRITICAL/lowMemory），
         // 进程可能已被 LMKD 静默回收（无 Java 日志）——本次启动读出标记并写日志留痕，
         // 配合启动时自动导出日志，让「无报错闪退」在下一次启动自动留下排查证据。
@@ -468,10 +446,6 @@ class AIEditorApp : Application() {
         if (critical) {
             runCatching { browserController.onMemoryPressure() }
                 .onFailure { FileLogger.w(TAG, "低内存释放浏览器快照缓存失败（忽略）", it) }
-            appScope.launch {
-                runCatching { checkpointAllDatabases() }
-                    .onFailure { FileLogger.w(TAG, "低内存 WAL checkpoint 失败（忽略）", it) }
-            }
             recordTrimCritical()
         }
     }
@@ -481,66 +455,7 @@ class AIEditorApp : Application() {
         FileLogger.e("Memory", "onLowMemory 回调：进程即将被系统回收，流式输出/工具执行期间最易在此闪退")
     }
 
-    /**
-     * 数据库完整性检查：损坏的 DB 会让 SQLite 在写入时原生崩溃（SIGABRT），绕过 Java 崩溃处理器，
-     * 是「模型输出落库时闪退且看不到日志」的高概率根因之一。启动期后台执行，把结果写日志；
-     * 一旦发现损坏，至少让下次崩溃有据可查（崩溃快照会一并导出）。
-     * 数据层重构后覆盖全部 5 个域库。
-     */
-    private fun checkDatabaseIntegrity() {
-        val databases = mapOf(
-            "agent" to agentDatabase,
-            "settings" to settingsDatabase,
-            "credentials" to credentialsDatabase,
-            "workspace" to workspaceDatabase,
-            "t2i" to t2iDatabase
-        )
-        var allOk = true
-        for ((name, db) in databases) {
-            val result = runCatching {
-                db.openHelper.writableDatabase.query("PRAGMA integrity_check").use { cursor ->
-                    cursor.moveToFirst()
-                    cursor.getString(0)
-                }
-            }.getOrDefault("error")
-            if (result == "ok") {
-                FileLogger.d("DBIntegrity", "[$name] 数据库完整性检查通过")
-            } else {
-                allOk = false
-                FileLogger.e("DBIntegrity", "[$name] 数据库完整性检查失败: $result（写入时可能触发 SQLite 原生崩溃，建议恢复备份或清理重建）")
-            }
-        }
-        if (allOk) {
-            FileLogger.d("DBIntegrity", "全部 5 个域库完整性检查通过")
-        }
-    }
-
-    /**
-     * 预防闸门（WAL 自愈）：对所有域库执行 `PRAGMA wal_checkpoint(TRUNCATE)`，把 WAL 日志合并回
-     * 主库文件。WAL 模式下进程被 LMKD 静默杀死时，未合并的 WAL/SHM 在下次启动可能触发
-     * SQLite 原生崩溃（SIGABRT，绕过 Java CrashHandler）——低内存临界时主动合并显著缩小损坏窗口。
-     * 仅在 IO 线程调用（onTrimMemory 主线程回调里经 appScope 异步）。
-     */
-    private fun checkpointAllDatabases() {
-        val databases = mapOf(
-            "agent" to agentDatabase,
-            "settings" to settingsDatabase,
-            "credentials" to credentialsDatabase,
-            "workspace" to workspaceDatabase,
-            "t2i" to t2iDatabase
-        )
-        for ((name, db) in databases) {
-            runCatching {
-                db.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
-                    cursor.moveToFirst()
-                    FileLogger.d(
-                        "DBIntegrity",
-                        "[$name] WAL checkpoint 完成（busy=${cursor.getInt(0)} log=${cursor.getInt(1)} checkpointed=${cursor.getInt(2)}）"
-                    )
-                }
-            }.onFailure { FileLogger.w("DBIntegrity", "[$name] WAL checkpoint 失败（忽略）", it) }
-        }
-    }
+    
 
     /** 预防闸门（自诊断）：落「上次触发内存临界」时间戳标记，供下次启动 [diagnoseLastExit] 读取。 */
     private fun recordTrimCritical() {

@@ -1,9 +1,11 @@
 package com.R.codecore.feature.agent.data.repository
 
-import com.R.codecore.feature.agent.data.local.dao.HallucinationFuseDao
+
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.entity.HallucinationFuseEntity
 import com.R.codecore.feature.agent.domain.permission.FuseState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,22 +25,23 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthCircuitBreakerRepository @Inject constructor(
-    private val dao: HallucinationFuseDao
+    private val v2Agent: V2AgentRepository,
 ) {
 
     /** UI Red Banner：实时观察全局 + 会话级 fuse。 */
     fun observeGlobalAndSession(sessionId: String): Flow<List<HallucinationFuseEntity>> =
-        dao.observeGlobalAndSession(sessionId)
+        v2Agent.observeAllFuses().map { list -> list.map { it.toEntity() } }
 
     /** Phase 4.2 Sync：全量拉取本地（push 到 Firestore）。 */
-    suspend fun getAll(): List<HallucinationFuseEntity> = dao.getAllOnce()
+    suspend fun getAll(): List<HallucinationFuseEntity> =
+        v2Agent.listAllFuses().map { it.toEntity() }
 
     /** Phase 4.2 Sync：Firestore pull → 本地合并（按 KILL-1 不变性过滤 killSwitch1=true）。 */
     suspend fun mergeFromRemote(remoteList: List<HallucinationFuseEntity>) {
-        val locals = dao.getAllOnce().associateBy { it.id }
+        val locals = getAll().associateBy { it.scope to it.scopeId }
         val toUpsert = mutableListOf<HallucinationFuseEntity>()
         for (r in remoteList) {
-            val l = locals[r.id]
+            val l = locals[r.scope to r.scopeId]
             if (l == null) {
                 toUpsert.add(r)
                 continue
@@ -49,7 +52,18 @@ class ZthCircuitBreakerRepository @Inject constructor(
             } else r
             toUpsert.add(merged)
         }
-        if (toUpsert.isNotEmpty()) dao.upsertAll(toUpsert)
+        if (toUpsert.isNotEmpty()) {
+            for (e in toUpsert) {
+                v2Agent.upsertFuse(
+                    id = e.id, scope = e.scope, scopeId = e.scopeId, state = e.state,
+                    linkageVersion = e.linkageVersion, failureCount = e.failureCount.toLong(),
+                    openSinceMs = e.openSinceMs, lastProbeAtMs = e.lastProbeAtMs,
+                    killSwitch1Triggered = if (e.killSwitch1Triggered) 1L else 0L,
+                    killSwitch2SoftDisabled = if (e.killSwitch2SoftDisabled) 1L else 0L,
+                    lastTripSubclass = e.lastTripSubclass, updatedAtMs = e.updatedAtMs,
+                )
+            }
+        }
     }
 
     // ── Phase 4.2 Firestore：Entity ↔ Dto 映射 ─────────────────────────
@@ -78,5 +92,20 @@ class ZthCircuitBreakerRepository @Inject constructor(
         killSwitch2SoftDisabled = (m["killSwitch2SoftDisabled"] as? Boolean) ?: false,
         lastTripSubclass = m["lastTripSubclass"] as? String,
         updatedAtMs = (m["updatedAtMs"] as? Number)?.toLong() ?: System.currentTimeMillis()
+    )
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses.toEntity() = HallucinationFuseEntity(
+        id = id,
+        scope = scope,
+        scopeId = scope_id,
+        state = state,
+        linkageVersion = linkage_version,
+        failureCount = failure_count.toInt(),
+        openSinceMs = open_since_ms,
+        lastProbeAtMs = last_probe_at_ms,
+        killSwitch1Triggered = kill_switch1_triggered == 1L,
+        killSwitch2SoftDisabled = kill_switch2_soft_disabled == 1L,
+        lastTripSubclass = last_trip_subclass,
+        updatedAtMs = updated_at_ms,
     )
 }

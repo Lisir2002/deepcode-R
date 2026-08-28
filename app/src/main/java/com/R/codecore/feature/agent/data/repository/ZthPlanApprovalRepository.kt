@@ -1,7 +1,7 @@
 package com.R.codecore.feature.agent.data.repository
 
 import com.R.codecore.core.security.ZthSensitiveColumnCrypto
-import com.R.codecore.feature.agent.data.local.dao.HardConstraintDeleteAuditDao
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.entity.HardConstraintDeleteAuditEntity
 import java.util.UUID
 import javax.inject.Inject
@@ -9,6 +9,7 @@ import javax.inject.Singleton
 
 /**
  * C.4.5 PlanApproval + C.4.11 LINK-INV 删除审计 Repository。
+ *
  *
  * 两个独立子功能：
  *   1) HardConstraintDeleteAuditDao：写「AI 删除了用户保留行/sentinel/checkpoint」审计
@@ -22,7 +23,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthPlanApprovalRepository @Inject constructor(
-    private val deleteAuditDao: HardConstraintDeleteAuditDao,
+    private val v2Agent: V2AgentRepository,
     private val crypto: ZthSensitiveColumnCrypto,
     private val telemetry: ZthTelemetryRepository
 ) {
@@ -35,13 +36,13 @@ class ZthPlanApprovalRepository @Inject constructor(
         crypto.assertSensitiveColumnName("s_affectedKeysCiphertext")
         val cipher = crypto.encrypt(affectedKeysJsonPlaintext)
         val id = "HCD:${UUID.randomUUID()}"
-        deleteAuditDao.upsert(
-            HardConstraintDeleteAuditEntity(
-                id = id, sessionId = sessionId,
-                affectedTableName = affectedTableName,
-                s_affectedKeysCiphertext = cipher,
-                triggerSubClass = triggerSubClass
-            )
+        v2Agent.insertDeleteAudit(
+            id = id, sessionId = sessionId,
+            affectedTableName = affectedTableName,
+            sAffectedKeysCiphertext = cipher,
+            triggerSubClass = triggerSubClass,
+            rollbackApplied = 0L,
+            createdAtMs = System.currentTimeMillis(),
         )
         telemetry.recordCapabilityAudit(
             sessionId, tier = 3, subKind = "HARD_CONSTRAINT_DELETE",
@@ -52,12 +53,11 @@ class ZthPlanApprovalRepository @Inject constructor(
 
     /** C.4.11 DB Migration 兜底：扫所有 rollbackApplied=0 的删除审计 → 调用者做回滚。 */
     suspend fun listPendingRollbacks(): List<HardConstraintDeleteAuditEntity> =
-        deleteAuditDao.getPendingRollbacks()
+        v2Agent.listDeleteAuditsPendingRollback().map { it.toEntity() }
 
     /** 回滚成功后：标记 rollbackApplied=1（PA-INV-2 单向）。 */
-    suspend fun markRolledBack(auditId: String) {
-        deleteAuditDao.markRolledBack(auditId)
-    }
+    suspend fun markRolledBack(auditId: String) =
+        v2Agent.markDeleteAuditRolledBack(auditId)
 
     // ── Phase 4.2 Firestore：HardConstraintDelete ↔ Dto 映射 ──────────
     // 说明：跨设备同步不存 s_affectedKeysCiphertext（只有本地 Keystore 能解开；同步只用于「统计与通知」）。
@@ -82,4 +82,14 @@ class ZthPlanApprovalRepository @Inject constructor(
             rollbackApplied = (m["rollbackApplied"] as? Boolean) ?: false,
             createdAtMs = (m["createdAtMs"] as? Number)?.toLong() ?: System.currentTimeMillis()
         )
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Zth_hard_constraint_delete_audits.toEntity() = HardConstraintDeleteAuditEntity(
+        id = id,
+        sessionId = session_id,
+        affectedTableName = affected_table_name,
+        s_affectedKeysCiphertext = s_affectedKeysCiphertext,
+        triggerSubClass = trigger_sub_class,
+        rollbackApplied = rollback_applied == 1L,
+        createdAtMs = created_at_ms,
+    )
 }

@@ -1,9 +1,5 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-
 /**
  * 技能运行时状态表（RC74 新增，v47 扩展作用域覆盖）。
  *
@@ -18,13 +14,13 @@ import androidx.room.PrimaryKey
  * @param scopeOverride 作用域用户覆盖（v47）：NULL=跟随 frontmatter 声明；非空字符串（GLOBAL/AGENT/CONVERSATION）= 用户覆盖。
  * @param agentTypeOverride 指定 Agent 覆盖（v47）：当 scope 覆盖为 AGENT 时绑定的 agentType；NULL=跟随声明。
  */
-@Entity(tableName = "skill_state")
+
 data class SkillStateEntity(
-    @PrimaryKey val id: String,
+     val id: String,
     val enabled: Boolean = true,
     val version: String = "0.0.0",
     val source: String = "LOCAL",
     val installedAtMs: Long = System.currentTimeMillis(),
-    @ColumnInfo(name = "scope_override") val scopeOverride: String? = null,
-    @ColumnInfo(name = "agent_type_override") val agentTypeOverride: String? = null
+     val scopeOverride: String? = null,
+     val agentTypeOverride: String? = null
 )

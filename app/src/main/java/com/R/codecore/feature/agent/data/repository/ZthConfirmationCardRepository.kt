@@ -1,15 +1,16 @@
 package com.R.codecore.feature.agent.data.repository
 
-import com.R.codecore.feature.agent.data.local.dao.SentinelPlanRejectionAuditDao
-import com.R.codecore.feature.agent.data.local.dao.UserConfirmedSentinelDao
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.entity.SentinelPlanRejectionAuditEntity
 import com.R.codecore.feature.agent.data.local.entity.UserConfirmedSentinelEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * C.4.1/C.4.3 ConfirmationCard Repository（主表 sentinel + 从表 rejection audit）。
+ *
  *
  * LINK-INV 4 写事务不在这里（在 ZthConfirmationCardManager 内显式 4 步 + CAS）。
  * 这里只提供：
@@ -25,32 +26,31 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthConfirmationCardRepository @Inject constructor(
-    private val sentinelDao: UserConfirmedSentinelDao,
-    private val rejectionAuditDao: SentinelPlanRejectionAuditDao,
+    private val v2Agent: V2AgentRepository,
     private val telemetry: ZthTelemetryRepository
 ) {
 
     /** Phase 5 Facade：弹卡前查询 chainId 是否已决策（已存在 → 直接复用 choice，不重复弹卡）。 */
     suspend fun getSentinelsByChain(chainId: String): List<UserConfirmedSentinelEntity> =
-        sentinelDao.getByChain(chainId)
+        v2Agent.listSentinelsByChain(chainId).map { it.toEntity() }
 
     /** UI 时间线：流式观察会话内所有 sentinel（新→旧）。 */
     fun observeSentinelsBySession(sessionId: String): Flow<List<UserConfirmedSentinelEntity>> =
-        sentinelDao.observeBySession(sessionId)
+        v2Agent.observeSentinelsBySession(sessionId).map { list -> list.map { it.toEntity() } }
 
     /** C.4.3 崩溃恢复：会话下所有未过期 sentinel（expireAtMs=-1 永不过期）。 */
     suspend fun listUnexpiredBySession(sessionId: String, nowMs: Long = System.currentTimeMillis()):
             List<UserConfirmedSentinelEntity> =
-        sentinelDao.getUnexpiredBySession(sessionId, nowMs)
+        v2Agent.listSentinelsUnexpiredBySession(sessionId, nowMs).map { it.toEntity() }
 
     /** C.4.2 Red Banner 一键回滚：标记会话内所有 sentinel rollbackFlag=true。 */
     suspend fun markAllRollbackBySession(sessionId: String) {
-        sentinelDao.markAllRollbackBySession(sessionId)
+        v2Agent.markAllSentinelsRollbackBySession(sessionId)
     }
 
     /** 审计查询：某 sentinel 的拒绝/修改理由（外键）。 */
     suspend fun getRejectionAudit(sentinelId: String): SentinelPlanRejectionAuditEntity? =
-        rejectionAuditDao.getBySentinel(sentinelId)
+        v2Agent.listRejectionAudits(sentinelId).firstOrNull()?.toEntity()
 
     /** Manager 写入成功后，打一条 CARD.DECISION 遥测（Phase 4.1 14 指标写入路径之一）。 */
     suspend fun recordDecisionTelemetry(
@@ -112,7 +112,39 @@ class ZthConfirmationCardRepository @Inject constructor(
 
     // ── Phase 4.2 Sync 辅助：批量全量拉（push 到 Firestore） ─────────
 
-    suspend fun getAllSentinels(): List<UserConfirmedSentinelEntity> = sentinelDao.getAllOnce()
+    suspend fun getAllSentinels(): List<UserConfirmedSentinelEntity> =
+        v2Agent.listAllSentinels().map { it.toEntity() }
+
     suspend fun getAllRejectionAudits(): List<SentinelPlanRejectionAuditEntity> =
-        rejectionAuditDao.getAllOnce()
+        v2Agent.listAllRejectionAudits().map { it.toEntity() }
+
+    // ── 内部映射 ─────────────────────────────────────────────────────
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Zth_user_confirmed_sentinels.toEntity() = UserConfirmedSentinelEntity(
+        id = id,
+        sessionId = session_id,
+        linkageVersion = linkage_version,
+        chainId = chain_id,
+        chainIndex = chain_index.toInt(),
+        cardTemplateId = card_template_id,
+        triggerSubClass = trigger_sub_class,
+        s_planPayloadCiphertext = s_planPayloadCiphertext,
+        s_userTextCiphertext = s_userTextCiphertext,
+        s_cardPayloadCiphertext = s_cardPayloadCiphertext,
+        userChoice = user_choice,
+        swipeVerified = swipe_verified == 1L,
+        s_modifiedPlanCiphertext = s_modifiedPlanCiphertext,
+        expireAtMs = expire_at_ms,
+        rollbackFlag = rollback_flag == 1L,
+        createdAtMs = created_at_ms,
+    )
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Zth_sentinel_plan_rejection_audits.toEntity() = SentinelPlanRejectionAuditEntity(
+        id = id,
+        sentinelId = sentinel_id,
+        rejectionType = rejection_type,
+        s_reasonCiphertext = s_reasonCiphertext,
+        s_rejectedPlanSnapshotCiphertext = s_rejectedPlanSnapshotCiphertext,
+        createdAtMs = created_at_ms,
+    )
 }

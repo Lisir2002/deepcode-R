@@ -1,7 +1,7 @@
 package com.R.codecore.feature.agent.domain.zth
 
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.agent.data.local.dao.HallucinationFuseDao
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.entity.HallucinationFuseEntity
 import com.R.codecore.feature.agent.domain.permission.FailureClassification
 import com.R.codecore.feature.agent.domain.permission.FuseState
@@ -31,7 +31,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class ZthCircuitBreakerManager @Inject constructor(
-    private val dao: HallucinationFuseDao
+    private val v2Agent: V2AgentRepository,
 ) {
     private companion object {
         const val TAG = "ZthCircuitBreakerMgr"
@@ -130,7 +130,7 @@ class ZthCircuitBreakerManager @Inject constructor(
                 // 必经 TRANSITIONING → HALF_OPEN
                 val tOk = transitionTo(e, FuseState.TRANSITIONING, TierContext(tier, sessionId))
                 if (tOk) {
-                    val e2 = dao.getById(e.id) ?: continue
+                    val e2 = loadEntityById(e.id) ?: continue
                     transitionTo(e2, FuseState.HALF_OPEN, TierContext(tier, sessionId), clearFailures = true)
                 } else allOk = false
             }
@@ -154,10 +154,10 @@ class ZthCircuitBreakerManager @Inject constructor(
         if (entity.fuseState == FuseState.CLOSED && newCount >= threshold) {
             // 超阈值 → 切 OPEN + 写 openSinceMs
             val tripped = updated.copy(state = FuseState.OPEN.name, openSinceMs = System.currentTimeMillis())
-            dao.upsert(tripped)
+            upsertFuse(tripped)
             FileLogger.i(TAG, "[$scopeLabel] 熔断 OPEN：failureCount=$newCount ≥ threshold=$threshold subClass=$subClass")
         } else {
-            dao.upsert(updated)
+            upsertFuse(updated)
         }
     }
 
@@ -175,26 +175,23 @@ class ZthCircuitBreakerManager @Inject constructor(
         var attempts = 0
         while (attempts < MAX_CAS_ATTEMPTS) {
             attempts++
-            val current = dao.getVersion(entity.id) ?: run {
+            val current = v2Agent.getFuseVersion(entity.id)
+            if (current == null) {
                 // 不存在 → 先插初始
-                dao.upsert(createInitial(entity.id, entity.scope, entity.scopeId))
+                upsertFuse(createInitial(entity.id, entity.scope, entity.scopeId))
                 continue
             }
-            val rows = dao.casUpdateState(entity.id, expectedVersion = current, target.name, nowMs)
-            if (rows == 1) {
+            val rows = v2Agent.casUpdateFuseState(entity.id, expectedVersion = current, target.name, nowMs)
+            if (rows == 1L) {
                 // CAS 成功：再把附加字段（clearFailures/killSwitch 不用）写一次
-                if (clearFailures) {
-                    val e = dao.getById(entity.id) ?: return true
-                    dao.upsert(e.copy(failureCount = 0, lastProbeAtMs = nowMs))
-                } else {
-                    val e = dao.getById(entity.id) ?: return true
-                    val fix = when (target) {
-                        FuseState.OPEN -> e.copy(openSinceMs = nowMs)
-                        FuseState.HALF_OPEN -> e.copy(lastProbeAtMs = nowMs)
-                        else -> e
-                    }
-                    dao.upsert(fix)
+                val e = loadEntityById(entity.id) ?: return true
+                val fix = when {
+                    clearFailures -> e.copy(failureCount = 0, lastProbeAtMs = nowMs)
+                    target == FuseState.OPEN -> e.copy(openSinceMs = nowMs)
+                    target == FuseState.HALF_OPEN -> e.copy(lastProbeAtMs = nowMs)
+                    else -> e
                 }
+                upsertFuse(fix)
                 FileLogger.i(TAG, "CAS 迁移成功 id=${entity.id} ${entity.state}→$target 第 $attempts 次")
                 return true
             }
@@ -203,7 +200,7 @@ class ZthCircuitBreakerManager @Inject constructor(
         }
         FileLogger.e(TAG, "CAS 迁移失败 ${MAX_CAS_ATTEMPTS} 次 id=${entity.id}：LINK-INV 版本冲突，回滚 OPEN + kill-switch-1 置位")
         // 迁移失败 → 不变性 LINK-INV-FAIL：回滚 OPEN + kill-switch-1 单向置位
-        dao.triggerKillSwitch1(entity.id, nowMs)
+        v2Agent.triggerFuseKillSwitch1(entity.id, nowMs)
         return false
     }
 
@@ -218,11 +215,11 @@ class ZthCircuitBreakerManager @Inject constructor(
         // 自动冷却：先 TRANSITIONING → HALF_OPEN
         val ctx = TierContext(tier, if (entity.scope == "SESSION") entity.scopeId else null)
         transitionTo(entity, FuseState.TRANSITIONING, ctx)
-        val t = dao.getById(entity.id) ?: return entity
+        val t = loadEntityById(entity.id) ?: return entity
         if (t.fuseState == FuseState.TRANSITIONING) {
             transitionTo(t, FuseState.HALF_OPEN, ctx, clearFailures = true)
         }
-        return dao.getById(entity.id) ?: entity
+        return loadEntityById(entity.id) ?: entity
     }
 
     private fun mapState(state: FuseState, label: String): AllowanceResult = when (state) {
@@ -234,10 +231,15 @@ class ZthCircuitBreakerManager @Inject constructor(
     // ── 懒创建初始实体（scope=GLOBAL/SESSION scopeId 锁死 composeGlobalId/composeSessionId）
 
     private suspend fun loadOrCreateGlobal(): HallucinationFuseEntity =
-        dao.getGlobal() ?: createInitial(HallucinationFuseEntity.composeGlobalId(), "GLOBAL", HallucinationFuseEntity.GLOBAL_SCOPE_ID).also { dao.upsert(it) }
+        v2Agent.getFuse("GLOBAL", HallucinationFuseEntity.GLOBAL_SCOPE_ID)?.toEntity()
+            ?: createInitial(HallucinationFuseEntity.composeGlobalId(), "GLOBAL", HallucinationFuseEntity.GLOBAL_SCOPE_ID).also { upsertFuse(it) }
 
     private suspend fun loadOrCreateSession(sessionId: String): HallucinationFuseEntity =
-        dao.getBySession(sessionId) ?: createInitial(HallucinationFuseEntity.composeSessionId(sessionId), "SESSION", sessionId).also { dao.upsert(it) }
+        v2Agent.getFuse("SESSION", sessionId)?.toEntity()
+            ?: createInitial(HallucinationFuseEntity.composeSessionId(sessionId), "SESSION", sessionId).also { upsertFuse(it) }
+
+    private suspend fun loadEntityById(id: String): HallucinationFuseEntity? =
+        v2Agent.listAllFuses().firstOrNull { it.id == id }?.toEntity()
 
     private fun createInitial(id: String, scope: String, scopeId: String) = HallucinationFuseEntity(
         id = id,
@@ -248,9 +250,36 @@ class ZthCircuitBreakerManager @Inject constructor(
         failureCount = 0
     )
 
-    // 为了方便拿到 entity
-    private suspend fun HallucinationFuseDao.getById(id: String): HallucinationFuseEntity? =
-        getAllOnce().firstOrNull { it.id == id }
+    // ── V2 写入 / 映射 ────────────────────────────────────────────────
+
+    private suspend fun upsertFuse(e: HallucinationFuseEntity) {
+        v2Agent.upsertFuse(
+            id = e.id, scope = e.scope, scopeId = e.scopeId,
+            state = e.state, linkageVersion = e.linkageVersion,
+            failureCount = e.failureCount.toLong(),
+            openSinceMs = e.openSinceMs,
+            lastProbeAtMs = e.lastProbeAtMs,
+            killSwitch1Triggered = if (e.killSwitch1Triggered) 1L else 0L,
+            killSwitch2SoftDisabled = if (e.killSwitch2SoftDisabled) 1L else 0L,
+            lastTripSubclass = e.lastTripSubclass,
+            updatedAtMs = e.updatedAtMs
+        )
+    }
+
+    private fun com.R.codecore.datalayer.sqldelight.agent.Zth_hallucination_fuses.toEntity() = HallucinationFuseEntity(
+        id = id,
+        scope = scope,
+        scopeId = scope_id,
+        state = state,
+        linkageVersion = linkage_version,
+        failureCount = failure_count.toInt(),
+        openSinceMs = open_since_ms,
+        lastProbeAtMs = last_probe_at_ms,
+        killSwitch1Triggered = kill_switch1_triggered != 0L,
+        killSwitch2SoftDisabled = kill_switch2_soft_disabled != 0L,
+        lastTripSubclass = last_trip_subclass,
+        updatedAtMs = updated_at_ms
+    )
 }
 
 /**

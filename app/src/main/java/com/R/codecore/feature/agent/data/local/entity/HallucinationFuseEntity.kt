@@ -1,22 +1,12 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.Entity
-import androidx.room.Index
-
 /**
  * ZTH HallucinationCircuitBreaker 持久化状态机。
  * RC68 SCHEMA 38：改为原生复合主键 (scope, scopeId)，之前用 id 做拼接字符串主键 + (scope, scopeId) 独立唯一索引，冗余。
  * Room 实体保留单独的 id 字段（为了兼容 Funnel2 LightweightSchemaRescue 的单主键反射解析分支 + 其他 @Query 用 id 定位的旧代码），
  * 但 DDL 层是复合主键（UNIQUE 约束 + @Entity primaryKeys=[...]），应用侧 INSERT 同 (scope, scopeId) 两次直接冲突（SQLite 报错 ON CONFLICT REPLACE）。
  */
-@Entity(
-    tableName = "zth_hallucination_fuses",
-    primaryKeys = ["scope", "scopeId"],
-    indices = [
-        Index(value = ["state"]),
-        Index(value = ["updatedAtMs"])
-    ]
-)
+
 data class HallucinationFuseEntity(
     /** 兼容旧 id（UI/DAO 仍用它定位）。值保持 `composeGlobalId()` / `composeSessionId()` 的产物即可。 */
     val id: String,

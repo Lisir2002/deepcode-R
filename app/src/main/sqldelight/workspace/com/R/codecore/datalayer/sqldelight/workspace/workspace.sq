@@ -115,6 +115,11 @@ insertRemoteConnection:
 INSERT INTO remote_connections (id, name, protocol, host, port, username, auth_type, auth_data, passphrase)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- P0-2：对齐 Room `@Insert(onConflict = REPLACE)` 语义。
+insertOrReplaceRemoteConnection:
+INSERT OR REPLACE INTO remote_connections (id, name, protocol, host, port, username, auth_type, auth_data, passphrase)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 selectRemoteConnectionById:
 SELECT * FROM remote_connections WHERE id = ?;
 
@@ -124,12 +129,35 @@ SELECT * FROM remote_connections ORDER BY name ASC;
 deleteRemoteConnection:
 DELETE FROM remote_connections WHERE id = ?;
 
+-- P0-2：补齐 Room 侧列级 setter（缺这些则批 1 无法切换业务）──
+
+updateConnectionCredentials:
+UPDATE remote_connections SET auth_data = ?, passphrase = ? WHERE id = ?;
+
 insertRemoteMount:
 INSERT INTO remote_mounts (id, connection_id, remote_path, local_mount_path, is_active, auto_connect)
 VALUES (?, ?, ?, ?, ?, ?);
 
+-- P0-2：对齐 Room `@Insert(onConflict = REPLACE)` 语义。
+insertOrReplaceRemoteMount:
+INSERT OR REPLACE INTO remote_mounts (id, connection_id, remote_path, local_mount_path, is_active, auto_connect)
+VALUES (?, ?, ?, ?, ?, ?);
+
 selectRemoteMountsByConnection:
 SELECT * FROM remote_mounts WHERE connection_id = ? ORDER BY remote_path ASC;
+
+-- P2-2 批 2：对齐 Room RemoteMountDao 剩余方法（getMountById/getAllMountsOnce Flow/update/delete）。
+selectRemoteMountById:
+SELECT * FROM remote_mounts WHERE id = ?;
+
+selectAllRemoteMounts:
+SELECT * FROM remote_mounts ORDER BY remote_path ASC;
+
+updateRemoteMount:
+UPDATE remote_mounts SET connection_id = ?, remote_path = ?, local_mount_path = ?, is_active = ?, auto_connect = ? WHERE id = ?;
+
+deleteRemoteMount:
+DELETE FROM remote_mounts WHERE id = ?;
 
 deleteRemoteMountsByConnection:
 DELETE FROM remote_mounts WHERE connection_id = ?;
@@ -141,11 +169,30 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 selectAuditLogsByConnection:
 SELECT * FROM remote_audit_logs WHERE connection_id = ? ORDER BY created_at DESC;
 
+selectAuditLogsPage:
+SELECT * FROM remote_audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?;
+
+selectAuditLogsByConnectionPage:
+SELECT * FROM remote_audit_logs WHERE connection_id = ? ORDER BY created_at DESC LIMIT ?;
+
+-- 多维筛选：category IN (:cats) AND success IN (:successes) AND created_at >= :since。
+-- SQLDelight 需用 ? 占位 + IN 列表，故拆成三个布尔参数的动态 SQL 由业务层拼装。
+selectAuditLogsFiltered:
+SELECT * FROM remote_audit_logs
+WHERE category IN ? AND success IN ? AND created_at >= ?
+ORDER BY created_at DESC LIMIT ?;
+
 selectAllAuditLogs:
 SELECT * FROM remote_audit_logs ORDER BY created_at DESC;
 
 deleteAuditLogsOlderThan:
 DELETE FROM remote_audit_logs WHERE created_at < ?;
+
+selectAuditLogCount:
+SELECT COUNT(1) FROM remote_audit_logs;
+
+selectAuditCategories:
+SELECT DISTINCT category FROM remote_audit_logs ORDER BY category;
 
 selectEncryptionState:
 SELECT * FROM credential_encryption_state WHERE id = 1;

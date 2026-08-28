@@ -1,8 +1,5 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.R.codecore.core.util.EnumSafe
 import com.R.codecore.feature.agent.presentation.AgentAttachment
 import com.R.codecore.feature.agent.presentation.BACKGROUND_NOTIFICATION_PREFIX
@@ -11,12 +8,11 @@ import com.R.codecore.feature.agent.presentation.AgentUIMessage
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
-@Entity(tableName = "agent_messages")
 data class AgentMessageEntity(
-    @PrimaryKey val id: String,
+     val id: String,
     val sessionId: String,
     /** 任务分组 id：同一轮用户请求产出的消息共享同一 taskId；历史消息为空串。 */
-    @ColumnInfo(defaultValue = "")
+    
     val taskId: String,
     val role: String,
     val content: String,
@@ -39,26 +35,26 @@ data class AgentMessageEntity(
     // 仅 USER 行：用户上传附件的展示元数据。内部模型提示仍不落入 content。
     val attachmentsJson: String? = null,
     /** 该消息已被上下文压缩归入摘要，不应再参与上下文回放或 UI 展示。默认 false。 */
-    @ColumnInfo(defaultValue = "0")
+    
     val isCompacted: Boolean = false,
     /** 上下文压缩生成的内部摘要：参与模型回放，但不作为普通聊天气泡展示。 */
-    @ColumnInfo(defaultValue = "0")
+    
     val isContextSummary: Boolean = false,
     /** 上下文压缩生成的内部用户锚点：参与模型回放，UI 渲染为压缩分隔线。 */
-    @ColumnInfo(defaultValue = "0")
+    
     val isCompactionMarker: Boolean = false,
-    @ColumnInfo(defaultValue = "0")
+    
     val inputTokens: Int = 0,
-    @ColumnInfo(defaultValue = "0")
+    
     val outputTokens: Int = 0,
     /**
      * 分块组 id：超长消息（> CHUNK_SIZE）按块拆分落库时，主行与续块行共享同一 chunkGroupId（= 主行 id），
      * 读取侧按 chunk_index 升序拼接出完整内容。非分块消息为空串。
      */
-    @ColumnInfo(defaultValue = "")
+    
     val chunkGroupId: String = "",
     /** 块序号（0 起）：主行（含全部元数据）为 0，续块行为 1..N-1。非分块消息恒为 0。 */
-    @ColumnInfo(defaultValue = "0")
+    
     val chunkIndex: Int = 0
 ) {
     fun toUIMessage(): AgentUIMessage {

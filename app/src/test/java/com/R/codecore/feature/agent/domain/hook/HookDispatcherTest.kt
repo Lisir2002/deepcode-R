@@ -1,6 +1,7 @@
 package com.R.codecore.feature.agent.domain.hook
 
-import com.R.codecore.feature.agent.data.local.dao.WakeQueueDao
+import com.R.codecore.datalayer.repository.WakeQueueStore
+import com.R.codecore.datalayer.sqldelight.agent.Wake_queue as V2WakeItem
 import com.R.codecore.feature.agent.data.local.entity.WakeItemEntity
 import com.R.codecore.feature.agent.domain.model.AgentMode
 import com.R.codecore.feature.agent.domain.tool.ToolCall
@@ -17,26 +18,26 @@ class HookDispatcherTest {
 
     // ---------- 构造辅助 ----------
 
-    /** 内存版 WakeQueueDao（测试用 fake，行为对齐真实 DAO 语义）。 */
-    private class FakeWakeQueueDao : WakeQueueDao {
-        val store = mutableListOf<WakeItemEntity>()
-        override suspend fun insert(entity: WakeItemEntity) { store += entity }
-        override suspend fun insertAll(entities: List<WakeItemEntity>) { store += entities }
-        override suspend fun getBySessionAndStatus(sessionId: String, status: String): List<WakeItemEntity> =
-            store.filter { it.sessionId == sessionId && it.status == status }.sortedBy { it.createdAtMs }
-        override suspend fun getByStatus(status: String): List<WakeItemEntity> =
-            store.filter { it.status == status }.sortedBy { it.createdAtMs }
-        override suspend fun updateStatus(ids: List<String>, status: String) {
+    /** 内存版 WakeQueueStore（测试用 fake，行为对齐真实 V2 语义）。 */
+    private class FakeWakeQueueStore : WakeQueueStore {
+        val store = mutableListOf<V2WakeItem>()
+        override suspend fun upsertWakeItem(
+            wakeId: String, sessionId: String, source: String, type: String, content: String,
+            status: String, createdAtMs: Long,
+        ) { store += V2WakeItem(wakeId, sessionId, source, type, content, status, createdAtMs) }
+        override suspend fun listWakeBySessionAndStatus(sessionId: String, status: String): List<V2WakeItem> =
+            store.filter { it.session_id == sessionId && it.status == status }.sortedBy { it.created_at_ms }
+        override suspend fun markWakeItemsConsumedBatch(ids: List<String>, status: String) {
             store.indices.forEach { i ->
-                if (store[i].wakeId in ids) store[i] = store[i].copy(status = status)
+                if (store[i].wake_id in ids) store[i] = store[i].copy(status = status)
             }
         }
-        override suspend fun deleteByIds(ids: List<String>) { store.removeAll { it.wakeId in ids } }
-        override suspend fun deleteBySession(sessionId: String) { store.removeAll { it.sessionId == sessionId } }
+        override suspend fun listPendingWakeItems(): List<V2WakeItem> =
+            store.filter { it.status == WakeItemEntity.STATUS_PENDING }.sortedBy { it.created_at_ms }
     }
 
-    private fun commitDisciplineHook(dao: WakeQueueDao = FakeWakeQueueDao()): CommitDisciplineHook =
-        CommitDisciplineHook(WakeQueueManager(dao))
+    private fun commitDisciplineHook(store: WakeQueueStore = FakeWakeQueueStore()): CommitDisciplineHook =
+        CommitDisciplineHook(WakeQueueManager(store))
 
     private fun bashCall(command: String = "git commit -m \"feat(agent): add hook\"") = ToolCall(
         id = "call-1",

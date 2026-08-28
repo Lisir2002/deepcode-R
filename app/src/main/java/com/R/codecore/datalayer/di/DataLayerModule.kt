@@ -1,6 +1,7 @@
 package com.R.codecore.datalayer.di
 
 import android.content.Context
+import com.R.codecore.datalayer.engine.AndroidDatabasePathProvider
 import com.R.codecore.datalayer.engine.ConnectionPool
 import com.R.codecore.datalayer.engine.DatabaseDriverFactory
 import com.R.codecore.datalayer.engine.DatabasePathProvider
@@ -9,6 +10,7 @@ import com.R.codecore.datalayer.engine.PlainDriverFactory
 import com.R.codecore.datalayer.migration.MigrationEngine
 import com.R.codecore.datalayer.repository.AgentRepository
 import com.R.codecore.datalayer.repository.CredentialsRepository
+import com.R.codecore.datalayer.repository.WakeQueueStore
 import com.R.codecore.datalayer.repository.SettingsRepository
 import com.R.codecore.datalayer.repository.T2iRepository
 import com.R.codecore.datalayer.repository.WorkspaceRepository
@@ -49,7 +51,7 @@ object DataLayerModule {
     @Provides
     @Singleton
     fun providePathProvider(@ApplicationContext context: Context): DatabasePathProvider =
-        DatabasePathProvider(context)
+        AndroidDatabasePathProvider(context)
 
     @Provides
     @Singleton
@@ -146,6 +148,10 @@ object DataLayerModule {
     @Provides
     @Singleton
     fun provideAgentRepository(db: AgentDb): AgentRepository = AgentRepository(db)
+
+    @Provides
+    @Singleton
+    fun provideWakeQueueStore(agent: AgentRepository): WakeQueueStore = agent
 
     @Provides
     @Singleton

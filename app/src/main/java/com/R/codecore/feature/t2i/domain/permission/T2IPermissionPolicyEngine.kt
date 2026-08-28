@@ -2,7 +2,7 @@ package com.R.codecore.feature.t2i.domain.permission
 
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.feature.settings.data.repository.ZthTierRepository
-import com.R.codecore.feature.t2i.data.local.dao.T2ITaskDao
+import com.R.codecore.feature.t2i.domain.repository.T2IRepository
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,7 +31,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class T2IPermissionPolicyEngine @Inject constructor(
-    private val taskDao: T2ITaskDao,
+    private val t2iRepository: T2IRepository,
     private val zthTierRepo: ZthTierRepository, // 复用 ZTH 分层存储（免费/Pro/Enterprise 可差异化额度）
 ) {
 
@@ -100,7 +100,7 @@ class T2IPermissionPolicyEngine @Inject constructor(
 
         // ── P2 日额度耗尽 ──
         if (dailyQuota > 0) {
-            val usedToday = taskDao.sumDeductedTokensSince(dayStartMs)
+            val usedToday = t2iRepository.sumDeductedTokensSince(dayStartMs)
             if (usedToday + totalCost > dailyQuota) {
                 val msg = "今日额度已用 $usedToday/$dailyQuota tokens，本次需 $totalCost，超出上限。"
                 FileLogger.w(TAG, "P2 命中：日额度耗尽 — $msg")
@@ -110,7 +110,7 @@ class T2IPermissionPolicyEngine @Inject constructor(
 
         // ── P3 会话额度耗尽 ──
         if (sessionQuota > 0) {
-            val usedInSession = taskDao.sumDeductedTokensForSession(req.sessionId)
+            val usedInSession = t2iRepository.sumDeductedTokensForSession(req.sessionId)
             if (usedInSession + totalCost > sessionQuota) {
                 val msg = "本会话额度已用 $usedInSession/$sessionQuota tokens，本次需 $totalCost。"
                 FileLogger.w(TAG, "P3 命中：会话额度耗尽 — $msg")
@@ -132,7 +132,7 @@ class T2IPermissionPolicyEngine @Inject constructor(
         if (req.progressiveProtection) {
             val threshold = effectiveProgressiveThreshold(req)
             if (threshold > 0) {
-                val successCount = taskDao.countSuccessfulImagesSince(dayStartMs)
+                val successCount = t2iRepository.countSuccessfulImagesSince(dayStartMs)
                 if (successCount >= threshold) {
                     FileLogger.i(
                         TAG,

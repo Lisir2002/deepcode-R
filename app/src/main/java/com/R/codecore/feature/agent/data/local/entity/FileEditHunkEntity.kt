@@ -1,22 +1,12 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
 /**
  * 文件编辑快照（F-3 hunk 落库）：记录一次 readFile/writeFile/editFile 造成的文件变化，
  * 持久化 hunk 差异与旧/新内容快照，为「撤销编辑」等能力提供数据基础。
  */
-@Entity(
-    tableName = "file_edit_hunks",
-    indices = [
-        Index(value = ["sessionId", "filePath"]),
-        Index(value = ["createdAtMs"])
-    ]
-)
+
 data class FileEditHunkEntity(
-    @PrimaryKey val id: String,
+     val id: String,
     val sessionId: String,
     val filePath: String,
     /** read / write / edit 之一。 */

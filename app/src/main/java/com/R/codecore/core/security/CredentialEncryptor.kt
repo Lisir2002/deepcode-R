@@ -3,7 +3,7 @@ package com.R.codecore.core.security
 import android.content.Context
 import com.R.codecore.core.db.entity.CredentialEncryptionStateEntity
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.workspace.data.local.dao.CredentialEncryptionStateDao
+import com.R.codecore.datalayer.repository.WorkspaceRepository as V2WorkspaceRepository
 import com.R.codecore.feature.workspace.domain.RemoteAuditAction
 import com.R.codecore.feature.workspace.domain.RemoteAuditCategory
 import com.R.codecore.feature.workspace.domain.repository.RemoteAuditLogRepository
@@ -44,7 +44,7 @@ import javax.inject.Singleton
 @Singleton
 class CredentialEncryptor @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val stateDao: CredentialEncryptionStateDao,
+    private val v2Workspace: V2WorkspaceRepository,
     private val auditLogRepo: RemoteAuditLogRepository
 ) {
     private companion object {
@@ -53,6 +53,24 @@ class CredentialEncryptor @Inject constructor(
         const val GCM_TAG_BITS = 128
         const val IV_LEN = 12
         const val SCHEME_V2 = "V2:"
+    }
+
+    private suspend fun getState(): CredentialEncryptionStateEntity? =
+        v2Workspace.getEncryptionState()?.toEntity()
+
+    /** 供 UI 读取当前加密状态。 */
+    suspend fun encryptionState(): CredentialEncryptionStateEntity? = getState()
+
+    private suspend fun upsertState(e: CredentialEncryptionStateEntity) {
+        v2Workspace.upsertEncryptionState(
+            masterKeyFingerprint = e.masterKeyFingerprint,
+            dekCiphertext = e.dekCiphertext,
+            encScheme = e.encScheme,
+            lastRotatedAt = e.lastRotatedAt,
+            rotationCounter = e.rotationCounter.toLong(),
+            biometricRequired = if (e.biometricRequired) 1L else 0L,
+            migratedFromV1 = if (e.migratedFromV1) 1L else 0L,
+        )
     }
 
     // DEKManager.getInstance 是纯 volatile+双检锁，构造函数里直接赋值无阻塞
@@ -87,13 +105,13 @@ class CredentialEncryptor @Inject constructor(
      * ============= RC61b hotfix3（RC60 后闪退根因级修复） =============
      * RC60 之前 ExecutionModeRepository 不用 CredentialEncryptor；RC61 起它在
      * remoteConnectionFlow 的 mapLatest { decryptCredentialCompat → encryptor.decrypt →
-     * ensureInitialized → stateDao.getSingleOrNull → DB open } 里被冷启动的 Flow 首次
+     * ensureInitialized → v2Workspace.getEncryptionState → DB open } 里被冷启动的 Flow 首次
      * 订阅（Hilt 注入链 CredentialRequestBridge → LinuxContainerEngine → … → collect 点）
      * 同步调用。此时若：
      *   - Android Keystore 首次生成 MasterKey 在某些机型锁/首次解锁后 500ms+ 阻塞
-     *   - DB SCHEMA_VERSION=32 open 同时在做 migration 32 schema 校验 / destructive fallback
-     *   - 主线程同时在 Hilt provideAgentDatabase 拿同一个 Room DB 实例
-     * 会发生**启动期两线程争用 DB + Keystore 慢**的伪死锁：主线程拿不到 provideAgentDatabase
+     *   - 数据库首次 open 同时在做 schema 校验 / 初始化
+     *   - 主线程同时在初始化数据层（V2 SQLDelight 驱动 / Keystore）
+     * 会发生**启动期两线程争用 DB + Keystore 慢**的伪死锁：主线程拿不到数据层初始化
      * 返回，首帧超 5s 被 ActivityManager/ANR 认为启动卡住 → 直接杀进程，无崩溃弹窗，只有
      * logcat 有 W/ActivityManager: Launch timeout has expired, giving up wake lock! 字样。
      *
@@ -113,7 +131,7 @@ class CredentialEncryptor @Inject constructor(
             if (initialized && dekCached != null) return@withLock
 
             val result = runCatching {
-                val existing = stateDao.getSingleOrNull()
+                val existing = getState()
                 val masterKey = dekManager.getOrCreateMasterKey()
 
                 if (existing == null) {
@@ -121,7 +139,7 @@ class CredentialEncryptor @Inject constructor(
                     val dek = dekManager.generateDek()
                     val dekCiphertext = dekManager.wrapDek(masterKey, dek)
                     val fingerprint = dekManager.getMasterKeyFingerprint(masterKey)
-                    stateDao.upsert(
+                    upsertState(
                         CredentialEncryptionStateEntity(
                             masterKeyFingerprint = fingerprint,
                             dekCiphertext = dekCiphertext,
@@ -156,7 +174,7 @@ class CredentialEncryptor @Inject constructor(
                         )
                         val newDek = dekManager.generateDek()
                         val newCiphertext = dekManager.wrapDek(masterKey, newDek)
-                        stateDao.upsert(
+                        upsertState(
                             existing.copy(
                                 dekCiphertext = newCiphertext,
                                 rotationCounter = (existing.rotationCounter ?: 0) + 1,
@@ -276,8 +294,8 @@ class CredentialEncryptor @Inject constructor(
             val fingerprint = dekManager.getMasterKeyFingerprint(masterKey)
             val startMs = System.currentTimeMillis()
 
-            val existing = stateDao.getSingleOrNull()
-            stateDao.upsert(
+            val existing = getState()
+            upsertState(
                 CredentialEncryptionStateEntity(
                     masterKeyFingerprint = fingerprint,
                     dekCiphertext = newDekCiphertext,
@@ -326,7 +344,7 @@ class CredentialEncryptor @Inject constructor(
      *
      * 流程：① 先 unwrap 当前 DEK；② 删除旧 MasterKey；
      * ③ 生成新 MasterKey（带或不带生物识别标志）；
-     * ④ 重新 wrap DEK；⑤ 更新 stateDao。
+     * ④ 重新 wrap DEK；⑤ 更新凭据加密状态。
      *
      * @param required 是否开启生物识别
      */
@@ -343,8 +361,8 @@ class CredentialEncryptor @Inject constructor(
                 val newDekCiphertext = dekManager.wrapDek(newMasterKey, currentDek)
                 val fingerprint = dekManager.getMasterKeyFingerprint(newMasterKey)
 
-                val existing = stateDao.getSingleOrNull()
-                stateDao.upsert(
+                val existing = getState()
+                upsertState(
                     CredentialEncryptionStateEntity(
                         masterKeyFingerprint = fingerprint,
                         dekCiphertext = newDekCiphertext,
@@ -385,7 +403,7 @@ class CredentialEncryptor @Inject constructor(
      *
      * 调用方必须已经通过「验证任一 SSH 密码」的校验后再调用。
      * 流程：① 销毁当前 MasterKey alias；② 生成全新 MasterKey''；
-     * ③ 生成 DEK''；④ 写单行 stateDao；
+     * ③ 生成 DEK''；④ 更新单行凭据加密状态；
      * ⑤ 旧 V2 密文无法用新 DEK 解开，调用方应引导用户重设凭据。
      */
     suspend fun emergencyResetMasterKey(): ResetReport = withContext(Dispatchers.IO) {
@@ -399,7 +417,7 @@ class CredentialEncryptor @Inject constructor(
         val newDekCiphertext = dekManager.wrapDek(newMasterKey, newDek)
         val fingerprint = dekManager.getMasterKeyFingerprint(newMasterKey)
 
-        stateDao.upsert(
+        upsertState(
             CredentialEncryptionStateEntity(
                 masterKeyFingerprint = fingerprint,
                 dekCiphertext = newDekCiphertext,
@@ -476,6 +494,19 @@ class CredentialEncryptor @Inject constructor(
             false
         }
     }
+
+    // ── V2 映射 ──────────────────────────────────────────────────────
+
+    private fun com.R.codecore.datalayer.sqldelight.workspace.Credential_encryption_state.toEntity() = CredentialEncryptionStateEntity(
+        id = id.toInt(),
+        masterKeyFingerprint = master_key_fingerprint,
+        dekCiphertext = dek_ciphertext,
+        encScheme = enc_scheme,
+        lastRotatedAt = last_rotated_at,
+        rotationCounter = rotation_counter.toInt(),
+        biometricRequired = biometric_required == 1L,
+        migratedFromV1 = migrated_from_v1 == 1L,
+    )
 
     // ============== 数据类 ==============
 

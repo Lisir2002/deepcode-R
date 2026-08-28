@@ -1,23 +1,12 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
 /**
  * C.4.3 LINK-INV 审计：任何「硬约束被 AI 删除」的动作必须写此表（即使后来被 LINK-INV 迁移回滚）。
  * 由 ZthDbAutoReconciler（C.4.11 DB Migration 兜底）扫描本表 + 重建 sentinel 时使用。
  */
-@Entity(
-    tableName = "zth_hard_constraint_delete_audits",
-    indices = [
-        Index(value = ["sessionId"]),
-        Index(value = ["affectedTableName"]),
-        Index(value = ["createdAtMs"])
-    ]
-)
+
 data class HardConstraintDeleteAuditEntity(
-    @PrimaryKey(autoGenerate = false)
+    
     val id: String,
     val sessionId: String,
     /** ZTH-0：被删除的 row/snapshot/file path 所属表名或 path 类型（如 session_checkpoints / 文件快照）。 */

@@ -3,11 +3,10 @@ package com.R.codecore.feature.backup.data
 import android.content.Context
 import com.R.codecore.core.data.DataBlob
 import com.R.codecore.core.data.DataRegistry
-import com.R.codecore.feature.agent.data.local.dao.AgentMessageDao
-import com.R.codecore.feature.agent.data.local.dao.ChatSessionDao
-import com.R.codecore.feature.agent.data.local.dao.TodoItemDao
-import com.R.codecore.feature.agent.data.local.database.AgentDatabase
-import com.R.codecore.feature.agent.data.local.database.LegacyAgentDatabase
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
+import com.R.codecore.datalayer.sqldelight.agent.Agent_message as V2AgentMessage
+import com.R.codecore.datalayer.sqldelight.agent.Agent_session as V2AgentSession
+import com.R.codecore.datalayer.sqldelight.agent.Todo_items as V2TodoItem
 import com.R.codecore.feature.agent.data.local.entity.AgentMessageEntity
 import com.R.codecore.feature.agent.data.local.entity.ChatSessionEntity
 import com.R.codecore.feature.agent.data.local.entity.TodoItemEntity
@@ -29,9 +28,7 @@ import com.R.codecore.feature.backup.domain.RemoteMountDto
 import com.R.codecore.feature.backup.domain.RestoreStats
 import com.R.codecore.feature.backup.domain.TodoItemDto
 import com.R.codecore.feature.backup.domain.toMetadata
-import com.R.codecore.feature.credentials.data.local.dao.GitCredentialDao
 import com.R.codecore.feature.credentials.data.local.entity.GitCredentialEntity
-import com.R.codecore.feature.settings.data.local.dao.AIProviderDao
 import com.R.codecore.feature.settings.data.local.entity.AIProviderEntity
 import com.R.codecore.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.R.codecore.feature.settings.data.repository.KeepaliveSettingsRepository
@@ -39,10 +36,10 @@ import com.R.codecore.feature.settings.data.repository.LogSettingsRepository
 import com.R.codecore.feature.settings.data.repository.SyncSettingsRepository
 import com.R.codecore.feature.settings.data.repository.ThemeSettingsRepository
 import com.R.codecore.feature.settings.data.repository.VisionModelSettingsRepository
-import com.R.codecore.feature.workspace.data.local.dao.RemoteConnectionDao
 import com.R.codecore.feature.workspace.data.local.entity.RemoteConnectionEntity
 import com.R.codecore.feature.workspace.data.local.entity.RemoteMountEntity
 import com.R.codecore.feature.workspace.data.repository.WorkspaceRepository
+import com.R.codecore.datalayer.repository.WorkspaceRepository as V2WorkspaceRepository
 import com.R.codecore.feature.workspace.domain.model.RemoteProtocol
 import com.R.codecore.core.security.CredentialEncryptor
 import com.R.codecore.core.util.FileLogger
@@ -69,12 +66,6 @@ import javax.inject.Singleton
 @Singleton
 class BackupManagerImpl @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val aiProviderDao: AIProviderDao,
-    private val gitCredentialDao: GitCredentialDao,
-    private val remoteConnectionDao: RemoteConnectionDao,
-    private val chatSessionDao: ChatSessionDao,
-    private val agentMessageDao: AgentMessageDao,
-    private val todoItemDao: TodoItemDao,
     private val mcpConfigRepository: McpConfigRepository,
     private val mcpManager: McpManager,
     private val permissionRulesRepository: PermissionRulesRepository,
@@ -84,9 +75,13 @@ class BackupManagerImpl @Inject constructor(
     private val visionModelSettingsRepository: VisionModelSettingsRepository,
     private val compactionModelSettingsRepository: CompactionModelSettingsRepository,
     private val syncSettingsRepository: SyncSettingsRepository,
+    private val settingsRepo: com.R.codecore.datalayer.repository.SettingsRepository,
+    private val credentialsRepo: com.R.codecore.datalayer.repository.CredentialsRepository,
     private val workspaceRepository: WorkspaceRepository,
+    private val v2WorkspaceRepository: V2WorkspaceRepository,
     private val encryptor: CredentialEncryptor,
     private val dataRegistry: DataRegistry,
+    private val v2Agent: V2AgentRepository,
 ) : BackupManager {
 
     private val json = Json {
@@ -113,7 +108,7 @@ class BackupManagerImpl @Inject constructor(
         }.getOrDefault(failValue)
     }
 
-    private fun currentSchemaVersion(): Int = AgentDatabase.SCHEMA_VERSION
+    private fun currentSchemaVersion(): Int = AGENT_SCHEMA_VERSION
 
     private fun appVersionName(): String = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
@@ -140,8 +135,9 @@ class BackupManagerImpl @Inject constructor(
 
     override suspend fun exportSession(sessionId: String, output: OutputStream) {
         withContext(Dispatchers.IO) {
-            val session = safeDaoSuspend("getSessionById", null) { chatSessionDao.getById(sessionId) }
-                ?: error("Session not found: $sessionId")
+            val session =
+                safeDaoSuspend("getSessionById", null) { v2Agent.getSessionById(sessionId) }?.toEntity()
+                    ?: error("Session not found: $sessionId")
             val temp = createTempFile()
             try {
                 FileOutputStream(temp).use { fos ->
@@ -162,7 +158,8 @@ class BackupManagerImpl @Inject constructor(
                                     val batch = safeDaoSuspend(
                                         "getMsgPageAfter_$sessionId",
                                         emptyList()
-                                    ) { agentMessageDao.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE) }
+                                    ) { v2Agent.getPageBySessionAfter(sessionId, lastTs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
                                     if (batch.isEmpty()) break
                                     batch.forEach { writer.writeLine(json.encodeToString(AgentMessageDto.serializer(), it.toDto())) }
                                     lastTs = batch.last().timestamp
@@ -176,7 +173,8 @@ class BackupManagerImpl @Inject constructor(
                                     val batch = safeDaoSuspend(
                                         "getTodoPageAfter_$sessionId",
                                         emptyList()
-                                    ) { todoItemDao.getBySessionPageAfter(sessionId, lastCreatedAtMs, lastId, PAGE_SIZE) }
+                                    ) { v2Agent.getTodoPageBySessionAfter(sessionId, lastCreatedAtMs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
                                     if (batch.isEmpty()) break
                                     batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
                                     lastCreatedAtMs = batch.last().createdAtMs
@@ -248,9 +246,10 @@ class BackupManagerImpl @Inject constructor(
                             var lastId = ""
                             while (true) {
                                 val batch = safeDaoSuspend(
-                                    "getSessionPageAfter",
-                                    emptyList()
-                                ) { chatSessionDao.getPageAfter(lastUpdatedAtMs, lastId, PAGE_SIZE) }
+                                        "getSessionPageAfter",
+                                        emptyList()
+                                    ) { v2Agent.getSessionPageAfter(lastUpdatedAtMs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(ChatSessionDto.serializer(), it.toDto())) }
                                 lastUpdatedAtMs = batch.last().updatedAtMs
@@ -262,9 +261,10 @@ class BackupManagerImpl @Inject constructor(
                             var lastId = ""
                             while (true) {
                                 val batch = safeDaoSuspend(
-                                    "getMsgPageAfter",
-                                    emptyList()
-                                ) { agentMessageDao.getPageAfter(lastTs, lastId, PAGE_SIZE) }
+                                        "getMsgPageAfter",
+                                        emptyList()
+                                    ) { v2Agent.getMessagePageAfter(lastTs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(AgentMessageDto.serializer(), it.toDto())) }
                                 lastTs = batch.last().timestamp
@@ -276,9 +276,10 @@ class BackupManagerImpl @Inject constructor(
                             var lastId = ""
                             while (true) {
                                 val batch = safeDaoSuspend(
-                                    "getTodoPageAfter",
-                                    emptyList()
-                                ) { todoItemDao.getPageAfter(lastCreatedAtMs, lastId, PAGE_SIZE) }
+                                        "getTodoPageAfter",
+                                        emptyList()
+                                    ) { v2Agent.getTodoPageAfter(lastCreatedAtMs, lastId, PAGE_SIZE.toLong()) }
+                                        .map { it.toEntity() }
                                 if (batch.isEmpty()) break
                                 batch.forEach { writer.writeLine(json.encodeToString(TodoItemDto.serializer(), it.toDto())) }
                                 lastCreatedAtMs = batch.last().createdAtMs
@@ -311,10 +312,10 @@ class BackupManagerImpl @Inject constructor(
         schemaVersion = currentSchemaVersion(),
         appVersion = appVersionName(),
         createdAt = System.currentTimeMillis(),
-        providers = if (options.providers) safeDaoSuspend("getAllProviders", emptyList()) { aiProviderDao.getAllProvidersOnce().map { it.toDto() } } else emptyList(),
-        gitCredentials = if (options.gitCredentials) safeDaoSuspend("getAllGitCred", emptyList()) { gitCredentialDao.getAllOnce().map { it.toDto() } } else emptyList(),
-        remoteConnections = if (options.remoteConnections) safeDaoSuspend("getAllRemoteConn", emptyList()) { remoteConnectionDao.getAllConnectionsOnce().map { it.toDto() } } else emptyList(),
-        remoteMounts = if (options.remoteConnections) safeDaoSuspend("getAllRemoteMounts", emptyList()) { remoteConnectionDao.getAllMountsOnce().map { it.toDto() } } else emptyList(),
+        providers = if (options.providers) safeDaoSuspend("getAllProviders", emptyList()) { settingsRepo.listProviders().map { it.toV2Dto() } } else emptyList(),
+        gitCredentials = if (options.gitCredentials) safeDaoSuspend("getAllGitCred", emptyList()) { credentialsRepo.listGitCredentials().map { it.toV2Dto() } } else emptyList(),
+        remoteConnections = if (options.remoteConnections) safeDaoSuspend("getAllRemoteConn", emptyList()) { v2WorkspaceRepository.listRemoteConnections().map { it.toV2Dto() } } else emptyList(),
+        remoteMounts = if (options.remoteConnections) safeDaoSuspend("getAllRemoteMounts", emptyList()) { v2WorkspaceRepository.listAllRemoteMounts().map { it.toV2Dto() } } else emptyList(),
         mcpServers = if (options.mcpServers) mcpConfigRepository.getServers() else emptyList(),
         globalPermissionRules = if (options.permissionRules) permissionRulesRepository.getGlobalRulesOnce() else emptyList(),
         themeMode = if (options.appSettings) themeSettingsRepository.snapshot() else null,
@@ -389,7 +390,8 @@ class BackupManagerImpl @Inject constructor(
                         .getOrDefault("")
                     stats += RestoreStats(chatSessions = restoreJsonl(tar, ChatSessionDto.serializer(), "upsertSessions") { dtos ->
                         safeDaoSuspend("upsertSessions", 0) {
-                            chatSessionDao.upsertAll(dtos.map { it.copy(workspacePath = currentWorkspacePath).toEntity() })
+                            val mapped = dtos.map { it.copy(workspacePath = currentWorkspacePath).toEntity() }
+                            v2Agent.upsertAllSessions(mapped.map { it.toV2() })
                             dtos.size
                         }
                     })
@@ -397,7 +399,8 @@ class BackupManagerImpl @Inject constructor(
                 FILE_MESSAGES -> {
                     stats += RestoreStats(agentMessages = restoreJsonl(tar, AgentMessageDto.serializer(), "insertMessages") { dtos ->
                         safeDaoSuspend("insertMessages", 0) {
-                            agentMessageDao.insertAll(dtos.map { it.toEntity() })
+                            val mapped = dtos.map { it.toEntity() }
+                            v2Agent.insertAllMessages(mapped.map { it.toV2() })
                             dtos.size
                         }
                     })
@@ -405,7 +408,8 @@ class BackupManagerImpl @Inject constructor(
                 FILE_TODOS -> {
                     stats += RestoreStats(todoItems = restoreJsonl(tar, TodoItemDto.serializer(), "upsertTodos") { dtos ->
                         safeDaoSuspend("upsertTodos", 0) {
-                            todoItemDao.upsertAll(dtos.map { it.toEntity() })
+                            val mapped = dtos.map { it.toEntity() }
+                            v2Agent.upsertAllTodos(mapped.map { it.toV2() })
                             dtos.size
                         }
                     })
@@ -475,12 +479,12 @@ class BackupManagerImpl @Inject constructor(
     /**
      * 校验备份 schemaVersion 上界：仅拒绝「未来未知版本」。
      *
-     * 拆库后当前库版本为 [AgentDatabase.SCHEMA_VERSION]（v1），但旧版备份可能携带旧单库 v49
-     * （[LegacyAgentDatabase.SCHEMA_VERSION]）的 schemaVersion——那同样可读可迁移，不能按当前
-     * v1 上界误拒。因此上界取「已知最大版本」，超过才拒绝。
+     * 历史备份可能携带旧版 schemaVersion（Room 时代 v49 / V2 六库版本）。上界取
+     * 「已知最大版本」（[AGENT_SCHEMA_VERSION] 与 [LEGACY_AGENT_SCHEMA_VERSION] 的较大者），
+     * 超过才拒绝，避免把可向下迁移的旧备份误拒。
      */
     private fun checkVersion(schemaVersion: Int) {
-        val maxKnown = maxOf(AgentDatabase.SCHEMA_VERSION, LegacyAgentDatabase.SCHEMA_VERSION)
+        val maxKnown = maxOf(AGENT_SCHEMA_VERSION, LEGACY_AGENT_SCHEMA_VERSION)
         if (schemaVersion > maxKnown) {
             error("备份的数据库版本 v$schemaVersion 高于本应用已知最大版本 v$maxKnown，请升级应用")
         }
@@ -494,17 +498,20 @@ class BackupManagerImpl @Inject constructor(
                 .onFailure { FileLogger.w("BackupMgr", "读取 workspacePath 失败(legacy)", it) }
                 .getOrDefault("")
             safeDaoSuspend("legacyUpsertSessions", Unit) {
-                chatSessionDao.upsertAll(snapshot.chatSessions.map { it.copy(workspacePath = currentWorkspacePath).toEntity() })
+                val mapped = snapshot.chatSessions.map { it.copy(workspacePath = currentWorkspacePath).toEntity() }
+                v2Agent.upsertAllSessions(mapped.map { it.toV2() })
             }
         }
         if (snapshot.agentMessages.isNotEmpty()) {
             safeDaoSuspend("legacyInsertMessages", Unit) {
-                agentMessageDao.insertAll(snapshot.agentMessages.map { it.toEntity() })
+                val mapped = snapshot.agentMessages.map { it.toEntity() }
+                v2Agent.insertAllMessages(mapped.map { it.toV2() })
             }
         }
         if (snapshot.todoItems.isNotEmpty()) {
             safeDaoSuspend("legacyUpsertTodos", Unit) {
-                todoItemDao.upsertAll(snapshot.todoItems.map { it.toEntity() })
+                val mapped = snapshot.todoItems.map { it.toEntity() }
+                v2Agent.upsertAllTodos(mapped.map { it.toV2() })
             }
         }
         return stats + RestoreStats(
@@ -518,22 +525,63 @@ class BackupManagerImpl @Inject constructor(
     private suspend fun restoreMeta(meta: BackupMetadata): RestoreStats {
         if (meta.providers.isNotEmpty()) {
             safeDaoSuspend("insertProviders", Unit) {
-                aiProviderDao.insertAllProviders(meta.providers.map { it.toEntity() })
+                meta.providers.forEach { p ->
+                    val encrypted = if (p.apiKey.isNotEmpty()) {
+                        runCatching { encryptor.encrypt(p.apiKey) }
+                            .onFailure { FileLogger.w(TAG, "restoreMeta 加密 apiKey 失败，encryptedApiKey 落库为空串") }
+                            .getOrDefault("")
+                    } else ""
+                    settingsRepo.saveProvider(
+                        id = p.id, name = p.name, type = p.type,
+                        encryptedApiKey = encrypted, baseUrl = p.baseUrl,
+                        defaultModel = p.selectedModel.ifBlank { p.defaultModel },
+                        isActive = p.isActive, models = p.models,
+                        isEnabled = p.isEnabled, useFullUrl = p.useFullUrl, useResponseApi = p.useResponseApi,
+                    )
+                }
             }
         }
         if (meta.gitCredentials.isNotEmpty()) {
             safeDaoSuspend("upsertGitCreds", Unit) {
-                gitCredentialDao.upsertAll(meta.gitCredentials.map { it.toEntity() })
+                meta.gitCredentials.forEach { c ->
+                    val encrypted = if (c.token.isNotEmpty()) {
+                        runCatching { encryptor.encrypt(c.token) }
+                            .onFailure { FileLogger.w(TAG, "restoreMeta 加密 git token 失败") }
+                            .getOrDefault("")
+                    } else ""
+                    credentialsRepo.upsertGitCredential(
+                        id = c.id, host = c.host, username = c.username,
+                        encryptedToken = encrypted, label = c.label,
+                        isDefault = if (c.isDefault) 1L else 0L,
+                        createdAtMs = c.createdAt, updatedAtMs = c.updatedAt,
+                    )
+                }
             }
         }
         if (meta.remoteConnections.isNotEmpty()) {
             safeDaoSuspend("insertRemoteConns", Unit) {
-                remoteConnectionDao.insertAllConnections(meta.remoteConnections.map { it.toEntity() })
+                meta.remoteConnections.forEach { c ->
+                    val isPwd = c.authType.equals("PASSWORD", ignoreCase = true)
+                    val authData = if (isPwd && c.authData.isNotEmpty()) encryptor.encrypt(c.authData) else c.authData
+                    val pass = c.passphrase?.takeIf { it.isNotBlank() }?.let { encryptor.encrypt(it) }
+                    v2WorkspaceRepository.upsertRemoteConnection(
+                        id = c.id, name = c.name, protocol = c.protocol, host = c.host,
+                        port = c.port.toLong(), username = c.username, authType = c.authType,
+                        authData = authData, passphrase = pass,
+                    )
+                }
             }
         }
         if (meta.remoteMounts.isNotEmpty()) {
             safeDaoSuspend("insertRemoteMounts", Unit) {
-                remoteConnectionDao.insertAllMounts(meta.remoteMounts.map { it.toEntity() })
+                meta.remoteMounts.forEach { m ->
+                    v2WorkspaceRepository.upsertRemoteMount(
+                        id = m.id, connectionId = m.connectionId, remotePath = m.remotePath,
+                        localMountPath = m.localMountPath,
+                        isActive = if (m.isActive) 1L else 0L,
+                        autoConnect = if (m.autoConnect) 1L else 0L,
+                    )
+                }
             }
         }
         if (meta.mcpServers.isNotEmpty()) {
@@ -576,6 +624,74 @@ class BackupManagerImpl @Inject constructor(
     private fun createTempFile(): File = File.createTempFile("backup", ".tmp", context.cacheDir)
 
     // ── Entity ↔ DTO 转换 ──────────────────────────────────────
+
+    private suspend fun com.R.codecore.datalayer.sqldelight.settings.Ai_providers.toV2Dto(): ProviderDto {
+        val resolvedKey = if (encrypted_api_key.isNotEmpty()) {
+            runCatching { encryptor.decrypt(encrypted_api_key) }
+                .onFailure { FileLogger.w(TAG, "toDto 解密 encrypted_api_key 失败，导出空串: ${it.message}") }
+                .getOrDefault("")
+        } else ""
+        return ProviderDto(
+            id = id,
+            name = name,
+            type = type,
+            apiKey = resolvedKey,
+            baseUrl = base_url,
+            defaultModel = default_model,
+            isActive = is_active == 1L,
+            models = models,
+            selectedModel = default_model,
+            isEnabled = is_enabled == 1L,
+            useFullUrl = use_full_url == 1L,
+            useResponseApi = use_response_api == 1L
+        )
+    }
+
+    private suspend fun com.R.codecore.datalayer.sqldelight.credentials.Git_credentials.toV2Dto(): GitCredentialDto {
+        val resolvedToken = if (encrypted_token.isNotEmpty()) {
+            runCatching { encryptor.decrypt(encrypted_token) }
+                .onFailure { FileLogger.w(TAG, "toDto GitCredential 解密 encrypted_token 失败：${it.message}") }
+                .getOrDefault("")
+        } else ""
+        return GitCredentialDto(
+            id = id,
+            host = host,
+            username = username,
+            token = resolvedToken,
+            label = label,
+            isDefault = is_default == 1L,
+            createdAt = created_at_ms,
+            updatedAt = updated_at_ms
+        )
+    }
+
+    private suspend fun com.R.codecore.datalayer.sqldelight.workspace.Remote_connections.toV2Dto(): RemoteConnectionDto {
+        val isPwd = auth_type.equals("PASSWORD", ignoreCase = true)
+        val resolvedAuthData: String = if (isPwd) {
+            try {
+                encryptor.decrypt(auth_data)
+            } catch (_: Throwable) {
+                auth_data
+            }
+        } else {
+            auth_data
+        }
+        val resolvedPassphrase: String? = if (!passphrase.isNullOrBlank()) {
+            try {
+                encryptor.decrypt(passphrase)
+            } catch (_: Throwable) {
+                passphrase
+            }
+        } else {
+            null
+        }
+        return RemoteConnectionDto(
+            id, name, protocol, host, port.toInt(), username, auth_type, resolvedAuthData, resolvedPassphrase
+        )
+    }
+
+    private fun com.R.codecore.datalayer.sqldelight.workspace.Remote_mounts.toV2Dto() =
+        RemoteMountDto(id, connection_id, remote_path, local_mount_path, is_active == 1L, auto_connect == 1L)
 
     private suspend fun AIProviderEntity.toDto(): ProviderDto {
         // RC68 SCHEMA 38 后：Entity 中已无 apiKey/selectedModel 列。
@@ -744,6 +860,63 @@ class BackupManagerImpl @Inject constructor(
         inputTokens = 0, outputTokens = 0, chunkGroupId = chunkGroupId, chunkIndex = chunkIndex
     )
 
+    // ── V2（SQLDelight）↔ Room Entity 映射 ──────────────────────────────
+
+    private fun V2AgentSession.toEntity() = ChatSessionEntity(
+        id = id, title = title ?: "",
+        createdAtMs = created_at, updatedAtMs = updated_at,
+        workspacePath = workspace_path, mode = mode, reasoningEffort = reasoning_effort,
+        providerId = provider_id, model = model,
+        totalInputTokens = total_input_tokens.toInt(),
+        totalOutputTokens = total_output_tokens.toInt(),
+        lastInputTokens = last_input_tokens.toInt()
+    )
+
+    private fun ChatSessionEntity.toV2() = V2AgentSession(
+        id = id, title = title, mode = mode, model = model, status = "active",
+        created_at = createdAtMs, updated_at = updatedAtMs,
+        workspace_path = workspacePath, reasoning_effort = reasoningEffort,
+        provider_id = providerId,
+        total_input_tokens = totalInputTokens.toLong(),
+        total_output_tokens = totalOutputTokens.toLong(),
+        last_input_tokens = lastInputTokens.toLong()
+    )
+
+    private fun V2AgentMessage.toEntity() = AgentMessageEntity(
+        id = id, sessionId = session_id, taskId = task_id, role = role, content = content,
+        timestamp = created_at, toolCallsJson = tool_calls_json, toolCallId = tool_call_id,
+        toolName = tool_name, toolArgs = tool_args, isError = is_error == 1L,
+        reasoning = reasoning, signature = signature, attachmentsJson = attachments_json,
+        isCompacted = is_compacted == 1L, isContextSummary = is_context_summary == 1L,
+        isCompactionMarker = is_compaction_marker == 1L,
+        inputTokens = input_tokens.toInt(), outputTokens = output_tokens.toInt(),
+        chunkGroupId = chunk_group_id, chunkIndex = chunk_index.toInt()
+    )
+
+    private fun AgentMessageEntity.toV2() = V2AgentMessage(
+        id = id, session_id = sessionId, role = role, seq = timestamp, created_at = timestamp,
+        task_id = taskId, content = content, tool_calls_json = toolCallsJson,
+        tool_call_id = toolCallId, tool_name = toolName, tool_args = toolArgs,
+        is_error = if (isError) 1L else 0L, reasoning = reasoning, signature = signature,
+        attachments_json = attachmentsJson, is_compacted = if (isCompacted) 1L else 0L,
+        is_context_summary = if (isContextSummary) 1L else 0L,
+        is_compaction_marker = if (isCompactionMarker) 1L else 0L,
+        input_tokens = inputTokens.toLong(), output_tokens = outputTokens.toLong(),
+        chunk_group_id = chunkGroupId, chunk_index = chunkIndex.toLong()
+    )
+
+    private fun V2TodoItem.toEntity() = TodoItemEntity(
+        id = id, sessionId = session_id, subject = subject, description = description,
+        status = status, priority = priority.toInt(), order = sort_order.toInt(),
+        createdAtMs = created_at_ms, updatedAtMs = updated_at_ms
+    )
+
+    private fun TodoItemEntity.toV2() = V2TodoItem(
+        id = id, session_id = sessionId, subject = subject, description = description,
+        status = status, priority = priority.toLong(), sort_order = order.toLong(),
+        created_at_ms = createdAtMs, updated_at_ms = updatedAtMs
+    )
+
     private fun TodoItemEntity.toDto() = TodoItemDto(
         id = id, sessionId = sessionId, subject = subject, description = description,
         status = status, priority = priority, order = order,
@@ -756,6 +929,8 @@ class BackupManagerImpl @Inject constructor(
     )
 
     private companion object {
+        private const val AGENT_SCHEMA_VERSION = 1
+        private const val LEGACY_AGENT_SCHEMA_VERSION = 49
         const val TAG = "BackupManagerImpl"
         const val PAGE_SIZE = 500
         const val FILE_METADATA = "metadata.json"

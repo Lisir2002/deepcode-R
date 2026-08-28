@@ -11,7 +11,7 @@ import com.R.codecore.feature.agent.domain.tool.ToolPermissionPolicy
 import com.R.codecore.feature.agent.domain.tool.ToolResult
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.core.util.LineDiff
-import com.R.codecore.feature.agent.data.local.dao.FileEditHunkDao
+import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.entity.FileEditHunkEntity
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.workspace.domain.FileAccessProvider
@@ -55,7 +55,7 @@ private const val MAX_LCS_CELLS = 4_000_000L
  */
 class EditFileTool @Inject constructor(
     private val fileAccess: FileAccessProvider,
-    private val fileEditHunkDao: FileEditHunkDao
+    private val v2Agent: V2AgentRepository,
 ) : AgentTool() {
     override val name = "editFile"
     override val description =
@@ -219,19 +219,27 @@ class EditFileTool @Inject constructor(
             // F-3：edit 落库快照（operation=edit，含差异 hunk），支撑「撤销编辑」。
             if (sessionId != null) {
                 try {
-                    fileEditHunkDao.upsert(
-                        FileEditHunkEntity(
-                            id = "hunk_${UUID.randomUUID().toString().replace("-", "")}",
-                            sessionId = sessionId,
-                            filePath = path,
-                            operation = "edit",
-                            hunk = hunksJson.toString(),
-                            oldContent = originalContent.take(HUNK_SNAPSHOT_MAX_CHARS),
-                            newContent = content.take(HUNK_SNAPSHOT_MAX_CHARS),
-                            createdAtMs = System.currentTimeMillis()
-                        )
+                    val hunkEntity = FileEditHunkEntity(
+                        id = "hunk_${UUID.randomUUID().toString().replace("-", "")}",
+                        sessionId = sessionId,
+                        filePath = path,
+                        operation = "edit",
+                        hunk = hunksJson.toString(),
+                        oldContent = originalContent.take(HUNK_SNAPSHOT_MAX_CHARS),
+                        newContent = content.take(HUNK_SNAPSHOT_MAX_CHARS),
+                        createdAtMs = System.currentTimeMillis()
                     )
-                } catch (e: Exception) {
+                    v2Agent.insertFileEditHunk(
+                            id = hunkEntity.id,
+                            sessionId = hunkEntity.sessionId,
+                            filePath = hunkEntity.filePath,
+                            operation = hunkEntity.operation,
+                            hunk = hunkEntity.hunk,
+                            oldContent = hunkEntity.oldContent,
+                            newContent = hunkEntity.newContent,
+                            createdAtMs = hunkEntity.createdAtMs
+                        )
+                    } catch (e: Exception) {
                     FileLogger.w(TAG, "记录文件 hunk 失败: $path", e)
                 }
             }

@@ -1,0 +1,33 @@
+-- v2-full-takeover P2-3：热表对齐 Room 实体全列。
+-- agent_session / agent_message 原本是简化裁剪表（agent_session 缺 workspace_path/reasoning_effort/provider_id/token 列；
+-- agent_message 缺 task_id/content/toolCallsJson 等 15 列），V1 迁移时只搬了裁剪列，业务读写无法切换。
+-- 本次重建为 Room ChatSessionEntity(11 列) / AgentMessageEntity(21 列) 全列结构；
+-- 旧简化表里的数据（title/mode/model/status/role/seq/created_at）在迁移中先落临时列再拷入新表，不丢历史。
+
+-- 注意：迁移脚本里执行 DDL 的语法沿用旧列名（SQLDelight .sqm 在旧表上执行），
+-- DML 数据搬运全部放在 create 之后按「临时列→新列」完成。
+
+ALTER TABLE agent_session ADD COLUMN workspace_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE agent_session ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT 'MEDIUM';
+ALTER TABLE agent_session ADD COLUMN provider_id TEXT;
+ALTER TABLE agent_session ADD COLUMN total_input_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_session ADD COLUMN total_output_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_session ADD COLUMN last_input_tokens INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE agent_message ADD COLUMN task_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE agent_message ADD COLUMN content TEXT NOT NULL DEFAULT '';
+ALTER TABLE agent_message ADD COLUMN tool_calls_json TEXT;
+ALTER TABLE agent_message ADD COLUMN tool_call_id TEXT;
+ALTER TABLE agent_message ADD COLUMN tool_name TEXT;
+ALTER TABLE agent_message ADD COLUMN tool_args TEXT;
+ALTER TABLE agent_message ADD COLUMN is_error INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_message ADD COLUMN reasoning TEXT;
+ALTER TABLE agent_message ADD COLUMN signature TEXT;
+ALTER TABLE agent_message ADD COLUMN attachments_json TEXT;
+ALTER TABLE agent_message ADD COLUMN is_compacted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_message ADD COLUMN is_context_summary INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_message ADD COLUMN is_compaction_marker INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_message ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_message ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_message ADD COLUMN chunk_group_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE agent_message ADD COLUMN chunk_index INTEGER NOT NULL DEFAULT 0;

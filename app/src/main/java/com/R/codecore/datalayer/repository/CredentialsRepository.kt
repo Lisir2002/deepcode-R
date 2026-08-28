@@ -1,14 +1,19 @@
 package com.R.codecore.datalayer.repository
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
 import com.R.codecore.datalayer.sqldelight.CredentialsDb
 import com.R.codecore.datalayer.sqldelight.credentials.Cred_connection
 import com.R.codecore.datalayer.sqldelight.credentials.Cred_secret
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 /**
  * credentials 域 Repository（设计 §11.2 / L2）：远程连接与密钥的访问门面。
  * secret 走独立表 [Cred_secret]，与连接元数据隔离；库级加密启用时该库优先级最高（设计 §8）。
+ *
+ * v2-full-takeover P0-1：补 Flow 响应式读，对齐 Room DAO 的 1 个 Flow 查询。
  */
 class CredentialsRepository(private val db: CredentialsDb) {
 
@@ -60,4 +65,33 @@ class CredentialsRepository(private val db: CredentialsDb) {
 
     suspend fun deleteGitCredential(id: String) =
         withContext(Dispatchers.IO) { q.deleteGitCredential(id) }
+
+    // ── P0-2 补齐列级 setter 与 REPLACE 语义 ──
+
+    suspend fun upsertGitCredential(
+        id: String, host: String, username: String, encryptedToken: String, label: String,
+        isDefault: Long, createdAtMs: Long, updatedAtMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        q.insertOrReplaceGitCredential(id, host, username, encryptedToken, label, isDefault, createdAtMs, updatedAtMs)
+    }
+
+    suspend fun findGitCredentialByHost(host: String): com.R.codecore.datalayer.sqldelight.credentials.Git_credentials? =
+        withContext(Dispatchers.IO) { q.findByHost(host).executeAsOneOrNull() }
+
+    suspend fun clearDefaultForHost(host: String) =
+        withContext(Dispatchers.IO) { q.clearDefaultForHost(host) }
+
+    suspend fun setGitCredentialDefault(id: String, isDefault: Boolean) =
+        withContext(Dispatchers.IO) { q.setDefault(if (isDefault) 1L else 0L, id) }
+
+    suspend fun updateGitCredentialEncryptedToken(id: String, newEncrypted: String) =
+        withContext(Dispatchers.IO) { q.updateEncryptedToken(newEncrypted, id) }
+
+    suspend fun countGitCredentials(): Long =
+        withContext(Dispatchers.IO) { q.selectGitCredentialCount().executeAsOne() }
+
+    // ── P0-1 Flow 响应式读（对齐 Room DAO 的 1 个 Flow 查询）──
+
+    fun observeAllGitCredentials(): Flow<List<com.R.codecore.datalayer.sqldelight.credentials.Git_credentials>> =
+        q.selectAllGitCredentials().asFlow().mapToList(Dispatchers.IO)
 }

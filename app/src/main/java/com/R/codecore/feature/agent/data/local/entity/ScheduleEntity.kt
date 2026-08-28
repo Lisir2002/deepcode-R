@@ -1,9 +1,5 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
 import com.R.codecore.core.util.EnumSafe
 
 /**
@@ -13,27 +9,20 @@ import com.R.codecore.core.util.EnumSafe
  *
  * 表名 agent_schedules，agent 库 v1→v2 新增（见 AgentDatabaseMigrations）。
  */
-@Entity(
-    tableName = "agent_schedules",
-    indices = [
-        Index(value = ["sessionId"]),
-        Index(value = ["status"]),
-        Index(value = ["enabled"])
-    ]
-)
+
 data class ScheduleEntity(
-    @PrimaryKey val scheduleId: String,
+     val scheduleId: String,
     val sessionId: String,
     /** [ScheduleRule] 名称。 */
     val rule: String,
     /** 规则参数的 JSON 序列化（{delayMs}/{atMs}/{intervalMs}）。 */
-    @ColumnInfo(defaultValue = "''")
+    
     val args: String = "",
     /** [ScheduleStatus] 名称。 */
-    @ColumnInfo(defaultValue = "'PENDING'")
+    
     val status: String = ScheduleStatus.PENDING.name,
     /** 是否启用（Boolean 存 INTEGER：1 启用 / 0 停用）。 */
-    @ColumnInfo(defaultValue = "1")
+    
     val enabled: Int = 1,
     /** 创建时间毫秒。 */
     val createdAtMs: Long,

@@ -1,14 +1,42 @@
--- t2i 域 v1 schema（设计文档 §11.5）
+-- t2i 域 v2 schema（设计文档 §11.5）
 -- 生成类：T2iDb / T2iQueries
+--
+-- v2-full-takeover P2-2：t2i_task 结构对齐 Room T2ITaskEntity（30 列全集），
+-- 使 V2 可完整接管任务表读写，业务读源切 V2 后行为与 Room 版完全一致。
 
 CREATE TABLE t2i_task (
-  id          TEXT    NOT NULL PRIMARY KEY,
-  prompt      TEXT    NOT NULL,
-  params_json TEXT,
-  status      TEXT    NOT NULL,
-  created_at  INTEGER NOT NULL,
-  updated_at  INTEGER NOT NULL
+  id                  TEXT    NOT NULL PRIMARY KEY,
+  session_id          TEXT    NOT NULL,
+  message_id          TEXT    NOT NULL DEFAULT '',
+  prompt              TEXT    NOT NULL,
+  negative_prompt     TEXT    NOT NULL DEFAULT '',
+  width               INTEGER NOT NULL DEFAULT 1024,
+  height              INTEGER NOT NULL DEFAULT 1024,
+  steps               INTEGER NOT NULL DEFAULT 30,
+  seed                INTEGER NOT NULL DEFAULT 0,
+  hd                  INTEGER NOT NULL DEFAULT 0,
+  provider_id         TEXT    NOT NULL,
+  model_id            TEXT    NOT NULL,
+  provider_ref        TEXT    NOT NULL DEFAULT '',
+  endpoint_mode_ref   TEXT    NOT NULL DEFAULT '',
+  status              TEXT    NOT NULL DEFAULT 'PENDING',
+  image_path          TEXT    NOT NULL DEFAULT '',
+  thumbnail_path      TEXT    NOT NULL DEFAULT '',
+  remote_task_id      TEXT    NOT NULL DEFAULT '',
+  progress_percent    INTEGER NOT NULL DEFAULT 0,
+  retry_count         INTEGER NOT NULL DEFAULT 0,
+  max_retries         INTEGER NOT NULL DEFAULT 3,
+  error_code          TEXT    NOT NULL DEFAULT '',
+  error_message       TEXT    NOT NULL DEFAULT '',
+  permission_decision TEXT    NOT NULL DEFAULT '',
+  quota_deducted_tokens INTEGER NOT NULL DEFAULT 0,
+  created_at_ms       INTEGER NOT NULL DEFAULT 0,
+  updated_at_ms       INTEGER NOT NULL DEFAULT 0,
+  completed_at_ms     INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX idx_t2i_tasks_session_created ON t2i_task (session_id, created_at_ms DESC);
+CREATE INDEX idx_t2i_tasks_status ON t2i_task (status);
+CREATE INDEX idx_t2i_tasks_message ON t2i_task (message_id);
 
 CREATE TABLE t2i_result (
   id          TEXT    NOT NULL PRIMARY KEY,
@@ -22,19 +50,65 @@ CREATE TABLE t2i_result (
 );
 CREATE INDEX t2i_result_task_idx ON t2i_result (task_id);
 
--- ── queries ──
-insertTask:
-INSERT INTO t2i_task (id, prompt, params_json, status, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?);
+-- ── 任务查询（对齐 Room T2ITaskDao 全集）──
 
-updateTaskStatus:
-UPDATE t2i_task SET status = ?, updated_at = ? WHERE id = ?;
+insertTask:
+INSERT INTO t2i_task (id, session_id, message_id, prompt, negative_prompt, width, height, steps, seed, hd, provider_id, model_id, provider_ref, endpoint_mode_ref, status, image_path, thumbnail_path, remote_task_id, progress_percent, retry_count, max_retries, error_code, error_message, permission_decision, quota_deducted_tokens, created_at_ms, updated_at_ms, completed_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- P0-2：对齐 Room `@Insert(onConflict = REPLACE)` 语义。
+insertOrReplaceTask:
+INSERT OR REPLACE INTO t2i_task (id, session_id, message_id, prompt, negative_prompt, width, height, steps, seed, hd, provider_id, model_id, provider_ref, endpoint_mode_ref, status, image_path, thumbnail_path, remote_task_id, progress_percent, retry_count, max_retries, error_code, error_message, permission_decision, quota_deducted_tokens, created_at_ms, updated_at_ms, completed_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectTaskById:
 SELECT * FROM t2i_task WHERE id = ?;
 
+selectTasksBySession:
+SELECT * FROM t2i_task WHERE session_id = ? ORDER BY created_at_ms DESC;
+
+selectTaskByMessageId:
+SELECT * FROM t2i_task WHERE message_id = ?;
+
 selectAllTasks:
-SELECT * FROM t2i_task ORDER BY updated_at DESC;
+SELECT * FROM t2i_task ORDER BY updated_at_ms DESC;
+
+-- 崩溃恢复扫描：PENDING / RUNNING / PENDING_RETRY 且更新于 cutoff 之前。
+selectDanglingTasks:
+SELECT * FROM t2i_task WHERE status IN ('PENDING','RUNNING','PENDING_RETRY') AND updated_at_ms < ? ORDER BY updated_at_ms ASC;
+
+updateTaskStatus:
+UPDATE t2i_task SET status = ?, updated_at_ms = ? WHERE id = ?;
+
+updateTaskStatusAndProgress:
+UPDATE t2i_task SET status = ?, progress_percent = ?, updated_at_ms = ? WHERE id = ?;
+
+markTaskSuccess:
+UPDATE t2i_task SET status = 'SUCCESS', image_path = ?, thumbnail_path = ?, progress_percent = 100, completed_at_ms = ?, updated_at_ms = ? WHERE id = ?;
+
+markTaskFailedOrRetry:
+UPDATE t2i_task SET status = ?, error_code = ?, error_message = ?, retry_count = ?, updated_at_ms = ? WHERE id = ?;
+
+setTaskRemoteId:
+UPDATE t2i_task SET remote_task_id = ?, updated_at_ms = ? WHERE id = ?;
+
+setTaskPermissionDecision:
+UPDATE t2i_task SET permission_decision = ?, quota_deducted_tokens = ?, updated_at_ms = ? WHERE id = ?;
+
+deleteTask:
+DELETE FROM t2i_task WHERE id = ?;
+
+deleteTasksBySession:
+DELETE FROM t2i_task WHERE session_id = ?;
+
+sumDeductedTokensSince:
+SELECT COALESCE(SUM(quota_deducted_tokens), 0) FROM t2i_task WHERE created_at_ms >= ? AND status IN ('SUCCESS','FAILED');
+
+sumDeductedTokensForSession:
+SELECT COALESCE(SUM(quota_deducted_tokens), 0) FROM t2i_task WHERE session_id = ? AND status IN ('SUCCESS','FAILED');
+
+countSuccessfulImagesSince:
+SELECT COUNT(*) FROM t2i_task WHERE created_at_ms >= ? AND status = 'SUCCESS';
 
 insertResult:
 INSERT INTO t2i_result (id, task_id, blob_ref, seed, width, height, seq)
@@ -42,9 +116,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?);
 
 selectResultsByTask:
 SELECT * FROM t2i_result WHERE task_id = ? ORDER BY seq ASC;
-
-deleteTask:
-DELETE FROM t2i_task WHERE id = ?;
 
 -- ── 旧 Room t2i 域补表（阶段 1）──
 
@@ -89,6 +160,10 @@ insertT2iProvider:
 INSERT INTO t2i_providers (id, name, type, base_url, encrypted_api_key, endpoint_mode, is_active, priority, is_enabled, extra_headers_json, created_at_ms, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+insertOrReplaceT2iProvider:
+INSERT OR REPLACE INTO t2i_providers (id, name, type, base_url, encrypted_api_key, endpoint_mode, is_active, priority, is_enabled, extra_headers_json, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 selectT2iProviderById:
 SELECT * FROM t2i_providers WHERE id = ?;
 
@@ -101,11 +176,27 @@ SELECT * FROM t2i_providers WHERE is_active = 1 LIMIT 1;
 deactivateAllT2iProviders:
 UPDATE t2i_providers SET is_active = 0;
 
+setT2iProviderActive:
+UPDATE t2i_providers SET is_active = 1 WHERE id = ?;
+
+setT2iProviderEnabled:
+UPDATE t2i_providers SET is_enabled = ?, updated_at_ms = ? WHERE id = ?;
+
+setT2iProviderEndpointMode:
+UPDATE t2i_providers SET endpoint_mode = ?, updated_at_ms = ? WHERE id = ?;
+
+updateT2iProviderEncryptedApiKey:
+UPDATE t2i_providers SET encrypted_api_key = ?, updated_at_ms = ? WHERE id = ?;
+
 deleteT2iProvider:
 DELETE FROM t2i_providers WHERE id = ?;
 
 insertT2iProviderModel:
 INSERT INTO t2i_provider_models (id, provider_id, model_id, display_name, supports_hd, supports_inpaint, default_width, default_height, max_steps, default_steps, cost_per_image_tokens, created_at_ms, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertOrReplaceT2iProviderModel:
+INSERT OR REPLACE INTO t2i_provider_models (id, provider_id, model_id, display_name, supports_hd, supports_inpaint, default_width, default_height, max_steps, default_steps, cost_per_image_tokens, created_at_ms, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectT2iModelsByProvider:

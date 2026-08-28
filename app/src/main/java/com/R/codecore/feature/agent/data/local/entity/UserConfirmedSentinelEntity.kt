@@ -1,9 +1,5 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
 /**
  * ZTH 核心：用户已确认 sentinel 明细（C.4.1/C.4.3/C.4.6 LINK-INV-1 主表）。
  *
@@ -15,16 +11,9 @@ import androidx.room.PrimaryKey
  * 必须经 ZthSensitiveColumnCrypto.encrypt() Keystore AES-GCM 写（C.4.8 最严格模式），
  * Room 永远不存明文。
  */
-@Entity(
-    tableName = "zth_user_confirmed_sentinels",
-    indices = [
-        Index(value = ["sessionId"]),
-        Index(value = ["chainId"]),
-        Index(value = ["createdAtMs"])
-    ]
-)
+
 data class UserConfirmedSentinelEntity(
-    @PrimaryKey(autoGenerate = false)
+    
     val id: String,
     /** 所属会话；C.4.6 session 级 fuse 隔离 → 查询过滤此字段。 */
     val sessionId: String,
