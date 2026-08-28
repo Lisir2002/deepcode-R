@@ -1,8 +1,5 @@
 package com.R.codecore.core.db.entity
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-
 /**
  * 单行配置表 (id 恒 =1)。所有加密状态（DEK、轮换、生物识别开关）集中存储，避免散落在 Preferences。
  * 迁移自 `feature.workspace.data.local.entity.CredentialEncryptionStateEntity`（RC68 包归位：跨 feature.* 共享的
@@ -11,10 +8,10 @@ import androidx.room.PrimaryKey
  * 由 [CredentialEncryptor.ensureInitialized] 在首次加密/解密前写入第一行。
  * 后续每次轮换或生物识别切换时 upsert 更新。
  */
-@Entity(tableName = "credential_encryption_state")
+
 data class CredentialEncryptionStateEntity(
     /** 永远 =1；SCHEMA 38 迁移 DDL 增加 `CHECK(id=1)` 保证单行。 */
-    @PrimaryKey val id: Int = 1,
+     val id: Int = 1,
 
     /** MasterKey 的公参 SHA-256 指纹，用于检测 Keystore 主密钥被重置（≠存值时判异常重置）。 */
     val masterKeyFingerprint: String,

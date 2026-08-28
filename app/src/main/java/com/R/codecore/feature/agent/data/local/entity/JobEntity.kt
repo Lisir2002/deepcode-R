@@ -1,9 +1,5 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
 import com.R.codecore.core.util.EnumSafe
 
 /**
@@ -13,27 +9,21 @@ import com.R.codecore.core.util.EnumSafe
  *
  * 表名 agent_jobs，agent 库 v1→v2 新增（见 AgentDatabaseMigrations）。
  */
-@Entity(
-    tableName = "agent_jobs",
-    indices = [
-        Index(value = ["sessionId"]),
-        Index(value = ["status"])
-    ]
-)
+
 data class JobEntity(
-    @PrimaryKey val jobId: String,
+     val jobId: String,
     val sessionId: String,
     /** 任务类型：如 container（容器命令）/ ssh（远程命令）。 */
     val kind: String,
     /** 人类可读标题（展示/日志用）。 */
     val title: String,
     /** [JobStatus] 名称。 */
-    @ColumnInfo(defaultValue = "'RUNNING'")
+    
     val status: String = JobStatus.RUNNING.name,
     /** 退出码：null 表示未知/未结束（进程被回收等）。 */
     val exitCode: Int? = null,
     /** 输出定位器（如日志文件路径 / 内存缓冲区 key）；空串表示无独立输出。 */
-    @ColumnInfo(defaultValue = "''")
+    
     val outputLocator: String = "",
     /** 创建时间毫秒。 */
     val createdAtMs: Long,

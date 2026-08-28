@@ -1,9 +1,5 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-
 /**
  * 统一唤醒队列（WakeQueue，SCHEMA v48 新增）。
  *
@@ -22,28 +18,28 @@ import androidx.room.PrimaryKey
  * @param status 队列状态：[STATUS_PENDING] 待注入 / [STATUS_CONSUMED] 已注入。
  * @param createdAtMs 入队时间（毫秒）。
  */
-@Entity(tableName = "wake_queue")
+
 data class WakeItemEntity(
-    @PrimaryKey
-    @ColumnInfo(name = "wake_id")
+    
+    
     val wakeId: String,
 
-    @ColumnInfo(name = "session_id")
+    
     val sessionId: String,
 
-    @ColumnInfo(name = "source")
+    
     val source: String,
 
-    @ColumnInfo(name = "type")
+    
     val type: String,
 
-    @ColumnInfo(name = "content")
+    
     val content: String,
 
-    @ColumnInfo(name = "status")
+    
     val status: String,
 
-    @ColumnInfo(name = "created_at_ms")
+    
     val createdAtMs: Long
 ) {
     companion object {

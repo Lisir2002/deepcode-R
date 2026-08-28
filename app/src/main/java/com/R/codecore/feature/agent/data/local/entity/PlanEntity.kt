@@ -1,9 +1,5 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
 import com.R.codecore.core.util.EnumSafe
 
 /**
@@ -13,25 +9,19 @@ import com.R.codecore.core.util.EnumSafe
  *
  * 表名 agent_plans，agent 库 v1→v2 新增（见 AgentDatabaseMigrations）。
  */
-@Entity(
-    tableName = "agent_plans",
-    indices = [
-        Index(value = ["sessionId"]),
-        Index(value = ["status"])
-    ]
-)
+
 data class PlanEntity(
-    @PrimaryKey val planId: String,
+     val planId: String,
     val sessionId: String,
     val title: String,
     /** steps 的 JSON 数组序列化（[ {text, status} ]），设计为 TEXT。 */
-    @ColumnInfo(defaultValue = "''")
+    
     val steps: String = "",
     /** [PlanStatus] 名称。 */
-    @ColumnInfo(defaultValue = "'DRAFT'")
+    
     val status: String = PlanStatus.DRAFT.name,
     /** 用户尚未批准的待定选择（注入 pre-step 用）；空串表示无待定项。 */
-    @ColumnInfo(defaultValue = "''")
+    
     val pendingSelection: String = "",
     /** 创建时间毫秒。 */
     val createdAtMs: Long,

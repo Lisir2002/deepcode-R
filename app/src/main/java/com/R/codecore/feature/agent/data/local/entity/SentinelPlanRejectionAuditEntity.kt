@@ -1,22 +1,12 @@
 package com.R.codecore.feature.agent.data.local.entity
 
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
 /**
  * C.4.3 LINK-INV 审计：用户按 REJECT/MODIFY 的决策记录（Plan 被拒绝时强制写 1 条）。
  * 用于 C.4.17 ZTH DevMenu 第 3 页「拒绝决策追溯」。
  */
-@Entity(
-    tableName = "zth_sentinel_plan_rejection_audits",
-    indices = [
-        Index(value = ["sentinelId"]),
-        Index(value = ["createdAtMs"])
-    ]
-)
+
 data class SentinelPlanRejectionAuditEntity(
-    @PrimaryKey(autoGenerate = false)
+    
     val id: String,
     /** 外键 → zth_user_confirmed_sentinels.id。 */
     val sentinelId: String,
