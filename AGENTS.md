@@ -45,7 +45,7 @@ R-CodeCore 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 | 构建 | Android Gradle Plugin 8.9.3 + KSP |
 | UI | Jetpack Compose（BOM 2025.12.01）+ Material 3 |
 | 依赖注入 | Hilt 2.56.1 (Dagger) |
-| 数据库 | Room 2.7.1（按域拆库：agent / settings / credentials / workspace / t2i 五库；agent 库已独立演进至 v4，其余各 v1 全新；旧单库经 LegacyAgentDatabase 一次性移植） |
+| 数据库 | SQLDelight 2.2.1（6 库拓扑，`datalayer/`；SQLCipher 加密读写）；旧 Room 数据层已完全移除 |
 | 网络 | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
 | 终端 | Termux terminal-emulator + terminal-view（JNI libtermux.so） |
 | 容器 | PRoot + Alpine Linux 3.21 rootfs（arm64-v8a / x86_64 双架构，运行时按宿主选择） |
@@ -203,46 +203,22 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 
 ## 数据库与迁移
 
-数据层已按域拆库（数据层重构「新写法」）：5 个独立 Room 库，各归属其 feature 模块，v1 起全新、无历史迁移链（agent 库已独立演进至 v4，其余库仍 v1）——
+数据层为 **SQLDelight V2 六库拓扑**（`datalayer/`），旧 Room 数据层（世代0 巨型单库 `LegacyAgentDatabase`、世代1 按域拆 5 库、全部 DAO/`@Entity` 注解/迁移基建/Room gradle 依赖）已从程序**完全剔除**。
 
-| 库 | 文件 | 表 |
-|---|---|---|
-| agent | `feature/agent/data/local/database/AgentDatabase.kt` | 消息/会话/todo/checkpoint/skill/wake/zth 等 23 表（含任务编排层 Goal/Plan/Job/Schedule + 运行轨迹 + 剧本运行） |
-| settings | `feature/settings/data/local/database/SettingsDatabase.kt` | `ai_providers` |
-| credentials | `feature/credentials/data/local/database/CredentialsDatabase.kt` | `git_credentials` |
-| workspace | `feature/workspace/data/local/database/WorkspaceDatabase.kt` | remote_connections / remote_mounts / remote_audit_logs / credential_encryption_state |
-| t2i | `feature/t2i/data/local/database/T2IDatabase.kt` | t2i_providers / t2i_provider_models / t2i_tasks |
+**V2 分层**：
+- L0 引擎 `datalayer/engine`：ConnectionPool + Plain/CipherDriverFactory（Cipher 即 SQLCipher 加密读写）。
+- L1 迁移 `datalayer/migration`：MigrationEngine / HeavyMigration / CodeMigration（必须保留）。
+- L2 门面 `datalayer/repository/*`：`AgentRepository`（业务聚合）+ 泛型 KV / Document / Queue / Blob / TimeSeries store。
+- DI：`datalayer/di/DataLayerModule.kt` 独立提供全部 V2 driver / 6 库 / 仓储（不依赖任何旧数据层）。
+- SQL 定义：`app/src/main/sqldelight/<域>/`，查询类/数据类落在 `com.R.codecore.datalayer.sqldelight.*`。
 
-**数据库迁移（一次性移植）**：旧单巨库（`LegacyAgentDatabase`，v49 + 全迁移链）仅保留用于读取旧文件 `rcodecore_agent_db`。启动时 `DbSplitMigrator.migrateIfNeeded` 检测「旧文件存在 && 移植标记未置位」→ 逐表拷贝到新 5 库 → 旧文件改名 `rcodecore_agent_db.migrated.v49` 留底 → 置位标记（幂等，只跑一次，失败下次启动自动重试）。新库 v1 起无历史迁移链，各库独立演进：agent 库已 v1→v2（任务编排层表）→v3（运行轨迹表）→v4（Playbook 剧本运行表）四版，其余库仍 v1。若未来仍需为老库补迁移（仅历史读取场景），沿用 `MigrationLoader` 文件驱动迁移：迁移 SQL 放 `app/src/main/assets/migrations/`，⚠️ 语句按 `;` 切分，SQL 字面量中不得出现 `;`（用 `char(59)`）。
+**数据访问**：业务读写全部经 `datalayer/repository` 门面；`data/local/entity/*.kt` 为纯 Kotlin data class（已剥离 Room 注解），仅当 DTO 被领域/UI/Firebase 层复用（如 `V2Xxx.toEntity()`、Backup 的 `toDto/toEntity`）。
 
-**数据注册表（备份/恢复单一事实源）**：`core/data/DataRegistry` 枚举全应用数据域（32 张 Room 表 + DataStore 目录），备份/恢复/自动迁移统一经它全量导出/导入（见 [docs/modules/core.md](./docs/modules/core.md) 与 [docs/modules/backup.md](./docs/modules/backup.md)）。
+**一次性移植（旧 Room → V2）**：`core/db/V1toV2FullMigrator`（纯 `SQLiteDatabase.openDatabase`+游标，不依赖 Room）启动时把旧 5 个 Room 域库的数据搬到 V2 库（幂等，只跑一次，失败下次启动重试）。旧库文件历史数据由 `MigrationEngine` 的既有 SQLDelight 迁移链承接。
 
-### V2 (SQLDelight) 数据层接管 & 移除旧 Room（重建进行中，分支 `refactor/v2-full-cleanup`）
+**备份/恢复**：`core/data/DataRegistry`（经 `datalayer/backup/SqlDelightDataProvider` 连 V2 driver，DataRegistryModule 提供）+ `feature/backup/data/BackupManagerImpl` 全量导出/导入。
 
-三代数据层路线：Room 世代0 巨型单库（`LegacyAgentDatabase` v49）→ Room 世代1（按域拆 5 库）→ **V2（SQLDelight 6 库，`datalayer/sqldelight`/`datalayer/repository` 门面）**。当前业务读写已全部走 V2，正在把旧 Room 完全从程序剔除（双路径 → 纯 V2）。
-
-**V2 分层**：L0 引擎（`datalayer/engine`：ConnectionPool/Plain& CipherDriverFactory）· L1 迁移（`MigrationEngine`/`CodeMigration`）· L2 门面（`datalayer/repository/*`：AgentRepository + 泛型 KV/Document/Queue/Blob/TimeSeries store）。`datalayer/di/DataLayerModule.kt` 提供全部 V2 仓储（Hilt @Provides），如 `provideWorkspaceRepository(db)`。
-
-**去双路径通用模式**：删 `readMode` 构造参数、删 `private suspend fun isV2()`，保留 `if(isV2()) V2分支 else ROOM分支` 的 V2 分支、删 else；未用 import 可保留（无 allWarningsAsErrors）。`DataReadMode/DataReadModeHolder/V2TakeoverGate` 仍保留（供再阅），待最后清理。
-
-**已完成（CI 每批验证通过）**：
-- 第2步去双路径：约 46 文件 / 235 调用点全部纯 V2，已删全部 `isV2()/currentModeSync/readMode.currentMode()`（业务代码）。
-- 第3步·迁移器与依赖：`V1toV2FullMigrator` 读端重写为纯 `SQLiteDatabase.openDatabase`+游标（5 旧库 18+ 表），不再依赖 Room；`AndroidV1RowCountProvider` 改 SQLite 直读；`BackupManagerImpl` 去掉 6 个 Room DAO 构造依赖，metadata 4 表改走 V2 repo，schema 版本内联为 companion 常量。
-- 第3步·死代码清除：删除 `AIProviderRepositoryImpl`/`CredentialRepositoryImpl`/`T2IRepositoryRoomImpl`（Hilt 均绑定 V2 impl，Room 版从未被注入）、`V1toV2MigrationWorker`/`CredentialRotationWorker`（无 WorkManager 调度点）。
-- 第3步·Zth 去 DAO：`ZthConfirmationCardManager` 去掉 fuseDao/sentinelDao/rejectionAuditDao，改用 V2 `AgentRepository`（`getFuseVersion`+`upsertFuse`+`casUpdateFuseState` 保 CAS 语义；`insertSentinel`/`insertRejectionAudit`），id 格式由 `composeSessionId`/`composeSentinelId` 内联保持 `SESSION:$id` / `$sessionId:$chainId:$chainIndex` 兼容既有数据。`ZthConfirmationCardRepository` 本就纯 V2（无 DAO）。
-
-**里程碑达成：生产代码零活 DAO 消费者**（RepositoryModule 的 AIProvider/Credential/T2I 绑定全为 V2 impl；唯一活 DAO 使用者 ZthConfirmationCardManager 已迁移）。
-
-**待续：物理删除 Room 骨架（须一次原子批完成，无法增量拆分）**
-1. **删文件**：`di/DatabaseModule.kt`+5 个 `feature/*/data/local/database/*Database.kt`+`LegacyAgentDatabase`+`AgentDatabaseMigrations`+全部 `/*Dao.kt`（agent 域 30+ 个已无业务消费者）+`core/db` 的 `DbSplitMigrator/MigrationLoader/LightweightSchemaRescue`+`DataRegistryModule`（注意保留 `datalayer/migration` 的 V2 `MigrationEngine/HeavyMigration/CodeMigration`）。
-2. **删后联锁 V2 backup**：`DataRegistryModule` 现以 5 个 Room Database 底层 driver 喂 `SqlDelightDataProvider.create(...)`（V2 backup/DataRegistry 连接点）——删 Room DB 须改为直接用 V2 `ConnectionPool`/driver factory 提供，属跨 Room+V2 的联锁替换。
-3. **改 `AIEditorApp.kt`**：去掉 5 个 Database 字段注入与完整性检查，**保留** `v1toV2FullMigrator.migrateIfNeeded()`（已纯 SQLite）。
-4. **剥离 Entity 注解**：领域层/UI/Firebase 同步依然把 Room Entity 当 DTO 用（如 `V2AgentGoal.toEntity()`→`GoalEntity`、Backup 的 `toDto/toEntity`、Zth 同步 DTO）——因此**把全部 Room `@Entity` 改为纯 Kotlin data class**（删 `@Entity/@ColumnInfo/@PrimaryKey/@Index` 与 `import androidx.room.*`，compose helper 保留），而非全量换成 V2 类型（风险低、改动机械）。注意顺序：剥离注解必须在删 DB/DAO 之后，否则 DB/DAO 因「非 @Entity」报错。
-5. **gradle**：移除 `app/build.gradle.kts` 的 `room-runtime/room-ktx`、`ksp`+`room-compiler` 与 `ksp { arg("room.schemaLocation"...) }`、schema 目录（`schemas/**` 及 roomExportSchema 产物）。
-
-**迁移器改造易错点**：SQLite 游标取值列名必须与 Room schema JSON（`app/src/main/.../schemas/**/N.json`）精确一致；`SQLiteDatabase.query(table)` 无单参重载，须用 `rawQuery("SELECT * FROM t", null)`；`data class` 只允许一个 `companion object`；`port` 等跨层类型要显式 `toInt()/toLong()`（V2 用 `Long`、备份 DTO 用 `Int`）。
-
-**迁移器改造易错点**：SQLite 游标取值列名必须与 Room schema JSON（`app/src/main/.../schemas/**/N.json`）精确一致；`SQLiteDatabase.query(table)` 无单参重载，须用 `rawQuery("SELECT * FROM t", null)`；`data class` 只允许一个 `companion object`，否则常量全 unresolved；`port` 等跨层类型要显式 `toInt()/toLong()`（V2 用 `Long`、备份 DTO 用 `Int`）。
+**迁移器改造易错点**：SQLite 游标取值列名必须与旧库实际建表列精确一致；`SQLiteDatabase.query(table)` 无单参重载，须用 `rawQuery("SELECT * FROM t", null)`；`data class` 只允许一个 `companion object`，否则常量全 unresolved；`port` 等跨层类型要显式 `toInt()/toLong()`（V2 用 `Long`、备份 DTO 用 `Int`）。
 
 ## 常见坑
 
@@ -265,10 +241,9 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 | `docs/plan-docs/` | 设计文档目录（架构/功能设计方案，命名 `<名称>-design.md`） |
 | `docs/modules/README.md` | 模块文档索引（每模块一份文档） |
 | `app/build.gradle.kts` | 构建配置 + 版本号动态推导（勿手写 versionName） |
-| `app/src/main/java/com/R/codecore/feature/agent/data/local/database/AgentDatabase.kt` | agent 域独立库（v4）+ `LegacyAgentDatabase.kt`（旧单库 v49 只读，一次性移植源） |
-| `app/src/main/java/com/R/codecore/core/db/DbSplitMigrator.kt` | 旧单库 → 新 5 域库的一次性移植器（幂等、只跑一次） |
-| `app/src/main/java/com/R/codecore/core/data/DataRegistry.kt` | 数据注册表（备份/恢复/自动迁移的单一事实源，枚举 32 表 + DataStore） |
-| `app/src/main/assets/migrations/` | 老库历史迁移 SQL（仅 `LegacyAgentDatabase` 读取旧数据用） |
+| `app/src/main/java/com/R/codecore/datalayer/repository/AgentRepository.kt` | V2 数据门面（`AgentRepository` 业务聚合 + `data/local/entity/*.kt` 纯 DTO，DOMAIN/UI/Firebase 复用） |
+| `app/src/main/java/com/R/codecore/core/db/V1toV2FullMigrator.kt` | 旧 Room 域库 → V2 一次性移植器（纯 SQLite，幂等，只跑一次） |
+| `app/src/main/java/com/R/codecore/core/data/DataRegistry.kt` | 数据注册表（备份/恢复单一事实源，经 `datalayer/backup/SqlDelightDataProvider` 连 V2） |
 | `app/src/main/assets/prompts/` | 系统提示词资产（AI 行为来源，随工作流同步） |
 | `app/src/main/assets/docs/` | 用户使用文档资产（运行时「设置 → 帮助」） |
 | `app/src/main/java/com/R/codecore/AIEditorApp.kt` | Application 入口（核心服务初始化） |
