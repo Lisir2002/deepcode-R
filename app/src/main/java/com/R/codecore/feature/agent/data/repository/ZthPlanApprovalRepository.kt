@@ -1,8 +1,6 @@
 package com.R.codecore.feature.agent.data.repository
 
 import com.R.codecore.core.security.ZthSensitiveColumnCrypto
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.entity.HardConstraintDeleteAuditEntity
 import java.util.UUID
@@ -12,7 +10,6 @@ import javax.inject.Singleton
 /**
  * C.4.5 PlanApproval + C.4.11 LINK-INV 删除审计 Repository。
  *
- * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  *
  * 两个独立子功能：
  *   1) HardConstraintDeleteAuditDao：写「AI 删除了用户保留行/sentinel/checkpoint」审计

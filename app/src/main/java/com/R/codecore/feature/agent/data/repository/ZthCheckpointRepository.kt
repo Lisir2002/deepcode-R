@@ -1,7 +1,5 @@
 package com.R.codecore.feature.agent.data.repository
 
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.entity.CheckpointEntity
 import com.R.codecore.feature.agent.data.local.entity.CheckpointFileSnapshotEntity
@@ -11,7 +9,6 @@ import javax.inject.Singleton
 /**
  * C.4.12 Context Checkpoint Repository（四方联动第 4 方；薄封装 DAO）。
  *
- * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  *
  * 职责：
  *   prePlan：为「AI 即将写代码」创建 checkpoint（含所有要修改文件的 hash 快照）

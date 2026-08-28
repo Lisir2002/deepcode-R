@@ -1,7 +1,5 @@
 package com.R.codecore.feature.agent.data.repository
 
-import com.R.codecore.datalayer.DataReadMode
-import com.R.codecore.datalayer.DataReadModeHolder
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.data.local.entity.L0SoftCompactRestoreLogEntity
 import com.R.codecore.feature.agent.domain.zth.ZthCapabilityAuditResult
@@ -12,7 +10,6 @@ import javax.inject.Singleton
 /**
  * C.4.9 CapabilityGuard + C.3.1 L0 压缩 审计 Repository。
  *
- * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  *
  * 两个独立子功能（不同表，不共享事务）：
  *   1) CapabilityGuard auditBatch 结果 → 转 Telemetry 事件（调用 ZthTelemetryRepository）

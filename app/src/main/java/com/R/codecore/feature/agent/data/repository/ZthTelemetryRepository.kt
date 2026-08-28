@@ -11,7 +11,6 @@ import javax.inject.Singleton
 /**
  * C.4.16 埋点 Repository（薄封装 DAO；无业务判断）。
  *
- * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  *
  * 14 指标写入路径（eventKind 枚举严格 5 大类）：
  *   FUSE       → 熔断 OPEN / HALF_OPEN / kill-switch-1 激活

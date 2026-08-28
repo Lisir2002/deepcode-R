@@ -12,7 +12,6 @@ import javax.inject.Singleton
 /**
  * C.4.6 熔断 Repository（薄封装 HallucinationFuseDao）。
  *
- * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  * 业务逻辑（计数 / 冷却 / CAS 迁移 / kill-switch）在 [ZthCircuitBreakerManager]，
  * 这里只提供：
  *   - 供 Phase 4.2 SyncManager 拉/推的 getAllOnce / upsertAll

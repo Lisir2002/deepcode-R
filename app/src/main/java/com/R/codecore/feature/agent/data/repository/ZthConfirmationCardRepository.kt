@@ -11,7 +11,6 @@ import javax.inject.Singleton
 /**
  * C.4.1/C.4.3 ConfirmationCard Repository（主表 sentinel + 从表 rejection audit）。
  *
- * v2-full-takeover P2-2：按 DataReadMode 在 Room DAO / V2 AgentRepository 间选择。
  *
  * LINK-INV 4 写事务不在这里（在 ZthConfirmationCardManager 内显式 4 步 + CAS）。
  * 这里只提供：
