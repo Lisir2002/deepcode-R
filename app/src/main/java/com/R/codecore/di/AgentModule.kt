@@ -66,10 +66,9 @@ import javax.inject.Singleton
 object AgentModule {
 
     // ══════════════════════════════════════════════════════════
-    // 数据层重构（新写法）：数据库构建与 DAO 分发已整体迁移至 DatabaseModule，
-    // 旧版单巨库（AgentDatabase v49）+ DB-SHIELD 四阶段 Funnel 全部移除。
-    // 新架构 = 5 个按域拆分的独立库 + 一次性拆库移植（DbSplitMigrator），
-    // 数据库不再被任何其他因素影响。本模块只保留网络 / 工具 / 工作流等绑定。
+    // 数据层已整体迁移至 SQLDelight V2（六库拓扑，见 DataLayerModule），
+    // 旧 Room 数据层（单巨库 AgentDatabase v49 / 按域拆分独立库、DAO、
+    // DbSplitMigrator 一次性拆库）已全部移除。本模块只保留网络/工具/工作流绑定。
     // ══════════════════════════════════════════════════════════
 
     // ══ RC69 T2I：ImageGenerator（interface）→ OpenAiCompatibleImageGenerator（实现）绑定

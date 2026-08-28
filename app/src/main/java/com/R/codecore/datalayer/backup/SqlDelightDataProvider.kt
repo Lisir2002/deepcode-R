@@ -87,7 +87,7 @@ class SqlDelightDataProvider(
         }
     }
 
-    // ── 表结构 / 行值序列化（对齐 TableDataProvider 的约定）─────────────
+    // ── 表结构 / 行值序列化（对齐 DataRegistry 的约定）─────────────
 
     private fun readColumns(): List<Column> {
         val cols = mutableListOf<Column>()

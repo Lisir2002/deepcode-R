@@ -13,7 +13,7 @@ object EnumSafe {
         tag: String = "EnumSafe",
         onUnknown: ((String) -> Unit) = { unknown ->
             FileLogger.w(tag, "未知枚举值「$unknown」映射到默认=$default；" +
-                    "若这是近期重构改名导致，请补一条老值→新值的迁移映射（MigrationLoader 或 EnumAliases）。")
+                    "若这是近期重构改名导致，请补一条老值→新值的迁移映射（EnumAliases）。")
         }
     ): T {
         if (value == null) return default

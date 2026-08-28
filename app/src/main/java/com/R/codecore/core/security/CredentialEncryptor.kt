@@ -105,13 +105,13 @@ class CredentialEncryptor @Inject constructor(
      * ============= RC61b hotfix3（RC60 后闪退根因级修复） =============
      * RC60 之前 ExecutionModeRepository 不用 CredentialEncryptor；RC61 起它在
      * remoteConnectionFlow 的 mapLatest { decryptCredentialCompat → encryptor.decrypt →
-     * ensureInitialized → stateDao.getSingleOrNull → DB open } 里被冷启动的 Flow 首次
+     * ensureInitialized → v2Workspace.getEncryptionState → DB open } 里被冷启动的 Flow 首次
      * 订阅（Hilt 注入链 CredentialRequestBridge → LinuxContainerEngine → … → collect 点）
      * 同步调用。此时若：
      *   - Android Keystore 首次生成 MasterKey 在某些机型锁/首次解锁后 500ms+ 阻塞
-     *   - DB SCHEMA_VERSION=32 open 同时在做 migration 32 schema 校验 / destructive fallback
-     *   - 主线程同时在 Hilt provideAgentDatabase 拿同一个 Room DB 实例
-     * 会发生**启动期两线程争用 DB + Keystore 慢**的伪死锁：主线程拿不到 provideAgentDatabase
+     *   - 数据库首次 open 同时在做 schema 校验 / 初始化
+     *   - 主线程同时在初始化数据层（V2 SQLDelight 驱动 / Keystore）
+     * 会发生**启动期两线程争用 DB + Keystore 慢**的伪死锁：主线程拿不到数据层初始化
      * 返回，首帧超 5s 被 ActivityManager/ANR 认为启动卡住 → 直接杀进程，无崩溃弹窗，只有
      * logcat 有 W/ActivityManager: Launch timeout has expired, giving up wake lock! 字样。
      *
@@ -344,7 +344,7 @@ class CredentialEncryptor @Inject constructor(
      *
      * 流程：① 先 unwrap 当前 DEK；② 删除旧 MasterKey；
      * ③ 生成新 MasterKey（带或不带生物识别标志）；
-     * ④ 重新 wrap DEK；⑤ 更新 stateDao。
+     * ④ 重新 wrap DEK；⑤ 更新凭据加密状态。
      *
      * @param required 是否开启生物识别
      */
@@ -403,7 +403,7 @@ class CredentialEncryptor @Inject constructor(
      *
      * 调用方必须已经通过「验证任一 SSH 密码」的校验后再调用。
      * 流程：① 销毁当前 MasterKey alias；② 生成全新 MasterKey''；
-     * ③ 生成 DEK''；④ 写单行 stateDao；
+     * ③ 生成 DEK''；④ 更新单行凭据加密状态；
      * ⑤ 旧 V2 密文无法用新 DEK 解开，调用方应引导用户重设凭据。
      */
     suspend fun emergencyResetMasterKey(): ResetReport = withContext(Dispatchers.IO) {

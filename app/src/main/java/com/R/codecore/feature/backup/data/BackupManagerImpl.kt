@@ -479,9 +479,9 @@ class BackupManagerImpl @Inject constructor(
     /**
      * 校验备份 schemaVersion 上界：仅拒绝「未来未知版本」。
      *
-     * 拆库后当前库版本为 [AgentDatabase.SCHEMA_VERSION]（v1），但旧版备份可能携带旧单库 v49
-     * （[LegacyAgentDatabase.SCHEMA_VERSION]）的 schemaVersion——那同样可读可迁移，不能按当前
-     * v1 上界误拒。因此上界取「已知最大版本」，超过才拒绝。
+     * 历史备份可能携带旧版 schemaVersion（Room 时代 v49 / V2 六库版本）。上界取
+     * 「已知最大版本」（[AGENT_SCHEMA_VERSION] 与 [LEGACY_AGENT_SCHEMA_VERSION] 的较大者），
+     * 超过才拒绝，避免把可向下迁移的旧备份误拒。
      */
     private fun checkVersion(schemaVersion: Int) {
         val maxKnown = maxOf(AGENT_SCHEMA_VERSION, LEGACY_AGENT_SCHEMA_VERSION)

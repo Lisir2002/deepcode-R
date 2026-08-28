@@ -141,14 +141,13 @@ class ExecutionModeRepository @Inject constructor(
      *
      * ============= RC61b hotfix3（RC60 后闪退根因级修复 #2） =============
      * 旧实现：`runCatching { encryptor.decrypt(raw) }.getOrElse { raw }`
-     * 问题：encryptor.decrypt → ensureInitialized → stateDao.getSingleOrNull() → **强制 DB open**，
+     * 问题：encryptor.decrypt → ensureInitialized → v2Workspace.getEncryptionState → **强制 DB open**，
      * 而 remoteConnectionFlow 是冷启动 Flow，会在 Hilt 构造链「CredentialRequestBridge →
      * LinuxContainerEngine → 任意 ExecutionModeHolder/Repository 订阅点」时被首个订阅
-     * 同步触发；和主线程 Hilt.provideAgentDatabase 同时抢同一 RoomDB 实例 + Keystore
-     * MasterKey 生成，形成启动期两线程争用伪死锁 → ANR → 系统 1-2s 杀进程无弹窗。
+     * 同步触发；和主线程数据层初始化 + Keystore MasterKey 生成同时进行，形成启动期两线程争用伪死锁 → ANR → 系统 1-2s 杀进程无弹窗。
      *
      * 修复：v1 legacy 路径的 password 字段本身就是明文（RC60 之前没加密），真正的 V2
-     * 密码根本**不会保存在 DataStore**（RC61+ 已改成 Room 单源 + DataStore 只存
+     * 密码根本**不会保存在 DataStore**（RC61+ 已改成 V2(SQLDelight) 单源 + DataStore 只存
      * ssh_active_connection_id 指针），所以在这里解 V2 实际上是死路径。
      * 我们改成「只看 raw 前缀」来区分，不调用任何需要 DB/Keystore 的方法：
      *   - V2: 前缀 → 返回 ""（提示上层去 Room 单源读；v2 路径本来就不该到这里）
