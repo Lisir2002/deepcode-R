@@ -1,4 +1,4 @@
-CREATE TABLE remote_connections (
+CREATE TABLE IF NOT EXISTS remote_connections (
   id         TEXT    NOT NULL PRIMARY KEY,
   name       TEXT    NOT NULL,
   protocol   TEXT    NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE remote_connections (
   passphrase TEXT
 );
 
-CREATE TABLE remote_mounts (
+CREATE TABLE IF NOT EXISTS remote_mounts (
   id               TEXT    NOT NULL PRIMARY KEY,
   connection_id    TEXT    NOT NULL,
   remote_path      TEXT    NOT NULL,
@@ -20,9 +20,9 @@ CREATE TABLE remote_mounts (
   FOREIGN KEY (connection_id) REFERENCES remote_connections(id) ON DELETE CASCADE
 );
 
-CREATE INDEX remote_mounts_conn_idx ON remote_mounts (connection_id);
+CREATE INDEX IF NOT EXISTS remote_mounts_conn_idx ON remote_mounts (connection_id);
 
-CREATE TABLE remote_audit_logs (
+CREATE TABLE IF NOT EXISTS remote_audit_logs (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   category        TEXT    NOT NULL,
   action          TEXT    NOT NULL,
@@ -35,13 +35,13 @@ CREATE TABLE remote_audit_logs (
   created_at      INTEGER NOT NULL
 );
 
-CREATE INDEX remote_audit_logs_created_idx ON remote_audit_logs (created_at);
+CREATE INDEX IF NOT EXISTS remote_audit_logs_created_idx ON remote_audit_logs (created_at);
 
-CREATE INDEX remote_audit_logs_category_idx ON remote_audit_logs (category);
+CREATE INDEX IF NOT EXISTS remote_audit_logs_category_idx ON remote_audit_logs (category);
 
-CREATE INDEX remote_audit_logs_conn_idx ON remote_audit_logs (connection_id);
+CREATE INDEX IF NOT EXISTS remote_audit_logs_conn_idx ON remote_audit_logs (connection_id);
 
-CREATE TABLE credential_encryption_state (
+CREATE TABLE IF NOT EXISTS credential_encryption_state (
   id                    INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
   master_key_fingerprint TEXT   NOT NULL,
   dek_ciphertext        TEXT   NOT NULL,
