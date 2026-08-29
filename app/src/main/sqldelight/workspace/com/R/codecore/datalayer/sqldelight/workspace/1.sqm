@@ -1,0 +1,53 @@
+CREATE TABLE remote_connections (
+  id         TEXT    NOT NULL PRIMARY KEY,
+  name       TEXT    NOT NULL,
+  protocol   TEXT    NOT NULL,
+  host       TEXT    NOT NULL,
+  port       INTEGER NOT NULL,
+  username   TEXT    NOT NULL,
+  auth_type  TEXT    NOT NULL,
+  auth_data  TEXT    NOT NULL,
+  passphrase TEXT
+);
+
+CREATE TABLE remote_mounts (
+  id               TEXT    NOT NULL PRIMARY KEY,
+  connection_id    TEXT    NOT NULL,
+  remote_path      TEXT    NOT NULL,
+  local_mount_path TEXT    NOT NULL,
+  is_active        INTEGER NOT NULL DEFAULT 0,
+  auto_connect     INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY (connection_id) REFERENCES remote_connections(id) ON DELETE CASCADE
+);
+
+CREATE INDEX remote_mounts_conn_idx ON remote_mounts (connection_id);
+
+CREATE TABLE remote_audit_logs (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  category        TEXT    NOT NULL,
+  action          TEXT    NOT NULL,
+  connection_id   TEXT,
+  connection_name TEXT,
+  remote_host     TEXT,
+  success         INTEGER NOT NULL,
+  message         TEXT,
+  source_ip       TEXT,
+  created_at      INTEGER NOT NULL
+);
+
+CREATE INDEX remote_audit_logs_created_idx ON remote_audit_logs (created_at);
+
+CREATE INDEX remote_audit_logs_category_idx ON remote_audit_logs (category);
+
+CREATE INDEX remote_audit_logs_conn_idx ON remote_audit_logs (connection_id);
+
+CREATE TABLE credential_encryption_state (
+  id                    INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+  master_key_fingerprint TEXT   NOT NULL,
+  dek_ciphertext        TEXT   NOT NULL,
+  enc_scheme            TEXT   NOT NULL DEFAULT 'V2',
+  last_rotated_at       INTEGER NOT NULL DEFAULT 0,
+  rotation_counter      INTEGER NOT NULL DEFAULT 0,
+  biometric_required    INTEGER NOT NULL DEFAULT 0,
+  migrated_from_v1      INTEGER NOT NULL DEFAULT 0
+);

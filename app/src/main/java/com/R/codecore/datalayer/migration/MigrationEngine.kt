@@ -41,6 +41,12 @@ class MigrationEngine(private val pathProvider: DatabasePathProvider) {
                     .sortedBy { it.from }
                     .forEach { it.block(driver) }
             }
+            current.toLong() == target -> {
+                // 显式 no-op。⚠️ 版本相等 ≠ 表结构一致：v0.5.0-rc1 事故中，表结构演进（+14 张表）
+                // 未伴随版本递增（彼时 0 个 .sqm，version 恒为 1），本分支静默空转导致
+                // 从 v0.4.0 升级的设备永远缺表、首查即崩（no such table: remote_connections）。
+                // 纪律：任何 .sq 结构变更必须同步新增 .sqm（version = 1 + .sqm 数，自动递增）。
+            }
             current > target -> error("[$lib] 检测到版本回退：$current > $target，拒绝打开以防数据损坏")
         }
     }
