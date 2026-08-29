@@ -1,4 +1,4 @@
-CREATE TABLE todo_items (
+CREATE TABLE IF NOT EXISTS todo_items (
   id          TEXT    NOT NULL PRIMARY KEY,
   session_id  TEXT    NOT NULL,
   subject     TEXT    NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE todo_items (
   updated_at_ms INTEGER NOT NULL
 );
 
-CREATE TABLE session_checkpoints (
+CREATE TABLE IF NOT EXISTS session_checkpoints (
   id               TEXT    NOT NULL PRIMARY KEY,
   session_id       TEXT    NOT NULL,
   user_message_id  TEXT    NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE session_checkpoints (
   created_at_ms    INTEGER NOT NULL
 );
 
-CREATE TABLE checkpoint_file_snapshots (
+CREATE TABLE IF NOT EXISTS checkpoint_file_snapshots (
   id                      TEXT    NOT NULL PRIMARY KEY,
   checkpoint_id           TEXT    NOT NULL,
   file_path               TEXT    NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE checkpoint_file_snapshots (
   FOREIGN KEY (checkpoint_id) REFERENCES session_checkpoints(id)
 );
 
-CREATE TABLE file_edit_hunks (
+CREATE TABLE IF NOT EXISTS file_edit_hunks (
   id          TEXT    NOT NULL PRIMARY KEY,
   session_id  TEXT    NOT NULL,
   file_path   TEXT    NOT NULL,
@@ -39,7 +39,7 @@ CREATE TABLE file_edit_hunks (
   created_at_ms INTEGER NOT NULL
 );
 
-CREATE TABLE mode_switch_history (
+CREATE TABLE IF NOT EXISTS mode_switch_history (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id  TEXT    NOT NULL,
   from_mode   TEXT    NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE mode_switch_history (
   timestamp_ms INTEGER NOT NULL
 );
 
-CREATE TABLE model_capability_overrides (
+CREATE TABLE IF NOT EXISTS model_capability_overrides (
   id                TEXT    NOT NULL,
   provider_type     TEXT    NOT NULL,
   model_id          TEXT    NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE model_capability_overrides (
   PRIMARY KEY (provider_type, model_id)
 );
 
-CREATE TABLE agent_goals (
+CREATE TABLE IF NOT EXISTS agent_goals (
   goal_id       TEXT    NOT NULL PRIMARY KEY,
   session_id    TEXT    NOT NULL,
   text          TEXT    NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE agent_goals (
   updated_at_ms INTEGER NOT NULL
 );
 
-CREATE TABLE agent_plans (
+CREATE TABLE IF NOT EXISTS agent_plans (
   plan_id          TEXT    NOT NULL PRIMARY KEY,
   session_id       TEXT    NOT NULL,
   title            TEXT    NOT NULL,
@@ -82,7 +82,7 @@ CREATE TABLE agent_plans (
   updated_at_ms    INTEGER NOT NULL
 );
 
-CREATE TABLE agent_jobs (
+CREATE TABLE IF NOT EXISTS agent_jobs (
   job_id         TEXT    NOT NULL PRIMARY KEY,
   session_id     TEXT    NOT NULL,
   kind           TEXT    NOT NULL,
@@ -95,7 +95,7 @@ CREATE TABLE agent_jobs (
   updated_at_ms  INTEGER NOT NULL
 );
 
-CREATE TABLE agent_schedules (
+CREATE TABLE IF NOT EXISTS agent_schedules (
   schedule_id    TEXT    NOT NULL PRIMARY KEY,
   session_id     TEXT    NOT NULL,
   rule           TEXT    NOT NULL,
@@ -107,7 +107,7 @@ CREATE TABLE agent_schedules (
   updated_at_ms  INTEGER NOT NULL
 );
 
-CREATE TABLE agent_trajectories (
+CREATE TABLE IF NOT EXISTS agent_trajectories (
   trajectory_id  TEXT    NOT NULL PRIMARY KEY,
   session_id     TEXT    NOT NULL,
   task_id        TEXT    NOT NULL DEFAULT '',
@@ -123,7 +123,7 @@ CREATE TABLE agent_trajectories (
   ts             INTEGER NOT NULL
 );
 
-CREATE TABLE agent_playbook_runs (
+CREATE TABLE IF NOT EXISTS agent_playbook_runs (
   playbook_run_id   TEXT    NOT NULL PRIMARY KEY,
   session_id        TEXT    NOT NULL,
   playbook_name     TEXT    NOT NULL,
@@ -134,7 +134,7 @@ CREATE TABLE agent_playbook_runs (
   updated_at_ms     INTEGER NOT NULL
 );
 
-CREATE TABLE skill_state (
+CREATE TABLE IF NOT EXISTS skill_state (
   id                 TEXT    NOT NULL PRIMARY KEY,
   enabled            INTEGER NOT NULL DEFAULT 1,
   version            TEXT    NOT NULL DEFAULT '0.0.0',
@@ -144,14 +144,14 @@ CREATE TABLE skill_state (
   agent_type_override TEXT
 );
 
-CREATE TABLE skill_conversation_state (
+CREATE TABLE IF NOT EXISTS skill_conversation_state (
   skill_id   TEXT NOT NULL,
   session_id TEXT NOT NULL,
   enabled    INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (skill_id, session_id)
 );
 
-CREATE TABLE wake_queue (
+CREATE TABLE IF NOT EXISTS wake_queue (
   wake_id      TEXT    NOT NULL PRIMARY KEY,
   session_id   TEXT    NOT NULL,
   source       TEXT    NOT NULL,
@@ -161,7 +161,7 @@ CREATE TABLE wake_queue (
   created_at_ms INTEGER NOT NULL
 );
 
-CREATE TABLE zth_user_confirmed_sentinels (
+CREATE TABLE IF NOT EXISTS zth_user_confirmed_sentinels (
   id                        TEXT    NOT NULL PRIMARY KEY,
   session_id                TEXT    NOT NULL,
   linkage_version           INTEGER NOT NULL,
@@ -180,7 +180,7 @@ CREATE TABLE zth_user_confirmed_sentinels (
   created_at_ms             INTEGER NOT NULL
 );
 
-CREATE TABLE zth_hallucination_fuses (
+CREATE TABLE IF NOT EXISTS zth_hallucination_fuses (
   id                     TEXT    NOT NULL,
   scope                  TEXT    NOT NULL,
   scope_id               TEXT    NOT NULL,
@@ -196,7 +196,7 @@ CREATE TABLE zth_hallucination_fuses (
   PRIMARY KEY (scope, scope_id)
 );
 
-CREATE TABLE zth_sentinel_plan_rejection_audits (
+CREATE TABLE IF NOT EXISTS zth_sentinel_plan_rejection_audits (
   id                              TEXT    NOT NULL PRIMARY KEY,
   sentinel_id                     TEXT    NOT NULL,
   rejection_type                  TEXT    NOT NULL,
@@ -205,7 +205,7 @@ CREATE TABLE zth_sentinel_plan_rejection_audits (
   created_at_ms                   INTEGER NOT NULL
 );
 
-CREATE TABLE zth_hard_constraint_delete_audits (
+CREATE TABLE IF NOT EXISTS zth_hard_constraint_delete_audits (
   id                    TEXT    NOT NULL PRIMARY KEY,
   session_id            TEXT    NOT NULL,
   affected_table_name   TEXT    NOT NULL,
@@ -215,7 +215,7 @@ CREATE TABLE zth_hard_constraint_delete_audits (
   created_at_ms         INTEGER NOT NULL
 );
 
-CREATE TABLE zth_l0_soft_compact_restore_logs (
+CREATE TABLE IF NOT EXISTS zth_l0_soft_compact_restore_logs (
   id                          TEXT    NOT NULL PRIMARY KEY,
   session_id                  TEXT    NOT NULL,
   first_message_id            TEXT    NOT NULL,
@@ -229,7 +229,7 @@ CREATE TABLE zth_l0_soft_compact_restore_logs (
   created_at_ms               INTEGER NOT NULL
 );
 
-CREATE TABLE zth_telemetry_events (
+CREATE TABLE IF NOT EXISTS zth_telemetry_events (
   id                   INTEGER PRIMARY KEY AUTOINCREMENT,
   event_kind           TEXT    NOT NULL,
   event_sub_kind       TEXT    NOT NULL,
