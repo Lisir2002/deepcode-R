@@ -1,33 +1,244 @@
--- v2-full-takeover P2-3：热表对齐 Room 实体全列。
--- agent_session / agent_message 原本是简化裁剪表（agent_session 缺 workspace_path/reasoning_effort/provider_id/token 列；
--- agent_message 缺 task_id/content/toolCallsJson 等 15 列），V1 迁移时只搬了裁剪列，业务读写无法切换。
--- 本次重建为 Room ChatSessionEntity(11 列) / AgentMessageEntity(21 列) 全列结构；
--- 旧简化表里的数据（title/mode/model/status/role/seq/created_at）在迁移中先落临时列再拷入新表，不丢历史。
+CREATE TABLE todo_items (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  session_id  TEXT    NOT NULL,
+  subject     TEXT    NOT NULL,
+  description TEXT    NOT NULL DEFAULT '',
+  status      TEXT    NOT NULL DEFAULT 'PENDING',
+  priority    INTEGER NOT NULL DEFAULT 0,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
 
--- 注意：迁移脚本里执行 DDL 的语法沿用旧列名（SQLDelight .sqm 在旧表上执行），
--- DML 数据搬运全部放在 create 之后按「临时列→新列」完成。
+CREATE TABLE session_checkpoints (
+  id               TEXT    NOT NULL PRIMARY KEY,
+  session_id       TEXT    NOT NULL,
+  user_message_id  TEXT    NOT NULL,
+  prompt_snippet   TEXT    NOT NULL,
+  created_at_ms    INTEGER NOT NULL
+);
 
-ALTER TABLE agent_session ADD COLUMN workspace_path TEXT NOT NULL DEFAULT '';
-ALTER TABLE agent_session ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT 'MEDIUM';
-ALTER TABLE agent_session ADD COLUMN provider_id TEXT;
-ALTER TABLE agent_session ADD COLUMN total_input_tokens INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE agent_session ADD COLUMN total_output_tokens INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE agent_session ADD COLUMN last_input_tokens INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE checkpoint_file_snapshots (
+  id                      TEXT    NOT NULL PRIMARY KEY,
+  checkpoint_id           TEXT    NOT NULL,
+  file_path               TEXT    NOT NULL,
+  snapshot_relative_path  TEXT    NOT NULL,
+  change_type             TEXT    NOT NULL,
+  created_at              INTEGER NOT NULL,
+  FOREIGN KEY (checkpoint_id) REFERENCES session_checkpoints(id)
+);
 
-ALTER TABLE agent_message ADD COLUMN task_id TEXT NOT NULL DEFAULT '';
-ALTER TABLE agent_message ADD COLUMN content TEXT NOT NULL DEFAULT '';
-ALTER TABLE agent_message ADD COLUMN tool_calls_json TEXT;
-ALTER TABLE agent_message ADD COLUMN tool_call_id TEXT;
-ALTER TABLE agent_message ADD COLUMN tool_name TEXT;
-ALTER TABLE agent_message ADD COLUMN tool_args TEXT;
-ALTER TABLE agent_message ADD COLUMN is_error INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE agent_message ADD COLUMN reasoning TEXT;
-ALTER TABLE agent_message ADD COLUMN signature TEXT;
-ALTER TABLE agent_message ADD COLUMN attachments_json TEXT;
-ALTER TABLE agent_message ADD COLUMN is_compacted INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE agent_message ADD COLUMN is_context_summary INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE agent_message ADD COLUMN is_compaction_marker INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE agent_message ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE agent_message ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE agent_message ADD COLUMN chunk_group_id TEXT NOT NULL DEFAULT '';
-ALTER TABLE agent_message ADD COLUMN chunk_index INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE file_edit_hunks (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  session_id  TEXT    NOT NULL,
+  file_path   TEXT    NOT NULL,
+  operation   TEXT    NOT NULL,
+  hunk        TEXT    NOT NULL,
+  old_content TEXT    NOT NULL,
+  new_content TEXT    NOT NULL,
+  created_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE mode_switch_history (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  TEXT    NOT NULL,
+  from_mode   TEXT    NOT NULL,
+  to_mode     TEXT    NOT NULL,
+  reason      TEXT    NOT NULL,
+  timestamp_ms INTEGER NOT NULL
+);
+
+CREATE TABLE model_capability_overrides (
+  id                TEXT    NOT NULL,
+  provider_type     TEXT    NOT NULL,
+  model_id          TEXT    NOT NULL,
+  override_vision   INTEGER,
+  override_tools    INTEGER,
+  override_reasoning INTEGER,
+  updated_at_ms     INTEGER NOT NULL,
+  PRIMARY KEY (provider_type, model_id)
+);
+
+CREATE TABLE agent_goals (
+  goal_id       TEXT    NOT NULL PRIMARY KEY,
+  session_id    TEXT    NOT NULL,
+  text          TEXT    NOT NULL,
+  status        TEXT    NOT NULL DEFAULT 'ACTIVE',
+  revision      INTEGER NOT NULL DEFAULT 0,
+  parent_goal_id TEXT   NOT NULL DEFAULT '',
+  round_seq     INTEGER NOT NULL DEFAULT 0,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE agent_plans (
+  plan_id          TEXT    NOT NULL PRIMARY KEY,
+  session_id       TEXT    NOT NULL,
+  title            TEXT    NOT NULL,
+  steps            TEXT    NOT NULL DEFAULT '',
+  status           TEXT    NOT NULL DEFAULT 'DRAFT',
+  pending_selection TEXT   NOT NULL DEFAULT '',
+  created_at_ms    INTEGER NOT NULL,
+  updated_at_ms    INTEGER NOT NULL
+);
+
+CREATE TABLE agent_jobs (
+  job_id         TEXT    NOT NULL PRIMARY KEY,
+  session_id     TEXT    NOT NULL,
+  kind           TEXT    NOT NULL,
+  title          TEXT    NOT NULL,
+  status         TEXT    NOT NULL DEFAULT 'RUNNING',
+  exit_code      INTEGER,
+  output_locator TEXT    NOT NULL DEFAULT '',
+  created_at_ms  INTEGER NOT NULL,
+  finished_at_ms INTEGER,
+  updated_at_ms  INTEGER NOT NULL
+);
+
+CREATE TABLE agent_schedules (
+  schedule_id    TEXT    NOT NULL PRIMARY KEY,
+  session_id     TEXT    NOT NULL,
+  rule           TEXT    NOT NULL,
+  args           TEXT    NOT NULL DEFAULT '',
+  status         TEXT    NOT NULL DEFAULT 'PENDING',
+  enabled        INTEGER NOT NULL DEFAULT 1,
+  created_at_ms  INTEGER NOT NULL,
+  last_fired_at_ms INTEGER,
+  updated_at_ms  INTEGER NOT NULL
+);
+
+CREATE TABLE agent_trajectories (
+  trajectory_id  TEXT    NOT NULL PRIMARY KEY,
+  session_id     TEXT    NOT NULL,
+  task_id        TEXT    NOT NULL DEFAULT '',
+  turn_index     INTEGER NOT NULL DEFAULT 0,
+  kind           TEXT    NOT NULL,
+  tool_name      TEXT    NOT NULL DEFAULT '',
+  args_hash      TEXT    NOT NULL DEFAULT '',
+  result_summary TEXT    NOT NULL DEFAULT '',
+  is_error       INTEGER NOT NULL DEFAULT 0,
+  duration_ms    INTEGER NOT NULL DEFAULT 0,
+  tokens_in      INTEGER NOT NULL DEFAULT 0,
+  tokens_out     INTEGER NOT NULL DEFAULT 0,
+  ts             INTEGER NOT NULL
+);
+
+CREATE TABLE agent_playbook_runs (
+  playbook_run_id   TEXT    NOT NULL PRIMARY KEY,
+  session_id        TEXT    NOT NULL,
+  playbook_name     TEXT    NOT NULL,
+  current_stage_index INTEGER NOT NULL DEFAULT 0,
+  stage_statuses    TEXT    NOT NULL DEFAULT '',
+  status            TEXT    NOT NULL DEFAULT 'RUNNING',
+  created_at_ms     INTEGER NOT NULL,
+  updated_at_ms     INTEGER NOT NULL
+);
+
+CREATE TABLE skill_state (
+  id                 TEXT    NOT NULL PRIMARY KEY,
+  enabled            INTEGER NOT NULL DEFAULT 1,
+  version            TEXT    NOT NULL DEFAULT '0.0.0',
+  source             TEXT    NOT NULL DEFAULT 'LOCAL',
+  installed_at_ms    INTEGER NOT NULL,
+  scope_override     TEXT,
+  agent_type_override TEXT
+);
+
+CREATE TABLE skill_conversation_state (
+  skill_id   TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (skill_id, session_id)
+);
+
+CREATE TABLE wake_queue (
+  wake_id      TEXT    NOT NULL PRIMARY KEY,
+  session_id   TEXT    NOT NULL,
+  source       TEXT    NOT NULL,
+  type         TEXT    NOT NULL,
+  content      TEXT    NOT NULL,
+  status       TEXT    NOT NULL,
+  created_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE zth_user_confirmed_sentinels (
+  id                        TEXT    NOT NULL PRIMARY KEY,
+  session_id                TEXT    NOT NULL,
+  linkage_version           INTEGER NOT NULL,
+  chain_id                  TEXT    NOT NULL,
+  chain_index               INTEGER NOT NULL,
+  card_template_id          TEXT    NOT NULL,
+  trigger_sub_class         TEXT    NOT NULL,
+  s_planPayloadCiphertext   TEXT    NOT NULL,
+  s_userTextCiphertext      TEXT,
+  s_cardPayloadCiphertext   TEXT    NOT NULL,
+  user_choice               TEXT    NOT NULL,
+  swipe_verified            INTEGER NOT NULL,
+  s_modifiedPlanCiphertext  TEXT,
+  expire_at_ms              INTEGER NOT NULL DEFAULT -1,
+  rollback_flag             INTEGER NOT NULL DEFAULT 0,
+  created_at_ms             INTEGER NOT NULL
+);
+
+CREATE TABLE zth_hallucination_fuses (
+  id                     TEXT    NOT NULL,
+  scope                  TEXT    NOT NULL,
+  scope_id               TEXT    NOT NULL,
+  state                  TEXT    NOT NULL,
+  linkage_version        INTEGER NOT NULL,
+  failure_count          INTEGER NOT NULL DEFAULT 0,
+  open_since_ms          INTEGER NOT NULL DEFAULT 0,
+  last_probe_at_ms       INTEGER NOT NULL DEFAULT 0,
+  kill_switch1_triggered INTEGER NOT NULL DEFAULT 0,
+  kill_switch2_soft_disabled INTEGER NOT NULL DEFAULT 0,
+  last_trip_subclass     TEXT,
+  updated_at_ms          INTEGER NOT NULL,
+  PRIMARY KEY (scope, scope_id)
+);
+
+CREATE TABLE zth_sentinel_plan_rejection_audits (
+  id                              TEXT    NOT NULL PRIMARY KEY,
+  sentinel_id                     TEXT    NOT NULL,
+  rejection_type                  TEXT    NOT NULL,
+  s_reasonCiphertext              TEXT,
+  s_rejectedPlanSnapshotCiphertext TEXT   NOT NULL,
+  created_at_ms                   INTEGER NOT NULL
+);
+
+CREATE TABLE zth_hard_constraint_delete_audits (
+  id                    TEXT    NOT NULL PRIMARY KEY,
+  session_id            TEXT    NOT NULL,
+  affected_table_name   TEXT    NOT NULL,
+  s_affectedKeysCiphertext TEXT  NOT NULL,
+  trigger_sub_class     TEXT    NOT NULL,
+  rollback_applied      INTEGER NOT NULL DEFAULT 0,
+  created_at_ms         INTEGER NOT NULL
+);
+
+CREATE TABLE zth_l0_soft_compact_restore_logs (
+  id                          TEXT    NOT NULL PRIMARY KEY,
+  session_id                  TEXT    NOT NULL,
+  first_message_id            TEXT    NOT NULL,
+  last_message_id             TEXT    NOT NULL,
+  original_row_count          INTEGER NOT NULL,
+  tokens_before               INTEGER NOT NULL,
+  tokens_after                INTEGER NOT NULL,
+  s_compactSourceDigestCiphertext TEXT NOT NULL,
+  expire_at_ms                INTEGER NOT NULL,
+  restored_flag               INTEGER NOT NULL DEFAULT 0,
+  created_at_ms               INTEGER NOT NULL
+);
+
+CREATE TABLE zth_telemetry_events (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_kind           TEXT    NOT NULL,
+  event_sub_kind       TEXT    NOT NULL,
+  severity_tier        INTEGER NOT NULL,
+  session_sha256_prefix TEXT,
+  latency_ms           INTEGER,
+  flag_a               INTEGER,
+  flag_b               INTEGER,
+  metric_a             INTEGER,
+  metric_b             INTEGER,
+  created_at_ms        INTEGER NOT NULL
+);
