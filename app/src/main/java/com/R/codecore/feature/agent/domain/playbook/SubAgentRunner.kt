@@ -1,9 +1,6 @@
 package com.R.codecore.feature.agent.domain.playbook
 
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicApi
-import com.R.codecore.feature.agent.data.remote.gemini.GeminiApi
-import com.R.codecore.feature.agent.data.remote.openai.OpenAIApi
 import com.R.codecore.feature.agent.domain.model.AgentContext
 import com.R.codecore.feature.agent.domain.model.AgentMessage
 import com.R.codecore.feature.agent.domain.model.AgentMode
@@ -11,15 +8,12 @@ import com.R.codecore.feature.agent.domain.permission.SandboxMode
 import com.R.codecore.feature.agent.domain.permission.ToolPermissionPolicyEngine
 import com.R.codecore.feature.agent.domain.prompt.AgentAssetRegistry
 import com.R.codecore.feature.agent.domain.provider.AIProvider
-import com.R.codecore.feature.agent.domain.provider.AnthropicAdapter
-import com.R.codecore.feature.agent.domain.provider.GeminiAdapter
-import com.R.codecore.feature.agent.domain.provider.OpenAIAdapter
+import com.R.codecore.feature.agent.domain.provider.AiProviderFactory
 import com.R.codecore.feature.agent.domain.session.MessagePersistenceUseCase
 import com.R.codecore.feature.agent.domain.tool.ToolCall
 import com.R.codecore.feature.agent.domain.tool.ToolCapability
 import com.R.codecore.feature.agent.domain.tool.ToolRegistry
 import com.R.codecore.feature.agent.domain.tool.ToolResult
-import com.R.codecore.feature.settings.domain.model.ProviderType
 import com.R.codecore.feature.settings.domain.repository.AIProviderRepository
 import dagger.Lazy
 import kotlinx.coroutines.async
@@ -59,9 +53,7 @@ import javax.inject.Singleton
 class SubAgentRunner @Inject constructor(
     private val toolRegistry: Lazy<ToolRegistry>,
     private val aiProviderRepository: AIProviderRepository,
-    private val openAIApi: OpenAIApi,
-    private val anthropicApi: AnthropicApi,
-    private val geminiApi: GeminiApi,
+    private val aiProviderFactory: AiProviderFactory,
     private val agentAssetRegistry: AgentAssetRegistry,
     private val policyEngine: ToolPermissionPolicyEngine,
     private val messagePersistenceUseCase: MessagePersistenceUseCase
@@ -346,22 +338,16 @@ class SubAgentRunner @Inject constructor(
 
     // ── 依赖解析 ──
 
-    /** 创建独立 provider（对齐 workflow createStandaloneProvider 的适配器工厂逻辑）。 */
+    /** 创建独立 provider（对齐 workflow 的注册表化工厂逻辑）。 */
     private suspend fun resolveStandaloneProvider(sessionId: String?): AIProvider? {
         val config = aiProviderRepository.getActiveProviderSync() ?: return null
         if (config.apiKey.isBlank() || config.effectiveModel.isBlank()) return null
-        val provider: AIProvider = when (config.type) {
-            ProviderType.ANTHROPIC -> AnthropicAdapter(anthropicApi)
-            ProviderType.GEMINI -> GeminiAdapter(geminiApi)
-            else -> OpenAIAdapter(openAIApi)
+        return try {
+            aiProviderFactory.create(config, sessionId)
+        } catch (e: Exception) {
+            com.R.codecore.core.util.FileLogger.d(TAG, "创建独立 provider 失败: ${e.message}")
+            null
         }
-        provider.apiKey = config.apiKey
-        provider.baseUrl = config.baseUrl
-        provider.model = config.effectiveModel
-        provider.useFullUrl = config.useFullUrl
-        provider.useResponseApi = config.useResponseApi
-        provider.logSessionId = sessionId
-        return provider
     }
 
     // ── 辅助 ──

@@ -368,6 +368,7 @@
 
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
+- **v0.5.1.1（2026-09-02）**：模型供应商接入层重构为 SPI 注册表架构——新增 `domain/spi/`（`ModelProvider` / 类型化 `ModelProviderConfig` / `ModelProviderRegistry` / 自洽 `ToolCall`/`ToolSpec`）与 `domain/provider/` 三家原生 Provider（`OkHttpProvider` / `AnthropicProvider` / `GeminiProvider`，OkHttp 直连 + SSE，另 `DemoProvider` 兜底）+ `DefaultProviderRegistry`；`ModelProviderAdapter` 桥接新旧 `AIProvider` 接口，`AiProviderFactory` 统一按 `AIProviderConfig` 实例化；`StatefulAgentWorkflow` / `SubAgentRunner` 经 `AgentModule` 注入工厂、移除对 Retrofit API 的直接依赖；`ModelEndpointConfigStore` 接入 `KeyEncryptorV2`（Keystore AES-256-GCM）；三家 Provider 补齐 `images`（多模态输入）/ `reasoning` / `signature`（Anthropic extended thinking）渲染与透传；删除旧 `*Adapter` / `*Api` / `HttpErrorEnricher` / `RetryPolicy`。
 - **v0.3.0-rc3（2026-08-26）**：空转软收敛（D2-1）新增「规范流程 → 空转收敛」子开关（`NormFlowSettingsRepository.idleConvergeEnabledFlow`，默认关）：workflow 每轮 CallLlm 前经 `isIdleConvergeActive()` 判定，关闭时即使连续 6 轮无实质产出也不强制收敛，避免研究/浏览类请求（websearch/browser 不在实质产出集合）被误伤结束；设置页「规范流程」二级页新增开关行。
 - **v0.3.0-rc2（2026-08-26）**：AI 工作流规范体系 D2~D6 落地——D2 思维链路 + 步骤结果汇总（空转软收敛、推理预算、运行轨迹表、用量卡片）；D3 分层规则纪律（全局/项目/工作区/模块四级规则资产 + 显式 priority + 模块级按需注入，基于文件观察命中判断）；D4 SOP 标准作业（6 份 SOP + `loadSop` 工具）；D5 Playbook + 子代理（剧本资产与执行引擎、4 个剧本工具 + `/playbook`、spawn/fork 双模式、`playbook_auto` 子开关）；D6 Spec 规范驱动（`spec-check.sh` 预检）。
 - **v0.3.0-rc1（2026-08-25）**：D0 用户意图拆解基座（问判模式、行为模式、GoalStale/GoalAdjustEvent 注入）；D1 Agentic Workflow 基座（`step` 前注入链、`ToolGuard` 链式护栏、统一开关）。

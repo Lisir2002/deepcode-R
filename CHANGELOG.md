@@ -26,6 +26,23 @@
 
 ---
 
+## [v0.5.1.1] - 2026-09-02
+
+### Changed（变更）
+
+- **模型供应商接入层重构为 SPI 注册表架构**：废弃 Retrofit 直连三家 API，改为 `ModelProvider` 接口 + `ModelProviderRegistry` 可插拔注册表 + `ModelProviderAdapter` 桥接层。新增 `AiProviderFactory` 统一按配置实例化 Provider，`StatefulAgentWorkflow` / `SubAgentRunner` 通过工厂解耦对具体网络实现的依赖。
+  - **新增 3 家原生 Provider**（OkHttp 直连、SSE 流式）：OpenAI 兼容 `OkHttpProvider`、Anthropic `AnthropicProvider`、Gemini `GeminiProvider`，另有 `DemoProvider` 兜底。
+  - **多模态能力补齐**：三家 Provider 均支持图片输入（base64 内联 / 多模态 content block），并回传/透传 `reasoning`（思考过程）与 `signature`（Anthropic extended thinking 签名），修复多轮工具循环下思考模式回传缺失导致的 400 错误。
+  - **API Key 加密升级**：新增 `KeyEncryptorV2`（Android Keystore AES-256-GCM），`ModelEndpointConfigStore` 接入新加密器。
+
+### Added（新增）
+
+- **新增独立 `lint` 模块**：自定义 Lint 规则 `DesignSystemDetector`，确保 UI 组件使用统一设计系统。
+
+### Removed（删除）
+
+- **删除旧 Retrofit 数据层**：移除三家旧 `*Adapter`（OpenAI/Anthropic/Gemini）、三个 `*Api`（Retrofit 接口）、`HttpErrorEnricher` 与 `RetryPolicy`，以及 `app/build.gradle.kts` 中的 Retrofit / converter-gson 依赖（OkHttp / Gson 保留）。
+
 ## [v0.3.1] - 2026-08-26
 
 ### Adjusted（调整）

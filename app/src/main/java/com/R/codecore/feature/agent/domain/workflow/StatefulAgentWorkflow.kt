@@ -70,14 +70,8 @@ import com.R.codecore.feature.settings.data.repository.ViewImageUnknownGuardPoli
 import com.R.codecore.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.R.codecore.feature.settings.data.repository.VisionModelSettingsRepository
 import com.R.codecore.feature.settings.domain.model.AIProviderConfig
-import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicApi
-import com.R.codecore.feature.agent.data.remote.gemini.GeminiApi
-import com.R.codecore.feature.agent.data.remote.openai.OpenAIApi
-import com.R.codecore.feature.agent.domain.provider.AnthropicAdapter
-import com.R.codecore.feature.agent.domain.provider.GeminiAdapter
-import com.R.codecore.feature.agent.domain.provider.OpenAIAdapter
+import com.R.codecore.feature.agent.domain.provider.AiProviderFactory
 import com.R.codecore.feature.settings.domain.model.ModelMetadata
-import com.R.codecore.feature.settings.domain.model.ProviderType
 import com.R.codecore.feature.settings.domain.repository.AIProviderRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
@@ -107,9 +101,7 @@ import javax.inject.Inject
 class StatefulAgentWorkflow @Inject constructor(
     private val toolRegistry: ToolRegistry,
     private val aiProviderRepository: AIProviderRepository,
-    private val openAIApi: OpenAIApi,
-    private val anthropicApi: AnthropicApi,
-    private val geminiApi: GeminiApi,
+    private val aiProviderFactory: AiProviderFactory,
     private val promptProvider: SystemPromptProvider,
     private val permissionManager: ToolPermissionManager,
     private val policyEngine: ToolPermissionPolicyEngine,
@@ -358,20 +350,8 @@ class StatefulAgentWorkflow @Inject constructor(
      * 根据 [config] 创建一个全新的、独立的 [AIProvider] 实例。
      * 用于识图回退和上下文压缩等独立请求场景，完全不占用或修改主对话所用的 Provider 单例。
      */
-    private fun createStandaloneProvider(config: AIProviderConfig, sessionId: String?): AIProvider {
-        val provider: AIProvider = when (config.type) {
-            ProviderType.ANTHROPIC -> AnthropicAdapter(anthropicApi)
-            ProviderType.GEMINI -> GeminiAdapter(geminiApi)
-            else -> OpenAIAdapter(openAIApi)
-        }
-        provider.apiKey = config.apiKey
-        provider.baseUrl = config.baseUrl
-        provider.model = config.effectiveModel
-        provider.useFullUrl = config.useFullUrl
-        provider.useResponseApi = config.useResponseApi
-        provider.logSessionId = sessionId
-        return provider
-    }
+    private fun createStandaloneProvider(config: AIProviderConfig, sessionId: String?): AIProvider =
+        aiProviderFactory.create(config, sessionId)
 
     /** 核心 Reducer，接收旧状态与 Action，返回新状态以及触发的副作用列表 (纯函数) */
     private fun reduce(

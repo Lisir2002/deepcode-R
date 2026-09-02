@@ -3,9 +3,8 @@ package com.R.codecore.di
 import com.R.codecore.feature.agent.data.CodeChangeTracker
 import com.R.codecore.feature.agent.domain.tool.todo.TodoTool
 import com.R.codecore.feature.settings.domain.repository.AIProviderRepository
-import com.R.codecore.feature.agent.data.remote.anthropic.AnthropicApi
-import com.R.codecore.feature.agent.data.remote.gemini.GeminiApi
-import com.R.codecore.feature.agent.data.remote.openai.OpenAIApi
+import com.R.codecore.feature.agent.domain.provider.DefaultProviderRegistry
+import com.R.codecore.feature.agent.domain.spi.ModelProviderRegistry
 import com.R.codecore.feature.agent.domain.container.CommandEngine
 import com.R.codecore.feature.agent.domain.container.DelegatingCommandEngine
 import com.R.codecore.feature.agent.domain.container.LinuxContainerEngine
@@ -55,10 +54,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
-import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -104,57 +100,6 @@ object AgentModule {
             // 网络层优化 C3：短 TTL DNS 缓存，避免每次连接走系统 DNS（弱网可省几十~几百 ms）。
             .dns(com.R.codecore.core.network.CachingDns())
             .build()
-    }
-
-    @Provides
-    @Singleton
-    @Named("OpenAI")
-    fun provideOpenAIRetrofit(client: OkHttpClient): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl("https://api.openai.com/")
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    @Named("Anthropic")
-    fun provideAnthropicRetrofit(client: OkHttpClient): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl("https://api.anthropic.com/")
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideOpenAIApi(@Named("OpenAI") retrofit: Retrofit): OpenAIApi {
-        return retrofit.create(OpenAIApi::class.java)
-    }
-
-    @Provides
-    @Singleton
-    fun provideAnthropicApi(@Named("Anthropic") retrofit: Retrofit): AnthropicApi {
-        return retrofit.create(AnthropicApi::class.java)
-    }
-
-    @Provides
-    @Singleton
-    @Named("Gemini")
-    fun provideGeminiRetrofit(client: OkHttpClient): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl("https://generativelanguage.googleapis.com/")
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideGeminiApi(@Named("Gemini") retrofit: Retrofit): com.R.codecore.feature.agent.data.remote.gemini.GeminiApi {
-        return retrofit.create(com.R.codecore.feature.agent.data.remote.gemini.GeminiApi::class.java)
     }
 
     @Provides
@@ -385,12 +330,15 @@ object AgentModule {
 
     @Provides
     @Singleton
+    fun provideModelProviderRegistry(): ModelProviderRegistry =
+        DefaultProviderRegistry()
+
+    @Provides
+    @Singleton
     fun provideAgentWorkflow(
         toolRegistry: ToolRegistry,
         aiProviderRepository: AIProviderRepository,
-        openAIApi: OpenAIApi,
-        anthropicApi: AnthropicApi,
-        geminiApi: GeminiApi,
+        aiProviderFactory: com.R.codecore.feature.agent.domain.provider.AiProviderFactory,
         promptProvider: SystemPromptProvider,
         permissionManager: ToolPermissionManager,
         policyEngine: ToolPermissionPolicyEngine,
@@ -424,9 +372,7 @@ object AgentModule {
         return com.R.codecore.feature.agent.domain.workflow.StatefulAgentWorkflow(
             toolRegistry,
             aiProviderRepository,
-            openAIApi,
-            anthropicApi,
-            geminiApi,
+            aiProviderFactory,
             promptProvider,
             permissionManager,
             policyEngine,
