@@ -22,6 +22,7 @@ import com.R.codecore.feature.terminal.domain.TerminalKeepaliveService
 import com.R.codecore.core.security.CredentialEncryptor
 import com.R.codecore.datalayer.engine.ConnectionPool
 import com.R.codecore.datalayer.engine.LibName
+import com.R.codecore.datalayer.sqldelight.AgentDb
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -199,17 +200,25 @@ class AIEditorApp : Application() {
                 0,
                 null,
             ).value
-            // 再跑一次真实业务查询（SQLDelight 生成的那条），确认也能过
-            agentDriver.executeQuery(
-                null,
-                "SELECT agent_message.id FROM agent_message LIMIT 1",
-                { cursor -> QueryResult.Unit },
-                0,
-                null,
-            ).value
-            FileLogger.i(TAG, "【rc8 诊断】启动阶段 SELECT agent_message.id 成功 ✅")
+            // 冒烟测试：直接调用 SQLDelight **生成的那条查询**，而不是手写一段「看起来像」的 SQL。
+            //
+            // rc8 事故教训：此前这里手写 "SELECT agent_message.id FROM agent_message LIMIT 1"，
+            // 其形态（FROM 真实表）与真实生成 SQL（FROM 匿名嵌套子查询）**不同**——
+            // 手写版编译通过并打出「✅」，业务侧却照崩，诊断给出假阳性绿灯，
+            // 直接误导 rc1~rc7 把 7 轮精力投在「表结构缺列」的错误方向上。
+            //
+            // 改为直接构造 AgentDb 调 agentQueries.selectMessagesBySessionPaged：
+            // 与线上崩溃路径 100% 同构，且随 .sq 变更自动同步，永不漂移。
+            // 任何「生成的 SQL 编译不过 / 列绑定失败」都会在启动阶段就地暴露，
+            // 而不是等用户在主线程收集 Flow 时才炸。
+            AgentDb(agentDriver).agentQueries
+                .selectMessagesBySessionPaged("__startup_smoke__", 1L)
+                .executeAsList()
+            FileLogger.i(TAG, "【rc9 冒烟】selectMessagesBySessionPaged 启动期执行成功 ✅")
         }.onFailure { e ->
-            FileLogger.e(TAG, "【rc8 诊断】启动阶段就崩了！agent_message 真有问题！", e)
+            // 冒烟失败说明生成的 SQL 本身就不可编译/绑定——不要放行到 UI，
+            // 否则就是 rc8 那种「启动灯全绿、一进会话页就崩」。
+            FileLogger.e(TAG, "【rc9 冒烟】selectMessagesBySessionPaged 启动期执行失败（生成 SQL 有问题，非表结构问题）", e)
         }
         // 数据层重构：前 DataStore（settings_prefs / workspace_prefs / terminal_prefs / proxy_prefs /
         // mcp_server_prefs / app_run_meta / ftp_server_prefs）全部迁移到 SQLDelight InfraDb.kv_store，

@@ -161,10 +161,22 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 selectMessagesBySession:
 SELECT * FROM agent_message WHERE session_id = ? ORDER BY seq ASC, created_at ASC;
 
+-- ⚠️ 子查询**必须**显式别名（AS agent_message），删掉别名会立刻复活 rc8 崩溃。
+--
+-- 根因（rc8）：SQLDelight 会把外层 `SELECT *` 展开为带表名前缀的列（agent_message.id, ...）。
+-- 子查询若匿名，SQLite 外层作用域里不存在名为 agent_message 的表或别名，
+-- 展开后的 `agent_message.id` 无处绑定 → 编译期即报
+--   `no such column: agent_message.id (code 1 SQLITE_ERROR)`
+-- 这与 agent_message 表**是否真的含 id 列完全无关**：表结构 100% 正确时同样必崩
+-- （实测 SQLite 3.45：完整 22 列结构 + 匿名子查询 → 仍报同一错误）。
+-- 因此 rc1~rc7 围绕「表结构缺列 / 换库文件名 / SchemaSelfHealer」的 7 轮修复全部落空——
+-- 方向错了：这是**生成的 SQL 形态缺陷**，不是数据缺陷。
+-- 加上 AS agent_message 后，外层前缀正确绑定到子查询结果集，语义与之前一致
+-- （内层倒序取最近 N 条 → 外层正序返回）。
 selectMessagesBySessionPaged:
 SELECT * FROM (
   SELECT * FROM agent_message WHERE session_id = ? ORDER BY seq DESC, created_at DESC LIMIT ?
-) ORDER BY seq ASC, created_at ASC;
+) AS agent_message ORDER BY seq ASC, created_at ASC;
 
 deleteMessagesBySession:
 DELETE FROM agent_message WHERE session_id = ?;
