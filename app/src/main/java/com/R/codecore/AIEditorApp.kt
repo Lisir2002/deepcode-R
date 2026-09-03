@@ -190,10 +190,10 @@ class AIEditorApp : Application() {
                 { cursor ->
                     val cols = mutableListOf<String>()
                     while (cursor.next().value) {
-                        val name = cursor.getString(1)?.value
+                        val name: String? = cursor.getString(1)
                         if (name != null) cols.add(name)
                     }
-                    FileLogger.i(TAG, "【rc7 诊断】agent_message 真实列: ${cols.joinToString()}")
+                    FileLogger.i(TAG, "【rc8 诊断】agent_message 真实列: ${cols.joinToString()}")
                     QueryResult.Unit
                 },
                 0,
@@ -207,9 +207,9 @@ class AIEditorApp : Application() {
                 0,
                 null,
             ).value
-            FileLogger.i(TAG, "【rc7 诊断】启动阶段 SELECT agent_message.id 成功 ✅")
+            FileLogger.i(TAG, "【rc8 诊断】启动阶段 SELECT agent_message.id 成功 ✅")
         }.onFailure { e ->
-            FileLogger.e(TAG, "【rc7 诊断】启动阶段就崩了！agent_message 真有问题！", e)
+            FileLogger.e(TAG, "【rc8 诊断】启动阶段就崩了！agent_message 真有问题！", e)
         }
         // 数据层重构：前 DataStore（settings_prefs / workspace_prefs / terminal_prefs / proxy_prefs /
         // mcp_server_prefs / app_run_meta / ftp_server_prefs）全部迁移到 SQLDelight InfraDb.kv_store，
