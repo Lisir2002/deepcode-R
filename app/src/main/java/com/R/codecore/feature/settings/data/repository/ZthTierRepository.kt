@@ -5,6 +5,7 @@ import com.R.codecore.datalayer.store.KVStore
 import com.R.codecore.feature.agent.domain.zth.ZthPerformanceClass
 import com.R.codecore.feature.agent.domain.zth.ZthPresetTier
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
