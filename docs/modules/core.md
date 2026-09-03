@@ -61,6 +61,9 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
+- **v0.0.0.1-rc7（2026-09-03）**：AGENT 库改为全新文件名（`rcodecore_agent_v2.db` → `rcodecore_agent_v3.db`，`LibName.AGENT`）。
+  - 背景：即便 rc6 升 schema 到 v3 + 启动无条件预热自愈，仍有设备出现「预热确认 `agent_message.id` 存在、随后查询却报 `no such column: agent_message.id`」的自洽矛盾（见 [SchemaSelfHealer](../../CHANGELOG.md) 排查）；代码内仅单驱动单文件、`ensureSchema`/自愈只会加 `id`，指向磁盘上那份旧破文件已「坏到底、自愈救不回」（很早期 rc 创建、`id` 列从未存在，覆盖安装未被清除）。
+  - 处理：换新文件名让 `rcodecore_agent_v3.db` 全新创建（`current=0` → `schema.create`，`agent_message` 必然带 `id`），彻底甩开旧破文件，距今 6 个 rc 反复出现的 `no such column` 从机制上堵死不复发。代价：受影响设备的历史 AI 会话随旧文件一起弃置（全新文件为空）。全仓仅 `DatabasePathProvider.kt` 一处引用库名，换名安全；备份/恢复/自动迁移均经 `LibName.fileName` 钥匙映射，透明适配。
 - **v0.0.0.1-rc5（2026-09-03）**：结构自愈时机彻底前置——`AIEditorApp.onCreate` 最早期同步无条件预热 AGENT 库（`connectionPool.driver(LibName.AGENT)`），任何 ViewModel/数据门面查询前，`ConnectionPool.onOpened` 即完成 `ensureSchema` + `SchemaSelfHealer` 幂等自愈；自愈失败改为以语义明确的自定义错误崩溃（落 `no such column` 之外的完整表结构现场）。彻底消除「首个 UI 查询先于自愈」的竞态窗口。
 - **v0.0.0.1-rc1（2026-09-03）**：数据层迁移落定 + 网络/结构韧性与版本体系刷新。
   - 数据层完成 Room/DataStore → SQLDelight V2 全面接管（核心链路），`core/data`/`core/db` 目录按 V2 门面收敛。

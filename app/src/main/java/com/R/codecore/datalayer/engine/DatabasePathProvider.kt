@@ -16,7 +16,7 @@ import java.io.File
  * 使 [com.R.codecore.datalayer.migration.MigrationEngine] 的快照/回滚可在 JVM 单测覆盖。
  */
 enum class LibName(val fileName: String) {
-    AGENT("rcodecore_agent_v2.db"),
+    AGENT("rcodecore_agent_v3.db"),
     CREDENTIALS("rcodecore_credentials_v2.db"),
     SETTINGS("rcodecore_settings_v2.db"),
     WORKSPACE("rcodecore_workspace_v2.db"),

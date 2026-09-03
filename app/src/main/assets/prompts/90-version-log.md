@@ -9,6 +9,22 @@
 - 规则：工具 / prompt / schema 等 AI 工作流相关变更，发版时必须在本文件追加一条结构化记录。
 - 版本号规则：四段式 x.x.x.x，见 `docs/versioning.md`。本文件最新条目置顶。
 
+## 0.0.0.1-rc7 (2026-09-03)
+
+### TYPE
+prerelease-rc / fix (abandon corrupt legacy agent db file)
+
+### IMPACT
+- datalayer / agent 数据落点变化；`LibName.AGENT.fileName` 由 `rcodecore_agent_v2.db` 改为 `rcodecore_agent_v3.db`。
+
+### DATA / SCHEMA
+- AGENT 库改全新文件名 `rcodecore_agent_v3.db`（全仓仅 `datalayer/engine/DatabasePathProvider.kt` 一处引用，备份/恢复/自动迁移均按 `LibName.fileName` 映射，透明适配）。
+- 新文件首次打开 `user_version=0` → `schema.create` 全新建表，`agent_message` 必带 `id` 主键，从机制上根治反复出现的 `no such column: agent_message.id`。
+- 受影响设备旧的 `rcodecore_agent_v2.db`（很早期 rc 创建、缺 `id`、覆盖安装未清除的坏库）不再被读取，历史 AI 会话随之弃置（新库为空）。
+
+### AI ACTION
+- AI 若需访问/迁移旧 agent 数据，注意旧文件 `rcodecore_agent_v2.db` 已被弃用；后续一律以 `LibName.AGENT.fileName` 为准，勿硬编码旧库名。
+
 ## 0.0.0.1-rc3 (2026-09-03)
 
 ### TYPE

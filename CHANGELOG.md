@@ -27,6 +27,16 @@
 
 ---
 
+## [v0.0.0.1-rc7] - 2026-09-03
+
+反复 6 个 rc 都无法根治的 `no such column: agent_message.id`，最终定位到「自愈救不回的坏库」：即便把 AGENT 库升到 schema v3 并启动无条件预热，仍有设备出现「预热确认 `id` 列存在、随后消息查询却报缺列」的矛盾——代码内单驱动单文件、`ensureSchema`/自愈只会加 `id`，指向磁盘上那份**很早期 rc 创建、`id` 列从未存在、覆盖安装又未清除**的旧破文件。rc7 换全新库文件，从机制上甩开它。
+
+### Changed（变更）
+
+- **AGENT 数据改用全新库文件**：`rcodecore_agent_v2.db` 弃用，改用全新 `rcodecore_agent_v3.db`（`schema.create` 全新建表，`agent_message` 必然包含 `id` 主键），彻底杜绝历史坏文件反复触发缺列崩溃。受影响设备此前的 AI 会话不在新库中（全新库为空），属本次为根治崩溃接受的取舍。
+
+---
+
 ## [v0.0.0.1-rc6] - 2026-09-03
 
 上溯审计「新版数据层结构本身是否正常」：SQLDelight DDL 中 `agent_message` 明确含 `id` 主键（22 列与插入语句完全对应），全代码库仅 `agent.sq` 与自愈器两处建表且结构一致，「全新库 → schema.create」必然带 `id` 列。因此反复出现 `no such column: agent_message.id`，根因指向**历史坏库「user_version 已对齐 target」被 MigrationEngine 判为 no-op，跳过了修复路径**。rc6 把它强制拉回迁移路径，并给崩溃快照加指纹以在当场定案。
