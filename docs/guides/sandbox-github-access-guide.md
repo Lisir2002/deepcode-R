@@ -235,12 +235,16 @@ PATCH /repos/{o}/{r}/releases/<release_id>        # 改说明/置顶警示
 | 8 | DoH 偶发解析失败 / Answer 为空 | 重试 3 次 → 换备用通道（§3.4），单通道是单点 |
 | 9 | 海外 DoH（1.1.1.1）在白名单沙箱不可达 | 别默认"大厂 DoH 一定通"，先体检（§3.3） |
 | 10 | 基于过期 main HEAD 组装 commit 被拒/覆盖 | 组装前重取 `refs/heads/main` |
+| 11 | **git smart-http 端点被精准阻断**（rc10 实测 2026-09-04）：真实 IP 直连下，`github.com/` 主页与 `api.github.com` 均通，但 `/…/info/refs?service=git-receive-pack` 挂起超时——`git push` 彻底不可用 | 别恋战 `git push`；`api.github.com` 可用即走 §5 Git Data API（本轮 4 commits 分段重建验证成功） |
+| 12 | `POST /git/refs` 成功响应**顶层无 `sha`**（在 `object.sha`），`git/tags`、`git/commits`、`git/blobs` 顶层才有 | 脚本判成功别只看顶层 `sha` 键，否则会把成功误判为失败（rc10 两次踩中） |
+| 13 | workflow 的 `gh` 命令在无 checkout 的 runner 上报 `fatal: not a git repository` | `gh` 靠 git 上下文推断仓库；给步骤 env 显式加 `GH_REPO: ${{ github.repository }}`（ci-failure-alert.yml 已修） |
 
 ## 9. 适用边界：这招什么时候不管用
 
 | 场景 | 是否有效 | 判别方法 |
 | --- | --- | --- |
 | 仅 DNS 污染（IP 可达） | ✅ 本方案 | ①解析到特殊网段 + ④体检 HTTP 200 |
+| **git 协议被精准阻断、但 api 子域可用**（rc10 实测 2026-09-04） | ⚠️ 降级为 §5 Git Data API 专属通道 | `curl --resolve` 打主页/API 均 200/400，唯独 `…/info/refs?service=git-receive-pack` 挂起 → 放弃 `git push`，全走 api.github.com |
 | 出口 IP 被 TCP 阻断 / SNI 阻断 | ❌ | 体检③握手即断（35 错误）；需 HTTP 代理、镜像站或 VPN |
 | 沙箱对 TLS 做 MITM（自签 CA） | ❌（症状相同，易误诊） | 同样报 35/证书错误；用 `curl -kv` 探测——能通即是 MITM 而非 SNI 阻断，但 MITM 下继续操作等于裸奔，应停手 |
 | DoH 域名本身不在白名单 | ❌ | 体检②失败；换白名单内可用的 DoH/HTTPDNS（§3.4） |
