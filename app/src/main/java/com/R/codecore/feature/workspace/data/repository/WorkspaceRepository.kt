@@ -3,6 +3,7 @@ package com.R.codecore.feature.workspace.data.repository
 import android.content.Context
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.datalayer.store.KVStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.R.codecore.datalayer.repository.AgentRepository as V2AgentRepository
 import com.R.codecore.feature.agent.domain.container.ConnectionState
 import com.R.codecore.feature.agent.domain.container.RemoteSshConnection

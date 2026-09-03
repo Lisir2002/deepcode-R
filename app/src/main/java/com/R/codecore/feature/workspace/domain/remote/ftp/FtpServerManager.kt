@@ -3,6 +3,7 @@ package com.R.codecore.feature.workspace.domain.remote.ftp
 import android.content.Context
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.datalayer.store.KVStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
