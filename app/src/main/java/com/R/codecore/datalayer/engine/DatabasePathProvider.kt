@@ -15,6 +15,20 @@ import java.io.File
  * v2-full-takeover P0-3：抽为接口，平台实现见 [AndroidDatabasePathProvider]，
  * 使 [com.R.codecore.datalayer.migration.MigrationEngine] 的快照/回滚可在 JVM 单测覆盖。
  */
+/**
+ * 库文件名是**数据契约（data contract）**，不可随意手改。
+ *
+ * ⚠️ 改 `fileName` 后缀（如 v2 → v3）= 放弃旧文件名指向的物理文件 = **清空该库的全部历史数据**
+ * （App 之后只会去读新文件名，旧文件不再被打开）。rc7 曾因误判 `no such column: agent_message.id`
+ * 根因（实为 SQL 形态不合法，非库损坏）而把 agent 库改名 `rcodecore_agent_v3.db`，
+ * 导致所有历史会话被静默清空——这是一次过度反应，代价不可逆。
+ *
+ * 纪律（固化，防复发）：
+ *  1. 表结构演进 / 缺列等问题，**一律走 [SchemaSelfHealer] 无损重建或 .sqm 迁移**，绝不用「改文件名换库」规避；
+ *  2. 仅当库文件确属**不可自愈的损坏**（如 `SQLITE_CORRUPT`、只读打开即失败）时，才考虑换文件名重建，
+ *     且必须在 changelog 显式记录「为何弃旧库」并保留旧文件可人工恢复；
+ *  3. 任何 `fileName` 变更都是破坏性数据事件，需经评审，不在修复提交里顺手改。
+ */
 enum class LibName(val fileName: String) {
     AGENT("rcodecore_agent_v3.db"),
     CREDENTIALS("rcodecore_credentials_v2.db"),

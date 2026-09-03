@@ -13,10 +13,13 @@ import app.cash.sqldelight.db.SqlDriver
  * 哪怕 DataRegistryModule.provideDataProviders 先于 provideAgentDb 调用 [driver]，拿到的也已经是
  * 表结构完整（含 id 列）的库，不会再出现 no such column: agent_message.id 的启动即崩。
  *
+ * [onPreOpen] 在 [factory.create]（即 `AndroidSqliteDriver` 构造、会立即打开并迁移）**之前**触发，
+ * 用于「迁移前」的版本探测 + 文件级快照（见 MigrationEngine.preOpen / VersionProbe）。
  * [onOpened] 在 ConnectionPool 构造时由 DataLayerModule 注入；单进程内、单库只触发一次（幂等）。
  */
 class ConnectionPool(
     private val factory: DatabaseDriverFactory,
+    private val onPreOpen: ((LibName) -> Unit)? = null,
     private val onOpened: ((LibName, SqlDriver) -> Unit)? = null,
 ) {
 
@@ -26,6 +29,8 @@ class ConnectionPool(
     fun driver(lib: LibName): SqlDriver {
         val existing = drivers[lib]
         if (existing != null) return existing
+        // 迁移前探测 + 快照：必须在 factory.create 打开/迁移之前，否则快照永远落在迁移之后。
+        onPreOpen?.invoke(lib)
         val created = factory.create(lib)
         drivers[lib] = created
         // 立即对齐 schema + 自愈，再让任何业务代码访问。

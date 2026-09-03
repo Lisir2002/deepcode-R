@@ -3,6 +3,7 @@ package com.R.codecore.datalayer.di
 import android.content.Context
 import com.R.codecore.core.util.FileLogger
 import com.R.codecore.datalayer.engine.AndroidDatabasePathProvider
+import com.R.codecore.datalayer.engine.AndroidVersionProbe
 import com.R.codecore.datalayer.engine.ConnectionPool
 import com.R.codecore.datalayer.engine.DatabaseDriverFactory
 import com.R.codecore.datalayer.engine.DatabasePathProvider
@@ -89,6 +90,25 @@ object DataLayerModule {
         factory: DatabaseDriverFactory,
         engine: MigrationEngine,
     ): ConnectionPool {
+        // 迁移前钩子：在 factory.create（AndroidSqliteDriver 构造，会立即打开并迁移）之前，
+        // 用原生只读连接探测真实 user_version，对旧版本库先快照保命。
+        // 若漏调，driver 打开后 ensureSchema 仍有 codeMigrations 兜底，但快照安全网会失效——故必须此处先跑。
+        val preOpenHook: (LibName) -> Unit = preOpenHook@{ lib ->
+            val schema = SCHEMA_MAP[lib]
+            if (schema == null) {
+                FileLogger.w(TAG, "未知 LibName=$lib，跳过 preOpen")
+                return@preOpenHook
+            }
+            FileLogger.i(TAG, "preOpen($lib) target=${schema.version}")
+            runCatching {
+                engine.preOpen(lib, schema)
+                FileLogger.i(TAG, "preOpen($lib) 完成")
+            }.onFailure {
+                // preOpen 失败（如只读探测异常）：不阻断启动，driver 仍会打开并由 ensureSchema 兜底。
+                FileLogger.e(TAG, "preOpen($lib) 失败（忽略，driver 打开后由 ensureSchema 兜底）", it)
+            }
+        }
+
         val hook: (LibName, app.cash.sqldelight.db.SqlDriver) -> Unit = hook@{ lib, driver ->
             val schema = SCHEMA_MAP[lib]
             if (schema == null) {
@@ -123,13 +143,13 @@ object DataLayerModule {
                 }
             }
         }
-        return ConnectionPool(factory, hook)
+        return ConnectionPool(factory, preOpenHook, hook)
     }
 
     @Provides
     @Singleton
     fun provideMigrationEngine(pathProvider: DatabasePathProvider): MigrationEngine =
-        MigrationEngine(pathProvider)
+        MigrationEngine(pathProvider, AndroidVersionProbe(pathProvider))
 
     // ── 6 个 Database：ConnectionPool.onOpened 已确保 ensureSchema + 自愈先跑，
     //   这里再调一遍是幂等安全网（provideAgentDb 里的自愈会在 ConnectionPool 之后再跑一次，

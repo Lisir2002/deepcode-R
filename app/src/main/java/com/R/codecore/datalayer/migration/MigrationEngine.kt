@@ -12,15 +12,62 @@ import java.io.File
 /**
  * 迁移引擎（设计 §5：数据保护核心）。
  *
- * 职责（每个库打开时调用一次 [ensureSchema]）：
- *  - 全新库（user_version=0）：[SqlSchema.create] 建表并落地版本号。
- *  - 旧版本：先文件级快照（§5.3 安全网）→ [SqlSchema.migrate]（.sqm DDL 链）→ 代码迁移（[CodeMigration]）。
- *  - 版本回退（current > target）：拒绝打开，防数据损坏。
+ * 职责：
+ *  - **[preOpen]（driver 打开前）**：用 [VersionProbe] 原生只读探测真实 user_version，
+ *    在「迁移前」对旧版本库做文件级快照（§5.3 安全网）；版本回退（current > target）提前拒绝。
+ *    ⚠️ 必须在 `AndroidSqliteDriver` 构造**之前**调用——driver 构造即打开并执行
+ *    create/migrate，届时 user_version 已被改写为 target，再探测就永远进不了快照分支。
+ *  - **[ensureSchema]（driver 打开后）**：打开后兜底校验 + 代码迁移（[CodeMigration]）。
+ *    版本探测与迁移前快照已前移至 [preOpen]，此处 `currentVersion(driver)` 读到的是迁移后的版本。
  *
  * 失败语义（§5.4）：本引擎不写版本号、保留现场，由调用方（DataLayerModule 打开环节）决定重试/回滚；
  * 连续失败 N 次由上层回滚到 [restoreSnapshot] 产出的快照。
  */
-class MigrationEngine(private val pathProvider: DatabasePathProvider) {
+class MigrationEngine(
+    private val pathProvider: DatabasePathProvider,
+    // 默认探测（非 Android / 测试环境）：不读物理版本、一律视为「已对齐」，
+    // 不触发快照。真实 Android 环境由 DataLayerModule 注入 AndroidVersionProbe 覆盖。
+    private val probe: VersionProbe = object : VersionProbe {
+        override fun readVersion(lib: LibName): Int = 0
+    },
+) {
+
+    private companion object {
+        const val TAG = "MigrationEngine"
+    }
+
+    /**
+     * driver 构造（打开 / 迁移）**之前**调用：探测真实 user_version 并执行迁移前快照。
+     *
+     * 必须在 [com.R.codecore.datalayer.engine.ConnectionPool.driver] 的
+     * `factory.create(lib)`（即 `AndroidSqliteDriver` 构造）之前触发，
+     * 否则快照永远落在「数据已被迁移」之后，失去回滚意义。
+     *
+     * @return 本次决策动作（[PreOpenAction]），便于上层日志与测试断言。
+     */
+    fun preOpen(lib: LibName, schema: SqlSchema<*>, heavy: Boolean = false): PreOpenAction {
+        val current = probe.readVersion(lib)
+        val target = schema.version
+        FileLogger.i(TAG, "preOpen($lib): current=$current target=$target")
+        val action = decidePreOpen(current, target)
+        when (action) {
+            PreOpenAction.FRESH -> {
+                FileLogger.i(TAG, "  $lib 全新库（current=0），待 driver 打开时 onCreate 建表，无需快照")
+            }
+            PreOpenAction.UPGRADE_SNAPSHOT -> {
+                FileLogger.i(TAG, "  $lib 旧版本 $current → $target，driver 打开(迁移)前先快照保命")
+                snapshot(lib, heavy)
+            }
+            PreOpenAction.ALIGNED_NOOP -> {
+                FileLogger.i(TAG, "  $lib 版本已对齐（current==target==$current），无需快照；结构完整性由 onOpened 的 SchemaSelfHealer 保证")
+            }
+            PreOpenAction.DOWNGRADE -> {
+                // 提前到打开前拒绝，避免用低版本 schema 打开高版本数据造成损坏。
+                error("[$lib] 检测到版本回退：$current > $target，拒绝打开以防数据损坏")
+            }
+        }
+        return action
+    }
 
     fun ensureSchema(
         lib: LibName,
@@ -30,36 +77,29 @@ class MigrationEngine(private val pathProvider: DatabasePathProvider) {
         sqlMigrations: Array<out AfterVersion> = emptyArray(),
         heavy: Boolean = false,
     ) {
+        // ⚠️ driver 已在 factory.create 阶段打开并执行过 onCreate/onUpgrade（schema.create/migrate），
+        //    此处 currentVersion(driver) 读到的是「迁移后」的 user_version。
+        //    版本探测 + 迁移前快照已前移至 [preOpen]（在 factory.create 之前调用）。
+        //    本方法现在只负责：打开后兜底校验 + codeMigrations + 日志。
         val current = currentVersion(driver)
         val target = schema.version
-        FileLogger.i("MigrationEngine", "ensureSchema($lib): current=$current target=$target")
+        FileLogger.i(TAG, "ensureSchema($lib): current=$current target=$target（打开后兜底）")
         when {
-            current == 0 -> {
-                // 全新库：schema.create 由 AndroidSqliteDriver.onCreate() 回调自动执行（SQLDelight 绑定），
-                // 这里不再手动跑，避免二次 CREATE TABLE 报 table already exists 被吞掉。
-                FileLogger.i("MigrationEngine", "  $lib 全新库（current=0），schema.create 由 AndroidSqliteDriver.onCreate() 自动处理")
+            current.toLong() == target -> {
+                // 显式 no-op。⚠️ 版本相等 ≠ 表结构一致（v0.5.0-rc1 事故）：结构演进未同步新增 .sqm 时
+                // user_version 不变但表缺列，结构完整性由 ConnectionPool.onOpened 里的 SchemaSelfHealer 保证。
+                FileLogger.i(TAG, "  $lib 版本已对齐（current==target==$current），no-op；结构完整性由 SchemaSelfHealer 保证")
             }
-            current < target -> {
-                // 旧版本升级：先做文件级快照（数据安全网，AndroidSqliteDriver 不做）；
-                // schema.migrate 由 AndroidSqliteDriver.onUpgrade() 回调自动执行，这里不再手动跑。
-                FileLogger.i("MigrationEngine", "  $lib 需迁移 $current → $target，先 snapshot（schema.migrate 由 AndroidSqliteDriver.onUpgrade() 自动处理）")
-                snapshot(lib, heavy)
-                // codeMigrations 是应用级代码逻辑迁移，AndroidSqliteDriver 不覆盖，这里仍手动执行
+            current.toLong() < target -> {
+                // 正常不该进入（preOpen 已先快照并让 driver 完成迁移）；
+                // 若因某种原因 preOpen 未跑而 driver 仍完成了升级，这里补执行 codeMigrations 兜底。
+                FileLogger.w(TAG, "  $lib 打开后 current($current) < target($target)：preOpen 可能未执行，补跑 codeMigrations")
                 codeMigrations
                     .filter { it.from >= current && it.to <= target }
                     .sortedBy { it.from }
                     .forEach { it.block(driver) }
-                FileLogger.i("MigrationEngine", "  $lib 迁移 snapshot 已完成")
             }
-            current.toLong() == target -> {
-                // 显式 no-op。⚠️ 版本相等 ≠ 表结构一致：v0.5.0-rc1 事故中，表结构演进（+14 张表）
-                // 未伴随版本递增（彼时 0 个 .sqm，version 恒为 1），本分支静默空转导致
-                // 从 v0.4.0 升级的设备永远缺表、首查即崩（no such table: remote_connections）。
-                // 纪律：任何 .sq 结构变更必须同步新增 .sqm（version = 1 + .sqm 数，自动递增）。
-                FileLogger.i("MigrationEngine", "  $lib 版本已对齐（current==target==$current），no-op；" +
-                        " 表结构完整性由 ConnectionPool.onOpened 里的 SchemaSelfHealer 保证")
-            }
-            current > target -> error("[$lib] 检测到版本回退：$current > $target，拒绝打开以防数据损坏")
+            else -> error("[$lib] 检测到版本回退：$current > $target，拒绝打开以防数据损坏")
         }
     }
 
