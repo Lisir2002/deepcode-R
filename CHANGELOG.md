@@ -27,6 +27,27 @@
 
 ---
 
+## [v0.0.0.1-rc10] - 2026-09-03
+
+rc9 修掉 rc8 崩溃后，复盘发现两个遗留风险并在本轮闭环。
+
+### Fixed（修复）
+
+- **恢复迁移前快照安全网，堵住 rc 演进中的隐性数据风险**：原 `ensureSchema` 经 SQLDelight driver 探测 `user_version`，但 `AndroidSqliteDriver` 构造即打开并执行 `schema.create`/`schema.migrate`、写入目标版本号，导致 `current == 0` 与 `current < target` 两个分支永远进不去、**迁移前文件级快照从未执行**——一旦迁移中途失败将无快照可回滚。本轮引入平台无关的 `VersionProbe` 抽象，新增 `preOpen(lib, schema)` 在 driver 构造**之前**用原生只读连接探测真实 `user_version`，仅对 `0 < current < target` 的旧版本库先 `snapshot()` 再交给驱动迁移；并把版本回退（current > target）的拒绝前移到打开前。
+- **把「库文件名是数据契约」焊进纪律（rc7 换库代价的防复发）**：`LibName.fileName` 加数据契约注释——改后缀即放弃旧文件、清空该库历史；缺列等问题一律走 `SchemaSelfHealer` 无损重建，**禁止用「改文件名换库」规避**。rc7 曾因误判根因把 agent 库改名 `rcodecore_agent_v3.db`，导致历史会话被静默清空，本次从机制与注释上杜绝复发。
+
+### Added（新增）
+
+- **迁移前快照回归测试**：`MigrationEnginePreOpenTest` 用可控 `FakeProbe` 隔离物理 SQLite 探测，钉住 `decidePreOpen` 全部分支，并验证 `preOpen` 对旧版本库在「迁移前」做快照、且保住迁移前旧内容（核心回归）。
+- **配套设计文档**：`docs/plan-docs/migration-presnapshot-design.md`（承接 §5 数据保护），记录 preOpen / VersionProbe 的设计与决策表。
+
+### Changed（变更）
+
+- `ensureSchema` 职责收敛为「打开后兜底校验 + codeMigrations + 日志」，删除不可达的 `snapshot` 死代码与 `current == 0` 分支。
+- `ConnectionPool.driver` 新增 `onPreOpen` 回调（在 `factory.create` 之前触发），`DataLayerModule` 注入 `AndroidVersionProbe` 与 `onPreOpen` hook。
+
+---
+
 ## [v0.0.0.1-rc9] - 2026-09-03
 
 rc1~rc7 七轮修复全部围绕「`agent_message` 表缺 `id` 列」展开（结构自愈无损重建 → 换全新库文件 → 启动无条件预热），rc8 仍在同一处崩溃，且崩溃快照显示 `agentPreheatRan=true`——**自愈已成功执行**。本次转而审计**崩溃 SQL 本身**，定位到真正的根因：**不是数据缺列，而是 SQLDelight 生成的 SQL 形态不合法**。

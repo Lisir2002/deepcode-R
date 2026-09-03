@@ -9,6 +9,24 @@
 - 规则：工具 / prompt / schema 等 AI 工作流相关变更，发版时必须在本文件追加一条结构化记录。
 - 版本号规则：四段式 x.x.x.x，见 `docs/versioning.md`。本文件最新条目置顶。
 
+## 0.0.0.1-rc10 (2026-09-03)
+
+### TYPE
+prerelease-rc / fix (restore pre-migration snapshot safety net; harden fileName data-contract)
+
+### IMPACT
+- datalayer / migration engine；无 schema 版本变化、无表结构变化、无库文件名变化、无 API 语义变化。
+
+### DATA / SCHEMA
+- **无数据迁移**。`schema.version` 不变，不需新增 `.sqm`。
+- 根因：原 `MigrationEngine.ensureSchema` 第一步 `currentVersion(driver)` 经 SQLDelight driver 读 `user_version`，而 `AndroidSqliteDriver` 构造即打开并执行 `schema.create`/`schema.migrate`、写入目标版本号 → `current == 0` 与 `current < target` 分支永远不可达，**迁移前快照安全网从未执行**（迁移中途失败则无快照可回滚）。
+- 修复：新增平台无关接口 `VersionProbe.readVersion(lib)`（Android 实现 `AndroidVersionProbe` 用 `android.database.sqlite.SQLiteDatabase` 只读打开，不触发 onCreate/onUpgrade）；`MigrationEngine.preOpen(lib, schema)` 在 `ConnectionPool.driver` 的 `factory.create` **之前**调用，仅对 `0 < current < target` 的旧版本库先 `snapshot()` 再交驱动迁移；版本回退拒绝前移。
+- `decidePreOpen(current, target)` 纯函数决策：FRESH(0) / UPGRADE_SNAPSHOT(0<cur<tgt) / ALIGNED_NOOP(==) / DOWNGRADE(>)。
+
+### AI ACTION
+- 排查「迁移/升级后数据损坏、无快照」类问题时，先确认版本探测是否在 driver 打开**之前**完成；凡「driver 构造即打开并迁移」的 SQLDelight 驱动，绝不能经 driver 读 `user_version` 来判断「是否需要迁移前快照」——读到的总是迁移后的版本。
+- `LibName.fileName` 是数据契约：**改文件名后缀 = 清空该库历史**。缺列/结构演进一律走 `SchemaSelfHealer` 无损重建或 `.sqm` 迁移，禁止改文件名换库规避；仅确属不可自愈的损坏才换名且需评审记录（rc7 改 `rcodecore_agent_v3.db` 清空历史会话，属过度反应，已注释固化防复发）。
+
 ## 0.0.0.1-rc9 (2026-09-03)
 
 ### TYPE
