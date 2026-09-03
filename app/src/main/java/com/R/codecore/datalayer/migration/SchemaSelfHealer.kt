@@ -162,6 +162,10 @@ object SchemaSelfHealer {
             }
         }
 
+        // 清理上次自愈中途崩溃（RENAME 后未 DROP）残留的 ${table}_legacy，避免本次 RENAME 撞名失败、
+        // 永久锁死后续自愈。若存量数据仍在新表，legacy 为空表，直接删除无数据损失。
+        try { exec(driver, "DROP TABLE IF EXISTS $legacy;") } catch (_: Exception) { /* 删除失败不阻断主流，RENAME 前再试 */ }
+
         exec(driver, "ALTER TABLE $table RENAME TO $legacy;")
         exec(driver, createSql)
 
