@@ -140,7 +140,8 @@ R-CodeCore 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 ## 版本号规范
 
 - **唯一事实源**：由 Git Tag / Commit 动态推导解析，**彻底无需手写 `app/build.gradle.kts` 中的 `versionName`**。
-  - **`versionName`**：由 `gitVersionName()` 在构建时动态解析（如 tag 为 `v1.7.0` 则为 `1.7.0`；tag 为 `v1.7.0-rc1` 则为 `1.7.0-rc1`；非 Tag 的平时提交为 `1.7.0-dev.N+<hash>`）。
+  - **版本规则已升级为四段式 `x.x.x.x(-rcN)`**（从 `0.0.0.1` 迭代，A/B/C/D 语义与三份版本日志规范见 **`docs/versioning.md`**）。下文的三段式示例为历史基线，仅供回溯理解；新打 Tag 一律按四段式执行：Bug 修复仅迭代 rc 后缀，新增/删除功能正式版 D 段 +10，框架重构正式版 C 段 +1 且 D 段归零。
+  - **`versionName`**：由 `gitVersionName()` 在构建时动态解析（如 tag 为 `v0.0.0.1` 则为 `0.0.0.1`；tag 为 `v0.0.0.1-rc1` 则为 `0.0.0.1-rc1`；非 Tag 的平时提交为 `0.0.0.1-rcN-dev.N+<hash>`）。
   - **`versionCode`**：由 `gitCommitCount()` 从 git 提交数自动生成，随提交单调递增，无需手动维护。
 - **与 Tag 绑定**：发版时只需直接在 `main` 节点上打 git tag，例如 `v1.7.0-rc1` 或 `v1.7.0`，CI 捕获后会自动将生成的 APK 与该版本进行匹配并发布 Release。**严禁在功能分支（`feat/*` / `refactor/*`）上打 Tag 发版**，必须先合入 `main` 再打 Tag，确保发版的代码在 `main` 主线上可追溯。**唯一例外：预览版热修复**——RC 已发出后发现问题时，允许在基于该 RC Tag 的 `hotfix/*` 分支上打 rc 序号 +1 的 Tag 发修复版，修复必须随后合回 `main`（见「发版流程」）。
 

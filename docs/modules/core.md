@@ -14,7 +14,7 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 | `core/data/` | **数据注册表**（备份/恢复/自动迁移的单一事实源）：`DataRegistry`（枚举数据域并统一 `snapshotAll/restoreAll/pack/unpack`）、`DataProvider`/`DataBlob`/`DataCategory`（数据域接口与载荷）、`DataStoreDataProvider`（DataStore 目录转储）、`DataRegistryModule`（注册 V2 数据域 + DataStore）; V2 库的表转储走 `datalayer/backup/SqlDelightDataProvider`（SQLDelight 侧） |
 | `core/db/` | 数据迁移基础：`V1toV2FullMigrator`（旧 Room 域库 → V2 一次性移植器，纯 SQLite）+ `entity/CredentialEncryptionStateEntity`（纯 DTO） |
 | `core/environment/` | **运行环境抽象**：`ExecutionEnvironment`（真机 / arm64 模拟器 / x86_64 模拟器 / 其它）+ `EnvironmentDetector`（宿主 ABI、模拟器探测、默认容器 profile 选择）——所有「真机绑定」适配的唯一入口（见 [emulator-support-design](../plan-docs/emulator-support-design.md)） |
-| `core/network/` | **网络层优化**（见 [network-layer-optimization-design](../plan-docs/network-layer-optimization-design.md)）：`SseFieldExtractor`（SSE 行定点字段抽取，Gson `JsonReader` 流式不建树，P1）、`CachingDns`（OkHttp 异步 DNS 缓存，短 TTL 60s，失败清条目回退系统解析，C3）、`ConnectionPrewarmer`（模型 host 连接预热：DNS+TCP+TLS 握手预建，C1） |
+| `core/network/` | **网络层优化**（见 [network-layer-optimization-design](../plan-docs/network-layer-optimization-design.md)）：`SseFieldExtractor`（SSE 行定点字段抽取，Gson `JsonReader` 流式不建树，P1）、`CachingDns`（OkHttp 异步 DNS 缓存，短 TTL 60s，失败清条目回退系统解析，C3）、`ConnectionPrewarmer`（模型 host 连接预热：DNS+TCP+TLS 握手预建，C1）、`PublicDnsFallback`（系统 DNS 解析失败时回退公共 DNS 223.5.5.5 等 UDP 直连查 A 记录，规避「Unable to resolve host」） |
 | `core/security/` | 安全加密：`CredentialEncryptor`/`DEKManager`（数据加密密钥）、`HostKeyManager`（SSH host key）、`UserPasswordBackupCrypto`、`ZthSensitiveColumnCrypto`/`ZthSharedSyncKeyStore`、`CredentialEncryptionContract` |
 | `core/theme/` | 主题与组件：`AIEditorTheme`、`AppComponents`、`CyberComponents` |
 | `core/ui/` | UI 基础：`ImeInset`（软键盘 inset 处理） |
@@ -61,6 +61,11 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
+- **v0.0.0.1-rc1（2026-09-03）**：数据层迁移落定 + 网络/结构韧性与版本体系刷新。
+  - 数据层完成 Room/DataStore → SQLDelight V2 全面接管（核心链路），`core/data`/`core/db` 目录按 V2 门面收敛。
+  - 新增 `datalayer/migration/SchemaSelfHealer`：AgentDb 打开紧跟 `ensureSchema` 后对 `agent_session`/`agent_message` 做幂等无损结构自愈（缺列重建 + 索引预清理 + NOT NULL 回填），规避「user_version 相同但表结构漂移」导致的 `no such column: agent_message.id` 启动崩溃。
+  - 新增 `core/network/PublicDnsFallback`：系统 DNS 失败回退公共 DNS（223.5.5.5 等 UDP 直连 A 查询），`di/AgentModule` 共享 OkHttp 已挂载，解决自定义模型接口「Unable to resolve host」连接失败。
+  - 版本号切换四段式 `x.x.x.x(-rcN)`（从 `0.0.0.1` 迭代），权威规范见 [docs/versioning.md](../../docs/versioning.md)。
 - **v0.3.0-rc3（2026-08-26）**：崩溃与内存自愈防线（预防闸门）落地——`AIEditorApp.onTrimMemory` 在内存临界时释放浏览器快照缓存 + 5 域库 WAL checkpoint(TRUNCATE) + 落临界标记；新增 `diagnoseLastExit` 启动自诊断「上次因内存压力被 LMKD 静默回收」并留痕（解决「模型输出时闪退却无日志」的排查盲区）。同步新增浏览器侧 `BrowserController.onMemoryPressure`。
 - **v0.3.0-rc2（2026-08-26）**：仓库整理（移除调试数据库等杂项）；文档审计对齐（agent 库 v4、32 表、迁移链）。
 - **v0.2.0（2026-08-25）**：网络层连接预热组件落地（`core/network/ConnectionPrewarmer`：DNS+TCP+TLS 预建）。

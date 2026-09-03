@@ -1,9 +1,10 @@
 # Changelog
 
-本文件记录 R-CodeCore 各版本的用户可见变更，采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
+本文件记录 R-CodeCore 各版本的用户可见变更，采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格。版本号采用四段式 `x.x.x.x(-rcN)`（从 `0.0.0.1` 迭代），完整规则见 [docs/versioning.md](./docs/versioning.md)。
 
-- **发布视角**：本文档面向用户，只记录用户可感知的变化；内部实现细节（重构、DB 迁移、测试）不在此展开。
-- **开发视角**：各模块的内部演进见 `docs/modules/<module>.md` 的「版本演进记录」章节。
+- **用户日志**：本文档面向用户，只记录用户可感知的变化；内部实现细节（重构、DB 迁移、测试）不在此展开。
+- **开发者日志**：各模块内部演进见 `docs/modules/<module>.md` 的「版本演进记录」章节。
+- **AI 日志**：面向协同 AI 的结构化版本日志见 `app/src/main/assets/prompts/90-version-log.md`。
 - **生成机制**：发版时从 `git log`（Conventional Commits）汇总初稿并人工润色后写入，见 `AGENTS.md`「发版流程」。版本号由 Git Tag 动态推导，代码中不手写。
 
 ## 分类约定（六类）
@@ -23,6 +24,30 @@
 
 - `[Unreleased]`：尚未发布的变更。
 - 每个版本条目含版本号、发布日期；变更按上述六类分组，顺序固定为 新增 → 改进 → 修复 → 变更 → 删除 → 调整。
+
+---
+
+## [v0.0.0.1-rc1] - 2026-09-03
+
+首个预发行版，承接数据层全量重构 #4（数据层迁移等工作）并刷新版本号体系（四段式，从 `0.0.0.1` 重新迭代）。
+
+### Added（新增）
+
+- **DNS 解析兜底**：模型接口因系统 DNS 解析失败而连接不上时，自动回退到公共 DNS（223.5.5.5 等）完成解析，规避「Unable to resolve host」导致的无法添加 / 拉取模型问题。
+- **数据库结构自愈**：数据层增加幂等自愈能力，自动修复历史库「版本号相同但表结构不一致」导致的崩溃（如 `no such column: agent_message.id`），升级整个过程无感、可重复执行。
+
+### Improved（改进）
+
+- **数据层全面接管 SQLite**：核心数据统一由 SQLDelight 持久化，构建更稳、运行更可预期。
+
+### Fixed（修复）
+
+- **修复崩溃**：`no such column: agent_message.id` 引发的启动崩溃。
+- **修复模型连接失败**：DeepSeek 等自定义模型接口因 DNS 解析失败无法添加 / 拉取。
+
+### Changed（变更）
+
+- **版本号体系升级为四段式**：`x.x.x.x(-rcN)`，从 `0.0.0.1` 开始迭代（Bug 修复仅迭代 rc 后缀；新增 / 删除功能正式版 D 段 +10；框架重构正式版 C 段 +1 且 D 段归零）。
 
 ---
 
