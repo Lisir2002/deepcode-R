@@ -27,6 +27,20 @@
 
 ---
 
+## [v0.0.0.1-rc6] - 2026-09-03
+
+上溯审计「新版数据层结构本身是否正常」：SQLDelight DDL 中 `agent_message` 明确含 `id` 主键（22 列与插入语句完全对应），全代码库仅 `agent.sq` 与自愈器两处建表且结构一致，「全新库 → schema.create」必然带 `id` 列。因此反复出现 `no such column: agent_message.id`，根因指向**历史坏库「user_version 已对齐 target」被 MigrationEngine 判为 no-op，跳过了修复路径**。rc6 把它强制拉回迁移路径，并给崩溃快照加指纹以在当场定案。
+
+### Added（新增）
+
+- **崩溃日志指纹（一锤定音定位）**：崩溃快照头部新增三行标记 `version=`（当前安装版本）、`schemaVersion=AGENT-v3`（本次 schema 目标版本）、`agentPreheatRan=true/false`（本进程是否已执行过 AGENT 库预热自愈）。复现后仅凭这三行即可判定「跑的是不是含修复代码的包、自愈有没有执行」，终结此前的版本扯皮。
+
+### Fixed（修复）
+
+- **schema 升至 v3 强制迁移，堵死「版本对齐即当表结构正确」的根因**：AGENT 域新增 `2.sqm` 迁移标记，把历史中「user_version 已对齐 target → MigrationEngine no-op」的坏库强制拉进迁移路径（schema.version 由 2 升 3）。坏库在进入迁移后由既有 `SchemaSelfHealer` 按列交集无损重建 `agent_message`（缺 `id` 主键即 UUID 回填重建），保证打开即不再缺失关键列。迁移文件只放置幂等 marker 表、不依赖任何业务表列，确保迁移恒可成功、不因缺列中途崩溃。
+
+---
+
 ## [v0.0.0.1-rc5] - 2026-09-03
 
 rc4 修复了 `ConnectionPool` 打开配套的 schema 对齐 + 自愈时机，但仍依赖「首个查询方触发」。若某条启动路径同时读取了 AGENT 库结构但跳过了自愈，或自愈执行的连接与报错查询不一致，仍可能在上一个 rc（rc4，安装后添加模型发送第一条消息）复现 `no such column: agent_message.id`。rc5 改为**彻底消除时机不确定性**。
