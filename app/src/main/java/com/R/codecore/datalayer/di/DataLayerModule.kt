@@ -89,11 +89,11 @@ object DataLayerModule {
         factory: DatabaseDriverFactory,
         engine: MigrationEngine,
     ): ConnectionPool {
-        val hook: (LibName, app.cash.sqldelight.db.SqlDriver) -> Unit = { lib, driver ->
+        val hook: (LibName, app.cash.sqldelight.db.SqlDriver) -> Unit = hook@{ lib, driver ->
             val schema = SCHEMA_MAP[lib]
             if (schema == null) {
                 FileLogger.w(TAG, "未知 LibName=$lib，跳过 ensureSchema")
-                return@let
+                return@hook
             }
             FileLogger.i(TAG, "ensureSchema($lib) target=${schema.version}")
             runCatching {
