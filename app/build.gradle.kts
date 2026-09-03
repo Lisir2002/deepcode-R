@@ -351,11 +351,8 @@ dependencies {
     ksp("com.google.dagger:hilt-compiler:2.56.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
+
     
-
-    // DataStore
-    implementation("androidx.datastore:datastore-preferences:1.1.4")
-
     // 网络请求
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
@@ -417,10 +414,8 @@ dependencies {
     implementation("androidx.webkit:webkit:1.13.0")
     // Testing
     testImplementation("junit:junit:4.13.2")
-    // JSON（TableDataProvider / SqlDelightDataProvider 通用表转储 Provider 使用；main sourceSet 需要）
+    // JSON（SqlDelightDataProvider 通用表转储 Provider 使用；main sourceSet 需要）
     implementation("org.json:json:20240303")
-    // MigrationSchemaConsistencyTest：解析 Room 导出的 schema JSON 做迁移一致性校验（已随旧数据层删除）
-    testImplementation("org.json:json:20240303")
 
     // ── 新数据层（data-layer-redesign）─ SQLDelight（设计文档 §2/§12）──
     // Android 驱动（AndroidSqliteDriver，L0 引擎，可插拔加密 factory 的明文实现）

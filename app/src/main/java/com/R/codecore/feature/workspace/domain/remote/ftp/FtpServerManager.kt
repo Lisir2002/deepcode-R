@@ -1,21 +1,14 @@
 package com.R.codecore.feature.workspace.domain.remote.ftp
 
 import android.content.Context
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
 import com.R.codecore.core.util.FileLogger
-import com.R.codecore.feature.workspace.data.repository.workspaceDataStore
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.R.codecore.datalayer.store.KVStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.ftpserver.FtpServer
@@ -33,17 +26,20 @@ import java.net.NetworkInterface
 import javax.inject.Inject
 import javax.inject.Singleton
 
+const val WORKSPACE_FTP_NS = "workspace"
+const val FTP_PORT_KEY = "ftp_port"
+const val FTP_USERNAME_KEY = "ftp_username"
+const val FTP_PASSWORD_KEY = "ftp_password"
+const val FTP_ANONYMOUS_KEY = "ftp_anonymous"
+const val FTP_AUTO_START_KEY = "ftp_auto_start"
+
 @Singleton
 class FtpServerManager @Inject constructor(
-    @param:ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context,
+    private val kv: KVStore,
 ) {
     private companion object {
         const val TAG = "FtpServerManager"
-        val PORT_KEY = intPreferencesKey("port")
-        val USERNAME_KEY = stringPreferencesKey("username")
-        val PASSWORD_KEY = stringPreferencesKey("password")
-        val ANONYMOUS_KEY = booleanPreferencesKey("anonymous")
-        val AUTO_START_KEY = booleanPreferencesKey("auto_start")
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -79,18 +75,14 @@ class FtpServerManager @Inject constructor(
 
     init {
         scope.launch {
-            val prefs = context.workspaceDataStore.data.first()
-            _port.value = prefs[PORT_KEY] ?: 2121
-            _username.value = prefs[USERNAME_KEY] ?: "rcodecore"
-            _password.value = prefs[PASSWORD_KEY] ?: "123456"
-            _isAnonymous.value = prefs[ANONYMOUS_KEY] ?: false
-            _autoStart.value = prefs[AUTO_START_KEY] ?: false
+            _port.value = (kv.getInt(WORKSPACE_FTP_NS, FTP_PORT_KEY) ?: 2121L).toInt()
+            _username.value = kv.getString(WORKSPACE_FTP_NS, FTP_USERNAME_KEY) ?: "rcodecore"
+            _password.value = kv.getString(WORKSPACE_FTP_NS, FTP_PASSWORD_KEY) ?: "123456"
+            _isAnonymous.value = kv.getBool(WORKSPACE_FTP_NS, FTP_ANONYMOUS_KEY) ?: false
+            _autoStart.value = kv.getBool(WORKSPACE_FTP_NS, FTP_AUTO_START_KEY) ?: false
 
             updateServerUrl()
-
-            if (_autoStart.value) {
-                startServer()
-            }
+            if (_autoStart.value) startServer()
         }
     }
 
@@ -98,9 +90,9 @@ class FtpServerManager @Inject constructor(
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {
-                val networkInterface = interfaces.nextElement()
-                if (networkInterface.isLoopback || !networkInterface.isUp) continue
-                val addresses = networkInterface.inetAddresses
+                val ni = interfaces.nextElement()
+                if (ni.isLoopback || !ni.isUp) continue
+                val addresses = ni.inetAddresses
                 while (addresses.hasMoreElements()) {
                     val address = addresses.nextElement()
                     if (address is Inet4Address && !address.isLoopbackAddress) {
@@ -121,9 +113,7 @@ class FtpServerManager @Inject constructor(
 
     suspend fun saveConfig(port: Int, username: String, password: String, isAnonymous: Boolean, autoStart: Boolean) = withContext(Dispatchers.IO) {
         val wasRunning = _isRunning.value
-        if (wasRunning) {
-            stopServerInternal()
-        }
+        if (wasRunning) stopServerInternal()
 
         _port.value = port
         _username.value = username
@@ -132,26 +122,17 @@ class FtpServerManager @Inject constructor(
         _autoStart.value = autoStart
         updateServerUrl()
 
-        context.workspaceDataStore.edit { prefs ->
-            prefs[PORT_KEY] = port
-            prefs[USERNAME_KEY] = username
-            prefs[PASSWORD_KEY] = password
-            prefs[ANONYMOUS_KEY] = isAnonymous
-            prefs[AUTO_START_KEY] = autoStart
-        }
+        kv.putInt(WORKSPACE_FTP_NS, FTP_PORT_KEY, port.toLong())
+        kv.putString(WORKSPACE_FTP_NS, FTP_USERNAME_KEY, username)
+        kv.putString(WORKSPACE_FTP_NS, FTP_PASSWORD_KEY, password)
+        kv.putBool(WORKSPACE_FTP_NS, FTP_ANONYMOUS_KEY, isAnonymous)
+        kv.putBool(WORKSPACE_FTP_NS, FTP_AUTO_START_KEY, autoStart)
 
-        if (wasRunning) {
-            startServerInternal()
-        }
+        if (wasRunning) startServerInternal()
     }
 
     suspend fun toggleServer(): Boolean = withContext(Dispatchers.IO) {
-        if (_isRunning.value) {
-            stopServerInternal()
-            false
-        } else {
-            startServerInternal()
-        }
+        if (_isRunning.value) { stopServerInternal(); false } else startServerInternal()
     }
 
     suspend fun startServer(): Boolean = withContext(Dispatchers.IO) {
@@ -168,44 +149,30 @@ class FtpServerManager @Inject constructor(
         try {
             _errorMessage.value = null
             stopServerInternal()
-
             val serverFactory = FtpServerFactory()
-            val listenerFactory = ListenerFactory()
-            listenerFactory.port = _port.value
+            val listenerFactory = ListenerFactory().apply { port = _port.value }
             serverFactory.addListener("default", listenerFactory.createListener())
-
-            val userManagerFactory = PropertiesUserManagerFactory()
-            val propFile = File(context.cacheDir, "ftp_users.properties")
-            if (!propFile.exists()) {
-                propFile.createNewFile()
+            val userManagerFactory = PropertiesUserManagerFactory().apply {
+                file = File(context.cacheDir, "ftp_users.properties").apply { createNewFile() }
+                passwordEncryptor = ClearTextPasswordEncryptor()
             }
-            userManagerFactory.file = propFile
-            userManagerFactory.passwordEncryptor = ClearTextPasswordEncryptor()
             val userManager = userManagerFactory.createUserManager()
-
-            val authorities = ArrayList<Authority>()
-            authorities.add(WritePermission())
-            authorities.add(ConcurrentLoginPermission(20, 20))
-
-            // 正常用户
+            val authorities = ArrayList<Authority>().apply {
+                add(WritePermission()); add(ConcurrentLoginPermission(20, 20))
+            }
             if (_username.value.isNotBlank()) {
-                val user = BaseUser()
-                user.name = _username.value
-                user.password = _password.value
-                user.homeDirectory = defaultSharedPath
-                user.authorities = authorities
+                val user = BaseUser().apply {
+                    name = _username.value; password = _password.value
+                    homeDirectory = defaultSharedPath; this.authorities = authorities
+                }
                 userManager.save(user)
             }
-
-            // 匿名用户
             if (_isAnonymous.value) {
-                val anonUser = BaseUser()
-                anonUser.name = "anonymous"
-                anonUser.homeDirectory = defaultSharedPath
-                anonUser.authorities = authorities
+                val anonUser = BaseUser().apply {
+                    name = "anonymous"; homeDirectory = defaultSharedPath; authorities = authorities
+                }
                 userManager.save(anonUser)
             }
-
             serverFactory.userManager = userManager
             val server = serverFactory.createServer()
             server.start()
@@ -224,12 +191,10 @@ class FtpServerManager @Inject constructor(
 
     private fun stopServerInternal() {
         try {
-            ftpServer?.stop()
-            ftpServer = null
-            _isRunning.value = false
+            ftpServer?.stop(); ftpServer = null; _isRunning.value = false
             FileLogger.i(TAG, "内置 FTP 服务端已停止")
         } catch (e: Exception) {
-            FileLogger.e(TAG, "停止内置 FTP 服务端出错: ${e.message}", e)
+            FileLogger.e(TAG, "停止内置 FTP 服务端出错（忽略）: ${e.message}", e)
         }
     }
 }

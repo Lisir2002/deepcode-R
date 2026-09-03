@@ -130,15 +130,7 @@ class AIEditorApp : Application() {
     @Inject
     lateinit var browserController: com.R.codecore.feature.browser.domain.BrowserController
 
-    /** settings DataStore 收敛搬迁器（数据层重构 T2：11 个旧碎片文件 → 统一 settings_prefs）。 */
-    @Inject
-    lateinit var settingsDataStoreMigrator: com.R.codecore.feature.settings.data.repository.SettingsDataStoreMigrator
 
-    /** workspace DataStore 收敛搬迁器（数据层重构 T2：ftp_server_prefs → 统一 workspace_prefs）。 */
-    @Inject
-    lateinit var workspaceDataStoreMigrator: com.R.codecore.feature.workspace.data.repository.WorkspaceDataStoreMigrator
-
-    
 
     /**
      * 数据保全通知器：启动即跑哨兵（D4）+ 升级前双保险自动备份（D5），并把判定结果发布给
@@ -161,13 +153,9 @@ class AIEditorApp : Application() {
         super.onCreate()
         registerBouncyCastle()
         createNotificationChannels()
-        // 数据层重构 T2：settings 11 个碎片 DataStore → 统一 settings_prefs；workspace 2 个碎片 → 统一 workspace_prefs。
-        // 在 super 后同步执行（runBlocking），保证任何 repository 首次读之前旧值已搬迁到位，
-        // 消除「搬迁与首次读/写并发」的竞态；内部 runCatching 兜底，失败下次启动自动重试。
-        runBlocking {
-            settingsDataStoreMigrator.migrateIfNeeded()
-            workspaceDataStoreMigrator.migrateIfNeeded()
-        }
+        // 数据层重构：前 DataStore（settings_prefs / workspace_prefs / terminal_prefs / proxy_prefs /
+        // mcp_server_prefs / app_run_meta / ftp_server_prefs）全部迁移到 SQLDelight InfraDb.kv_store，
+        // 启动期不再需要 DataStore 收敛搬迁器，首次打开 SQLite 自动走 KVStore observe。
         // 主线程启动凭据请求监听（FileObserver 必须主线程创建与 startWatching），
         // 监听容器内 credential helper 写来的 cred-req-* → 全局弹窗回填 → 回喂 git 续跑。
         credentialRequestBridge.start()
