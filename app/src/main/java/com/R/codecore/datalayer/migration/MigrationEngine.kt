@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.AfterVersion
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlSchema
+import com.R.codecore.core.util.FileLogger
 import com.R.codecore.datalayer.engine.DatabasePathProvider
 import com.R.codecore.datalayer.engine.LibName
 import java.io.File
@@ -31,21 +32,29 @@ class MigrationEngine(private val pathProvider: DatabasePathProvider) {
     ) {
         val current = currentVersion(driver)
         val target = schema.version
+        FileLogger.i("MigrationEngine", "ensureSchema($lib): current=$current target=$target")
         when {
-            current == 0 -> schema.create(driver)
+            current == 0 -> {
+                FileLogger.i("MigrationEngine", "  $lib 全新库（current=0），跑 schema.create")
+                schema.create(driver)
+            }
             current < target -> {
+                FileLogger.i("MigrationEngine", "  $lib 需迁移 $current → $target")
                 snapshot(lib, heavy)
                 schema.migrate(driver, current.toLong(), target, *sqlMigrations)
                 codeMigrations
                     .filter { it.from >= current && it.to <= target }
                     .sortedBy { it.from }
                     .forEach { it.block(driver) }
+                FileLogger.i("MigrationEngine", "  $lib 迁移完成，current=${currentVersion(driver)}")
             }
             current.toLong() == target -> {
                 // 显式 no-op。⚠️ 版本相等 ≠ 表结构一致：v0.5.0-rc1 事故中，表结构演进（+14 张表）
                 // 未伴随版本递增（彼时 0 个 .sqm，version 恒为 1），本分支静默空转导致
                 // 从 v0.4.0 升级的设备永远缺表、首查即崩（no such table: remote_connections）。
                 // 纪律：任何 .sq 结构变更必须同步新增 .sqm（version = 1 + .sqm 数，自动递增）。
+                FileLogger.i("MigrationEngine", "  $lib 版本已对齐（current==target==$current），no-op；" +
+                        " 表结构完整性由 ConnectionPool.onOpened 里的 SchemaSelfHealer 保证")
             }
             current > target -> error("[$lib] 检测到版本回退：$current > $target，拒绝打开以防数据损坏")
         }

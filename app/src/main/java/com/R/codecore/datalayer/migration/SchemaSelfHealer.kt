@@ -3,6 +3,7 @@ package com.R.codecore.datalayer.migration
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
+import com.R.codecore.core.util.FileLogger
 
 /**
  * 幂等「结构自愈」器（MySQLite 数据保护 §5.7）。
@@ -15,8 +16,14 @@ import app.cash.sqldelight.db.SqlDriver
  * 本器通过 PRAGMA table_info 做「列存在性校验」，缺缺必要列时执行 SQLite 无损重建
  * （改名旧表 → 建新表 → 按列交集迁移数据 → 重建索引 → 删旧表）。全程不改 schema 版本、
  * 不丢数据、幂等（已修复则直接跳过）。新建库因 schema 本身就含全列，也会直接跳过。
+ *
+ * v2-full-takeover P3 诊断加固：healAgentSession / healAgentMessage / healTable 全节点
+ * 加 FileLogger，让崩溃快照里能看到「existing 列是什么、missing 列是什么、RENAME 是否成功」，
+ * 彻底消除「自愈没生效到底是没执行还是执行了但跑失败」的盲区。
  */
 object SchemaSelfHealer {
+
+    private const val TAG = "SchemaSelfHealer"
 
     // ── agent_message 目标结构（与 sqldelight/agent/agent.sq 保持一致）──────────
 
@@ -88,6 +95,7 @@ object SchemaSelfHealer {
 
     /** 修复 agent_message 缺 id（或其他目标列）的历史库。打开 AgentDb 后调用一次。 */
     fun healAgentMessage(driver: SqlDriver) {
+        FileLogger.i(TAG, "healAgentMessage 开始")
         healTable(driver, "agent_message", AGENT_MESSAGE_COLUMNS, AGENT_MESSAGE_CREATE, listOf(AGENT_MESSAGE_SESSION_IDX))
     }
 
@@ -97,13 +105,26 @@ object SchemaSelfHealer {
      * `no such column` 崩溃）。确保「打开后 agent_message 一定可查询」。
      */
     fun ensureAgentMessageUsable(driver: SqlDriver) {
-        if (hasColumn(driver, "agent_message", "id")) return
+        if (hasColumn(driver, "agent_message", "id")) {
+            FileLogger.i(TAG, "agent_message.id 列存在，结构正常")
+            return
+        }
+        FileLogger.w(TAG, "agent_message.id 仍缺失！强制再次重建")
         healTable(driver, "agent_message", AGENT_MESSAGE_COLUMNS, AGENT_MESSAGE_CREATE, listOf(AGENT_MESSAGE_SESSION_IDX))
         if (!hasColumn(driver, "agent_message", "id")) {
+            val cols = runCatching { tableColumns(driver, "agent_message").joinToString() }.getOrDefault("?")
+            val legacyCols = runCatching { tableColumns(driver, "agent_message_legacy").joinToString() }.getOrDefault("?")
+            val sessionCols = runCatching { tableColumns(driver, "agent_session").joinToString() }.getOrDefault("?")
+            FileLogger.e(TAG, "agent_message 自愈后仍缺 id 列！" +
+                    " 当前 agent_message 列: [$cols]；" +
+                    " agent_message_legacy 列: [$legacyCols]；" +
+                    " agent_session 列: [$sessionCols]")
             throw IllegalStateException(
-                "agent_message 自愈后仍缺 id 列，表结构异常且无法自愈，请人工介入检查 agent.db"
+                "agent_message 自愈后仍缺 id 列，表结构异常且无法自愈，请人工介入检查 agent.db。" +
+                        "当前 agent_message 列: [$cols]；agent_session 列: [$sessionCols]"
             )
         }
+        FileLogger.i(TAG, "强制重建后 agent_message.id 已存在")
     }
 
     /** 判断 [table] 是否含 [column]（PRAGMA table_info 命中）。 */
@@ -112,18 +133,26 @@ object SchemaSelfHealer {
 
     /** 与 agent_message 同风险的 agent_session 结构自愈。 */
     fun healAgentSession(driver: SqlDriver) {
+        FileLogger.i(TAG, "healAgentSession 开始")
         healTable(driver, "agent_session", AGENT_SESSION_COLUMNS, AGENT_SESSION_CREATE)
     }
 
     /** agent_session 保证性复核（同 [ensureAgentMessageUsable]）。 */
     fun ensureAgentSessionUsable(driver: SqlDriver) {
-        if (hasColumn(driver, "agent_session", "id")) return
+        if (hasColumn(driver, "agent_session", "id")) {
+            FileLogger.i(TAG, "agent_session.id 列存在，结构正常")
+            return
+        }
+        FileLogger.w(TAG, "agent_session.id 仍缺失！强制再次重建")
         healTable(driver, "agent_session", AGENT_SESSION_COLUMNS, AGENT_SESSION_CREATE)
         if (!hasColumn(driver, "agent_session", "id")) {
+            val cols = runCatching { tableColumns(driver, "agent_session").joinToString() }.getOrDefault("?")
+            FileLogger.e(TAG, "agent_session 自愈后仍缺 id 列！当前列: [$cols]")
             throw IllegalStateException(
                 "agent_session 自愈后仍缺 id 列，表结构异常且无法自愈，请人工介入检查 agent.db"
             )
         }
+        FileLogger.i(TAG, "强制重建后 agent_session.id 已存在")
     }
 
     /**
@@ -138,6 +167,9 @@ object SchemaSelfHealer {
      *    这里在建新表前 DROP INDEX IF EXISTS 预清理（旧索引随旧表删表一并消失，属于待回收资源，先删安全）。
      *  - 缺列回填：被缺的 NOT NULL 无默认列（典型即 PK `id`）若直接省略则 INSERT 抛 "NOT NULL constraint failed"。
      *    迁移时对缺失列按「先自身 DEFAULT、再 id→生成 UUID、再按类型兜底」回填，保证不丢行、不撞约束。
+     *
+     * v2-full-takeover P3 诊断加固：全节点输出 FileLogger，让崩溃快照里能看到 existing / missing /
+     *  RENAME / CREATE / INSERT / DROP 的每一步状态。
      */
     fun healTable(
         driver: SqlDriver,
@@ -147,12 +179,24 @@ object SchemaSelfHealer {
         indexSqls: List<String> = emptyList(),
     ) {
         val existing = tableColumns(driver, table).toSet()
+        FileLogger.i(TAG, "healTable($table): existing=${existing.joinToString()}")
+
         // 0 列 = 表不存在（合法表不可能 0 列），跳过，避免 RENAME "no such table" 崩溃。
-        if (existing.isEmpty()) return
+        if (existing.isEmpty()) {
+            FileLogger.i(TAG, "  $table 不存在或无列（existing.isEmpty），跳过")
+            return
+        }
+
         val missing = targetColumns.filter { it !in existing }
-        if (missing.isEmpty()) return   // 结构完好，幂等跳过
+        if (missing.isEmpty()) {
+            FileLogger.i(TAG, "  $table 结构完好，无需修复")
+            return
+        }
+
+        FileLogger.w(TAG, "  $table 缺 ${missing.size} 列: ${missing.joinToString()}，开始无损重建")
 
         val legacy = "${table}_legacy"
+
         // 预清理待重建索引：旧表 RENAME 后索引名仍占用同名，先 DROP 避免建新索引冲突。
         indexSqls.forEach { sql ->
             val name = Regex("""(?i)CREATE\s+(UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\s+\"?([\w]+)\"?""").find(sql)?.groupValues?.get(2)
@@ -164,9 +208,19 @@ object SchemaSelfHealer {
 
         // 清理上次自愈中途崩溃（RENAME 后未 DROP）残留的 ${table}_legacy，避免本次 RENAME 撞名失败、
         // 永久锁死后续自愈。若存量数据仍在新表，legacy 为空表，直接删除无数据损失。
-        try { exec(driver, "DROP TABLE IF EXISTS $legacy;") } catch (_: Exception) { /* 删除失败不阻断主流，RENAME 前再试 */ }
+        try {
+            val legacyExists = !tableColumns(driver, legacy).isEmpty()
+            FileLogger.i(TAG, "  预清理 ${table}_legacy（存在=$legacyExists）")
+            exec(driver, "DROP TABLE IF EXISTS $legacy;")
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "  预清理 ${table}_legacy 失败（忽略，RENAME 前再试）: ${e.message}")
+            /* 删除失败不阻断主流，RENAME 前再试 */
+        }
 
+        FileLogger.i(TAG, "  ALTER TABLE $table RENAME TO $legacy")
         exec(driver, "ALTER TABLE $table RENAME TO $legacy;")
+
+        FileLogger.i(TAG, "  CREATE TABLE $table")
         exec(driver, createSql)
 
         val meta = columnMeta(createSql)
@@ -188,10 +242,19 @@ object SchemaSelfHealer {
         }
         val cols = insertCols.joinToString(",") { "\"$it\"" }
         val exprs = selectExprs.joinToString(",")
+        FileLogger.i(TAG, "  INSERT INTO $table ($cols) SELECT $exprs FROM $legacy")
         exec(driver, "INSERT INTO $table ($cols) SELECT $exprs FROM $legacy;")
 
-        indexSqls.forEach { exec(driver, it) }
+        indexSqls.forEach {
+            FileLogger.i(TAG, "  CREATE INDEX: ${it.take(80)}...")
+            exec(driver, it)
+        }
+
+        FileLogger.i(TAG, "  DROP TABLE $legacy")
         exec(driver, "DROP TABLE $legacy;")
+
+        val afterCols = tableColumns(driver, table)
+        FileLogger.i(TAG, "healTable($table) 完成，当前列: ${afterCols.joinToString()}")
     }
 
     /**

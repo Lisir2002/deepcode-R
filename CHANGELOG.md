@@ -27,6 +27,17 @@
 
 ---
 
+## [v0.0.0.1-rc4] - 2026-09-03
+
+彻底堵死结构自愈竞态窗口（bug 修复，仅迭代 rc 后缀）。rc3 版本自愈代码虽已存在，但因 `DataRegistryModule.provideDataProviders` 可能先于 `provideAgentDb` 触发 `ConnectionPool.driver(AGENT)`，导致 AndroidSqliteDriver 的 SQLiteOpenHelper 自动跑完 `schema.create/schema.migrate` 把 user_version 对齐后，provideAgentDb 的 ensureSchema 走 no-op 分支，自愈代码可能来不及在业务查询前修复缺列表，最终在查询 `agent_message.id` 时崩溃。
+
+### Fixed（修复）
+
+- **ConnectionPool 打开即对齐 schema + 自愈**：在 `ConnectionPool.driver()` 首次创建 SqlDriver 后、返回给任何调用者之前，立刻注入的 `onOpened` 回调会对该库跑 `MigrationEngine.ensureSchema`，对 AGENT 库额外跑完整的 `SchemaSelfHealer` 自愈 + 保证性复核。`DataRegistryModule`、`provideAgentDb` 等任何先拿到 driver 的调用方，拿到的都已是表结构完整的库。
+- **自愈/迁移全节点 FileLogger 诊断加固**：`SchemaSelfHealer`（healAgentSession / healAgentMessage / healTable 每一步：existing 列、missing 列、RENAME / CREATE / INSERT / DROP、自愈后列清单）与 `MigrationEngine.ensureSchema`（每库 current / target 版本号与分支决策）均输出结构化日志。rc4 安装后首次运行即可在崩溃快照里看到自愈完整执行轨迹，彻底消除「自愈跑没跑 / 跑了没修好」的盲区。
+
+---
+
 ## [v0.0.0.1-rc3] - 2026-09-03
 
 进一步加固历史库升级自愈的健壮性（bug 修复，仅迭代 rc 后缀）。
