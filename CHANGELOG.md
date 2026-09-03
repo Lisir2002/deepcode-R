@@ -27,6 +27,19 @@
 
 ---
 
+## [v0.0.0.1-rc12] - 2026-09-04
+
+品牌一致性收尾：清零 rc11 品牌全量迭代后仍散落的旧版品牌标识符残留，并复核编译通过。
+
+### Fixed（修复）
+
+- **对外 HTTP 标识**：模型元数据服务 `User-Agent` 由 `r-codecore` 改为 `deepcore-code`，对外请求不再暴露旧品牌。
+- **内部常量 / 环境变量命名**：`ToolOutputStore.RCODECORE_ROOT`、`WorkspacePathMapper.AICODE_ROOT` 统一收敛为 `DEEPCODE_ROOT`；终端 QEMU 变量 `RCODECORE_QEMU_X86` → `DEEPCODE_QEMU_X86`。
+- **凭证脚本变量**：`git-credential-deepcode` 中 `RCODECORE` → `DEEPCODE`，与容器目录 `/root/.deepcode` 一致。
+- **设计文档路径**：`agent-orchestration-extension-design.md` 扩展目录由 `.codecore/` 更正为 `.deepcode/ext/`（与实代码一致）。
+
+> 注：旧包名仍刻意保留于 `LegacyPackageDetector`（旧包检测）、`ApplicationIdStabilityTest`（防回退黑名单）与演进史实日志中，属数据保全逻辑，非残留。
+
 ## [v0.0.0.1-rc11] - 2026-09-04
 
 品牌全量迭代：**DeepCore-Code**。应用名、包名（applicationId）、代码包结构、桌面图标全数更换，旧标识零残留。

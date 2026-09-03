@@ -9,6 +9,20 @@
 - 规则：工具 / prompt / schema 等 AI 工作流相关变更，发版时必须在本文件追加一条结构化记录。
 - 版本号规则：四段式 x.x.x.x，见 `docs/versioning.md`。本文件最新条目置顶。
 
+## 0.0.0.1-rc12 (2026-09-04)
+
+### TYPE
+prerelease-rc / fix (brand residue cleanup)
+
+### IMPACT
+- 清零 rc11 品牌全量迭代后仍散落的旧版品牌标识符：对外 HTTP `User-Agent`、内部常量/环境变量（`RCODECORE_ROOT`/`AICODE_ROOT`/`RCODECORE_QEMU_X86`）、凭证脚本变量（`RCODECORE`）、设计文档扩展目录路径（`.codecore/`）。
+- 应用名 / 包名 / 图标等核心载体在 rc11 已全量切换，本次仅收敛残留命名，无用户可感知行为变化。
+- AI 侧影响：无工具 / schema / 接口语义变化；仅标识符重命名。
+
+### DATA / SCHEMA
+- **无 schema 版本变化、无表结构变化、无 `.sqm` 迁移**。`schema.version` 不变。
+- 库文件名、容器目录、APK 名沿用 rc11（`deepcode_agent_v3.db` / `/root/.deepcode` / `deepcode-<版本>.apk`），本版未改动。
+
 ## 0.0.0.1-rc11 (2026-09-04)
 
 ### TYPE
