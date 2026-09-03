@@ -47,6 +47,15 @@ class AIEditorApp : Application() {
 
         /** 上次运行触发内存临界（RUNNING_CRITICAL/lowMemory）的时间戳，供下次启动诊断「无日志闪退」。 */
         const val KEY_LAST_TRIM_CRITICAL = "last_trim_critical_ms"
+
+        /**
+         * 启动预热 AGENT 库是否已成功完成（rc6 指纹）。崩溃快照首行输出该标记：
+         *  - `true` = 本进程已执行过 AGENT 库结构自愈/对齐，若此刻仍出现 `no such column`，
+         *    说明坏表残留但自愈未修复（真·数据层问题），据此继续深挖；
+         *  - `false` = 本进程根本没跑到预热，直接指向「跑的不是含 rc6 代码的包 / 旧进程残留」。
+         * 一次性坐实「是不是装对包」，结束此前反复的版本扯皮。
+         */
+        val agentPreheatCompleted = java.util.concurrent.atomic.AtomicBoolean(false)
     }
 
     override fun attachBaseContext(base: android.content.Context) {
@@ -168,6 +177,7 @@ class AIEditorApp : Application() {
         // （自愈自定义错误），而非毫无信息的 "no such column"，便于继续定位。
         FileLogger.i(TAG, "启动：无条件预热 AGENT 数据层（触发结构自愈）")
         connectionPool.driver(LibName.AGENT)
+        agentPreheatCompleted.set(true)
         FileLogger.i(TAG, "启动预热 AGENT 数据层完成（agent_message / agent_session 结构已就绪）")
         // 数据层重构：前 DataStore（settings_prefs / workspace_prefs / terminal_prefs / proxy_prefs /
         // mcp_server_prefs / app_run_meta / ftp_server_prefs）全部迁移到 SQLDelight InfraDb.kv_store，
@@ -367,6 +377,9 @@ class AIEditorApp : Application() {
                 val stamp = java.time.Instant.now().toString().replace(":", "-")
                 val snapshot = buildString {
                     append("RCodeCore 崩溃快照  ").append(stamp).append('\n')
+                    append("version=").append(BuildConfig.VERSION_NAME).append('\n')
+                    append("schemaVersion=AGENT-v3").append('\n')
+                    append("agentPreheatRan=").append(AIEditorApp.agentPreheatCompleted.get()).append('\n')
                     append("=".repeat(60)).append('\n')
                     append(summary).append('\n')
                     val sw = java.io.StringWriter()

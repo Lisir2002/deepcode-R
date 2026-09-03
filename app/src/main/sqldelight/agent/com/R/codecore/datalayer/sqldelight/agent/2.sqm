@@ -1,0 +1,11 @@
+-- v2 → v3 迁移标记（rc6）。
+--
+-- 目的：把「user_version 已对齐 target → MigrationEngine 走 no-op」的历史坏库
+-- 强制拉进迁移路径（schema.version 由 2 升到 3），堵死「版本对齐就当表结构正确」的根因。
+--
+-- 为什么这里不做表数据重建：坏库 agent_message 缺 id，若在本 .sqm 用固定 SQL
+-- INSERT INTO agent_message (id, ...) SELECT id, ... FROM legacy，会因 legacy 缺 id 直接
+-- `no such column` 使整个迁移崩溃、库打不开。表结构动态重建必须按列交集进行，
+-- 由 SchemaSelfHealer（PRAGMA table_info 计算列、缺列 UUID 回填）在打开迁移后无条件执行。
+-- 本 .sqm 仅放置一条幂等 marker，不依赖任何业务表列，保证迁移恒可成功。
+CREATE TABLE IF NOT EXISTS _agent_v3_migration_marker (id INTEGER PRIMARY KEY AUTOINCREMENT);
