@@ -19,6 +19,8 @@ import com.R.codecore.feature.settings.data.repository.resolveSshConfigOrNull
 import com.R.codecore.feature.settings.data.remote.ModelMetadataService
 import com.R.codecore.feature.terminal.domain.TerminalKeepaliveService
 import com.R.codecore.core.security.CredentialEncryptor
+import com.R.codecore.datalayer.engine.ConnectionPool
+import com.R.codecore.datalayer.engine.LibName
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -132,12 +134,14 @@ class AIEditorApp : Application() {
 
 
 
-    /**
-     * 数据保全通知器：启动即跑哨兵（D4）+ 升级前双保险自动备份（D5），并把判定结果发布给
-     * MainActivity 的启动级全局告警弹窗（解决「数据消失却不报错」，数据保全防线 D8b）。
-     */
+    /** 数据保全通知器：启动即跑哨兵（D4）+ 升级前双保险自动备份（D5），并把判定结果发布给
+     *  MainActivity 的启动级全局告警弹窗（解决「数据消失却不报错」，数据保全防线 D8b）。 */
     @Inject
     lateinit var dataSafetyNotifier: com.R.codecore.feature.backup.data.DataSafetyNotifier
+
+    /** 数据层连接池（rc5）：启动即无条件预热 AGENT 库触发结构自愈，见 [onCreate]。 */
+    @Inject
+    lateinit var connectionPool: ConnectionPool
 
     /** 长驻作用域：持续把持久化的日志等级同步到 FileLogger。
      * RC61b：附加 [CoroutineExceptionHandler]，任何子协程未捕获的异常都兜底记日志，
@@ -153,6 +157,18 @@ class AIEditorApp : Application() {
         super.onCreate()
         registerBouncyCastle()
         createNotificationChannels()
+        // ============== rc5 关键修复：启动无条件预热 AGENT 库，铁定先于任何 UI 查询 ==============
+        // 此前 AGENT 库的 ensureSchema + SchemaSelfHealer 依赖 ViewModel / DataRegistry 的「懒加载触发」，
+        // 理论上存在「首个 UI 数据查询先于自愈」的竞态窗口，表现为启动后一打开会话页就
+        // no such column: agent_message.id。
+        // 这里在 Application 层**同步、无条件**触发 ConnectionPool.onOpened——其内部对 AGENT 库
+        // 先跑 ensureSchema，再跑 SchemaSelfHealer 幂等自愈（缺列即无损重建）。确保自愈铁定先于
+        // 任何页面/查询完成。正常库只是两次 PRAGMA 幂等检查（毫秒级），缺失才重建。
+        // 若自愈仍异常，让其向上冒泡 → 由 installCrashHandler 落**语义明确**的崩溃日志
+        // （自愈自定义错误），而非毫无信息的 "no such column"，便于继续定位。
+        FileLogger.i(TAG, "启动：无条件预热 AGENT 数据层（触发结构自愈）")
+        connectionPool.driver(LibName.AGENT)
+        FileLogger.i(TAG, "启动预热 AGENT 数据层完成（agent_message / agent_session 结构已就绪）")
         // 数据层重构：前 DataStore（settings_prefs / workspace_prefs / terminal_prefs / proxy_prefs /
         // mcp_server_prefs / app_run_meta / ftp_server_prefs）全部迁移到 SQLDelight InfraDb.kv_store，
         // 启动期不再需要 DataStore 收敛搬迁器，首次打开 SQLite 自动走 KVStore observe。

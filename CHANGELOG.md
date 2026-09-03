@@ -27,6 +27,17 @@
 
 ---
 
+## [v0.0.0.1-rc5] - 2026-09-03
+
+rc4 修复了 `ConnectionPool` 打开配套的 schema 对齐 + 自愈时机，但仍依赖「首个查询方触发」。若某条启动路径同时读取了 AGENT 库结构但跳过了自愈，或自愈执行的连接与报错查询不一致，仍可能在上一个 rc（rc4，安装后添加模型发送第一条消息）复现 `no such column: agent_message.id`。rc5 改为**彻底消除时机不确定性**。
+
+### Fixed（修复）
+
+- **启动即无条件预热 AGENT 数据层，结构自愈铁定先于任何 UI 查询**：在应用 `onCreate` 的最早同步阶段，无条件触发一次 AGENT 库的连接池打开。无论哪个 ViewModel / 数据门面何时查询，`ConnectionPool.onOpened` 都会在返回前完成 `ensureSchema` + `SchemaSelfHealer` 幂等自愈（缺 `id` 列即无损重建）。正常库仅毫秒级幂等检查，缺失才重建，开启会话页即不再因表结构缺失而崩溃。
+- **自愈异常改为语义明确的崩溃日志**：若自愈仍失败，进程以「自愈自定义错误」崩溃，崩溃快照直接指向缺列与表结构现场，不再只是毫无信息的 `no such column`，便于继续定位。
+
+---
+
 ## [v0.0.0.1-rc4] - 2026-09-03
 
 彻底堵死结构自愈竞态窗口（bug 修复，仅迭代 rc 后缀）。rc3 版本自愈代码虽已存在，但因 `DataRegistryModule.provideDataProviders` 可能先于 `provideAgentDb` 触发 `ConnectionPool.driver(AGENT)`，导致 AndroidSqliteDriver 的 SQLiteOpenHelper 自动跑完 `schema.create/schema.migrate` 把 user_version 对齐后，provideAgentDb 的 ensureSchema 走 no-op 分支，自愈代码可能来不及在业务查询前修复缺列表，最终在查询 `agent_message.id` 时崩溃。

@@ -61,6 +61,7 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
+- **v0.0.0.1-rc5（2026-09-03）**：结构自愈时机彻底前置——`AIEditorApp.onCreate` 最早期同步无条件预热 AGENT 库（`connectionPool.driver(LibName.AGENT)`），任何 ViewModel/数据门面查询前，`ConnectionPool.onOpened` 即完成 `ensureSchema` + `SchemaSelfHealer` 幂等自愈；自愈失败改为以语义明确的自定义错误崩溃（落 `no such column` 之外的完整表结构现场）。彻底消除「首个 UI 查询先于自愈」的竞态窗口。
 - **v0.0.0.1-rc1（2026-09-03）**：数据层迁移落定 + 网络/结构韧性与版本体系刷新。
   - 数据层完成 Room/DataStore → SQLDelight V2 全面接管（核心链路），`core/data`/`core/db` 目录按 V2 门面收敛。
   - 新增 `datalayer/migration/SchemaSelfHealer`：AgentDb 打开紧跟 `ensureSchema` 后对 `agent_session`/`agent_message` 做幂等无损结构自愈（缺列重建 + 索引预清理 + NOT NULL 回填），规避「user_version 相同但表结构漂移」导致的 `no such column: agent_message.id` 启动崩溃。
