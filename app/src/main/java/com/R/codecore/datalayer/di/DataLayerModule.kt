@@ -83,6 +83,10 @@ object DataLayerModule {
         // agent_session / agent_message 同属 P2-3「对齐全表」的演进表，结构漂移风险同类，一并自愈。
         SchemaSelfHealer.healAgentSession(driver)
         SchemaSelfHealer.healAgentMessage(driver)
+        // 保证性复核：自愈后强制验证 id 列存在，若仍缺则立即重试；
+        // 二次失败抛出明确异常，避免落入 confusing 的 no such column 崩溃。
+        SchemaSelfHealer.ensureAgentMessageUsable(driver)
+        SchemaSelfHealer.ensureAgentSessionUsable(driver)
         return AgentDb(driver)
     }
 

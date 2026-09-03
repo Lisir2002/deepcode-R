@@ -91,9 +91,39 @@ object SchemaSelfHealer {
         healTable(driver, "agent_message", AGENT_MESSAGE_COLUMNS, AGENT_MESSAGE_CREATE, listOf(AGENT_MESSAGE_SESSION_IDX))
     }
 
+    /**
+     * 保证性复核（在 [healAgentMessage] 之后调用）：若 `id` 列仍缺失（极端漂移 / 前次自愈半途未落地），
+     * 立即对齐全列再次无损重建；仍失败则抛出明确异常（让启动上层可见，而非落入 confusing 的
+     * `no such column` 崩溃）。确保「打开后 agent_message 一定可查询」。
+     */
+    fun ensureAgentMessageUsable(driver: SqlDriver) {
+        if (hasColumn(driver, "agent_message", "id")) return
+        healTable(driver, "agent_message", AGENT_MESSAGE_COLUMNS, AGENT_MESSAGE_CREATE, listOf(AGENT_MESSAGE_SESSION_IDX))
+        if (!hasColumn(driver, "agent_message", "id")) {
+            throw IllegalStateException(
+                "agent_message 自愈后仍缺 id 列，表结构异常且无法自愈，请人工介入检查 agent.db"
+            )
+        }
+    }
+
+    /** 判断 [table] 是否含 [column]（PRAGMA table_info 命中）。 */
+    fun hasColumn(driver: SqlDriver, table: String, column: String): Boolean =
+        tableColumns(driver, table).contains(column)
+
     /** 与 agent_message 同风险的 agent_session 结构自愈。 */
     fun healAgentSession(driver: SqlDriver) {
         healTable(driver, "agent_session", AGENT_SESSION_COLUMNS, AGENT_SESSION_CREATE)
+    }
+
+    /** agent_session 保证性复核（同 [ensureAgentMessageUsable]）。 */
+    fun ensureAgentSessionUsable(driver: SqlDriver) {
+        if (hasColumn(driver, "agent_session", "id")) return
+        healTable(driver, "agent_session", AGENT_SESSION_COLUMNS, AGENT_SESSION_CREATE)
+        if (!hasColumn(driver, "agent_session", "id")) {
+            throw IllegalStateException(
+                "agent_session 自愈后仍缺 id 列，表结构异常且无法自愈，请人工介入检查 agent.db"
+            )
+        }
     }
 
     /**

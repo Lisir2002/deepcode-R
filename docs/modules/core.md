@@ -66,6 +66,8 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
   - 新增 `datalayer/migration/SchemaSelfHealer`：AgentDb 打开紧跟 `ensureSchema` 后对 `agent_session`/`agent_message` 做幂等无损结构自愈（缺列重建 + 索引预清理 + NOT NULL 回填），规避「user_version 相同但表结构漂移」导致的 `no such column: agent_message.id` 启动崩溃。
   - 新增 `core/network/PublicDnsFallback`：系统 DNS 失败回退公共 DNS（223.5.5.5 等 UDP 直连 A 查询），`di/AgentModule` 共享 OkHttp 已挂载，解决自定义模型接口「Unable to resolve host」连接失败。
   - 版本号切换四段式 `x.x.x.x(-rcN)`（从 `0.0.0.1` 迭代），权威规范见 [docs/versioning.md](../../docs/versioning.md)。
+- **v0.0.0.1-rc2（2026-09-03）**：结构自愈加强。
+  - `SchemaSelfHealer` 新增保证性复核：`hasColumn` + `ensureAgentMessageUsable`/`ensureAgentSessionUsable`——heal 后强制验证 `id` 列存在，仍缺立即重试无损重建，二次失败抛明确异常（不再落入 `no such column` 崩溃）；`DataLayerModule.provideAgentDb` 打开链路补上两条复核。
 - **v0.3.0-rc3（2026-08-26）**：崩溃与内存自愈防线（预防闸门）落地——`AIEditorApp.onTrimMemory` 在内存临界时释放浏览器快照缓存 + 5 域库 WAL checkpoint(TRUNCATE) + 落临界标记；新增 `diagnoseLastExit` 启动自诊断「上次因内存压力被 LMKD 静默回收」并留痕（解决「模型输出时闪退却无日志」的排查盲区）。同步新增浏览器侧 `BrowserController.onMemoryPressure`。
 - **v0.3.0-rc2（2026-08-26）**：仓库整理（移除调试数据库等杂项）；文档审计对齐（agent 库 v4、32 表、迁移链）。
 - **v0.2.0（2026-08-25）**：网络层连接预热组件落地（`core/network/ConnectionPrewarmer`：DNS+TCP+TLS 预建）。

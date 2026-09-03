@@ -9,6 +9,23 @@
 - 规则：工具 / prompt / schema 等 AI 工作流相关变更，发版时必须在本文件追加一条结构化记录。
 - 版本号规则：四段式 x.x.x.x，见 `docs/versioning.md`。本文件最新条目置顶。
 
+## 0.0.0.1-rc2 (2026-09-03)
+
+### TYPE
+prerelease-rc / fix (structural self-heal hardening)
+
+### IMPACT
+- startup / datalayer only；无 API/schema 语义变化。
+
+### DATA / SCHEMA
+- `datalayer/migration/SchemaSelfHealer` 新增保证性复核：
+  - `hasColumn`（PRAGMA 命中 true/false）；
+  - `ensureAgentMessageUsable` / `ensureAgentSessionUsable`：heal 后强制验证 `id` 列存在，仍缺立即重试无损重建，二次失败抛明确异常（不再落入 confusing 的 `no such column` 崩溃）。
+- `DataLayerModule.provideAgentDb` 打开链路：healAgentSession → healAgentMessage → ensureAgentMessageUsable → ensureAgentSessionUsable（全部幂等）。
+
+### AI ACTION
+- 若 AI 新增/演进 agent 域表结构，确保同步更新 SchemaSelfHealer 的 target 列与 DDL（与 .sq 一致）。
+
 ## 0.0.0.1-rc1 (2026-09-03)
 
 ### TYPE
