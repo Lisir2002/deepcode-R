@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.content.ComponentCallbacks2
 import android.content.SharedPreferences
 import android.os.Build
+import app.cash.sqldelight.db.QueryResult
 import com.R.codecore.core.util.AILogger
 import com.R.codecore.core.util.FileLogger
 import net.schmizz.sshj.common.SecurityUtils
@@ -176,9 +177,40 @@ class AIEditorApp : Application() {
         // 若自愈仍异常，让其向上冒泡 → 由 installCrashHandler 落**语义明确**的崩溃日志
         // （自愈自定义错误），而非毫无信息的 "no such column"，便于继续定位。
         FileLogger.i(TAG, "启动：无条件预热 AGENT 数据层（触发结构自愈）")
-        connectionPool.driver(LibName.AGENT)
+        val agentDriver = connectionPool.driver(LibName.AGENT)
         agentPreheatCompleted.set(true)
         FileLogger.i(TAG, "启动预热 AGENT 数据层完成（agent_message / agent_session 结构已就绪）")
+
+        // ── rc7 诊断：在同一 driver 上立刻做一次真实查询 ──
+        // 如果这次就报 no such column，说明 schema.create 本身有问题（而不是查询路径绕过）。
+        runCatching {
+            agentDriver.executeQuery(
+                null,
+                "PRAGMA table_info(agent_message)",
+                { cursor ->
+                    val cols = mutableListOf<String>()
+                    while (cursor.next().value) {
+                        val name = cursor.getString(1)?.value
+                        if (name != null) cols.add(name)
+                    }
+                    FileLogger.i(TAG, "【rc7 诊断】agent_message 真实列: ${cols.joinToString()}")
+                    QueryResult.Unit
+                },
+                0,
+                null,
+            ).value
+            // 再跑一次真实业务查询（SQLDelight 生成的那条），确认也能过
+            agentDriver.executeQuery(
+                null,
+                "SELECT agent_message.id FROM agent_message LIMIT 1",
+                { cursor -> QueryResult.Unit },
+                0,
+                null,
+            ).value
+            FileLogger.i(TAG, "【rc7 诊断】启动阶段 SELECT agent_message.id 成功 ✅")
+        }.onFailure { e ->
+            FileLogger.e(TAG, "【rc7 诊断】启动阶段就崩了！agent_message 真有问题！", e)
+        }
         // 数据层重构：前 DataStore（settings_prefs / workspace_prefs / terminal_prefs / proxy_prefs /
         // mcp_server_prefs / app_run_meta / ftp_server_prefs）全部迁移到 SQLDelight InfraDb.kv_store，
         // 启动期不再需要 DataStore 收敛搬迁器，首次打开 SQLite 自动走 KVStore observe。

@@ -35,18 +35,21 @@ class MigrationEngine(private val pathProvider: DatabasePathProvider) {
         FileLogger.i("MigrationEngine", "ensureSchema($lib): current=$current target=$target")
         when {
             current == 0 -> {
-                FileLogger.i("MigrationEngine", "  $lib 全新库（current=0），跑 schema.create")
-                schema.create(driver)
+                // 全新库：schema.create 由 AndroidSqliteDriver.onCreate() 回调自动执行（SQLDelight 绑定），
+                // 这里不再手动跑，避免二次 CREATE TABLE 报 table already exists 被吞掉。
+                FileLogger.i("MigrationEngine", "  $lib 全新库（current=0），schema.create 由 AndroidSqliteDriver.onCreate() 自动处理")
             }
             current < target -> {
-                FileLogger.i("MigrationEngine", "  $lib 需迁移 $current → $target")
+                // 旧版本升级：先做文件级快照（数据安全网，AndroidSqliteDriver 不做）；
+                // schema.migrate 由 AndroidSqliteDriver.onUpgrade() 回调自动执行，这里不再手动跑。
+                FileLogger.i("MigrationEngine", "  $lib 需迁移 $current → $target，先 snapshot（schema.migrate 由 AndroidSqliteDriver.onUpgrade() 自动处理）")
                 snapshot(lib, heavy)
-                schema.migrate(driver, current.toLong(), target, *sqlMigrations)
+                // codeMigrations 是应用级代码逻辑迁移，AndroidSqliteDriver 不覆盖，这里仍手动执行
                 codeMigrations
                     .filter { it.from >= current && it.to <= target }
                     .sortedBy { it.from }
                     .forEach { it.block(driver) }
-                FileLogger.i("MigrationEngine", "  $lib 迁移完成，current=${currentVersion(driver)}")
+                FileLogger.i("MigrationEngine", "  $lib 迁移 snapshot 已完成")
             }
             current.toLong() == target -> {
                 // 显式 no-op。⚠️ 版本相等 ≠ 表结构一致：v0.5.0-rc1 事故中，表结构演进（+14 张表）
