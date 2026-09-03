@@ -27,6 +27,27 @@
 
 ---
 
+## [v0.0.0.1-rc9] - 2026-09-03
+
+rc1~rc7 七轮修复全部围绕「`agent_message` 表缺 `id` 列」展开（结构自愈无损重建 → 换全新库文件 → 启动无条件预热），rc8 仍在同一处崩溃，且崩溃快照显示 `agentPreheatRan=true`——**自愈已成功执行**。本次转而审计**崩溃 SQL 本身**，定位到真正的根因：**不是数据缺列，而是 SQLDelight 生成的 SQL 形态不合法**。
+
+`agent.sq` 的 `selectMessagesBySessionPaged` 内层子查询是**匿名**的，而 SQLDelight 会把外层 `SELECT *` 展开为带表名前缀的列（`agent_message.id, ...`）；SQLite 外层作用域内不存在名为 `agent_message` 的表或别名，展开后的列无处绑定，**在 prepare 阶段**即报 `no such column: agent_message.id`。实测（SQLite 3.45）：表结构 100% 正确、22 列齐全含 `id` 时**同样必崩**。因此前七轮针对表结构的修复从机制上不可能生效——方向错了。
+
+### Fixed（修复）
+
+- **修复分页查询的匿名子查询，根治 rc1~rc8 的 `no such column: agent_message.id`**：内层子查询补上显式别名 `AS agent_message`，使外层展开的 `agent_message.*` 前缀正确绑定到子查询结果集。语义不变（内层倒序取最近 N 条 → 外层正序返回）。这是**一行 SQL 形态修复**，不涉及库文件、表结构或数据迁移。
+
+### Added（新增）
+
+- **启动期冒烟改为直接执行生成的查询**：此前启动诊断手写 `SELECT agent_message.id FROM agent_message LIMIT 1`，形态（FROM 真实表）与真实生成 SQL（FROM 匿名嵌套子查询）不同，导致诊断打出「✅」而业务照崩——**假阳性绿灯**，正是它误导前七轮把精力投向表结构。现改为直接构造 `AgentDb` 调用 `agentQueries.selectMessagesBySessionPaged`，与线上崩溃路径 100% 同构，且随 `.sq` 变更自动同步、永不漂移。
+- **新增分页查询回归测试**：`AgentPagedQueryRegressionTest` 用 JVM SQLite 驱动跑 SQLDelight **生成**的 SQL，覆盖可执行性、最近 N 条正序语义、limit 越界、会话隔离、空会话五例。任何人删掉 `.sq` 里的别名，CI 立即失败，把「结构看着没问题、SQL 编译不过」这类事故永久钉死。
+
+### Changed（变更）
+
+- **rc7 的换库决策可重新评估**：既然根因不在库文件与表结构，`rcodecore_agent_v3.db` 换名所付出的「历史会话清空」代价已非必要；是否回迁旧库以恢复 rc7 弃置的历史会话，留待后续单独评估（本次不做，避免二次风险）。
+
+---
+
 ## [v0.0.0.1-rc7] - 2026-09-03
 
 反复 6 个 rc 都无法根治的 `no such column: agent_message.id`，最终定位到「自愈救不回的坏库」：即便把 AGENT 库升到 schema v3 并启动无条件预热，仍有设备出现「预热确认 `id` 列存在、随后消息查询却报缺列」的矛盾——代码内单驱动单文件、`ensureSchema`/自愈只会加 `id`，指向磁盘上那份**很早期 rc 创建、`id` 列从未存在、覆盖安装又未清除**的旧破文件。rc7 换全新库文件，从机制上甩开它。

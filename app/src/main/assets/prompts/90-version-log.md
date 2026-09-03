@@ -9,6 +9,24 @@
 - 规则：工具 / prompt / schema 等 AI 工作流相关变更，发版时必须在本文件追加一条结构化记录。
 - 版本号规则：四段式 x.x.x.x，见 `docs/versioning.md`。本文件最新条目置顶。
 
+## 0.0.0.1-rc9 (2026-09-03)
+
+### TYPE
+prerelease-rc / fix (sql shape defect: anonymous subquery in generated paged query)
+
+### IMPACT
+- datalayer / agent 消息读取路径；**无 schema 版本变化、无表结构变化、无库文件变化、无 API 语义变化**。
+
+### DATA / SCHEMA
+- **无数据迁移**。`agent.sq` 的 `selectMessagesBySessionPaged` 内层子查询补 `AS agent_message` 别名（仅 .sq 文本变更，`schema.version` 仍为 3，不需新增 .sqm）。
+- 根因：SQLDelight 会把外层 `SELECT *` 展开为带表名前缀的列（`agent_message.id, ...`）；子查询**匿名**时，SQLite 外层作用域内不存在名为 `agent_message` 的表或别名，展开后的列无处绑定，**prepare 阶段**即报 `no such column: agent_message.id`。
+- 关键判据：**表结构 100% 正确（22 列含 `id`）时同样必崩**（SQLite 3.45 实测）。故 rc1~rc7 围绕「表缺列 / 自愈重建 / 换库文件名」的七轮修复从机制上不可能生效。此前崩溃快照的 `agentPreheatRan=true` 正是「自愈已成功、问题不在数据」的指纹。
+
+### AI ACTION
+- **AI 新增或修改 `.sq` 查询时：凡出现 `FROM ( 子查询 )` 且外层使用 `SELECT *`，子查询必须显式别名**（如 `AS agent_message`），否则外层展开的带前缀列会解析失败。
+- 排查 `no such column: <table>.<col>` 时，**先区分「表真的缺列」还是「SQL 作用域解析失败」**：若错误文本带表名前缀、且 `PRAGMA table_info` 确认该列存在 → 必属后者，应审计 SQL 形态而非数据库。这是 rc1~rc8 七轮误判的总教训。
+- 启动冒烟**禁止手写近似 SQL**（rc8 就因手写 `SELECT agent_message.id FROM agent_message LIMIT 1` 形态不同而打出假阳性绿灯），必须直接调用 SQLDelight 生成的查询方法，保证与线上路径同构、永不漂移。
+
 ## 0.0.0.1-rc7 (2026-09-03)
 
 ### TYPE
