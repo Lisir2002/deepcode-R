@@ -9,6 +9,20 @@
 - 规则：工具 / prompt / schema 等 AI 工作流相关变更，发版时必须在本文件追加一条结构化记录。
 - 版本号规则：四段式 x.x.x.x，见 `docs/versioning.md`。本文件最新条目置顶。
 
+## 0.0.0.1-rc3 (2026-09-03)
+
+### TYPE
+prerelease-rc / fix (structural self-heal idempotency)
+
+### IMPACT
+- datalayer only；无 API/schema 语义变化。
+
+### DATA / SCHEMA
+- `SchemaSelfHealer.healTable` 在 `ALTER TABLE ... RENAME TO ${table}_legacy` 前新增 `DROP TABLE IF EXISTS ${table}_legacy`（`try/catch` 包裹、失败不阻断）：清理上次自愈在 RENAME 后未 DROP 就中断所遗留的临时表，避免本次 RENAME 撞名失败、永久锁死后续自愈。
+
+### AI ACTION
+- 无行为迁移；AI 演进 agent 域表结构时仍需同步 SchemaSelfHealer 的 target 列与 DDL（与 .sq 一致）。
+
 ## 0.0.0.1-rc2 (2026-09-03)
 
 ### TYPE
