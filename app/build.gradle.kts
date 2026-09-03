@@ -20,15 +20,18 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
-// 当前版本基线：0.3.0；后续版本号升级必须由用户明确指令
-// 修复版本号漂移：此前 BASE_VERSION 停留在 0.2.0 但已发 v0.3.0-rc1/rc2 tag，
-// 导致 gitVersionName() 无法匹配 v0.3.0* tag、产物 versionName 错误回退为 "0.2.0-dev"（实测 rc2 APK）。
-val BASE_VERSION = "0.3.0"
+// 版本号策略（四段 x.x.x.x，最高 999.999.999.999，从 0.0.0.1 起迭代）：
+//   - 正式版 / RC：完全由 git tag 驱动（v0.0.0.1 / v0.0.0.1-rcN / v0.0.0.10 / v0.0.1.0），
+//     提示词内不定死；tag 语义（bug 修复→rc 迭代、功能→0.0.0.10 跨度、重构→0.0.1.0 跨度且第4位归零）
+//     只在打 tag 时由维护者按规则执行，构建侧只要能正确解析任意四段 tag 即可。
+//   - dev 基线：没有可用的四段 tag 时（旧三段 tag / 无 tag / 无 git 环境）回退到 "0.0.1-dev..."，
+//     "0.0.0.1" 是由 tag 打出来的正式号，不作为代码内常量写死。
+val BASE_VERSION = "0.0.1"
 
-// 版本号策略：
-//   1. 仅当 git tag 以 v0.3.0 开头时（如 v0.3.0 / v0.3.0-rcN），沿用 tag 中的后缀；
-//   2. 其他情况（tag 为其他版本号 / 无 tag / 无 git 环境），一律 fallback 到 "0.3.0-dev"；
-//   3. 严禁从旧 1.x tag 推导版本号，避免版本号回跳到 1.x 系列。
+// 版本号解析：解析 git describe 产物。
+//   匹配四段 tag：正式 "0.0.0.1"、"0.0.0.1-rcN"；以及 tag 后的日常提交
+//   "0.0.0.1-rcN-<n>-g<hash>[dirty]" → "0.0.0.1-rcN-dev.<n>+<hash>[dirty]"。
+//   其余（旧三段 tag 如 1.x / 0.6.0-rc 等、无 v 前缀、无 git）一律 fallback，防版本号回跳。
 fun gitVersionName(): String = try {
     val process = Runtime.getRuntime().exec(
         arrayOf("git", "describe", "--tags", "--always", "--dirty"),
@@ -37,25 +40,18 @@ fun gitVersionName(): String = try {
     )
     process.waitFor()
     val raw = process.inputStream.bufferedReader().readText().trim()
-    if (raw.startsWith("v")) {
-        val version = raw.substring(1)
-        // 仅接受 0.3.0 系列的 tag
-        if (version.startsWith("$BASE_VERSION")) {
-            // "0.3.0" / "0.3.0-rcN" / "0.3.0-N-gabcdef0"
-            val devRegex = Regex("""^(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?)-(\d+)-g([0-9a-f]+)(.*)$""")
-            val match = devRegex.matchEntire(version)
-            if (match != null) {
-                val (base, count, hash, dirty) = match.destructured
-                "$base-dev.$count+$hash$dirty"
-            } else {
-                version
-            }
+    val version = raw.removePrefix("v")
+    if (version.isNotEmpty()) {
+        val fourSegDev = Regex("""^(\d+\.\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?)-(\d+)-g([0-9a-f]+)(.*)$""")
+        val match = fourSegDev.matchEntire(version)
+        if (match != null) {
+            val (base, count, hash, dirty) = match.destructured
+            "$base-dev.$count+$hash$dirty"
+        } else if (Regex("""^\d+\.\d+\.\d+\.\d+(-rc\d+)?$""").matches(version)) {
+            version
         } else {
-            // 非 0.3.0 系列 tag（如旧的 1.8.0），一律忽略，走 fallback
             "$BASE_VERSION-dev"
         }
-    } else if (raw.isNotEmpty()) {
-        "$BASE_VERSION-dev+$raw"
     } else {
         "$BASE_VERSION-dev"
     }

@@ -48,6 +48,7 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 - **单向依赖**：core 不依赖 feature，保证基础设施可独立演进与测试。
 - **密钥管理**：`DEKManager` 统一管理数据加密密钥，避免散落；凭据轮换由 `CredentialRotationWorker` 周期执行。
 - **迁移纪律**：V2 库的 schema 演进走 `datalayer/migration` 的 `MigrationEngine`/`HeavyMigration`/`CodeMigration`（SQLDelight `MIGRATION_*` 链），禁止改既有库文件结构时直接绕过迁移；旧数据移入走一次性的 `V1toV2FullMigrator`。
+- **结构自愈兜底**：`datalayer/migration/SchemaSelfHealer` 在每库打开（`DataLayerModule` 各 Database provider）紧跟 `ensureSchema` 后，对历史遗留「user_version 与目标相同但表结构漂移（缺列）」的库做幂等无害重建，规避 `MigrationEngine` no-op 分支照顾不到的 `no such column` 类崩溃（如 `agent_message.id`）。当前覆盖 agent 域 `agent_session` / `agent_message`；新增/演进表如需同样兜底，在此登记目标列与建表 DDL（保持与 `.sq` 一致）。
 - **注册表纪律**：新增 V2 数据表/数据域必须登记进 `core/data/DataRegistryModule`，否则备份/恢复/自动迁移不覆盖；DataStore 走目录级转储，无需逐项登记。
 
 ## 6. 维护与扩展指引

@@ -102,7 +102,9 @@ object AgentModule {
             // 放宽到 8 连接 / 15min 提升长连接复用率，降低首字节（TTFT）延迟。
             .connectionPool(okhttp3.ConnectionPool(8, 15, TimeUnit.MINUTES))
             // 网络层优化 C3：短 TTL DNS 缓存，避免每次连接走系统 DNS（弱网可省几十~几百 ms）。
-            .dns(com.R.codecore.core.network.CachingDns())
+            // 网络层优化 C5+：系统解析失败时回退公共 DNS（223.5.5.5 等）兜底，规避
+            // "Unable to resolve host"（被网络分流/私人 DNS 劫持时系统查不到、公共 DNS 却可查）。
+            .dns(com.R.codecore.core.network.PublicDnsFallback(com.R.codecore.core.network.CachingDns()))
             .build()
     }
 

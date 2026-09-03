@@ -8,6 +8,7 @@ import com.R.codecore.datalayer.engine.DatabasePathProvider
 import com.R.codecore.datalayer.engine.LibName
 import com.R.codecore.datalayer.engine.PlainDriverFactory
 import com.R.codecore.datalayer.migration.MigrationEngine
+import com.R.codecore.datalayer.migration.SchemaSelfHealer
 import com.R.codecore.datalayer.repository.AgentRepository
 import com.R.codecore.datalayer.repository.CredentialsRepository
 import com.R.codecore.datalayer.repository.WakeQueueStore
@@ -77,6 +78,11 @@ object DataLayerModule {
     fun provideAgentDb(pool: ConnectionPool, engine: MigrationEngine): AgentDb {
         val driver = pool.driver(LibName.AGENT)
         engine.ensureSchema(LibName.AGENT, driver, AgentDb.Schema)
+        // 幂等结构自愈（§5.7）：历史库可能因「版本号相同但表结构漂移」残留，命中 ensureSchema 的
+        // no-op 分支而不重建——这里对缺列的无损重建兜底，规避 no such column: agent_message.id。
+        // agent_session / agent_message 同属 P2-3「对齐全表」的演进表，结构漂移风险同类，一并自愈。
+        SchemaSelfHealer.healAgentSession(driver)
+        SchemaSelfHealer.healAgentMessage(driver)
         return AgentDb(driver)
     }
 
