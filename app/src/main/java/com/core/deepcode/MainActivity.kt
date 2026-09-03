@@ -1,0 +1,640 @@
+package com.core.deepcode
+
+import android.Manifest
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.content.pm.PackageManager
+import android.view.WindowManager
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import com.core.deepcode.core.theme.pageEnterTransition
+import com.core.deepcode.core.theme.pageExitTransition
+import com.core.deepcode.core.theme.pagePopEnterTransition
+import com.core.deepcode.core.theme.pagePopExitTransition
+import com.core.deepcode.core.theme.terminalEnterTransition
+import com.core.deepcode.core.theme.terminalExitTransition
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Surface
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.core.deepcode.core.theme.AIEditorTheme
+import com.core.deepcode.feature.agent.presentation.AIAgentViewModel
+import com.core.deepcode.feature.agent.presentation.component.AIChatPanel
+import com.core.deepcode.feature.agent.presentation.component.ChatDrawerContent
+import com.core.deepcode.feature.git.presentation.GitViewModel
+import com.core.deepcode.feature.git.presentation.component.GitScreen
+import com.core.deepcode.feature.settings.data.repository.KeepaliveSettingsRepository
+import com.core.deepcode.feature.settings.data.repository.AppThemeMode
+import com.core.deepcode.feature.settings.data.repository.ThemeSettingsRepository
+import com.core.deepcode.feature.settings.presentation.SettingsViewModel
+import com.core.deepcode.feature.settings.presentation.component.SettingsScreen
+import com.core.deepcode.feature.terminal.domain.TerminalKeepaliveService
+import com.core.deepcode.feature.terminal.presentation.TerminalSettingsViewModel
+import com.core.deepcode.feature.terminal.presentation.TerminalViewModel
+import com.core.deepcode.feature.terminal.presentation.component.TerminalBundleManagerScreen
+import com.core.deepcode.feature.terminal.presentation.component.TerminalScreen
+import com.core.deepcode.feature.terminal.presentation.component.TerminalSettingsScreen
+import com.core.deepcode.feature.workspace.presentation.FileReaderViewModel
+import com.core.deepcode.feature.workspace.presentation.WorkspaceFileViewModel
+import com.core.deepcode.feature.workspace.presentation.WorkspaceViewModel
+import com.core.deepcode.feature.workspace.presentation.component.FileReaderScreen
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import androidx.compose.ui.res.stringResource
+import com.core.deepcode.R
+
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+
+    /** 用于冷启动时在前台恢复常驻保活通知（App.onCreate 的启动可能被后台 FGS 限制挡掉）。 */
+    @Inject
+    lateinit var keepaliveSettings: KeepaliveSettingsRepository
+
+    @Inject
+    lateinit var themeSettings: ThemeSettingsRepository
+
+    /** App 回到前台时，远程模式下若 SSH 断了触发重连。 */
+    @Inject
+    lateinit var remoteSshConnection: com.core.deepcode.feature.agent.domain.container.RemoteSshConnection
+
+    @Inject
+    lateinit var executionModeHolder: com.core.deepcode.feature.settings.data.repository.ExecutionModeHolder
+
+    /** 三端（UI/AI Bash/交互终端）git 缺凭据统一弹窗桥：在 AIEditorApp 启动后监听 helper 的文件 IPC 请求。 */
+    @Inject
+    lateinit var credentialRequestBridge: com.core.deepcode.feature.credentials.data.CredentialRequestBridge
+
+    /** 内置服务浏览器：用户与模型共享的 WebView 会话（浏览器页/模型工具共用）。 */
+    @Inject
+    lateinit var browserController: com.core.deepcode.feature.browser.domain.BrowserController
+
+    /** 浏览器登录凭据输入流程（模型登录时请求用户提供账号密码）。 */
+    @Inject
+    lateinit var browserLoginPromptManager: com.core.deepcode.feature.browser.domain.BrowserLoginPromptManager
+
+    /** 浏览器「用户接管」流程（验证码/支付/二次认证时请求用户亲自完成）。 */
+    @Inject
+    lateinit var browserTakeoverManager: com.core.deepcode.feature.browser.domain.BrowserTakeoverManager
+
+    /** 浏览器站点登录凭据加密存储（凭据管理 UI 用）。 */
+    @Inject
+    lateinit var browserCredentialStore: com.core.deepcode.feature.browser.domain.BrowserCredentialStore
+
+    /** 数据保全通知器：观察哨兵判定结果，数据疑似丢失/包名变更时弹启动级全局告警（D8b）。 */
+    @Inject
+    lateinit var dataSafetyNotifier: com.core.deepcode.feature.backup.data.DataSafetyNotifier
+
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants[Manifest.permission.WRITE_EXTERNAL_STORAGE] == true ||
+            grants[Manifest.permission.READ_EXTERNAL_STORAGE] == true
+        if (granted) {
+            // 权限授予后把日志目录切换到公共外部存储（卸载后仍保留）
+            com.core.deepcode.core.util.FileLogger.onExternalStorageGranted(this)
+            com.core.deepcode.core.util.AILogger.onExternalStorageGranted(this)
+        } else {
+            Toast.makeText(
+                this,
+                getString(R.string.main_no_storage_permission),
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    @Suppress("DEPRECATION") // 全局更新 application resources locale，createConfigurationContext 无法替代
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // RC61b：enableEdgeToEdge() 必须在 super.onCreate() 之后调用（ComponentActivity 基类要求）。
+        // 早于 super 调用时，基类内部的 mSavedStateRegistry / mConfigChangeTracker 尚未初始化，
+        // 会在低版本 AndroidX Activity 上触发 NPE 或警告，导致冷启动偶发 1-2s 秒退。
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        requestLegacyStoragePermissionIfNeeded()
+        // API 30+：全局切到 ADJUST_NOTHING，由 rememberImeBottomInset() 接管键盘内边距。
+        // 必须在 Activity 级别统一设置，不能在每个 composable 里各自 save/restore——
+        // NavHost 过渡动画期间新旧页面共存，旧页面 dispose 恢复 softInputMode 会触发窗口重布局导致白屏。
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+        }
+        setContent {
+            val themeMode by themeSettings.themeModeFlow.collectAsStateWithLifecycle(initialValue = AppThemeMode.AUTO)
+            val uiScope = rememberCoroutineScope()
+            // 侧边栏主题按钮：三态顺序切换（AUTO → DARK → LIGHT → AUTO），无需弹出选择弹窗。
+            val cycleTheme: () -> Unit = {
+                val next = when (themeMode) {
+                    AppThemeMode.AUTO -> AppThemeMode.DARK
+                    AppThemeMode.DARK -> AppThemeMode.LIGHT
+                    AppThemeMode.LIGHT -> AppThemeMode.AUTO
+                }
+                uiScope.launch { themeSettings.setThemeMode(next) }
+            }
+            val systemDarkTheme = isSystemInDarkTheme()
+            val darkTheme = when (themeMode) {
+                AppThemeMode.AUTO -> systemDarkTheme
+                AppThemeMode.DARK -> true
+                AppThemeMode.LIGHT -> false
+            }
+            val view = LocalView.current
+            SideEffect {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !darkTheme
+                controller.isAppearanceLightNavigationBars = !darkTheme
+            }
+
+            AIEditorTheme(darkTheme = darkTheme) {
+                // 将 MainActivity 算好的"APP 实际暗模式"通过 CompositionLocal 下发，
+                // 子树里的终端内容配色、跟随程序开关都读这同一个值，
+                // 保证 APP 切到"强制白/强制黑"时，终端颜色不会还停留在系统主题。
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.core.deepcode.core.theme.LocalAppDarkMode provides darkTheme
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        AppNavigation(
+                            browserController = browserController,
+                            browserLoginPromptManager = browserLoginPromptManager,
+                            browserTakeoverManager = browserTakeoverManager,
+                            browserCredentialStore = browserCredentialStore,
+                            dataSafetyNotifier = dataSafetyNotifier,
+                            currentThemeMode = themeMode,
+                            onCycleTheme = cycleTheme
+                        )
+                        // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
+                        com.core.deepcode.feature.credentials.presentation.component.GlobalCredentialDialogHost(
+                            bridge = credentialRequestBridge
+                        )
+                    }
+                }
+            }
+        }
+
+        // 此时处于前台，启动前台服务一定被允许：若用户曾开启常驻保活，补上通知。
+        lifecycleScope.launch {
+            if (keepaliveSettings.isEnabled()) {
+                TerminalKeepaliveService.enablePersistent(this@MainActivity)
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 远程模式回到前台时，若 SSH 断了立即触发重连，不等 supervisor 轮询
+        if (executionModeHolder.currentMode() == com.core.deepcode.feature.settings.data.repository.ExecutionMode.REMOTE_SSH) {
+            lifecycleScope.launch {
+                runCatching { remoteSshConnection.tryReconnectIfDisconnected() }
+            }
+        }
+    }
+
+    private fun requestLegacyStoragePermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val permissions = arrayOf(
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        )
+        val missing = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            storagePermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+}
+
+/**
+ * 根导航容器。
+ *
+ * [ModalNavigationDrawer] 放在 [NavHost] **外面**，使 Drawer 的生命周期独立于页面切换。
+ *
+ * NavHost 禁用了全部过渡动画（enterTransition / exitTransition = None）——
+ * Terminal 页面的 [AndroidView] 不参与 Compose 的 graphicsLayer alpha 动画，
+ * 如果保留默认 fadeIn/fadeOut，过渡期间新旧 composable 共存，TerminalView 以满不透明度
+ * 覆盖在新页面之上；过渡结束后原生 View 被移除触发 View 层级重布局，恰与 Drawer 打开动画
+ * 叠加导致渲染管线中断——表现为「退出终端后立即点侧边栏白屏」。
+ *
+ * ViewModel 提升到这一层创建，以便 Drawer 内容和 AIChatPanel 共享同一实例。
+ */
+@Composable
+fun AppNavigation(
+    browserController: com.core.deepcode.feature.browser.domain.BrowserController,
+    browserLoginPromptManager: com.core.deepcode.feature.browser.domain.BrowserLoginPromptManager,
+    browserTakeoverManager: com.core.deepcode.feature.browser.domain.BrowserTakeoverManager,
+    browserCredentialStore: com.core.deepcode.feature.browser.domain.BrowserCredentialStore,
+    dataSafetyNotifier: com.core.deepcode.feature.backup.data.DataSafetyNotifier,
+    currentThemeMode: AppThemeMode,
+    onCycleTheme: () -> Unit
+) {
+    val navController = rememberNavController()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    // 从侧边栏「工作目录」打开文件阅读页时置位；退出阅读页后自动重开侧边栏（保留所在 tab）。
+    var reopenDrawerAfterFileReader by remember { mutableStateOf(false) }
+
+    // 用于判断当前路由：仅在聊天页允许 Drawer 手势。
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
+
+    // Activity 级别的 ViewModel——Drawer 和 AIChatPanel 共享同一个实例。
+    val agentViewModel: AIAgentViewModel = hiltViewModel()
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val workspaceViewModel: WorkspaceViewModel = hiltViewModel()
+    // 侧边栏「工作目录 → 当前工作台」文件浏览数据源（Activity 级，切换工作区时自动复位到根目录）。
+    val workspaceFileViewModel: WorkspaceFileViewModel = hiltViewModel()
+
+    // 侧边栏打开时，系统返回键先收起侧边栏。
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
+
+    // 侧边栏需要的数据。
+    val currentWorkspace by workspaceViewModel.current.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(currentWorkspace) {
+        // 远程模式连接未就绪时 currentWorkspace 为 null，不触发 setWorkspace，避免空路径点燃 session 加载
+        val path = currentWorkspace?.path ?: return@LaunchedEffect
+        agentViewModel.setWorkspace(path)
+    }
+
+    val sessions by agentViewModel.sessions.collectAsStateWithLifecycle()
+    val sessionsWithCount by agentViewModel.sessionsWithCount.collectAsStateWithLifecycle()
+    val currentSessionId by agentViewModel.currentSessionId.collectAsStateWithLifecycle()
+    val currentSession = sessions.find { it.id == currentSessionId }
+    val agentStates by agentViewModel.agentStates.collectAsStateWithLifecycle()
+
+    // ── 导出会话：SAF 保存文件 ──
+    var pendingExportSessionId by remember { mutableStateOf<String?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sessionExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        val sessionId = pendingExportSessionId
+        if (uri != null && sessionId != null) {
+            scope.launch {
+                val os = withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri) }
+                if (os != null) {
+                    agentViewModel.exportSession(sessionId, os) { success ->
+                        Toast.makeText(
+                            context,
+                            context.getString(if (success) R.string.chat_export_session_done else R.string.chat_export_session_failed),
+                            if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                        ).show()
+                    }
+                } else {
+                    Toast.makeText(context, context.getString(R.string.chat_export_session_failed), Toast.LENGTH_LONG).show()
+                }
+                pendingExportSessionId = null
+            }
+        } else {
+            pendingExportSessionId = null
+        }
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        // 仅在聊天页启用手势滑出；其他页面禁止（但已打开时始终可关闭）。
+        gesturesEnabled = currentRoute == "chat" || drawerState.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerShape = RectangleShape,
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerTonalElevation = 0.dp,
+                modifier = Modifier.width(300.dp)
+            ) {
+                ChatDrawerContent(
+                    sessionsWithCount = sessionsWithCount,
+                    currentSessionId = currentSessionId,
+                    agentStates = agentStates,
+                    onSelect = {
+                        agentViewModel.selectSession(it.id)
+                        scope.launch { drawerState.close() }
+                    },
+                    onDelete = { agentViewModel.deleteSession(it.id) },
+                    onRename = { session, title -> agentViewModel.renameSession(session.id, title) },
+                    onExport = { session ->
+                        pendingExportSessionId = session.id
+                        val safeTitle = session.title.replace(Regex("[^\\w\\u4e00-\\u9fa5\\-]"), "_")
+                        sessionExportLauncher.launch("deepcode-session-$safeTitle-${System.currentTimeMillis()}.tar.gz")
+                    },
+                    onUndoDelete = { agentViewModel.undoDeleteSession() },
+                    onNavigateToSettings = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate("settings")
+                    },
+                    currentThemeMode = currentThemeMode,
+                    onCycleTheme = onCycleTheme,
+                    // 侧边栏「工作目录」tab：复用工作区 ViewModel，切换时若有运行会话则确认
+                    workspaceViewModel = workspaceViewModel,
+                    // 侧边栏「工作目录 → 当前工作台」：文件浏览器数据源
+                    workspaceFileViewModel = workspaceFileViewModel,
+                    hasRunningSessions = { agentViewModel.hasRunningSessionsInCurrentWorkspace() },
+                    onSwitchWorkspaceConfirmed = { agentViewModel.stopAllAndCloseTerminal() },
+                    // 点击文件 → 关闭侧边栏并跳转独立文件阅读页（路径 URI 编码传入）。
+                    // 记录「从侧边栏打开」，退出阅读页时自动重开侧边栏并保留所在 tab（工作目录），
+                    // 满足「阅读文件退出后要有记忆、不直接关闭侧边栏」。
+                    onOpenFile = { path ->
+                        reopenDrawerAfterFileReader = true
+                        scope.launch { drawerState.close() }
+                        navController.navigate("file_reader/" + Uri.encode(path))
+                    },
+                    // 「更多配置 → 工作台绑定」：当前会话 + 手动绑定回调
+                    currentSession = currentSession,
+                    onBindWorkspace = { path -> agentViewModel.bindSessionWorkspace(path) }
+                )
+            }
+        }
+    ) {
+        NavHost(
+            navController = navController,
+            startDestination = "chat",
+            enterTransition = {
+                when (targetState.destination.route) {
+                    "terminal" -> terminalEnterTransition
+                    else -> pageEnterTransition
+                }
+            },
+            exitTransition = {
+                when (initialState.destination.route) {
+                    "terminal" -> terminalExitTransition
+                    else -> pageExitTransition
+                }
+            },
+            popEnterTransition = {
+                when (targetState.destination.route) {
+                    "terminal" -> terminalEnterTransition
+                    else -> pagePopEnterTransition
+                }
+            },
+            popExitTransition = {
+                when (initialState.destination.route) {
+                    "terminal" -> terminalExitTransition
+                    else -> pagePopExitTransition
+                }
+            }
+        ) {
+            composable("chat") {
+                AIChatPanel(
+                    viewModel = agentViewModel,
+                    settingsViewModel = settingsViewModel,
+                    workspaceViewModel = workspaceViewModel,
+                    drawerState = drawerState,
+                    onNavigateToSettings = { navController.navigate("settings") },
+                    onNavigateToTerminal = { navController.navigate("terminal") },
+                    onNavigateToGit = { navController.navigate("git") },
+                    onNavigateToBrowser = { navController.navigate("browser") }
+                )
+            }
+            composable("settings") {
+                // 复用 Activity 级 settingsViewModel（MainActivity 顶部已创建并 init），
+                // 避免进入设置页时再建一个 NavBackStackEntry 级实例、重复跑 init 与 9 路 flow 订阅，
+                // 这是侧边栏点设置「卡一下」的主因。
+                SettingsScreen(
+                    viewModel = settingsViewModel,
+                    onNavigateBack = { 
+                        navController.popBackStack() 
+                        scope.launch { drawerState.open() }
+                    },
+                    onNavigateToTerminalSettings = { navController.navigate("terminal_settings") },
+                    // RC62：用户点「管理 SSH 主机配置」不再是占位。
+                    // 从 SettingsScreen（本路由内部）点 → 直接让 SettingsScreen 的 section 切换 RemoteServers。
+                    // 实现方式：利用 SettingsScreen 内部已经消费的 SettingsViewModel.openSection() 机制，
+                    //   它内部 section 是 remember mutableState，但 LaunchedEffect(pendingTick) 会在 next frame
+                    //   把它赋值成 RemoteServers。
+                    onNavigateToSshHosts = {
+                        settingsViewModel.openSection(
+                            com.core.deepcode.feature.settings.presentation.component.SettingsSection.RemoteServers
+                        )
+                    },
+                    onStopAllAndCloseTerminal = { agentViewModel.stopAllAndCloseTerminal() },
+                    onNavigateToNetProxy = { navController.navigate("proxy_config") },
+                    // 能力中心入口（自侧边栏移入设置）：设置页点击直接跳转能力中心。
+                    onNavigateToCapabilityCenter = { navController.navigate("capability_center") }
+                )
+            }
+            composable("capability_center") {
+                val capabilityViewModel: com.core.deepcode.feature.capability.presentation.CapabilityCenterViewModel = hiltViewModel()
+                val currentSessionMode by agentViewModel.currentSessionMode.collectAsStateWithLifecycle()
+                com.core.deepcode.feature.capability.presentation.component.CapabilityCenterScreen(
+                    viewModel = capabilityViewModel,
+                    currentSessionMode = currentSessionMode,
+                    onNavigateBack = { navController.popBackStack() },
+                    onOpenSkillDetail = { skillId ->
+                        navController.navigate("skill_detail/$skillId")
+                    },
+                    onEditSkill = { skillId ->
+                        navController.navigate("skill_edit/$skillId")
+                    }
+                )
+            }
+            composable("skill_detail/{skillId}") { entry ->
+                val skillId = entry.arguments?.getString("skillId") ?: ""
+                val detailViewModel: com.core.deepcode.feature.settings.presentation.SkillDetailViewModel = hiltViewModel()
+                com.core.deepcode.feature.settings.presentation.component.SkillDetailScreen(
+                    viewModel = detailViewModel,
+                    skillId = skillId,
+                    onNavigateBack = { navController.popBackStack() },
+                    onEditSkill = { id ->
+                        navController.navigate("skill_edit/$id")
+                    }
+                )
+            }
+            composable("skill_edit/{skillId}") { entry ->
+                val skillId = entry.arguments?.getString("skillId") ?: ""
+                val editViewModel: com.core.deepcode.feature.settings.presentation.SkillEditViewModel = hiltViewModel()
+                com.core.deepcode.feature.settings.presentation.component.SkillEditScreen(
+                    viewModel = editViewModel,
+                    skillId = skillId,
+                    onNavigateBack = { navController.popBackStack() },
+                    onSaved = { id ->
+                        navController.popBackStack()
+                    }
+                )
+            }
+            composable("proxy_config") {
+                val proxyViewModel: com.core.deepcode.feature.proxy.presentation.ProxyViewModel = hiltViewModel()
+                com.core.deepcode.feature.proxy.presentation.component.ProxyConfigScreen(
+                    viewModel = proxyViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToNodes = { navController.navigate("proxy_nodes") }
+                )
+            }
+            composable("proxy_nodes") {
+                val proxyViewModel: com.core.deepcode.feature.proxy.presentation.ProxyViewModel = hiltViewModel()
+                com.core.deepcode.feature.proxy.presentation.component.ProxyNodesScreen(
+                    viewModel = proxyViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("terminal") {
+                val terminalViewModel: TerminalViewModel = hiltViewModel()
+                TerminalScreen(
+                    viewModel = terminalViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToSettings = { navController.navigate("terminal_settings") }
+                )
+            }
+            composable("terminal_settings") {
+                val terminalSettingsVM: TerminalSettingsViewModel = hiltViewModel()
+                TerminalSettingsScreen(
+                    viewModel = terminalSettingsVM,
+                    onNavigateBack = { navController.popBackStack() },
+                    // RC62：TerminalSettings 里点「管理 SSH 主机配置」→ 跨路由栈切到 Settings 的 RemoteServers 分区。
+                    // 顺序必须是「先发 openSection（写入 SettingsViewModel 单例，CONFLATED Channel 只保留最新）
+                    // 再 pop 回 settings 路由」，因为 SettingsScreen 在 composable 首帧就会 consume pendingTick：
+                    //   tick(1) > consumed(-1) → 读 lastRequestedSection=RemoteServers → section=RemoteServers。
+                    onNavigateToSshHosts = {
+                        settingsViewModel.openSection(
+                            com.core.deepcode.feature.settings.presentation.component.SettingsSection.RemoteServers
+                        )
+                        val popped = navController.popBackStack("settings", inclusive = false)
+                        if (!popped) {
+                            // 理论上不会发生，因为 terminal_settings 一定是从 settings 导航过来的；
+                            // 兜底直接 go settings，路由创建时 LaunchedEffect(pendingTick) 也会消费。
+                            navController.navigate("settings")
+                        }
+                    },
+                    onNavigateToBundleManager = { navController.navigate("terminal_bundle_manager") }
+                )
+            }
+            composable("terminal_bundle_manager") {
+                val terminalSettingsVM: TerminalSettingsViewModel = hiltViewModel()
+                TerminalBundleManagerScreen(
+                    viewModel = terminalSettingsVM,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("git") {
+                val gitViewModel: GitViewModel = hiltViewModel()
+                val credentialViewModel: com.core.deepcode.feature.credentials.presentation.CredentialViewModel = hiltViewModel()
+                GitScreen(
+                    viewModel = gitViewModel,
+                    credentialViewModel = credentialViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("browser") {
+                com.core.deepcode.feature.browser.presentation.ServiceBrowserScreen(
+                    browserController = browserController,
+                    loginPromptManager = browserLoginPromptManager,
+                    takeoverManager = browserTakeoverManager,
+                    credentialStore = browserCredentialStore,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            // 独立文件阅读页：路径经 Uri.encode 编码后作为参数传入，Navigation 匹配时自动解码还原。
+            composable("file_reader/{filePath}") { entry ->
+                val filePath = entry.arguments?.getString("filePath") ?: ""
+                val readerViewModel: FileReaderViewModel = hiltViewModel()
+                FileReaderScreen(
+                    viewModel = readerViewModel,
+                    filePath = filePath,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                        // 从侧边栏「工作目录」进入的阅读页：退出后重开侧边栏，保留之前所在 tab。
+                        if (reopenDrawerAfterFileReader) {
+                            reopenDrawerAfterFileReader = false
+                            scope.launch { drawerState.open() }
+                        }
+                    }
+                )
+            }
+        }
+
+        // 数据疑似丢失 / 包名变更 → 启动级全局告警（D8b）：
+        // 冷启动后用户打开 App 第一眼就能看到「历史数据异常」提示，可一键跳转备份与还原页恢复。
+        DataSafetyStartupAlert(
+            notifier = dataSafetyNotifier,
+            onGoToBackup = {
+                settingsViewModel.openSection(
+                    com.core.deepcode.feature.settings.presentation.component.SettingsSection.Backup
+                )
+                navController.navigate("settings")
+            }
+        )
+    }
+}
+
+/**
+ * 数据保全启动级全局告警弹窗（数据保全防线 D8b，解决「数据消失却不报错」）。
+ *
+ * 哨兵（DataSentinel）判定本包名下数据疑似为空（DATA_LOST）或包名被改动（PACKAGE_CHANGED）时，
+ * 覆盖所有页面弹出，提示用户历史数据可能丢失，并提供「去备份与还原」入口。用户选择「我知道了」
+ * 仅本次会话不再弹；数据恢复后下次启动判定自然回落为 UPGRADED/NORMAL，不再告警。
+ */
+@Composable
+private fun DataSafetyStartupAlert(
+    notifier: com.core.deepcode.feature.backup.data.DataSafetyNotifier,
+    onGoToBackup: () -> Unit
+) {
+    val verdict by notifier.verdict.collectAsStateWithLifecycle()
+    if (!notifier.shouldShowStartupAlert) return
+    val isPackageChanged = verdict == com.core.deepcode.feature.backup.data.guard.SentinelVerdict.PACKAGE_CHANGED
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { notifier.dismissStartupAlert() },
+        title = {
+            androidx.compose.material3.Text(
+                stringResource(
+                    if (isPackageChanged) R.string.backup_package_changed_title
+                    else R.string.backup_data_lost_title
+                )
+            )
+        },
+        text = {
+            androidx.compose.material3.Text(
+                stringResource(
+                    if (isPackageChanged) R.string.backup_package_changed_desc
+                    else R.string.backup_data_lost_desc
+                )
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    notifier.dismissStartupAlert()
+                    onGoToBackup()
+                }
+            ) {
+                androidx.compose.material3.Text(stringResource(R.string.backup_data_safety_alert_go))
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = { notifier.dismissStartupAlert() }) {
+                androidx.compose.material3.Text(stringResource(R.string.backup_data_safety_alert_dismiss))
+            }
+        }
+    )
+}

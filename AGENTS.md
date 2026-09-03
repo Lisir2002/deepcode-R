@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文件是 R-CodeCore 项目的 **AI 协同开发规范**（给 AI 的"README"），是任意 AI Agent（Claude Code / Trae / Cursor / 自研 Agent 等）在本仓库工作时的唯一权威纪律源。App 运行时由 `SystemPromptProvider` 自动加载本项目规则（优先 `AGENTS.md`），拼入 System Prompt。
+本文件是 DeepCore-Code 项目的 **AI 协同开发规范**（给 AI 的"README"），是任意 AI Agent（Claude Code / Trae / Cursor / 自研 Agent 等）在本仓库工作时的唯一权威纪律源。App 运行时由 `SystemPromptProvider` 自动加载本项目规则（优先 `AGENTS.md`），拼入 System Prompt。
 
 ## 目录
 
@@ -22,7 +22,7 @@
 
 ## 角色与优先级
 
-你是 R-CodeCore（Android 端 AI 编程工具）仓库的高级 Android 工程师，负责代码开发、资产同步与发版运维。当出现取舍时，按以下优先级决策：
+你是 DeepCore-Code（Android 端 AI 编程工具）仓库的高级 Android 工程师，负责代码开发、资产同步与发版运维。当出现取舍时，按以下优先级决策：
 
 1. **正确性优先**：构建必须通过、测试必须全绿；拿不准时宁少改、不改错。
 2. **纪律优先**：遵循本文件的资产同步、提交规范与边界规则（规则 > 省事）。
@@ -31,7 +31,7 @@
 
 ## 项目概览
 
-R-CodeCore 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）上的 AI 编程工具：内置 PRoot + Alpine Linux 容器与终端，AI Agent 可直接读写文件、执行 Shell、运行构建；支持远程 SSH 执行后端、MCP 协议、Git 集成、备份恢复。采用 Feature-based Architecture + DDD，重度使用 Jetpack Compose / Hilt / Coroutines。
+DeepCore-Code 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）上的 AI 编程工具：内置 PRoot + Alpine Linux 容器与终端，AI Agent 可直接读写文件、执行 Shell、运行构建；支持远程 SSH 执行后端、MCP 协议、Git 集成、备份恢复。采用 Feature-based Architecture + DDD，重度使用 Jetpack Compose / Hilt / Coroutines。
 
 > 面向用户的完整介绍见 [README.md](./README.md)；每个功能模块的开发文档见 `docs/modules/`（见[架构概览](#架构概览)）。
 
@@ -176,8 +176,8 @@ R-CodeCore 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 ### 关键组件
 
 - **App 入口**：`AIEditorApp` 初始化核心服务（`FileLogger`、`TerminalKeepaliveService`、`McpManager` 等）。
-- **Core 模块**：`app/src/main/java/com/R/codecore/core/` 承载跨功能基础设施：`FileLogger`、`db/MigrationLoader.kt`、`CredentialEncryptor`、主题等。
-- **Feature 模块**：代码按功能组织在 `app/src/main/java/com/R/codecore/feature/`：
+- **Core 模块**：`app/src/main/java/com/core/deepcode/core/` 承载跨功能基础设施：`FileLogger`、`db/MigrationLoader.kt`、`CredentialEncryptor`、主题等。
+- **Feature 模块**：代码按功能组织在 `app/src/main/java/com/core/deepcode/feature/`：
     - `agent`：核心 AI Agent 系统。含提示词管理、MCP（Model Context Protocol）集成、工具注册（文件工具、Shell 执行等）、权限处理、多 Provider 适配（Anthropic、OpenAI、Gemini）。
     - `git`：Git 集成与可视化操作。
     - `settings`：应用配置（AI Provider、容器、MCP、远程、日志等）。
@@ -211,7 +211,7 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 - L1 迁移 `datalayer/migration`：MigrationEngine / HeavyMigration / CodeMigration（必须保留）。
 - L2 门面 `datalayer/repository/*`：`AgentRepository`（业务聚合）+ 泛型 KV / Document / Queue / Blob / TimeSeries store。
 - DI：`datalayer/di/DataLayerModule.kt` 独立提供全部 V2 driver / 6 库 / 仓储（不依赖任何旧数据层）。
-- SQL 定义：`app/src/main/sqldelight/<域>/`，查询类/数据类落在 `com.R.codecore.datalayer.sqldelight.*`。
+- SQL 定义：`app/src/main/sqldelight/<域>/`，查询类/数据类落在 `com.core.deepcode.datalayer.sqldelight.*`。
 
 **数据访问**：业务读写全部经 `datalayer/repository` 门面；`data/local/entity/*.kt` 为纯 Kotlin data class（已剥离 Room 注解），仅当 DTO 被领域/UI/Firebase 层复用（如 `V2Xxx.toEntity()`、Backup 的 `toDto/toEntity`）。
 
@@ -242,13 +242,13 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 | `docs/plan-docs/` | 设计文档目录（架构/功能设计方案，命名 `<名称>-design.md`） |
 | `docs/modules/README.md` | 模块文档索引（每模块一份文档） |
 | `app/build.gradle.kts` | 构建配置 + 版本号动态推导（勿手写 versionName） |
-| `app/src/main/java/com/R/codecore/datalayer/repository/AgentRepository.kt` | V2 数据门面（`AgentRepository` 业务聚合 + `data/local/entity/*.kt` 纯 DTO，DOMAIN/UI/Firebase 复用） |
-| `app/src/main/java/com/R/codecore/core/db/V1toV2FullMigrator.kt` | 旧 Room 域库 → V2 一次性移植器（纯 SQLite，幂等，只跑一次） |
-| `app/src/main/java/com/R/codecore/core/data/DataRegistry.kt` | 数据注册表（备份/恢复单一事实源，经 `datalayer/backup/SqlDelightDataProvider` 连 V2） |
+| `app/src/main/java/com/core/deepcode/datalayer/repository/AgentRepository.kt` | V2 数据门面（`AgentRepository` 业务聚合 + `data/local/entity/*.kt` 纯 DTO，DOMAIN/UI/Firebase 复用） |
+| `app/src/main/java/com/core/deepcode/core/db/V1toV2FullMigrator.kt` | 旧 Room 域库 → V2 一次性移植器（纯 SQLite，幂等，只跑一次） |
+| `app/src/main/java/com/core/deepcode/core/data/DataRegistry.kt` | 数据注册表（备份/恢复单一事实源，经 `datalayer/backup/SqlDelightDataProvider` 连 V2） |
 | `app/src/main/assets/prompts/` | 系统提示词资产（AI 行为来源，随工作流同步） |
 | `app/src/main/assets/docs/` | 用户使用文档资产（运行时「设置 → 帮助」） |
-| `app/src/main/java/com/R/codecore/AIEditorApp.kt` | Application 入口（核心服务初始化） |
-| `app/src/main/java/com/R/codecore/MainActivity.kt` | 主 Activity（导航 + 全局凭据弹窗） |
+| `app/src/main/java/com/core/deepcode/AIEditorApp.kt` | Application 入口（核心服务初始化） |
+| `app/src/main/java/com/core/deepcode/MainActivity.kt` | 主 Activity（导航 + 全局凭据弹窗） |
 
 ## 维护本文件
 

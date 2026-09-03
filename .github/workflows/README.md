@@ -8,7 +8,7 @@ CI 构建与产物说明见仓库根 [README.md](../../README.md) 的「构建�
 
 | Secret 名称 | 取值 |
 |---|---|
-| `AICODE_KEYSTORE_BASE64` | `app/rcodecore.jks` 文件的 base64 编码（见下） |
+| `AICODE_KEYSTORE_BASE64` | `app/deepcode.jks` 文件的 base64 编码（见下） |
 | `AICODE_KEYSTORE_PASSWORD` | keystore 的 `storePassword` |
 | `AICODE_KEY_ALIAS` | 签名 key 的 `keyAlias` |
 | `AICODE_KEY_PASSWORD` | key 的 `keyPassword`（通常与 keystore 口令相同） |
@@ -20,7 +20,7 @@ CI 构建与产物说明见仓库根 [README.md](../../README.md) 的「构建�
 仓库根目录用 PowerShell 复制到剪贴板：
 
 ```powershell
-[System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes("app\rcodecore.jks")) | Set-Clipboard
+[System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes("app\deepcode.jks")) | Set-Clipboard
 ```
 
 粘贴到 `AICODE_KEYSTORE_BASE64`。
@@ -28,7 +28,7 @@ CI 构建与产物说明见仓库根 [README.md](../../README.md) 的「构建�
 若还没有 keystore，先用 keytool 生成（别名/口令自定，回填到对应 Secret）：
 
 ```powershell
-keytool -genkeypair -v -keystore app\rcodecore.jks -alias rcodecore -keyalg RSA -keysize 2048 -validity 10000
+keytool -genkeypair -v -keystore app\deepcode.jks -alias deepcode -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-> `rcodecore.jks` 与 `keystore.properties` 都在 `.gitignore` 里，不会入仓库，本地签名不受影响。
+> `deepcode.jks` 与 `keystore.properties` 都在 `.gitignore` 里，不会入仓库，本地签名不受影响。

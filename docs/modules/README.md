@@ -1,6 +1,6 @@
-# R-CodeCore 功能模块文档索引
+# DeepCore-Code 功能模块文档索引
 
-> 本目录为**功能模块级文档**（一个模块一份文档），对应源码 `app/src/main/java/com/R/codecore/feature/<module>/`。
+> 本目录为**功能模块级文档**（一个模块一份文档），对应源码 `app/src/main/java/com/core/deepcode/feature/<module>/`。
 > 与 `app/src/main/assets/docs/`（用户可见使用说明）不同：本目录面向**开发与维护**，记录模块定位、目录职责、核心架构、对外接口与维护指引。
 
 ## 维护规则（强制）

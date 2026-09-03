@@ -1,10 +1,10 @@
 # 网络代理（Proxy）模块文档
 
-> 模块路径：`app/src/main/java/com/R/codecore/feature/proxy/`；维护规则：本模块代码变更必须同步更新本文档
+> 模块路径：`app/src/main/java/com/core/deepcode/feature/proxy/`；维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
 
-为 R-CodeCore 提供基于 **mihomo（Clash Meta）内核**的全局代理能力，涵盖：
+为 DeepCore-Code 提供基于 **mihomo（Clash Meta）内核**的全局代理能力，涵盖：
 
 - **Profile 播种与管理**：用户经 UI 导入「订阅 URL / 手动 YAML / 文件」形成长存 profile（订阅列表），敏感内容加密存储。
 - **内核生命周期**：自举下载并校验 mihomo 二进制 → 合成 Clash 配置 → 拉启/停止内核子进程（App 子进程，绑定 `127.0.0.1:7890`）。
@@ -44,7 +44,7 @@
 - 用 **SnakeYAML 真实解析**源配置为 Map，剥掉 `OVERRIDDEN_KEYS`（mixed-port/port/socks-port/redir-port/tproxy-port/external-controller/external-ui/secret/allow-lan/bind-address/mode）顶层键，再 dump 回 YAML——避免旧「正则删行」误删块式节点嵌套键导致 mihomo FATAL 秒退。
 - 叠加**固定覆盖块**：`mixed-port: 7890`、`allow-lan: false`、`mode: rule`、`log-level: info`（保证内核错误落到 mihomo.log）、`external-controller: 127.0.0.1:9090`、随机 secret。
 - 源不是 YAML 映射（订阅回 HTML/裸文本）时退化为仅 `MATCH,DIRECT` 兜底。
-- 产物落盘 `filesDir/rcodecore/proxy/config.yaml`。
+- 产物落盘 `filesDir/deepcode/proxy/config.yaml`。
 
 ### 3.3 内核生命周期
 

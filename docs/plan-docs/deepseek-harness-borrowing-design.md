@@ -8,11 +8,11 @@
 
 ### 1.1 背景
 
-R-CodeCore 是 Android 端 AI 编程工具，已具备 Agent 循环、工具注册与权限、PRoot 容器 + 远程 SSH 执行、MCP 客户端/服务器、消息分库持久化、上下文压缩等能力。DeepSeek Harness（下称 DSH）是 DeepSeek 开源的 Agent 运行时框架，沉淀了大量 Agent 工程化护栏与能力抽象。
+DeepCore-Code 是 Android 端 AI 编程工具，已具备 Agent 循环、工具注册与权限、PRoot 容器 + 远程 SSH 执行、MCP 客户端/服务器、消息分库持久化、上下文压缩等能力。DeepSeek Harness（下称 DSH）是 DeepSeek 开源的 Agent 运行时框架，沉淀了大量 Agent 工程化护栏与能力抽象。
 
 ### 1.2 目标
 
-深度阅读 DSH 源码与子系统文档，盘点其优势能力与架构，逐项评估能否借鉴到 R-CodeCore，输出分优先级的落地路线，避免"无中生有"式照搬。
+深度阅读 DSH 源码与子系统文档，盘点其优势能力与架构，逐项评估能否借鉴到 DeepCore-Code，输出分优先级的落地路线，避免"无中生有"式照搬。
 
 ### 1.3 借鉴原则
 
@@ -46,7 +46,7 @@ R-CodeCore 是 Android 端 AI 编程工具，已具备 Agent 循环、工具注�
 | 13 | 反馈与遥测 | message-feedback（点赞/踩进会话日志）+ session-telemetry |
 | 14 | 会话回放测试 | 用录制 session.jsonl 做 e2e 回放回归（replay-round-trip）；文档由 `gen-cordis-catalog` 自动生成并 type-equiv 校验 |
 
-## 4. 与 R-CodeCore 现状对比
+## 4. 与 DeepCore-Code 现状对比
 
 **已有能力**（借鉴基线）：`StatefulAgentWorkflow`（Agent 循环）、`ToolRegistry` + `ToolPermissionManager`（工具与权限）、PRoot 容器 + 远程 SSH（执行沙箱）、MCP 客户端/服务器、assets/prompts 提示词资产、Room 消息分块落库、`ContextCompactor`（上下文压缩）、凭据加密、AES 备份。
 
@@ -107,7 +107,7 @@ R-CodeCore 是 Android 端 AI 编程工具，已具备 Agent 循环、工具注�
 
 ## 7. 核心判断
 
-DSH 最值得 R-CodeCore 吸收的**不是"插件框架"这一层**（Android 端不适用），而是它沉淀在工具链路上的**工程化护栏**——canonical 输出契约、读前必改 + CAS、结构化超时、重复调用提醒、事件化压缩。这些与已落地的流式归一化（`DeltaAccumulator`）同源同向，是本项目最该补齐的短板。
+DSH 最值得 DeepCore-Code 吸收的**不是"插件框架"这一层**（Android 端不适用），而是它沉淀在工具链路上的**工程化护栏**——canonical 输出契约、读前必改 + CAS、结构化超时、重复调用提醒、事件化压缩。这些与已落地的流式归一化（`DeltaAccumulator`）同源同向，是本项目最该补齐的短板。
 
 ## 8. 参考来源
 

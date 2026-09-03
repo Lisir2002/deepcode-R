@@ -1,4 +1,4 @@
-# 四类规范流程针对性落地设计（R-CodeCore）
+# 四类规范流程针对性落地设计（DeepCore-Code）
 
 > 评审状态：📝 草案
 > 关联模块：agent（workflow / tool / prompt / sop / playbook）+ 仓库治理（docs / githooks）
@@ -204,7 +204,7 @@
 **背景**：现状有项目级 AGENTS.md（权威纪律，运行时由 SystemPromptProvider 加载）与用户级 prompts.custom（覆盖），缺中间层。经深入讨论，补齐为**四级全量分层**。
 
 **设计**（深入讨论定稿）：
-1. **分层级别（四级）**——① **全局**（用户设备级，`~/.rcodecore/global-rules.md`）② **项目**（`AGENTS.md`，已有，权威源）③ **工作区**（工作区根/容器内 `rcodecore` 目录的 `workspace-AGENTS.md`，对特定项目/工作区注入差异化规则）④ **模块**（`feature/<module>/AGENTS.md`，子目录级规则，仅对该模块相关任务生效）。
+1. **分层级别（四级）**——① **全局**（用户设备级，`~/.deepcode/global-rules.md`）② **项目**（`AGENTS.md`，已有，权威源）③ **工作区**（工作区根/容器内 `deepcode` 目录的 `workspace-AGENTS.md`，对特定项目/工作区注入差异化规则）④ **模块**（`feature/<module>/AGENTS.md`，子目录级规则，仅对该模块相关任务生效）。
 2. **合并与优先级**——四级规则全量拼接进系统提示词；每份规则 frontmatter 可声明 `priority` 字段（数值大优先，缺省按层级 全局<项目<工作区<模块 递增）。冲突时按 priority 收敛，同 priority 靠后声明者优先。
 3. **生效边界（省 token 设计）**——**全局/项目/工作区三级常驻注入**，但走 3.1.2 注入预算裁剪（超预算按 importance/priority 降级裁剪）；**模块级规则仅当本会话/任务涉及该模块时注入**（如工具读写了该模块文件，复用 3.1.3 文件观察的命中路径判断）。**借鉴省 token**：常驻层只注入每份规则的摘要/核心条目（少量 token），完整正文通过显式加载取（`/rules` 斜杠命令或 `load_rule` 工具，对齐 3.2 SOP 的"摘要常驻 + loadSop 按需取正文"模式）。**审计定稿：摘要/正文两级形态 D3 独立自研，不依赖 D4（SOP）实现**，仅共享形态约定，避免 D3↔D4 顺序依赖。
 4. **热加载**——复用 `AgentAssetRegistry` 的 mtime/FileObserver 双机制（全局/工作区/模块规则文件增删改即失效缓存）。

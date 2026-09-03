@@ -6,14 +6,14 @@
 
 ## 1. 背景与问题
 
-当前技能中心（能力中心 → 技能 Tab，复用 [SkillsScreen.kt](../../app/src/main/java/com/R/codecore/feature/settings/presentation/component/SkillsScreen.kt)）功能单一，存在以下不足：
+当前技能中心（能力中心 → 技能 Tab，复用 [SkillsScreen.kt](../../app/src/main/java/com/core/deepcode/feature/settings/presentation/component/SkillsScreen.kt)）功能单一，存在以下不足：
 
 - **列表信息单薄**：纯卡片列表，无分组、无搜索/筛选，操作仅「启用开关 + 详情弹窗」，无法一眼区分内置/上传技能、自动触发状态。
 - **无法查看技能内容**：用户无法查看技能的 SKILL.md 正文与脚本代码，技能对用户是黑盒。
 - **无自定义上传/导出能力**：技能只能由内置 seeder 或外部文件系统导入，App 内无 ZIP / MD / URL 上传入口，也无导出分享能力。
 - **无用户自编辑能力**：技能文件不可在 App 内编辑（「自我编译」缺失）。
-- **作用域模型模糊**：[SkillScope](../../app/src/main/java/com/R/codecore/feature/agent/domain/skill/Skill.kt)（GLOBAL/COMMON/AGENT）中 COMMON 与 GLOBAL 语义重叠，且无「对话级」概念。
-- **作用域未联动运行时**：[SystemPromptProvider](../../app/src/main/java/com/R/codecore/feature/agent/domain/prompt/SystemPromptProvider.kt) 技能清单仅按 `enabled` 过滤；自动触发候选筛选未感知作用域。
+- **作用域模型模糊**：[SkillScope](../../app/src/main/java/com/core/deepcode/feature/agent/domain/skill/Skill.kt)（GLOBAL/COMMON/AGENT）中 COMMON 与 GLOBAL 语义重叠，且无「对话级」概念。
+- **作用域未联动运行时**：[SystemPromptProvider](../../app/src/main/java/com/core/deepcode/feature/agent/domain/prompt/SystemPromptProvider.kt) 技能清单仅按 `enabled` 过滤；自动触发候选筛选未感知作用域。
 
 ## 2. 设计目标
 
@@ -60,7 +60,7 @@
 
 - **导航**：MainActivity 新增 `composable("skill_detail/{skillId}")`。
 - **AppBar**：返回 + 技能名 + 右侧「目录」按钮；LOCAL 技能额外「编辑」「导出」按钮。
-- **主内容**：默认渲染 `SKILL.md`（复用 [MarkdownContent](../../app/src/main/java/com/R/codecore/feature/agent/presentation/component/MarkdownContent.kt)）。
+- **主内容**：默认渲染 `SKILL.md`（复用 [MarkdownContent](../../app/src/main/java/com/core/deepcode/feature/agent/presentation/component/MarkdownContent.kt)）。
 - **目录树弹窗**：「目录」→ 半屏 `ModalBottomSheet`，技能目录树（可折叠），列出全部文件（`SKILL.md`、`CLAUDE.md`、规则文档如 `RULES.md`、`scripts/` 脚本、图片等，隐藏 `.builtin`）；点击文件切换主内容。
 - **文件渲染**（按扩展名分派）：
   - `.md` → Markdown 渲染
@@ -126,9 +126,9 @@ enum class SkillScope {
 ```
 
 - **COMMON 并入 GLOBAL**：旧 COMMON 语义「默认全 agent 可用、用户可开关」即新 GLOBAL；不再保留「系统强制不可关」档（内置只读由 `source == BUILTIN` 承载）。
-- **frontmatter 兼容**：[SkillParser](../../app/src/main/java/com/R/codecore/feature/agent/domain/skill/SkillParser.kt) 解析 `scope` 时旧值 `common` 映射为 `GLOBAL`。
+- **frontmatter 兼容**：[SkillParser](../../app/src/main/java/com/core/deepcode/feature/agent/domain/skill/SkillParser.kt) 解析 `scope` 时旧值 `common` 映射为 `GLOBAL`。
 - **存储（D6）**：frontmatter 声明默认值 + Room 存用户覆盖（覆盖 > 声明）；BUILTIN 只读。
-- **严格隐藏（D7）**：不匹配的技能不进 [SystemPromptProvider](../../app/src/main/java/com/R/codecore/feature/agent/domain/prompt/SystemPromptProvider.kt) 清单、不可 `loadSkill`、不进入自动触发候选（[StatefulAgentWorkflow](../../app/src/main/java/com/R/codecore/feature/agent/domain/workflow/StatefulAgentWorkflow.kt) 候选筛选叠加作用域）。
+- **严格隐藏（D7）**：不匹配的技能不进 [SystemPromptProvider](../../app/src/main/java/com/core/deepcode/feature/agent/domain/prompt/SystemPromptProvider.kt) 清单、不可 `loadSkill`、不进入自动触发候选（[StatefulAgentWorkflow](../../app/src/main/java/com/core/deepcode/feature/agent/domain/workflow/StatefulAgentWorkflow.kt) 候选筛选叠加作用域）。
 
 ### 4.6 联动矩阵（enabled 为前提，含 per-conversation override）
 
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS skill_conversation_state (
 )
 ```
 
-- [AgentDatabase.kt](../../app/src/main/java/com/R/codecore/feature/agent/data/local/database/AgentDatabase.kt) 版本 46→47；新增 `SkillConversationStateDao`（upsert / 查会话启用与禁用集 / 移除）。
+- [AgentDatabase.kt](../../app/src/main/java/com/core/deepcode/feature/agent/data/local/database/AgentDatabase.kt) 版本 46→47；新增 `SkillConversationStateDao`（upsert / 查会话启用与禁用集 / 移除）。
 - **覆盖语义**：`install` 新建技能无覆盖（跟随声明）；`update` 覆盖更新时**保留** `scope_override / agent_type_override`（用户覆盖优先）。
 
 ## 5. 改动面核对

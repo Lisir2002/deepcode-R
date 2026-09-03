@@ -1,10 +1,10 @@
 # 备份（Backup）模块文档
 
-> 模块路径：`app/src/main/java/com/R/codecore/feature/backup/`；维护规则：本模块代码变更必须同步更新本文档
+> 模块路径：`app/src/main/java/com/core/deepcode/feature/backup/`；维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
 
-负责 R-CodeCore 应用数据的**整体导出（备份）与导入（还原）**。支持 AI Provider（含 API Key）、Git 凭据、远程连接/挂载、聊天会话与消息、Todo、MCP 服务器、全局权限规则、应用设置（主题/keepalive/日志/视觉模型/压缩模型/同步设置）等数据段的备份还原。
+负责 DeepCore-Code 应用数据的**整体导出（备份）与导入（还原）**。支持 AI Provider（含 API Key）、Git 凭据、远程连接/挂载、聊天会话与消息、Todo、MCP 服务器、全局权限规则、应用设置（主题/keepalive/日志/视觉模型/压缩模型/同步设置）等数据段的备份还原。
 
 核心设计目标：
 
@@ -26,7 +26,7 @@
 | `presentation/BackupSection.kt` | 备份设置页 Compose UI：SAF 文件选择、数据范围勾选、口令输入、进度/结果弹窗、历史数据恢复横幅、数据丢失告警横幅、本机自动备份卡片、外部安全备份卡片 |
 | `data/AutoBackupManager.kt` | 双保险自动备份：本机私有目录明文备份（`filesDir/auto-backups/`）+ 外部公共目录签名密钥加密备份，各自轮转保留最近 7 份（纯判定 `excessBackupFiles` / `excessExternalBackups` 可单测） |
 | `data/SignatureKeyStore.kt` | 从应用签名证书 SHA-256 派生「跨包名稳定」加密密钥：同一 keystore 签名的包（无论包名）得到相同口令，是外部加密备份可跨包解密找回的密钥基础 |
-| `data/ExternalBackupStore.kt` | 外部公共存储备份落点（包名无关安全网）：API 29+ 走 MediaStore.Downloads（`Download/RCodeCore/backups`，免权限），API <29 走 `getExternalStoragePublicDirectory`（需 WRITE_EXTERNAL_STORAGE）；只写调用方加密后的内容 |
+| `data/ExternalBackupStore.kt` | 外部公共存储备份落点（包名无关安全网）：API 29+ 走 MediaStore.Downloads（`Download/DeepCore-Code/backups`，免权限），API <29 走 `getExternalStoragePublicDirectory`（需 WRITE_EXTERNAL_STORAGE）；只写调用方加密后的内容 |
 | `data/LegacyPackageDetector.kt` | 同签名旧包检测：判断 `com.aicodeeditor` / `com.aicode` / `com.deep.rcode` 旧包是否仍安装且签名一致，供哨兵区分「真全新安装」与「rebrand 升级」 |
 | `data/DataSafetyNotifier.kt` | 数据保全通知器：启动检查唯一出口（跑哨兵 + 升级前双保险备份 + 发布判定结果），MainActivity 据此弹启动级全局告警 |
 | `data/guard/AppRunMeta.kt` | 应用运行元数据持久化（DataStore `app_run_meta`）：`dataInitialized` / `lastVersionCode` / `lastApplicationId`，哨兵判定依据 |
@@ -83,20 +83,20 @@
 
 `BackupSection` 顶部有 `LegacyDataRecoveryBanner`：通过 `PackageManager` 检测历史遗留包名（`com.aicodeeditor`、`com.deep.rcode`）是否仍安装且**签名与当前包一致**（`GET_SIGNING_CERTIFICATES`/`GET_SIGNATURES` 取首个签名比对）。若命中则展示提示卡，引导用户「旧版本导出备份 → 本版本导入备份」找回因包名变更而隔离的历史对话。
 
-> 背景：applicationId 三次变更（`com.aicodeeditor` → `com.deep.rcode` → `com.R.codecore`），每次变更是完全不同的 App，新包名全新安装导致旧包数据不可见。该横幅与 `ApplicationIdStabilityTest`（锁死 release applicationId）共同防止用户数据再次因改包名而丢失。
+> 背景：applicationId 三次变更（`com.aicodeeditor` → `com.deep.rcode` → `com.core.deepcode`），每次变更是完全不同的 App，新包名全新安装导致旧包数据不可见。该横幅与 `ApplicationIdStabilityTest`（锁死 release applicationId）共同防止用户数据再次因改包名而丢失。
 
 ### 3.7 数据保全（数据完整性哨兵 + 本机自动备份）
 
 针对「历史对话在升级后清空」这一根因（包名变更 = 全新安装、数据被异常清空不可感知、无自动备份），数据保全用**三层防线**覆盖编译期/发布期/运行期：
 
 - **防变更（编译/发布期）**：
-  - D1 单测 `ApplicationIdStabilityTest`（release classpath，锁死 `com.R.codecore`，禁回退遗留包名）。
+  - D1 单测 `ApplicationIdStabilityTest`（release classpath，锁死 `com.core.deepcode`，禁回退遗留包名）。
   - D2 CI 发版门禁 `.github/workflows/android-release.yml` 的 `Verify applicationId stability`：比对当前 tag 与上一 tag 的 `applicationId`，不一致则 `::error::` 阻断发版。
-  - D3 构建期白名单 `app/build.gradle.kts` 的 `androidComponents.onVariants`：`applicationId` 不在 `ALLOWED_APPLICATION_IDS`（`com.R.codecore` / `com.R.codecore.debug`）内 → 构建直接失败。
+  - D3 构建期白名单 `app/build.gradle.kts` 的 `androidComponents.onVariants`：`applicationId` 不在 `ALLOWED_APPLICATION_IDS`（`com.core.deepcode` / `com.core.deepcode.debug`）内 → 构建直接失败。
   - D3b 系统级云备份兜底（AndroidManifest + `res/xml/`）：`android:allowBackup="true"` + `full_backup_rules.xml`（Android 9-11）+ `data_extraction_rules.xml`（Android 12+），让系统/OEM 换机克隆/Google 云备份保留 Room DB、崩溃备份、ZTH 元数据与 shared_prefs。局限：按包名路由，rebrand 后旧备份不可达，故仅作第三层兜底，主防线仍是应用层双保险备份（D5/D6b）。
 - **防丢失（运行时数据安全网）**：
   - D4 数据完整性哨兵（`DataSentinel` + `AppRunMeta` + `SentinelLogic` + `LegacyPackageDetector`）：启动时读运行元数据与 `ChatSessionDao.count()`，判定 `FIRST_RUN / UPGRADED / NORMAL / DATA_LOST / PACKAGE_CHANGED`。判定优先级：未初始化且无同签名旧包→`FIRST_RUN`；未初始化但有同签名旧包→`PACKAGE_CHANGED`（哨兵记忆随包名隔离丢失时，靠 `LegacyPackageDetector` 识别 rebrand 升级，不再静默当全新安装）；包名不一致→`PACKAGE_CHANGED`（优先于 DATA_LOST）；已初始化但会话数=0→`DATA_LOST`；versionCode 增大→`UPGRADED`；其余→`NORMAL`。`DATA_LOST`/`PACKAGE_CHANGED` 不更新 `lastRun`，保留告警态供 UI 持续提示。
-  - D5 升级前自动备份（`AutoBackupManager`）：哨兵判定 `UPGRADED` 时后台执行 `backupAll()` 双保险备份——本机私有目录明文（`filesDir/auto-backups/backup-<epochMs>.tar.gz`，仅本应用可读）+ 外部公共目录签名密钥加密（`Download/RCodeCore/backups/`，包名无关）。各自 `pruneLocked` / `pruneExternalLocked` 轮转保留最近 7 份（纯判定 `excessBackupFiles` / `excessExternalBackups` 可单测）。全程 `runCatching`，失败仅记日志不阻断启动。
+  - D5 升级前自动备份（`AutoBackupManager`）：哨兵判定 `UPGRADED` 时后台执行 `backupAll()` 双保险备份——本机私有目录明文（`filesDir/auto-backups/backup-<epochMs>.tar.gz`，仅本应用可读）+ 外部公共目录签名密钥加密（`Download/DeepCore-Code/backups/`，包名无关）。各自 `pruneLocked` / `pruneExternalLocked` 轮转保留最近 7 份（纯判定 `excessBackupFiles` / `excessExternalBackups` 可单测）。全程 `runCatching`，失败仅记日志不阻断启动。
   - D6 自动备份状态可视化：`BackupSection` 顶部 `AutoBackupCard`（本机：上次备份时间、份数、「立即备份到本机」）。
   - D6b 外部安全备份卡片：`BackupSection` 的 `ExternalBackupCard`（外部安全区：上次备份时间、份数、「立即备份到外部安全区」、有备份时「从外部安全区恢复」）。
 - **可找回（迁移与恢复入口）**：
@@ -160,4 +160,4 @@
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
 - **v0.1.0（2026-08-22）**：新增**数据保全三层防线**（防历史对话丢失）、修复历史对话因包名变更丢失的数据救济与可见性、外部备份轮转（含启动级全局告警与签名密钥加密的外部安全备份）。
-- **更早（迁移前）**：R-DeepCode → R-CodeCore 品牌与包名迁移（`com.deep.rcode` → `com.R.codecore`）。
+- **更早（迁移前）**：R-DeepCode → DeepCore-Code 品牌与包名迁移（`com.deep.rcode` → `com.core.deepcode`）。

@@ -81,7 +81,7 @@
 - **P-2 仓库状态**：`git rev-parse --show-toplevel` 定位根；`git branch --show-current` 取分支；
   `git status --porcelain` 计数未提交改动（已暂存/未暂存/未跟踪）；`git rev-parse --is-inside-work-tree`
   判仓库；`.git/MERGE_HEAD` 等判中间操作；`git log -1` 取最近提交。
-- **P-3 项目结构与模块清单**：`app/src/main/java/com/R/codecore/feature/*` 列 feature 模块；
+- **P-3 项目结构与模块清单**：`app/src/main/java/com/core/deepcode/feature/*` 列 feature 模块；
   `docs/modules/*.md` 列已有文档；`docs/plan-docs/`、`app/src/main/assets/prompts|docs` 存在性。
 - **P-4 关键文件探测**：`AGENTS.md`、`.gitignore`、`.gitattributes`、`README.md`、`local.properties`
   等存在性，供 AI 判断纪律上下文。

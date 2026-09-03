@@ -1,6 +1,6 @@
 # Changelog
 
-本文件记录 R-CodeCore 各版本的用户可见变更，采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格。版本号采用四段式 `x.x.x.x(-rcN)`（从 `0.0.0.1` 迭代），完整规则见 [docs/versioning.md](./docs/versioning.md)。
+本文件记录 DeepCore-Code 各版本的用户可见变更，采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格。版本号采用四段式 `x.x.x.x(-rcN)`（从 `0.0.0.1` 迭代），完整规则见 [docs/versioning.md](./docs/versioning.md)。
 
 - **用户日志**：本文档面向用户，只记录用户可感知的变化；内部实现细节（重构、DB 迁移、测试）不在此展开。
 - **开发者日志**：各模块内部演进见 `docs/modules/<module>.md` 的「版本演进记录」章节。
@@ -26,6 +26,24 @@
 - 每个版本条目含版本号、发布日期；变更按上述六类分组，顺序固定为 新增 → 改进 → 修复 → 变更 → 删除 → 调整。
 
 ---
+
+## [v0.0.0.1-rc11] - 2026-09-04
+
+品牌全量迭代：**DeepCore-Code**。应用名、包名（applicationId）、代码包结构、桌面图标全数更换，旧标识零残留。
+
+> ⚠️ **数据迁移必读**：包名变更在 Android 上等于「全新安装」。已装 rc10 及更早版本的设备，安装本版后
+> 本地历史对话 / 设置 / 容器数据**不可见**（旧数据仍在旧包私有目录，未删除）。
+> 请先在旧版本「设置 → 备份与还原」导出外部安全备份，装新版后导入恢复（外部备份与签名密钥绑定，跨包名可用）。
+
+### Changed（变更）
+
+- **应用名：`R-CodeCore` → `DeepCore-Code`**：桌面名称、调试变体名（`DeepCore-Code (Debug)`）、主题样式 `Theme.DeepCoreCode`、README / 应用内文档 / AI 版本日志中的品牌自述全数更新。
+- **包名（applicationId）：`com.R.codecore` → `com.core.deepcode`**：同步 `namespace`、Hilt / BuildConfig / SQLDelight 生成包、源码目录树 `com/R/codecore` → `com/core/deepcode`（含 6 个 SQLDelight 域的 `.sq` 包目录）、R8 混淆规则、agent 库文件名 `deepcode_agent_v3.db`、容器运行时目录 `/root/.deepcode`、APK 产物名 `deepcode-<版本>.apk`。
+- **三道数据保全门禁同步迁移**：Gradle 白名单换为新包名；`ApplicationIdStabilityTest` 断言新包名并把旧包名 `com.R.codecore` 纳入防回退黑名单；CI 发版门禁新增显式 `REBRAND_TRANSITIONS` 迁移对（仅放行本次登记的旧→新过渡，其他任何包名变更仍被阻断）。
+
+### Added（新增）
+
+- **全新桌面图标**：源自官方品牌图（蓝色渐变 `D` + `</>` + DeepCore-Code 字样），生成全套 adaptive icon（整图置于 70% 安全区 + 米白背景 `#FCFCFA`）与各密度方形 / 圆形 webp。
 
 ## [v0.0.0.1-rc10] - 2026-09-03
 

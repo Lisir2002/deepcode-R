@@ -1,4 +1,4 @@
-# R-CodeCore 设计主计划（Design Master Plan）
+# DeepCore-Code 设计主计划（Design Master Plan）
 
 > 评审状态：📝 草案
 > 定位：全项目设计工作的**总纲与顺序控制器**。后续所有设计任务从本文档登记、按序推进；已完成/在研/待设计在此登记状态。

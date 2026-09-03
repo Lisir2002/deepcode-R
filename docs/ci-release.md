@@ -13,10 +13,10 @@
 > workflow 实际是**单 job 多 step**结构（jobs.build），下述 6 个阶段是按职责划分的逻辑阶段，对应 step 序列。
 
 1. **variables** → `Display release tag info` + `Verify versionCode monotonic`（versionCode 单调递增校验）+ `Determine release name`（手动触发用 `manual-<run_number>`）+ `Determine prerelease flag`（tag 含 `-rc/-dev/-beta/-alpha` 后缀自动标记 prerelease）
-2. **build** → `:app:testReleaseUnitTest`（发版质量门禁）→ `:app:assembleRelease` → `Restore release keystore`（还原 `AICODE_KEYSTORE_BASE64` 到 `app/rcodecore.jks`）→ `Generate keystore.properties`（用 4 个签名 secrets 生成临时 `keystore.properties`）→ **正式签名**构建 APK 到 `app/build/outputs/apk/release/app-release.apk` → `Rename APK` 重命名为 `dist/rcodecore-<tag>.apk`（**双 ABI 通用包**，重命名同时做 ABI 校验：`lib/` 必须同时含 `arm64-v8a` 与 `x86_64`）
+2. **build** → `:app:testReleaseUnitTest`（发版质量门禁）→ `:app:assembleRelease` → `Restore release keystore`（还原 `AICODE_KEYSTORE_BASE64` 到 `app/deepcode.jks`）→ `Generate keystore.properties`（用 4 个签名 secrets 生成临时 `keystore.properties`）→ **正式签名**构建 APK 到 `app/build/outputs/apk/release/app-release.apk` → `Rename APK` 重命名为 `dist/deepcode-<tag>.apk`（**双 ABI 通用包**，重命名同时做 ABI 校验：`lib/` 必须同时含 `arm64-v8a` 与 `x86_64`）
 3. **upload-mapping** → `Upload R8 mapping`（`actions/upload-artifact@v4`，artifact 名 `r8-mapping-<tag>`，90 天保留，`if-no-files-found: ignore` 不阻塞）
 4. **create-release** → `Generate changelog from git log` + `Create GitHub Release & Upload assets`（`softprops/action-gh-release@v2`，prerelease 取决于 tag 是否含预发布后缀）
-5. **upload-apk** → 与 create-release 同 step 完成（`files: dist/rcodecore-*.apk` 挂到 Release Assets）
+5. **upload-apk** → 与 create-release 同 step 完成（`files: dist/deepcode-*.apk` 挂到 Release Assets）
 6. **summary** → `Write download URLs to Run Summary`（写入 Tag / Prerelease / APK 文件名 / SHA256 / Release 页面 / mapping artifact 名到 `$GITHUB_STEP_SUMMARY`）
 
 ## 实时监控命令（GitHub API）
@@ -40,7 +40,7 @@ curl -s -u "<owner>:<token>" \
 
 ## 产物校验清单（构建完成后必跑）
 
-1. **下载 APK** → `curl -sL -u "<owner>:<token>" -o rcodecore-<tag>.apk "<browser_download_url>"`
+1. **下载 APK** → `curl -sL -u "<owner>:<token>" -o deepcode-<tag>.apk "<browser_download_url>"`
 2. **ABI 校验** → `unzip -l <apk> | grep 'lib/.*\.so'` 必须**同时**含 `lib/arm64-v8a/*.so` 与 `lib/x86_64/*.so`（双 ABI 通用包）；容器资产应含 `assets/container/arm/alpine-rootfs.bin` 与 `assets/container/x86_64/alpine-rootfs-x86_64.bin`
 3. **签名校验** → `keytool -printcert -jarfile <apk>` → Owner 必须为正式签名（非 `CN=Android Debug`）
 4. **SHA256** → `sha256sum <apk>` 记录指纹
@@ -52,7 +52,7 @@ curl -s -u "<owner>:<token>" \
 
 | Secret 名称 | 取值 |
 |---|---|
-| `AICODE_KEYSTORE_BASE64` | `app/rcodecore.jks` 文件的 base64 编码 |
+| `AICODE_KEYSTORE_BASE64` | `app/deepcode.jks` 文件的 base64 编码 |
 | `AICODE_KEYSTORE_PASSWORD` | keystore 的 storePassword |
 | `AICODE_KEY_ALIAS` | 签名 key 的 keyAlias |
 | `AICODE_KEY_PASSWORD` | key 的 keyPassword |

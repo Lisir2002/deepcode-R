@@ -1,6 +1,6 @@
 # agent 模块文档
 
-> 模块路径：`app/src/main/java/com/R/codecore/feature/agent/`
+> 模块路径：`app/src/main/java/com/core/deepcode/feature/agent/`
 > 维护规则：本模块代码变更必须同步更新本文档。新增/重命名/删除类、接口、工具、命令、Provider、DAO 或调整关键流程后，请一并修订对应小节。
 
 ## 1. 模块定位
@@ -46,7 +46,7 @@
 | `domain/trajectory/` | **运行轨迹**（D2-3/D2-5）：`TrajectoryEntity`（agent_trajectories 表，append-only：tool/turn/compaction/inject/error/timeout 六类 kind）、`TrajectoryService`（记录 tool 轨迹与轻量标记、`buildActionSummary` 已做动作摘要、`turnUsage`/`sessionUsage` 用量聚合、`getTrajectory` 审计回放）；workflow 每次工具执行完成追加 tool 轨迹、turn 边界/压缩/注入/错误/超时追加标记，独立于 agent_messages 不受压缩影响 |
 | `domain/workflow/` | Agent 工作流：`AgentWorkflow`（接口 + `AgentEvent` 事件集）、`StatefulAgentWorkflow`（MVI 状态机实现）、`ContextCompactor`（上下文压缩）。**D1 六段式工具流水线契约**：runToolSync 内 pre-execute（门，L5 缓存/视图守卫）→ guard（护栏链）→ execute（执行）→ post-execute（可改写结果/媒体剥离/文件观察版本更新）→ finalizeContent（结果定型）→ result（只读观测）；每轮 step 前经 `NormFlowSettingsRepository.isStepInjectActive()` 判定注入 step 前注入块，guard 段经 `isToolGuardActive()` 判定挂载护栏链 |
 | `domain/zth/` | ZTH 零信任防护：`ZthGuardAggregateFacade`（聚合门面）、`ZthCircuitBreakerManager`、`ZthConfirmationCardManager` + `ZthConfirmationCardStateMachine`、`ZthPlanApprovalManagerWrapper`、`ZthContentReviewer`、`ZthToolOutputGuard`、`ZthCapabilityGuard`、`ZthFailureClassifier`、`ZthWorkflowHooks`、`ZthDomainModels`、`TerminalBundleMirrorRotator` |
-| `domain/ext/` | **声明式扩展生态**（Claude Code 形态）：`ExtensionLoader`（统一扫描内置 `assets/ext/` + 用户 `<rcodecore>/ext/` 的声明式命令，FileObserver 热加载）、`ExtensionCommand`（frontmatter 命令模型）、`ExtensionCommandCore`（无 Android 依赖的命令扫描核心，mtime 懒刷新）、`PluginManifest`/`PluginManager`（插件分发：内置/用户两级，zip 导入 + Zip Slip 防护，聚合插件命令与 hooks 内容源） |
+| `domain/ext/` | **声明式扩展生态**（Claude Code 形态）：`ExtensionLoader`（统一扫描内置 `assets/ext/` + 用户 `<deepcode>/ext/` 的声明式命令，FileObserver 热加载）、`ExtensionCommand`（frontmatter 命令模型）、`ExtensionCommandCore`（无 Android 依赖的命令扫描核心，mtime 懒刷新）、`PluginManifest`/`PluginManager`（插件分发：内置/用户两级，zip 导入 + Zip Slip 防护，聚合插件命令与 hooks 内容源） |
 | `domain/goal/` | **会话任务目标状态机**（DSH goal）：`GoalService` 管理每会话唯一 ACTIVE 目标（activate/updateText/setStatus），`GoalEntity` 持久化；workflow 每轮 step 前把当前目标注入 system prompt |
 | `domain/plan/` | **计划协作状态**（DSH plan + Claude Code Plan/Spec）：`PlanService` 管理会话单计划（propose/getById/update/approve/abandon/setPendingSelection），`PlanEntity` 持久化；workflow 每轮 step 前把未获批的 `pendingSelection` 注入 system prompt |
 | `domain/job/` | **后台任务**（DSH jobs）：`JobService`/`JobExecutor` 管理长任务（编译/测试/构建）后台执行，状态落库（pending/running/success/failed/interrupted），支持 start/status/kill/log |
@@ -54,8 +54,8 @@
 | `domain/playbook/` | **剧本编排 Playbook**（D5）：`PlaybookAsset`（frontmatter 剧本资产：stages/agents/sop/gates/guards + `PlaybookGate` 审批门 + `PlaybookSeed` spawn/fork 双 seed）、`PlaybookRegistry`（扫 `assets/playbooks/`，复用 frontmatter 解析 + mtime 懒刷新）、`PlaybookExecutor`（双状态机执行：运行级 RUNNING/COMPLETED/ABORTED/INTERRUPTED + 阶段级 PENDING/ACTIVE/DONE/FAILED，支持 start/advance/resume/retry/abort/interrupt，产物清单幂等）、`SubAgentRunner`（阶段子代理执行：spawn/fork 双 seed + 三档 SandboxMode 降权 + 并行聚合 + 阶段内写串行化） |
 | `domain/hook/` | **声明式 hook 事件**（Claude Code hooks + DSH 工具流水线）：`HookDispatcher`（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart 挂点）、`HookConfigLoader`（合并内置/插件/用户 hooks.json）、`CommitDisciplineHook`（git commit/push 纪律检查示例） |
 | `domain/input/` | **用户意图拆解与持续意图维护源**（D0 + D1 step 前注入源）：`UserInputParser`（结构化解析 command?/args/text + 意图分类 + `!`/`?` marker）、`IntentAskSource`（意图问判三问，P1）、`BehaviorModeManager`/`BehaviorModeSource`（四档行为模式，P1）、`GoalStaleDetector`/`GoalStaleSource`（语义失配检测，P2）、`GoalAdjustEvent`/`GoalAdjustEventSource`（目标调整事件闭环，P1）、`GoalHintSource`（goal 注入，P0）、`PlanPendingHintSource`（plan pending 提示，P1）、`PlaybookStageSource`（剧本阶段注入，P1，D5 预留）、`LoopAdvisorySource`（空转循环提醒，P2） |
-| `domain/rule/` | **分层规则纪律**（D3）：`RuleLayer`（全局/项目/工作区/模块四级 + 显式 priority）、`RuleAsset`（frontmatter 元数据 + 摘要/正文两级）、`RuleRegistry`（四级注册表：全局 `~/.rcodecore/global-rules.md` / 项目 `AGENTS.md` / 工作区 `workspace-AGENTS.md` / 模块 `feature/<module>/AGENTS.md`，复用 frontmatter 解析 + mtime 懒刷新；`resident` 三级常驻 + `moduleRules` 按需命中），`RuleAssetCore`（无 Android 依赖的解析核心，JVM 可测） |
-| `domain/sop/` | **SOP 标准作业**（D4）：`SopAsset`（独立结构：`name`/`order`/`whenToUse`/`body`，与 `AgentAsset` 解耦，body 为编号步骤「操作 + 判定 + 产出/出错处理」）、`SopRegistry`（扫 `~/.rcodecore/sop/`，复用 `SkillParser` frontmatter 解析 + mtime 懒刷新；`SopAssetCore` 无 Android 依赖解析核心，JVM 可测）；摘要（名称 + whenToUse）经 `SystemPromptProvider.SopSource` 常驻注入，完整正文经 `loadSop` 工具按需取用 |
+| `domain/rule/` | **分层规则纪律**（D3）：`RuleLayer`（全局/项目/工作区/模块四级 + 显式 priority）、`RuleAsset`（frontmatter 元数据 + 摘要/正文两级）、`RuleRegistry`（四级注册表：全局 `~/.deepcode/global-rules.md` / 项目 `AGENTS.md` / 工作区 `workspace-AGENTS.md` / 模块 `feature/<module>/AGENTS.md`，复用 frontmatter 解析 + mtime 懒刷新；`resident` 三级常驻 + `moduleRules` 按需命中），`RuleAssetCore`（无 Android 依赖的解析核心，JVM 可测） |
+| `domain/sop/` | **SOP 标准作业**（D4）：`SopAsset`（独立结构：`name`/`order`/`whenToUse`/`body`，与 `AgentAsset` 解耦，body 为编号步骤「操作 + 判定 + 产出/出错处理」）、`SopRegistry`（扫 `~/.deepcode/sop/`，复用 `SkillParser` frontmatter 解析 + mtime 懒刷新；`SopAssetCore` 无 Android 依赖解析核心，JVM 可测）；摘要（名称 + whenToUse）经 `SystemPromptProvider.SopSource` 常驻注入，完整正文经 `loadSop` 工具按需取用 |
 | `domain/guard/` | **工具执行护栏链**（D1）：`ToolGuard` 接口（guard 三态 PASS/BLOCK/ADVISORY）+ `ToolGuardContext`（toolName/args/sessionId/projectRoot）+ `ToolGuardResult`（Pass/Block/Advisory）；`FileObservationGuard`（文件观察纪律：编辑前必须先读否则 `FS_NOT_OBSERVED`、mtime 版本 CAS 否则 `FS_STALE`，新建豁免、writeFile 即已知）；`GuardModule`（Dagger `@IntoSet` 汇集注册护栏到 `Set<ToolGuard>`，挂入六段式 guard 段，首个 BLOCK 短路） |
 
 ### 2.3 domain/tool 工具系统
@@ -272,7 +272,7 @@
 - **定位**：方向 #1 Agent 声明式定义（R03，对齐 Claude Code agent 声明式范式，见 `docs/plan-docs/claude-code-study-design.md` 第 8 节）。把 `prompts/` 硬编码提示词升级为「frontmatter 元数据 + 正文」的 agent 资产，可热加载、可组合复用。
 - **资产模型**（`AgentAsset`）：`fileName`/`name`/`description`/`order`/`enabled`/`agent`/`modes`/`tools`/`model`/`includes`/`body`。无 frontmatter 的存量文件自动回退：name 取文件名去后缀、order 取文件名数字前缀（`00-identity.md` → 0）、enabled=true、agent=false、modes=default——保证迁移前装配结果与硬编码顺序一致。
 - **注册表**（`domain/prompt/AgentAssetRegistry`，Hilt 单例）：
-  - 扫描 `~/.rcodecore/prompts/`（内置默认副本，启动由 `ContainerInstaller.extractPrompts` 全量释放）+ `prompts.custom/`（用户覆盖，同名即覆盖元数据与正文）；
+  - 扫描 `~/.deepcode/prompts/`（内置默认副本，启动由 `ContainerInstaller.extractPrompts` 全量释放）+ `prompts.custom/`（用户覆盖，同名即覆盖元数据与正文）；
   - `components()`：主 agent 组件（enabled 且 `agent:false`）按 order 排序；`agents()`：专项 agent（`agent:true`）；`all()`：全部（含 disabled）；`findByName(name)`：按 name 精确查找；
   - **includes 组合引用**：按 name 递归展开正文（被引用方正文先序拼接），循环引用跳过防无限递归；
   - **热加载双机制**：mtime 懒刷新（主，读取时比对目录指纹（mtime,size），对齐 `ProjectRuleSource`）+ FileObserver（辅，监听两目录增删改 → `invalidate()` 失效缓存）；FileObserver 被回收/inotify 超限时 mtime 仍兜底。
@@ -312,7 +312,7 @@
 
 ### 3.14 分层规则纪律（D3，见 `docs/plan-docs/norm-chain-design.md` §3.9）
 
-- **四级规则资产**（D3-1）：`RuleLayer` 定义全局（`~/.rcodecore/global-rules.md`）/ 项目（`AGENTS.md`，权威源）/ 工作区（工作区根 `workspace-AGENTS.md`）/ 模块（`feature/<module>/AGENTS.md`）四级，frontmatter 可声明 `priority`（数值大优先，缺省按层级 10/20/30/40 递增）；`RuleRegistry`（装配 `RuleAssetCore` 纯解析核心，复用 `AgentAssetCore` frontmatter 解析 + mtime 懒刷新）按 priority 降序拼接合并，同 priority 靠后声明者优先。
+- **四级规则资产**（D3-1）：`RuleLayer` 定义全局（`~/.deepcode/global-rules.md`）/ 项目（`AGENTS.md`，权威源）/ 工作区（工作区根 `workspace-AGENTS.md`）/ 模块（`feature/<module>/AGENTS.md`）四级，frontmatter 可声明 `priority`（数值大优先，缺省按层级 10/20/30/40 递增）；`RuleRegistry`（装配 `RuleAssetCore` 纯解析核心，复用 `AgentAssetCore` frontmatter 解析 + mtime 懒刷新）按 priority 降序拼接合并，同 priority 靠后声明者优先。
 - **三级常驻 + 模块级按需注入**（D3-2）：`resident` 只注入全局/项目/工作区三级；模块级规则按**文件观察命中路径**判断——`RuleRegistry.touchedModulePaths(projectRoot)` 遍历 `ToolResultCache.touchedPaths()`（readFile 观察 / writeFile 即已知的路径集合），命中 `/feature/<module>/` 段即取模块目录名，`moduleRules` 只注入本会话触碰过的模块规则；`SystemPromptProvider.RulesSource`（step 前注入）把 `resident + moduleRules` 合并后按 priority 注入摘要。
 - **摘要/正文两级**（D3-3）：常驻只注入 `summary`（frontmatter `summary` 优先，否则正文首段，默认 120 字符），完整正文经 `/rules` 命令（`RulesCommandHandler`，列出四级规则清单或加载指定规则正文）或 `load_rule` 工具（`LoadRuleTool`，按名称精确查找，不存在返回 `RULE_NOT_FOUND`）显式加载。
 
@@ -326,7 +326,7 @@
 
 ### 3.16 SOP 标准作业（D4，见 `docs/plan-docs/norm-chain-design.md` §3.2）
 
-- **资产与注册**（D4-1/2）：`SopRegistry`（装配 `SopAssetCore` 纯解析核心，复用 `SkillParser.splitAndParseFrontmatter` frontmatter 解析 + mtime 懒刷新）扫 `~/.rcodecore/sop/`（内置默认副本经 `ContainerInstaller.extractSop` 启动全量释放）；`SopAsset` 独立结构 `name`/`order`/`whenToUse`/`body`（与 `AgentAsset` 解耦），frontmatter 缺省回退文件名/数字前缀/正文首段；`assets/sop/` 共 6 份：10-release（发版）/20-migration（迁移）/30-asset-sync（资产同步）/40-git-commit（提交）/50-troubleshooting（排障）/60-ai-conduct（行为纪律步骤化），正文均为编号步骤「操作 + 判定 + 产出/出错处理」，头部注明权威源（10-50 对齐 `AGENTS.md`、60 对齐 `prompts/`）。
+- **资产与注册**（D4-1/2）：`SopRegistry`（装配 `SopAssetCore` 纯解析核心，复用 `SkillParser.splitAndParseFrontmatter` frontmatter 解析 + mtime 懒刷新）扫 `~/.deepcode/sop/`（内置默认副本经 `ContainerInstaller.extractSop` 启动全量释放）；`SopAsset` 独立结构 `name`/`order`/`whenToUse`/`body`（与 `AgentAsset` 解耦），frontmatter 缺省回退文件名/数字前缀/正文首段；`assets/sop/` 共 6 份：10-release（发版）/20-migration（迁移）/30-asset-sync（资产同步）/40-git-commit（提交）/50-troubleshooting（排障）/60-ai-conduct（行为纪律步骤化），正文均为编号步骤「操作 + 判定 + 产出/出错处理」，头部注明权威源（10-50 对齐 `AGENTS.md`、60 对齐 `prompts/`）。
 - **摘要常驻 + 按需取正文**（D4-3/4）：`SystemPromptProvider.SopSource`（step 前注入，importance=P1，八源第 7 位 order 7，走预算裁剪）全量常驻注入 SOP 清单摘要（名称 + whenToUse 一句话，不做 mode 过滤）；完整正文经 `loadSop` 工具（`domain/tool/sop/LoadSopTool`，参数 `sop_name`，按名称精确查找，不存在返回 `SOP_NOT_FOUND`）按需加载。**sop_summary 子开关**（`NormFlowSettingsRepository`，默认开）：`isSopSummaryActive()` 每轮控制摘要注入开合，`loadSop` 取正文不受影响。
 - **SOP/Skill 双判据边界**（D4-4）：主判据按适用范围——SOP = 仓库内固定操作流程（绑项目语义，摘要常驻注入）；Skill = 通用可复用技能（用户可增删的技能中心）。辅助判据按步骤化程度——SOP 严格编号步骤；Skill 可非步骤化。双判据同时满足才归 SOP；区分指引写入 `prompts/70-skills-and-mcp.md`（§技能）。
 - **权威源同步提示**（D4-5）：`.githooks/spec-check.sh` 第 3 段（warning 级、不阻断）——本次提交改 `AGENTS.md` → 提示检查 `sop/10-50` 同步；改 `prompts/15-project-rules.md` / `40-approach.md` → 提示检查 `sop/60-ai-conduct` 同步。

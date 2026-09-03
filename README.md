@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">R-CodeCore</h1>
+  <h1 align="center">DeepCore-Code</h1>
   <p align="center">
     Android 端 AI 编程工具 · 内置 Linux 终端 · AI Agent · MCP 协议 · Git 集成
     <br />
@@ -21,8 +21,8 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/media/screenshots/home.png" alt="R-CodeCore 主页 - AI 对话界面，支持代码生成与 Markdown 渲染" width="270"/></td>
-      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="R-CodeCore 终端 - 内置 Alpine Linux 容器，完整命令行环境" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/home.png" alt="DeepCore-Code 主页 - AI 对话界面，支持代码生成与 Markdown 渲染" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="DeepCore-Code 终端 - 内置 Alpine Linux 容器，完整命令行环境" width="270"/></td>
     </tr>
     <tr>
       <td align="center">主页 · AI 对话</td>
@@ -50,7 +50,7 @@
 
 ## 简介
 
-R-CodeCore 是一款在 Android 手机上运行的 AI 编程工具，将大语言模型与本地 Linux 开发环境深度集成。它内置 Alpine Linux 容器和终端模拟器，让 AI 能直接读写文件、执行 Shell 命令、运行构建工具；同时支持远程 SSH 服务器作为执行后端，把手机变成远程项目的移动工作站。
+DeepCore-Code 是一款在 Android 手机上运行的 AI 编程工具，将大语言模型与本地 Linux 开发环境深度集成。它内置 Alpine Linux 容器和终端模拟器，让 AI 能直接读写文件、执行 Shell 命令、运行构建工具；同时支持远程 SSH 服务器作为执行后端，把手机变成远程项目的移动工作站。
 
 ## 功能特性
 
@@ -68,9 +68,9 @@ R-CodeCore 是一款在 Android 手机上运行的 AI 编程工具，将大语�
 
 ## 安装
 
-> R-CodeCore 以 APK 形式发布，**无需自己编译**，直接下载安装即可。
+> DeepCore-Code 以 APK 形式发布，**无需自己编译**，直接下载安装即可。
 
-1. 前往 [Releases 页面](https://github.com/Lisir2002/deepcode-R/releases)，下载最新版本 APK（`rcodecore-<tag>.apk`，单包通用：真机与模拟器同一安装包）。
+1. 前往 [Releases 页面](https://github.com/Lisir2002/deepcode-R/releases)，下载最新版本 APK（`deepcode-<tag>.apk`，单包通用：真机与模拟器同一安装包）。
 2. 将 APK 传输到手机/模拟器（浏览器直下 / 网盘 / USB）。
 3. 在手机上点击 APK 安装。若提示「未知来源」，需在系统设置中允许「安装未知应用」（不同品牌路径略有差异）。
 
@@ -116,13 +116,13 @@ R-CodeCore 是一款在 Android 手机上运行的 AI 编程工具，将大语�
 在 `app/keystore.properties` 中添加：
 
 ```properties
-storeFile=rcodecore.jks
+storeFile=deepcode.jks
 storePassword=your_password
 keyAlias=your_alias
 keyPassword=your_key_password
 ```
 
-> `storeFile` 路径可自定义（不固定文件名），CI 会从 secrets 还原到 `app/rcodecore.jks`。未配置时 release 会自动回退到 debug keystore 签名，保证零配置下 `assembleRelease` 也能产出 APK。
+> `storeFile` 路径可自定义（不固定文件名），CI 会从 secrets 还原到 `app/deepcode.jks`。未配置时 release 会自动回退到 debug keystore 签名，保证零配置下 `assembleRelease` 也能产出 APK。
 
 </details>
 
@@ -136,7 +136,7 @@ keyPassword=your_key_password
 
 ### 云端构建（GitHub Actions 自动发版）
 
-发版走 Tag 驱动：在 `main` 节点上打 `v*` Tag 推送（如 `git push origin v0.1.0-rc1` / `v0.1.0`），由 [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) 自动接管 → 单测 → `assembleRelease` → 正式签名 → **ABI 双架构产物校验** → 上传 R8 mapping → 创建 GitHub Release → 挂载 `rcodecore-<tag>.apk` → 写入 Run Summary。RC Tag（含 `-rc`）自动标记为 prerelease。
+发版走 Tag 驱动：在 `main` 节点上打 `v*` Tag 推送（如 `git push origin v0.1.0-rc1` / `v0.1.0`），由 [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) 自动接管 → 单测 → `assembleRelease` → 正式签名 → **ABI 双架构产物校验** → 上传 R8 mapping → 创建 GitHub Release → 挂载 `deepcode-<tag>.apk` → 写入 Run Summary。RC Tag（含 `-rc`）自动标记为 prerelease。
 
 - **正式签名前置条件**：仓库 `Settings → Secrets → Actions` 必须配置 4 个 secrets —— `AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`。缺失任一会**静默回退到 debug keystore 签名**，产物不可上架。
 - **实时监控与产物校验**、完整命令与 CI job 详解：见 [docs/ci-release.md](./docs/ci-release.md)（云端构建发版运维手册）。
@@ -164,7 +164,7 @@ keyPassword=your_key_password
 ## 项目结构
 
 ```
-app/src/main/java/com/R/codecore/
+app/src/main/java/com/core/deepcode/
 ├── core/                # 核心基础设施（FileLogger、AILogger、db/MigrationLoader、CredentialEncryptor、LineDiff、主题）
 ├── di/                  # Hilt 依赖注入（AgentModule、RepositoryModule、BackupModule）
 ├── feature/

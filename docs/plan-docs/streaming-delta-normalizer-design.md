@@ -11,9 +11,9 @@
 追踪完整链路后定位根因链：
 
 1. **上游行为**：DeepSeek 兼容生态流式返回 `delta.reasoning_content` 时，每个 chunk 是**完整思考内容（全量）**，而非增量 delta——`reasoning_content` 字段没有像 `content` 那样统一增量规范。
-2. **adapter**：`OpenAIAdapter` 把每行原样 `emit(AIStreamChunk.ReasoningDelta(r))`，假设是增量（[OpenAIAdapter.kt](../../app/src/main/java/com/R/codecore/feature/agent/domain/provider/OpenAIAdapter.kt)）。
-3. **workflow（真正的放大点）**：`reasoningAcc.append(chunk.text)` 把"全量"当"增量"累积，全量串 A 出现 n 次 → 累积 = A 重复 n 次（[StatefulAgentWorkflow.kt](../../app/src/main/java/com/R/codecore/feature/agent/domain/workflow/StatefulAgentWorkflow.kt)）。线性放大，与模型无关。
-4. **防御失效**：`capStreamingText` 只截流式显示（100k）、`sanitizeContent` 只剥带 `data:image/` 前缀的 base64（[MessagePersistenceUseCase.kt](../../app/src/main/java/com/R/codecore/feature/agent/domain/session/MessagePersistenceUseCase.kt)）——本案例模型输出的是**无前缀裸 base64**，恰好绕过，且累积本身无上限。
+2. **adapter**：`OpenAIAdapter` 把每行原样 `emit(AIStreamChunk.ReasoningDelta(r))`，假设是增量（[OpenAIAdapter.kt](../../app/src/main/java/com/core/deepcode/feature/agent/domain/provider/OpenAIAdapter.kt)）。
+3. **workflow（真正的放大点）**：`reasoningAcc.append(chunk.text)` 把"全量"当"增量"累积，全量串 A 出现 n 次 → 累积 = A 重复 n 次（[StatefulAgentWorkflow.kt](../../app/src/main/java/com/core/deepcode/feature/agent/domain/workflow/StatefulAgentWorkflow.kt)）。线性放大，与模型无关。
+4. **防御失效**：`capStreamingText` 只截流式显示（100k）、`sanitizeContent` 只剥带 `data:image/` 前缀的 base64（[MessagePersistenceUseCase.kt](../../app/src/main/java/com/core/deepcode/feature/agent/domain/session/MessagePersistenceUseCase.kt)）——本案例模型输出的是**无前缀裸 base64**，恰好绕过，且累积本身无上限。
 
 ### 本质
 
@@ -99,8 +99,8 @@ workflow 只消费 `Append`，UI 只渲染 `Append` 累积。放大在源头消�
 
 归一化/折叠/截断**不得破坏回传所需字段**：
 
-- Anthropic 要求上一轮 thinking + signature 原样回传，否则 400（[AnthropicAdapter.kt](../../app/src/main/java/com/R/codecore/feature/agent/domain/provider/AnthropicAdapter.kt)）。
-- DeepSeek 思考模式要求 assistant 消息的 `reasoning_content` 字段必须存在（即使空串），否则工具轮回调 400（[OpenAIAdapter.kt](../../app/src/main/java/com/R/codecore/feature/agent/domain/provider/OpenAIAdapter.kt)）。
+- Anthropic 要求上一轮 thinking + signature 原样回传，否则 400（[AnthropicAdapter.kt](../../app/src/main/java/com/core/deepcode/feature/agent/domain/provider/AnthropicAdapter.kt)）。
+- DeepSeek 思考模式要求 assistant 消息的 `reasoning_content` 字段必须存在（即使空串），否则工具轮回调 400（[OpenAIAdapter.kt](../../app/src/main/java/com/core/deepcode/feature/agent/domain/provider/OpenAIAdapter.kt)）。
 
 → 归一化后的累积结果仍作为 reasoning 落库并在下一轮回传（与现状一致），折叠/截断只影响展示，不得清空回传字段。截断时应保留头部（思考语义在开头）。
 

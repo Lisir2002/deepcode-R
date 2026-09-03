@@ -44,7 +44,7 @@ jobs:
       #   但只要签名证书稳定，用户从 rc23→rc24→rc25→正式版之间都能 OTA 式覆盖升级，不用每次清数据。
       #
       # 如果有正式 keystore（secrets.AICODE_KEYSTORE_BASE64），下面的 "Restore release keystore" 步骤会
-      # 用 AICODE_KEYSTORE_BASE64 在 app/rcodecore.jks 生成一份不同的 keystore，并写 app/keystore.properties
+      # 用 AICODE_KEYSTORE_BASE64 在 app/deepcode.jks 生成一份不同的 keystore，并写 app/keystore.properties
       # 指向它 → Gradle 的 signingConfigs.release 会优先生效 → 产物为正式签名（SHA256 另算但同样稳定）。
       #
       # 若 secrets 未配置（绝大多数测试/迭代场景）：Restore release keystore 跳过 → 本步骤写的
@@ -136,9 +136,12 @@ jobs:
 
       # 数据保全门禁：校验 applicationId（包名）与上个 Release 一致。
       # 背景：包名（applicationId）变更在 Android 眼里是"全新安装"，私有数据目录随之隔离，
-      #       历史对话会全部"消失"。历史上包名变更过三次（com.aicodeeditor → com.deep.rcode →
-      #       com.R.codecore），每次都是不可逆的数据丢失事故（详见 docs/plan-docs/data-preservation-design.md）。
+      #       历史对话会全部"消失"。历史上包名变更过四次（com.aicodeeditor → com.deep.rcode →
+      #       com.R.codecore → com.core.deepcode），每次都是不可逆的数据丢失事故
+      #       （详见 docs/plan-docs/data-preservation-design.md）。
       # 因此发版 Tag 必须与上个 Release 保持同包名，不一致直接阻断，杜绝带新包名的包流入用户。
+      # 例外：REBRAND_TRANSITIONS 登记的显式品牌迁移对（rc11 DeepCore-Code 迭代）允许通过，
+      #       但打 warning 提示数据迁移；未登记的任何变更仍然阻断。
       # 仅打 tag 触发时校验；workflow_dispatch（手动，无 tag）跳过。
       - name: Verify applicationId stability
         if: startsWith(github.ref, 'refs/tags/v')
@@ -155,11 +158,17 @@ jobs:
           prev_id=$(extract_id "$prev_tag")
           echo "上个 Release($prev_tag) applicationId = $prev_id"
           echo "当前(${cur_tag}) applicationId        = $cur_id"
+          # 显式 rebrand 迁移对：仅此表中登记的旧→新过渡被放行（一次性，新增条目需评审数据保全影响）。
+          declare -A REBRAND_TRANSITIONS=( ["com.R.codecore"]="com.core.deepcode" )
           if [[ -z "$prev_id" || "$cur_id" != "$prev_id" ]]; then
-            echo "::error::applicationId 变更: $prev_id -> $cur_id。包名变更在 Android 上是全新安装，会导致用户历史对话不可见。禁止变更 applicationId（详见 docs/plan-docs/data-preservation-design.md）。"
-            exit 1
+            if [[ -n "$prev_id" && "${REBRAND_TRANSITIONS[$prev_id]:-}" == "$cur_id" ]]; then
+              echo "::warning::applicationId 按登记的 rebrand 迁移对过渡: $prev_id -> $cur_id（DeepCore-Code 品牌迭代，rc11）。已装旧包用户历史数据不可见，请走「备份导出/导入」迁移（详见 docs/plan-docs/data-preservation-design.md）。"
+            else
+              echo "::error::applicationId 变更: $prev_id -> $cur_id。包名变更在 Android 上是全新安装，会导致用户历史对话不可见。禁止变更 applicationId（如需 rebrand 请在 REBRAND_TRANSITIONS 登记迁移对并评审数据保全影响，详见 docs/plan-docs/data-preservation-design.md）。"
+              exit 1
+            fi
           fi
-          echo "✓ applicationId 稳定: $cur_id"
+          echo "✓ applicationId 校验通过: $cur_id"
 
       - name: Restore release keystore (if secrets configured)
         env:
@@ -167,8 +176,8 @@ jobs:
         run: |
           # 如果 Secrets 未配置则跳过，后续 assembleRelease 会回退到 debug keystore。
           if [[ -n "$KEYSTORE_BASE64" ]]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > app/rcodecore.jks
-            echo "keystore restored ($(stat -c%s app/rcodecore.jks) bytes)"
+            echo "$KEYSTORE_BASE64" | base64 -d > app/deepcode.jks
+            echo "keystore restored ($(stat -c%s app/deepcode.jks) bytes)"
           else
             echo "AICODE_KEYSTORE_BASE64 not set — skipping release keystore restore, will use debug keystore fallback."
           fi
@@ -182,7 +191,7 @@ jobs:
         run: |
           # 仅当 release keystore 存在时才生成 properties 文件。
           if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
-            printf 'storeFile=rcodecore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            printf 'storeFile=deepcode.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
               "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > app/keystore.properties
             echo "app/keystore.properties generated"
           else
@@ -202,14 +211,14 @@ jobs:
         run: ./gradlew --warning-mode=all assembleRelease --stacktrace
 
       # 重命名 APK 为「品牌-版本」格式（单包通用，双 ABI 一并打入，不带 ABI 标签）：
-      #   rcodecore-v1.0.0-rc1.apk
+      #   deepcode-v1.0.0-rc1.apk
       - name: Rename APK
         run: |
           mkdir -p dist
           ver="${GITHUB_REF_NAME:-manual}"   # tag 如 v1.0.0-rc1；手动触发时为 manual-N
           src="app/build/outputs/apk/release/app-release.apk"
           if [[ -f "$src" ]]; then
-            out="dist/rcodecore-${ver}.apk"
+            out="dist/deepcode-${ver}.apk"
             cp "$src" "$out"
             echo "packaged $out"
             ls -lh "$out"
@@ -246,7 +255,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-apk-${{ github.ref_name }}
-          path: dist/rcodecore-*.apk
+          path: dist/deepcode-*.apk
           if-no-files-found: warn
           retention-days: 90
 
@@ -312,9 +321,9 @@ jobs:
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           fail_on_unmatched_files: true
           generate_release_notes: false
-          # 产物名约定 rcodecore-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
+          # 产物名约定 deepcode-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
           files: |
-            dist/rcodecore-*.apk
+            dist/deepcode-*.apk
         env:
           # RC70 修复：softprops action 对 tag/release 写操作 + 附件 upload 用 GH_RELEASE_TOKEN (细粒度 PAT)，
           # 避免默认 secrets.GITHUB_TOKEN 在 tag 已经存在 + repo 限制 Release write / tag push 时竞态失败。
@@ -330,13 +339,13 @@ jobs:
           IS_PRERELEASE: ${{ steps.prerelease.outputs.is_prerelease }}
           REPO: ${{ github.repository }}
         run: |
-          apk="dist/rcodecore-${TAG}.apk"
+          apk="dist/deepcode-${TAG}.apk"
           sha256="$(sha256sum "$apk" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
           {
-            echo "## R-CodeCore Release — ${TAG}"
+            echo "## DeepCore-Code Release — ${TAG}"
             echo ""
             echo "- **Prerelease**: ${IS_PRERELEASE}"
-            echo "- **APK**: \`rcodecore-${TAG}.apk\` (双 ABI 通用包：arm64-v8a + x86_64)"
+            echo "- **APK**: \`deepcode-${TAG}.apk\` (双 ABI 通用包：arm64-v8a + x86_64)"
             echo "- **SHA256**: \`${sha256}\`"
             echo "- **Release page**: https://github.com/${REPO}/releases/tag/${TAG}"
             echo "- **Artifact**: r8-mapping-${TAG} (Run artifact, 90d retention)"

@@ -1,6 +1,6 @@
 # 文生图（T2I）模块文档
 
-> 模块路径：`app/src/main/java/com/R/codecore/feature/t2i/`；维护规则：本模块代码变更必须同步更新本文档
+> 模块路径：`app/src/main/java/com/core/deepcode/feature/t2i/`；维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
 

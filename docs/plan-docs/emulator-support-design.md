@@ -1,7 +1,7 @@
 # 虚拟环境（模拟器/虚拟机）支持 · 设计文档 v1.0（已实施）
 
 > 状态：✅ 已实施（M0~M2 落地，M3 CI 模拟器冒烟为后续增强）
-> 目标：让 R-CodeCore 从「真机专用」平滑演进到「真机 + 虚拟环境（模拟器 / 虚拟机）均可用」
+> 目标：让 DeepCore-Code 从「真机专用」平滑演进到「真机 + 虚拟环境（模拟器 / 虚拟机）均可用」
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 相关入口：`AGENTS.md` / `docs/modules/`（模块文档）/ `docs/ci-release.md`（发版运维）
 
@@ -42,11 +42,11 @@
 |---|---|---|---|
 | P1 | **ABI 单架构打包** | [app/build.gradle.kts](file:///workspace/deepcode-R/app/build.gradle.kts#L141) `ndk { abiFilters += "arm64-v8a" }` | x86_64 宿主模拟器**安装即失败**（缺 x86_64 so） |
 | P2 | **targetSdk 锁定 28** | [app/build.gradle.kts](file:///workspace/deepcode-R/app/build.gradle.kts#L127-L129) | PRoot 需在 app 可写目录执行二进制（Android 10+ W^X）。**在模拟器上同样成立，不是额外负担** |
-| P3 | **容器 rootfs 架构资产** | [ContainerInstaller.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/container/ContainerInstaller.kt#L19-L25) 已留双容器架构设计；`_x86Assets` 已按旧决策删除 | 容器/终端运行期能力 |
+| P3 | **容器 rootfs 架构资产** | [ContainerInstaller.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/container/ContainerInstaller.kt#L19-L25) 已留双容器架构设计；`_x86Assets` 已按旧决策删除 | 容器/终端运行期能力 |
 
 **关键利好**：执行后端**已经是可插拔的**——
 
-- [DelegatingFileAccess.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/workspace/domain/DelegatingFileAccess.kt) 按执行模式自动分发本地/远程文件访问；
+- [DelegatingFileAccess.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/workspace/domain/DelegatingFileAccess.kt) 按执行模式自动分发本地/远程文件访问；
 - 终端有本地 PRoot 与远程 SSH 双后端；
 - **远程 SSH 执行模式完全不依赖容器**，是「模拟器上 AI 核心可用」的天然地基。
 
@@ -145,7 +145,7 @@ object EnvironmentDetector {
 
 - **双 ABI 原生库**：`abiFilters = ["arm64-v8a", "x86_64"]`，同一 APK 内同时携带两套 `.so`（含 Termux `libtermux.so` 的 x86_64 变体）。Android 包管理器在安装/运行期按设备 ABI 自动选用——真机加载 `lib/arm64-v8a/`，x86_64 模拟器加载 `lib/x86_64/`，互不干扰、无需用户选择。
 - **双 rootfs 资产**：`container/arm` 与 `container/x86_64` 两个 asset 目录**同时打入同一 APK**，运行时由 `ExecutionEnvironment` 选择安装对应 rootfs（详见 6.4）。
-- **产物命名**：由 `rcodecore-arm64-<tag>.apk` 调整为 `rcodecore-<tag>.apk`（不再暗示单架构）；CI 校验清单相应改为校验 `lib/` 同时含 `arm64-v8a` 与 `x86_64`（见 [docs/ci-release.md](file:///workspace/deepcode-R/docs/ci-release.md) 扩展）。
+- **产物命名**：由 `deepcode-arm64-<tag>.apk` 调整为 `deepcode-<tag>.apk`（不再暗示单架构）；CI 校验清单相应改为校验 `lib/` 同时含 `arm64-v8a` 与 `x86_64`（见 [docs/ci-release.md](file:///workspace/deepcode-R/docs/ci-release.md) 扩展）。
 - **体积代价**：单包 = 双 ABI `.so` + 双 rootfs，体积必然增长（预计 +5~10MB 量级）。这是「一个包、两环境」的确定性取舍，换取单一产物的分发与运维简单性。后续如需减负，可评估 rootfs 按需下载（属优化项，不影响本决策）。
 
 ### 6.4 容器架构选择与 x86_64 转译（方向 C 核心 · 已实施）
@@ -167,7 +167,7 @@ object EnvironmentDetector {
 
 - **可用**：AI 对话、本地文件读写（`LocalFileAccess` 不依赖容器）、Git 可视化、远程 SSH 模式、备份恢复；
 - **降级提示**：容器内执行命令 / 终端等依赖 PRoot 的能力，提示「当前环境不支持容器，请使用远程 SSH 模式或真机」；
-- 复用现有 [DelegatingFileAccess.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/workspace/domain/DelegatingFileAccess.kt) 分发骨架，新增一条「无容器」路由即可。
+- 复用现有 [DelegatingFileAccess.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/workspace/domain/DelegatingFileAccess.kt) 分发骨架，新增一条「无容器」路由即可。
 
 ### 6.6 CI 门禁（方向 D）
 

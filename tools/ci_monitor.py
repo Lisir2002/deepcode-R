@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-R-CodeCore 实时 CI/CD 监控器
+DeepCore-Code 实时 CI/CD 监控器
 实时轮询 GitHub Actions，展示构建进度、失败告警、产物信息。
 
 用法:
@@ -264,7 +264,7 @@ def watch_mode(workflow=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="R-CodeCore CI/CD 实时监控")
+    parser = argparse.ArgumentParser(description="DeepCore-Code CI/CD 实时监控")
     parser.add_argument("--run", type=str, help="监控指定 run ID")
     parser.add_argument("--watch", action="store_true", help="持续监控模式")
     parser.add_argument("--release", action="store_true", help="监控最新 release 构建")

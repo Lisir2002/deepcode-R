@@ -9,6 +9,31 @@
 - 规则：工具 / prompt / schema 等 AI 工作流相关变更，发版时必须在本文件追加一条结构化记录。
 - 版本号规则：四段式 x.x.x.x，见 `docs/versioning.md`。本文件最新条目置顶。
 
+## 0.0.0.1-rc11 (2026-09-04)
+
+### TYPE
+prerelease-rc / feat (full brand iteration: DeepCore-Code)
+
+### IMPACT
+- 应用名 / 包名 / 代码包结构 / 桌面图标全量迭代；AI 工作流无工具、无 schema、无接口语义变化。
+- **包名（applicationId）`com.R.codecore` → `com.core.deepcode`**：对应用层是「全新安装」，
+  旧包私有目录（`/data/data/com.R.codecore/`）数据不可见。用户侧数据找回走「外部安全备份 → 导入恢复」。
+- AI 侧影响：凡硬编码包名的路径 / 库名 / 工具脚本引用，一律改新名（见下）。
+
+### DATA / SCHEMA
+- **无 schema 版本变化、无表结构变化、无 `.sqm` 迁移**。`schema.version` 不变。
+- agent 库文件名：`rcodecore_agent_v3.db` → `deepcode_agent_v3.db`（`LibName.AGENT.fileName`）。
+  因包名变更导致数据目录本就是全新的，本次换名**无额外数据损失**；
+  `LibName.fileName` 的数据契约依然生效——此后改文件名即清空该库历史，禁止再用「改文件名换库」规避问题。
+- 容器运行时目录：`/root/.rcodecore` → `/root/.deepcode`（rootfs 内无该字符串的硬编码引用，宿主侧解压路径由代码控制，安全）。
+- APK 产物名：`rcodecore-<版本>.apk` → `deepcode-<版本>.apk`（CI workflow 的 Rename / Upload / Release 文案同步）。
+
+### AI ACTION
+- 排查容器 / 数据库问题时注意路径与库名已迭代：容器内 home 为 `/root/.deepcode`，agent 库为 `deepcode_agent_v3.db`。
+- 包名稳定性纪律不变：applicationId 仍受三层门禁保护（Gradle 白名单 + `ApplicationIdStabilityTest` + CI 发版门禁）。
+  未来任何 rebrand 改包名，必须在 CI 的 `REBRAND_TRANSITIONS` 登记迁移对并评审数据保全影响，否则构建/发版会被阻断。
+- 历史包名链（事实记录，勿回退）：`com.aicodeeditor` → `com.deep.rcode` → `com.R.codecore` → `com.core.deepcode`。
+
 ## 0.0.0.1-rc10 (2026-09-03)
 
 ### TYPE

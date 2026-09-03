@@ -43,7 +43,7 @@
 
 `LibName.fileName` 是**数据契约**：改后缀（v2→v3）= 放弃旧文件 = 清空该库全部历史数据。
 rc7 曾因误判 `no such column: agent_message.id` 根因（实为 SQL 形态不合法，非库损坏）而换名
-`rcodecore_agent_v3.db`，导致历史会话被静默清空——过度反应，不可逆。
+`deepcode_agent_v3.db`，导致历史会话被静默清空——过度反应，不可逆。
 
 纪律（已固化到 `DatabasePathProvider` 注释）：缺列/结构演进一律走 `SchemaSelfHealer` 无损重建或
 `.sqm` 迁移，**禁止用「改文件名换库」规避**；仅当库确属不可自愈的损坏才考虑换名重建且需评审记录。

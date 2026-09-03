@@ -1,0 +1,382 @@
+package com.core.deepcode.feature.agent.domain.provider
+
+import com.core.deepcode.core.network.SseFieldExtractor
+import com.core.deepcode.core.util.AILogger
+import com.core.deepcode.feature.agent.data.remote.gemini.GeminiApi
+import com.core.deepcode.feature.agent.domain.model.AgentImage
+import com.core.deepcode.feature.agent.domain.model.AgentMessage
+import com.core.deepcode.feature.agent.domain.tool.AgentTool
+import com.core.deepcode.feature.agent.domain.tool.ToolCall
+import com.google.gson.JsonParser
+import com.google.gson.JsonObject
+import javax.inject.Inject
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import java.io.IOException
+
+/** P1 定点字段抽取路径：Gemini 流式所需标量字段（candidates[0].content.parts[0]，数组下标为路径段）。 */
+private val GEMINI_STREAM_PATHS: List<List<String>> = listOf(
+    listOf("usageMetadata", "promptTokenCount"),
+    listOf("usageMetadata", "candidatesTokenCount"),
+    listOf("candidates", "0", "finishReason"),
+    listOf("candidates", "0", "content", "parts", "0", "thought"),
+    listOf("candidates", "0", "content", "parts", "0", "text"),
+    listOf("candidates", "0", "content", "parts", "0", "functionCall", "name")
+)
+
+class GeminiAdapter @Inject constructor(
+    private val api: GeminiApi
+) : AIProvider {
+
+    override var apiKey = ""
+    override var baseUrl = "https://generativelanguage.googleapis.com/"
+    override var useFullUrl = false
+    override var useResponseApi = false
+    override var model = "gemini-1.5-flash"
+    override var logSessionId: String? = null
+
+    override suspend fun complete(
+        systemPrompt: String,
+        messages: List<AgentMessage>,
+        tools: List<AgentTool>,
+        reasoningEffort: String?
+    ): AIResponse {
+        val geminiContents = convertToGeminiContents(messages)
+        val toolDefs = tools.takeIf { it.isNotEmpty() }?.map { tool ->
+            mapOf(
+                "name" to tool.name,
+                "description" to tool.description,
+                "parameters" to tool.toJsonSchema()
+            )
+        }?.let { listOf(mapOf("functionDeclarations" to it)) }
+
+        val request = mutableMapOf<String, Any>(
+            "contents" to geminiContents
+        )
+        if (systemPrompt.isNotBlank()) {
+            request["systemInstruction"] = mapOf(
+                "role" to "system",
+                "parts" to listOf(mapOf("text" to systemPrompt))
+            )
+        }
+        if (toolDefs != null) {
+            request["tools"] = toolDefs
+        }
+        buildThinkingConfig(reasoningEffort)?.let { request["generationConfig"] = mapOf("thinkingConfig" to it) }
+
+        val url = if (useFullUrl) {
+            baseUrl
+        } else {
+            val path = if (baseUrl.trimEnd('/').endsWith(model)) {
+                baseUrl.trimEnd('/') + ":generateContent"
+            } else {
+                joinUrl(baseUrl, "v1beta/models/$model:generateContent")
+            }
+            path
+        }
+        AILogger.logRequest(logSessionId, "Gemini", model, "POST", url, request)
+
+        val response = try {
+            retryStaircase {
+                api.generateContent(url = url, apiKey = apiKey, request = request)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val enriched = e.enrichWithHttpErrorBody()
+            AILogger.logError(logSessionId, "Gemini", enriched)
+            throw enriched
+        }
+        AILogger.logResponse(logSessionId, "Gemini", response)
+
+        var contentText = ""
+        var thinkingText = ""
+        val toolCalls = mutableListOf<ToolCall>()
+        var finishReason: String? = null
+
+        val candidates = response.getAsJsonArray("candidates")
+        candidates?.firstOrNull()?.asJsonObject?.let { candidate ->
+            finishReason = candidate.get("finishReason")?.asString
+            val content = candidate.getAsJsonObject("content")
+            content?.getAsJsonArray("parts")?.forEach { partEl ->
+                val part = partEl.asJsonObject
+                val isThought = part.get("thought")?.asBoolean == true
+                if (part.has("text")) {
+                    val text = part.get("text").asString
+                    if (isThought) thinkingText += text else contentText += text
+                }
+                if (part.has("functionCall")) {
+                    val fnCall = part.getAsJsonObject("functionCall")
+                    val name = fnCall.get("name")?.asString ?: ""
+                    val argsStr = fnCall.getAsJsonObject("args")?.toString() ?: "{}"
+                    val argsJson = parseArgs(argsStr)
+                    toolCalls.add(ToolCall(id = name, name = name, arguments = argsJson))
+                }
+            }
+            // 非流式时思考也可能以 candidate.thoughts 数组返回（thought 文本 + token 数）
+            candidate.getAsJsonArray("thoughts")?.forEach { t ->
+                t.asJsonObject?.get("text")?.takeIf { !it.isJsonNull }?.asString?.let { thinkingText += it }
+            }
+        }
+
+        val usageMetadata = response.get("usageMetadata")?.takeIf { it.isJsonObject }?.asJsonObject
+        val inputTokens = usageMetadata?.get("promptTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: 0
+        val outputTokens = usageMetadata?.get("candidatesTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: 0
+
+        return AIResponse(content = contentText, toolCalls = toolCalls, stopReason = finishReason, reasoning = thinkingText.ifEmpty { null }, inputTokens = inputTokens, outputTokens = outputTokens)
+    }
+
+    override fun completeStream(
+        systemPrompt: String,
+        messages: List<AgentMessage>,
+        tools: List<AgentTool>,
+        reasoningEffort: String?
+    ): Flow<AIStreamChunk> = flow {
+        val geminiContents = convertToGeminiContents(messages)
+        val toolDefs = tools.takeIf { it.isNotEmpty() }?.map { tool ->
+            mapOf(
+                "name" to tool.name,
+                "description" to tool.description,
+                "parameters" to tool.toJsonSchema()
+            )
+        }?.let { listOf(mapOf("functionDeclarations" to it)) }
+
+        val request = mutableMapOf<String, Any>(
+            "contents" to geminiContents
+        )
+        if (systemPrompt.isNotBlank()) {
+            request["systemInstruction"] = mapOf(
+                "role" to "system",
+                "parts" to listOf(mapOf("text" to systemPrompt))
+            )
+        }
+        if (toolDefs != null) {
+            request["tools"] = toolDefs
+        }
+        buildThinkingConfig(reasoningEffort)?.let { request["generationConfig"] = mapOf("thinkingConfig" to it) }
+
+        val url = if (useFullUrl) {
+            baseUrl
+        } else {
+            val path = if (baseUrl.trimEnd('/').endsWith(model)) {
+                baseUrl.trimEnd('/') + ":streamGenerateContent?alt=sse"
+            } else {
+                joinUrl(baseUrl, "v1beta/models/$model:streamGenerateContent?alt=sse")
+            }
+            path
+        }
+        
+        AILogger.logRequest(logSessionId, "Gemini", model, "POST", url, request)
+        val rawSse = StringBuilder()
+
+        try {
+            streamWithStaircaseRetry(
+                attemptOnce = { onProduced ->
+                val textBuilder = StringBuilder()
+                val toolCalls = mutableListOf<ToolCall>()
+                var currentFinishReason: String? = null
+                var streamInputTokens = 0
+                var streamOutputTokens = 0
+
+                val body = api.streamGenerateContent(url = url, apiKey = apiKey, request = request)
+
+                body.use { rb ->
+                    // 首字节超时 watchdog：60s 内未收到首个内容块则关闭流，触发可重试的 IOException。
+                    val firstByteReceived = java.util.concurrent.atomic.AtomicBoolean(false)
+                    val watchdog = launchFirstByteWatchdog({ rb.close() }) { firstByteReceived.get() }
+                    val closeHandle = coroutineContext[Job]?.invokeOnCompletion {
+                        runCatching { rb.close() }
+                    }
+                    try {
+                        val source = rb.source()
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            val line = source.readUtf8Line()
+                                ?: throw IOException("SSE 流被中断（疑似网络断开）")
+                            if (!line.startsWith("data:")) continue
+                            val data = line.removePrefix("data:").trim()
+                            if (data.isEmpty()) continue
+                            rawSse.append(line).append('\n')
+                            // P1 定点字段抽取：热路径（text/thought 增量）只取目标标量，不建整树。
+                            val m = runCatching { SseFieldExtractor.extract(data, GEMINI_STREAM_PATHS) }.getOrElse { emptyMap() }
+
+                            try {
+                                m["usageMetadata.promptTokenCount"]?.toIntOrNull()?.let { streamInputTokens = it }
+                                m["usageMetadata.candidatesTokenCount"]?.toIntOrNull()?.let { streamOutputTokens = it }
+
+                                m["candidates.0.finishReason"]?.let { reason ->
+                                    if (reason != "null") currentFinishReason = reason
+                                }
+
+                                // 文本/思考增量：candidates[0].content.parts[0]（Gemini 流式每 chunk 单 part）
+                                val isThought = m["candidates.0.content.parts.0.thought"]?.toBoolean() == true
+                                m["candidates.0.content.parts.0.text"]?.let { text ->
+                                    if (text.isNotEmpty()) {
+                                        if (isThought) {
+                                            // 思考增量：仅 UI 实时展示，不计入正文、不触发 onProduced（不落库可安全重试）
+                                            if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
+                                            emit(AIStreamChunk.ReasoningDelta(text))
+                                        } else {
+                                            textBuilder.append(text)
+                                            if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
+                                            onProduced()
+                                            emit(AIStreamChunk.TextDelta(text))
+                                        }
+                                    }
+                                }
+                                // 工具调用（低频）：functionCall.name 命中说明存在 functionCall；
+                                // args 为任意对象，定点抽取无法整段取回，回退整树解析取原 JSON。
+                                if ("candidates.0.content.parts.0.functionCall.name" in m) {
+                                    val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull()
+                                    val fnCall = obj?.getAsJsonArray("candidates")
+                                        ?.firstOrNull()?.asJsonObject
+                                        ?.getAsJsonObject("content")
+                                        ?.getAsJsonArray("parts")
+                                        ?.firstOrNull()?.asJsonObject
+                                        ?.getAsJsonObject("functionCall")
+                                    val name = fnCall?.get("name")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                                    val argsStr = fnCall?.getAsJsonObject("args")?.toString() ?: "{}"
+                                    toolCalls.add(ToolCall(id = name, name = name, arguments = parseArgs(argsStr)))
+                                }
+                                if (currentFinishReason != null) break
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                coroutineContext.ensureActive()
+                                // ignore
+                            }
+                        }
+                    } finally {
+                        watchdog.cancel()
+                        closeHandle?.dispose()
+                    }
+                }
+
+                onProduced()
+                emit(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = currentFinishReason, inputTokens = streamInputTokens, outputTokens = streamOutputTokens)))
+                },
+                onRetry = { attempt, max -> emit(AIStreamChunk.Retrying(attempt, max)) }
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            coroutineContext.ensureActive()
+            val enriched = e.enrichWithHttpErrorBody()
+            AILogger.logError(logSessionId, "Gemini", enriched)
+            throw enriched
+        } finally {
+            AILogger.logResponseStream(logSessionId, "Gemini", rawSse.toString())
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /** 思考强度 → Gemini thinkingConfig。模型名含 gemini-3 用 thinkingLevel，否则用 thinkingBudget（2.5 系）。 */
+    private fun buildThinkingConfig(reasoningEffort: String?): Map<String, Any>? {
+        if (reasoningEffort == null) return null
+        return if (model.contains("gemini-3")) {
+            mapOf("thinkingLevel" to reasoningEffort)
+        } else {
+            val budget = when (reasoningEffort) {
+                "low" -> 1024
+                "medium" -> 4096
+                "high" -> 8192
+                else -> return null
+            }
+            mapOf("thinkingBudget" to budget)
+        }
+    }
+
+    private fun parseArgs(raw: String): kotlinx.serialization.json.JsonObject {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return kotlinx.serialization.json.JsonObject(emptyMap())
+        return runCatching { Json.parseToJsonElement(trimmed).jsonObject }.getOrElse { kotlinx.serialization.json.JsonObject(emptyMap()) }
+    }
+
+    private fun convertToGeminiContents(messages: List<AgentMessage>): List<Map<String, Any>> {
+        val result = mutableListOf<Map<String, Any>>()
+        // 防御性跟踪：上一个 assistant(即 model) 消息是否包含 functionCall
+        var lastModelHadFunctionCall = false
+
+        for (message in messages) {
+            when (message) {
+                is AgentMessage.UserMessage -> {
+                    val parts = mutableListOf<Map<String, Any>>()
+                    if (message.content.isNotBlank()) {
+                        parts.add(mapOf("text" to message.content))
+                    }
+                    message.images.forEach { image ->
+                        parts.add(image.toGeminiInlineDataPart())
+                    }
+                    result.add(
+                        mapOf(
+                            "role" to "user",
+                            "parts" to parts
+                        )
+                    )
+                    lastModelHadFunctionCall = false
+                }
+                is AgentMessage.AssistantMessage -> {
+                    val parts = mutableListOf<Map<String, Any>>()
+                    if (message.content.isNotEmpty()) {
+                        parts.add(mapOf("text" to message.content))
+                    }
+                    for (toolCall in message.toolCalls) {
+                        parts.add(
+                            mapOf(
+                                "functionCall" to mapOf(
+                                    "name" to toolCall.name,
+                                    "args" to toolCall.arguments
+                                )
+                            )
+                        )
+                    }
+                    lastModelHadFunctionCall = message.toolCalls.isNotEmpty()
+                    if (parts.isNotEmpty()) {
+                        result.add(
+                            mapOf(
+                                "role" to "model",
+                                "parts" to parts
+                            )
+                        )
+                    }
+                }
+                is AgentMessage.ToolResultMessage -> {
+                    // 防御性清理：跳过没有配对 functionCall 的孤立 functionResponse
+                    if (!lastModelHadFunctionCall) continue
+                    result.add(
+                        mapOf(
+                            "role" to "user",
+                            "parts" to listOf(
+                                mapOf(
+                                    "functionResponse" to mapOf(
+                                        "name" to message.id, // For Gemini, we typically use the name as ID
+                                        "response" to mapOf(
+                                            "result" to message.result
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                }
+            }
+        }
+        return result
+    }
+
+    private fun AgentImage.toGeminiInlineDataPart(): Map<String, Any> {
+        return mapOf(
+            "inline_data" to mapOf(
+                "mime_type" to mimeType,
+                "data" to base64Data
+            )
+        )
+    }
+}

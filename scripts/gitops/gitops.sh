@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gitops：R-CodeCore Git 工程化 CLI。
+# gitops：DeepCore-Code Git 工程化 CLI。
 # 用途：与 AgentTool `gitops` 同源的开发者 CLI，终端直接调用提交规范校验/发版前体检/版本日志生成。
 # 启用：在仓库根执行后直接 `./scripts/gitops/gitops.sh <action> [args...]`。
 #   或 `chmod +x scripts/gitops/gitops.sh && ln -s ../../scripts/gitops/gitops.sh /usr/local/bin/gitops`。
@@ -341,7 +341,7 @@ cmd_changelog() {
 
 usage() {
   cat <<EOF
-gitops：R-CodeCore Git 工程化 CLI
+gitops：DeepCore-Code Git 工程化 CLI
 
 用法：
   gitops check-commit <msg>      Conventional Commits 校验

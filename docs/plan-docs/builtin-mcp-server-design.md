@@ -1,7 +1,7 @@
 # 内置 MCP 服务器 · 设计文档 v1.0
 
 > 状态：✅ 已评审（2026-08-19，决策已回填，进入实施期；M0 为首个里程碑）
-> 定位：让 R-CodeCore 从「MCP 客户端」同时成为「MCP 服务器」，把设备能力（容器/终端/文件/git/搜索/AI Agent 工具）开放给外部 MCP 客户端（Claude Desktop / Trae / Cursor / 任意脚本）
+> 定位：让 DeepCore-Code 从「MCP 客户端」同时成为「MCP 服务器」，把设备能力（容器/终端/文件/git/搜索/AI Agent 工具）开放给外部 MCP 客户端（Claude Desktop / Trae / Cursor / 任意脚本）
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 相关入口：`AGENTS.md` / `docs/modules/`（模块文档）
 
@@ -9,9 +9,9 @@
 
 ## 1. 背景与目标
 
-当前 R-CodeCore 是 **MCP 客户端**（`feature/agent/domain/mcp/`），负责「连别人」——连接远程 HTTP / 本地 stdio server 扩展自身工具。本设计是**方向反转**：让 App 自己作为 **MCP 服务器**，对外提供一套「真实 Linux 编码后端」。
+当前 DeepCore-Code 是 **MCP 客户端**（`feature/agent/domain/mcp/`），负责「连别人」——连接远程 HTTP / 本地 stdio server 扩展自身工具。本设计是**方向反转**：让 App 自己作为 **MCP 服务器**，对外提供一套「真实 Linux 编码后端」。
 
-**核心场景（用户决策）**：手机当开发后端——R-CodeCore 已内置容器 + Linux 终端 + git + AI Agent 工具，把这套能力以 MCP server 暴露，PC 上的 Claude Desktop / Trae / Cursor 连上来即可调用手机的终端、文件、git，相当于给外部 AI 一个随身 Linux 运行环境。
+**核心场景（用户决策）**：手机当开发后端——DeepCore-Code 已内置容器 + Linux 终端 + git + AI Agent 工具，把这套能力以 MCP server 暴露，PC 上的 Claude Desktop / Trae / Cursor 连上来即可调用手机的终端、文件、git，相当于给外部 AI 一个随身 Linux 运行环境。
 
 **能力范围（用户决策）**：暴露**全部 AgentTool**（文件读写、终端、git、搜索、浏览器、T2I、skills 等），带逐工具权限开关，复用现有审批体系。**实施采用渐进式（评审决策）**：M0 先只读子集验证链路，再逐步开放终端/写文件（配合远程审批）。
 
@@ -28,13 +28,13 @@
 
 | # | 地基 | 代码位置 | 说明 |
 |---|---|---|---|
-| D1 | **MCP 协议模型** | [McpClient.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/mcp/McpClient.kt) / `JsonRpcRequest` / `JsonRpcResponse` | 客户端已实现握手、tools/list、tools/call、JSON-RPC ID 匹配；server 侧复用同一套模型与协议版本（`2025-06-18`） |
-| D2 | **统一工具层** | [AgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/AgentTool.kt#L152-L223) / [ToolRegistry.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/ToolRegistry.kt) | `AgentTool` 已有 `toToolDefinition()`（name/description/parameters JSON Schema）；`ToolRegistry.getAvailableTools()/getTool(name)` 可枚举与按名调用；`execute(args)` / `executeWithContext(args, context)` 即为 tools/call 执行入口 |
-| D3 | **同步挂起式权限审批** | [ToolPermissionManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/ToolPermissionManager.kt#L29-L46) | `awaitApproval(sessionId, PendingToolPermission)` 挂起等 UI 弹窗 → `resolve(id, choice)`；MCP `tools/call` 是异步请求，天然兼容「挂起等审批」 |
-| D4 | **Android 端内置服务端范式** | [FtpServerManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/workspace/domain/remote/ftp/FtpServerManager.kt) | 内置 FTP 服务端已跑通：Singleton + DataStore 配置 + 开关/端口/用户名密码/匿名 + 自启 + `getLocalIpAddress()` + URL 展示。MCP server 的「服务管理」直接对标此范式 |
+| D1 | **MCP 协议模型** | [McpClient.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/mcp/McpClient.kt) / `JsonRpcRequest` / `JsonRpcResponse` | 客户端已实现握手、tools/list、tools/call、JSON-RPC ID 匹配；server 侧复用同一套模型与协议版本（`2025-06-18`） |
+| D2 | **统一工具层** | [AgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/tool/AgentTool.kt#L152-L223) / [ToolRegistry.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/tool/ToolRegistry.kt) | `AgentTool` 已有 `toToolDefinition()`（name/description/parameters JSON Schema）；`ToolRegistry.getAvailableTools()/getTool(name)` 可枚举与按名调用；`execute(args)` / `executeWithContext(args, context)` 即为 tools/call 执行入口 |
+| D3 | **同步挂起式权限审批** | [ToolPermissionManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/tool/ToolPermissionManager.kt#L29-L46) | `awaitApproval(sessionId, PendingToolPermission)` 挂起等 UI 弹窗 → `resolve(id, choice)`；MCP `tools/call` 是异步请求，天然兼容「挂起等审批」 |
+| D4 | **Android 端内置服务端范式** | [FtpServerManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/workspace/domain/remote/ftp/FtpServerManager.kt) | 内置 FTP 服务端已跑通：Singleton + DataStore 配置 + 开关/端口/用户名密码/匿名 + 自启 + `getLocalIpAddress()` + URL 展示。MCP server 的「服务管理」直接对标此范式 |
 
 **关键利好**：
-- 客户端已有的 [StreamableHttpTransport.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/mcp/StreamableHttpTransport.kt) 证明「Streamable HTTP 单端点 POST JSON-RPC + SSE」协议形态在项目内已吃透，server 侧照此规范实现即可被主流客户端连接。
+- 客户端已有的 [StreamableHttpTransport.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/mcp/StreamableHttpTransport.kt) 证明「Streamable HTTP 单端点 POST JSON-RPC + SSE」协议形态在项目内已吃透，server 侧照此规范实现即可被主流客户端连接。
 - 工具权限体系（`permissionPolicy`：AUTO_APPROVE / ASK / NEVER + `capabilities`：12 个 ToolCapability）可直接映射为「远程调用时的审批策略」。
 
 ---
@@ -51,7 +51,7 @@
 ## 4. 目标架构
 
 ```
-┌──────────────────────────── R-CodeCore（Android） ────────────────────────────┐
+┌──────────────────────────── DeepCore-Code（Android） ────────────────────────────┐
 │                                                                              │
 │  ┌──────────────────────────────┐      ┌──────────────────────────────────┐  │
 │  │  McpServerManager（对标 D4）    │      │  AgentTool 体系（D2，已存在）        │  │
@@ -105,11 +105,11 @@
 
 ### 5.2 协议会话层（McpServerSession）
 
-对齐客户端已实现的握手语义（[McpClient.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/mcp/McpClient.kt#L33-L42)），server 侧实现：
+对齐客户端已实现的握手语义（[McpClient.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/mcp/McpClient.kt#L33-L42)），server 侧实现：
 
 | 方法 | 行为 |
 |---|---|
-| `initialize` | 校验 `protocolVersion`；回 `serverInfo`（name=rcodecore-mcp, version）+ `capabilities`（声明 `tools` 能力） |
+| `initialize` | 校验 `protocolVersion`；回 `serverInfo`（name=deepcode-mcp, version）+ `capabilities`（声明 `tools` 能力） |
 | `notifications/initialized` | 无操作（客户端通知已就绪） |
 | `tools/list` | 经 AgentToolMcpAdapter 拉取 `ToolRegistry.getAvailableTools()` → 转 MCP tool 描述 |
 | `tools/call` | 经 AgentToolMcpAdapter 执行 + 权限审批，回 `content` 块（text 拼接，对齐客户端 `flattenContent` 语义） |
@@ -120,7 +120,7 @@
 
 ### 5.3 工具映射（AgentToolMcpAdapter）
 
-**tools/list 映射**：`AgentTool` → MCP tool 描述，直接复用 `toToolDefinition()`（[AgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/AgentTool.kt#L208-L222)）：
+**tools/list 映射**：`AgentTool` → MCP tool 描述，直接复用 `toToolDefinition()`（[AgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/tool/AgentTool.kt#L208-L222)）：
 ```
 name: <tool.name>
 description: <tool.description>
@@ -135,7 +135,7 @@ inputSchema: { type: "object", properties: <从 parameters 生成的 JSON Schema
    - 审批结果 `PermissionChoice.REJECT` → 回 `isError: true`；`ONCE/ALWAYS` → 继续执行。
 3. **执行**：
    - 无上下文工具：`execute(args)`。
-   - `AbstractContextualTool`（[AbstractContextualTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/agent/domain/tool/AbstractContextualTool.kt)）需 `AgentContext`：首期**不暴露**这类工具（tools/list 过滤），M3 再评估合成最小 context。
+   - `AbstractContextualTool`（[AbstractContextualTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/tool/AbstractContextualTool.kt)）需 `AgentContext`：首期**不暴露**这类工具（tools/list 过滤），M3 再评估合成最小 context。
    - `StreamingAgentTool`：进度事件在 SSE 通道回传（M2 增强，首期退化为执行完一次性返回）。
 4. **结果封装**：`ToolResult.Success/Error/Partial` → MCP `content` 块；Error 置 `isError: true`。
 
@@ -158,7 +158,7 @@ inputSchema: { type: "object", properties: <从 parameters 生成的 JSON Schema
 
 ### 5.5 服务管理（McpServerManager，对标 FtpServerManager）
 
-与 [FtpServerManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/R/codecore/feature/workspace/domain/remote/ftp/FtpServerManager.kt) 同构：
+与 [FtpServerManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/workspace/domain/remote/ftp/FtpServerManager.kt) 同构：
 - `@Singleton`，DataStore 持久化配置：`enabled / port / token / requireApproval / autoStart`。
 - 状态流：`isRunning / serverUrl / errorMessage`；UI 展示「运行中: http://<ip>:<port>/mcp」+ token 查看/复制/重生成。
 - `startServer()/stopServer()`：绑定 Ktor server + 启动 FGS；`autoStart` 时 App 启动自动拉起。

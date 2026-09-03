@@ -1,19 +1,19 @@
-# R-CodeCore App 完整设置与进阶使用指南 (主目录)
+# DeepCore-Code App 完整设置与进阶使用指南 (主目录)
 
 这是一份极其详细的客服与使用指引手册。当你（AI）在解答用户关于 App 使用、设置项或故障排查时，请参考本手册及子文档。
 
 ## 目录与子文档索引
 当用户询问特定模块时，请使用 `readFile` 进一步读取对应的子文档：
 1. **基础概念与工作区**：见本文档第 1、2、3 节。
-2. **模型服务商与模型配置 (Providers)**：请读取 `~/.rcodecore/docs/providers-and-models.md`
-3. **工具服务与扩展工具 (MCP)**：请读取 `~/.rcodecore/docs/mcp-and-skills.md`
-4. **远程服务器与云端工作区 (Remote Servers)**：请读取 `~/.rcodecore/docs/remote-servers.md`
-5. **日志查看、私有目录挂载与后台保活**：请读取 `~/.rcodecore/docs/logs-and-private-dir.md`
-6. **容器镜像 (Container)**：请读取 `~/.rcodecore/docs/container-image.md`
-7. **备份与还原 (Backup)**：请读取 `~/.rcodecore/docs/backup-and-restore.md`
-8. **Git 版本管理**：请读取 `~/.rcodecore/docs/git-page.md`
-9. **自定义提示词 (Custom Prompts)**：请读取 `~/.rcodecore/docs/custom-prompts.md`
-10. **内置服务浏览器 (Browser)**：请读取 `~/.rcodecore/docs/browser-guide.md`
+2. **模型服务商与模型配置 (Providers)**：请读取 `~/.deepcode/docs/providers-and-models.md`
+3. **工具服务与扩展工具 (MCP)**：请读取 `~/.deepcode/docs/mcp-and-skills.md`
+4. **远程服务器与云端工作区 (Remote Servers)**：请读取 `~/.deepcode/docs/remote-servers.md`
+5. **日志查看、私有目录挂载与后台保活**：请读取 `~/.deepcode/docs/logs-and-private-dir.md`
+6. **容器镜像 (Container)**：请读取 `~/.deepcode/docs/container-image.md`
+7. **备份与还原 (Backup)**：请读取 `~/.deepcode/docs/backup-and-restore.md`
+8. **Git 版本管理**：请读取 `~/.deepcode/docs/git-page.md`
+9. **自定义提示词 (Custom Prompts)**：请读取 `~/.deepcode/docs/custom-prompts.md`
+10. **内置服务浏览器 (Browser)**：请读取 `~/.deepcode/docs/browser-guide.md`
 
 ---
 
@@ -113,12 +113,12 @@ AI 工作时输入框仍然可用，输入后回车（或点击发送键前的�
 
 ## 6. 关于 (About)
 “设置”首页「关于应用」入口（图标为信息圆圈）。这是一个纯展示型页面，无任何持久化设置，点击进入后展示下列信息：
-*   **应用信息**：顶部卡片左侧显示 App 图标，右上为应用名 `R-CodeCore`，右下为一句简介。
+*   **应用信息**：顶部卡片左侧显示 App 图标，右上为应用名 `DeepCore-Code`，右下为一句简介。
 *   **版本（点击检查更新）**：单独一行卡片，显示当前版本号 `v<versionName>`（通过系统 PackageManager 读取，即对外发布版本，与 git tag `v<versionName>` 一致）。点击该行会自动通过 GitHub API `https://api.github.com/repos/Lisir2002/deepcode-R/releases/latest` 查询最新 Release 的 tag，与当前版本号比对：
     *   相等 → 弹窗提示「已经是最新版本」。
     *   不同 → 弹窗「发现新版本 vX」，点击「前往下载」用浏览器打开 GitHub Releases 页面获取最新 APK。
     *   网络失败或解析失败 → 弹窗提示「检查失败」并给出错误信息。
-*   **构建变体 / 包名**：应用信息卡片内展示「构建变体」（Release 版 / Debug 版）与「包名」（如 `com.R.codecore` 或 Debug 版 `com.R.codecore.debug`）。App 数据按包名隔离，混装 Debug/Release 包或包名变更都会导致历史对话不可见（详见 backup-and-restore.md 第 3 节）。
+*   **构建变体 / 包名**：应用信息卡片内展示「构建变体」（Release 版 / Debug 版）与「包名」（如 `com.core.deepcode` 或 Debug 版 `com.core.deepcode.debug`）。App 数据按包名隔离，混装 Debug/Release 包或包名变更都会导致历史对话不可见（详见 backup-and-restore.md 第 3 节）。
 *   **GitHub 仓库**：点击用系统浏览器打开本项目源码仓库 `https://github.com/Lisir2002/deepcode-R`。
 *   **开源许可证**：本项目使用 **GPL-3.0**，点击用浏览器打开完整 LICENSE 文件。
 

@@ -11,12 +11,12 @@ includes: []
 ---
 <!-- 项目规则：AGENTS.md 约定与自动记忆 -->
 ## AGENTS.md（硬规则）
-- 项目根目录（`~/workspace`）或全局配置目录（`~/.rcodecore`）下可能存在 `AGENTS.md`，记录当前项目的专属规则、架构约束、构建指南。
+- 项目根目录（`~/workspace`）或全局配置目录（`~/.deepcode`）下可能存在 `AGENTS.md`，记录当前项目的专属规则、架构约束、构建指南。
 - **绝对优先**：严格遵守 `AGENTS.md`，优先级高于一切默认通用规则。若项目根目录无 `AGENTS.md` 但存在 `CLAUDE.md`，系统自动回退读取它作为项目规则，效力相同。
 
 ## 分层规则（四级，D3）
 - 规则分四级全量分层，按优先级（frontmatter `priority`，数值大优先；缺省按层级 全局<项目<工作区<模块 递增）拼接进系统提示：
-  1. **全局**：`~/.rcodecore/global-rules.md`（用户设备级）。
+  1. **全局**：`~/.deepcode/global-rules.md`（用户设备级）。
   2. **项目**：项目根 `AGENTS.md`（权威源）。
   3. **工作区**：工作区根 `workspace-AGENTS.md`（对特定项目/工作区注入差异化规则）。
   4. **模块**：`feature/<module>/AGENTS.md`（子目录级，仅当本会话/任务读写过该模块文件时注入）。

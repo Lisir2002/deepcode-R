@@ -1,6 +1,6 @@
 # docs/plan-docs 设计文档目录说明
 
-本目录存放 R-CodeCore 的架构/功能**设计文档**（方案、评审、决策记录）。它是 Spec 规范驱动（norm-chain-design §3.4）与 pre-commit 预检（`.githooks/spec-check.sh`）的作用对象。
+本目录存放 DeepCore-Code 的架构/功能**设计文档**（方案、评审、决策记录）。它是 Spec 规范驱动（norm-chain-design §3.4）与 pre-commit 预检（`.githooks/spec-check.sh`）的作用对象。
 
 ## 命名与状态规范
 

@@ -9,9 +9,9 @@
 
 ## 1. 背景与目标
 
-R-CodeCore 已具备 Agent 循环（`StatefulAgentWorkflow`）、工具注册与权限引擎（`ToolPermissionManager` / `ToolPermissionPolicyEngine`，`ALLOW/DENY/ASK` + AgentMode PLAN/AUTO）、PRoot 容器 + 远程 SSH 执行、MCP 客户端/服务器、`assets/prompts` 提示词资产、Room 分库持久化、上下文压缩等能力。
+DeepCore-Code 已具备 Agent 循环（`StatefulAgentWorkflow`）、工具注册与权限引擎（`ToolPermissionManager` / `ToolPermissionPolicyEngine`，`ALLOW/DENY/ASK` + AgentMode PLAN/AUTO）、PRoot 容器 + 远程 SSH 执行、MCP 客户端/服务器、`assets/prompts` 提示词资产、Room 分库持久化、上下文压缩等能力。
 
-本设计吸收 DSH 的**任务编排运行时**（goal/jobs/schedule/workflow/run_code）与 Claude Code 的**声明式扩展生态**（agents/commands/skills/hooks/plugins 全为 Markdown+JSON），并结合现有护栏体系，为 R-CodeCore 规划四层加强。目标：
+本设计吸收 DSH 的**任务编排运行时**（goal/jobs/schedule/workflow/run_code）与 Claude Code 的**声明式扩展生态**（agents/commands/skills/hooks/plugins 全为 Markdown+JSON），并结合现有护栏体系，为 DeepCore-Code 规划四层加强。目标：
 
 1. **任务编排层**：让 Agent 具备可追溯的目标状态机、可恢复的后台任务与定时提醒。
 2. **声明式扩展生态**：把"提示词/子代理/命令/技能"全部改为目录 + frontmatter 声明式，支持用户目录热加载与插件分发。
@@ -214,7 +214,7 @@ assets/ext/                       # 内置扩展（打包）
 
 ## 8. 核心判断
 
-DSH 提供的是**过程化运行时**（goal/jobs/schedule/run_code 的调度与恢复），Claude Code 提供的是**声明式生态**（agent/command/skill/hook/plugin 的文件化与分发）——两者互补：编排层保证"能跑完、可恢复、可调度"，声明层保证"易扩展、可分发、低门槛"。R-CodeCore 已有不错的 Agent 循环与权限底座，本次加强以"声明式生态 + 任务编排 + run_code + 循环护栏"四层补齐，全部建立在对现有组件（权限引擎/Room/worker/工具链）的复用之上，无引入重框架。
+DSH 提供的是**过程化运行时**（goal/jobs/schedule/run_code 的调度与恢复），Claude Code 提供的是**声明式生态**（agent/command/skill/hook/plugin 的文件化与分发）——两者互补：编排层保证"能跑完、可恢复、可调度"，声明层保证"易扩展、可分发、低门槛"。DeepCore-Code 已有不错的 Agent 循环与权限底座，本次加强以"声明式生态 + 任务编排 + run_code + 循环护栏"四层补齐，全部建立在对现有组件（权限引擎/Room/worker/工具链）的复用之上，无引入重框架。
 
 ## 9. 参考来源
 

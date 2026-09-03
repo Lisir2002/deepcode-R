@@ -4,7 +4,7 @@
 >
 > 主题：数据层重构（「新写法」）——以现有数据层（「旧版写法」）为参照，收敛碎片化存储、统一持久化注册与备份/恢复链路，实现「数据库不被任何外部因素影响 + 包变更/升级无感自动迁移」。
 >
-> 关联问题：日志显示 `PACKAGE_CHANGED`（`com.deep.rcode` → `com.R.codecore`）后需手动从备份恢复；且现有备份为手工白名单，大量数据不参与迁移。
+> 关联问题：日志显示 `PACKAGE_CHANGED`（`com.deep.rcode` → `com.core.deepcode`）后需手动从备份恢复；且现有备份为手工白名单，大量数据不参与迁移。
 > 关联模块：`feature/backup`、`feature/settings`、`feature/agent`、`feature/credentials`、`feature/workspace`、`feature/t2i`。
 
 ## 0. 决策记录（评审确认）
@@ -102,8 +102,8 @@
 | `T2IDatabase` | `feature/t2i/data/local/database/T2IDatabase.kt` | T2IProvider、T2IProviderModel、T2ITask | 1 |
 
 **一次性数据移植（升级路径，防数据丢失）**：
-1. 现 `AgentDatabase` 重命名为 `LegacyAgentDatabase`（保留 v49 + 全迁移链 + 漏斗救援），仅用于读取旧单库文件 `rcodecore_agent_db`。
-2. 启动时检测：旧文件存在且移植标记未置位 → 打开 Legacy 库 → 逐表拷贝到新 5 库 → 关库并把旧文件改名 `rcodecore_agent_db.migrated.v49` 留底 → 置位移植标记（幂等，只跑一次）。
+1. 现 `AgentDatabase` 重命名为 `LegacyAgentDatabase`（保留 v49 + 全迁移链 + 漏斗救援），仅用于读取旧单库文件 `deepcode_agent_db`。
+2. 启动时检测：旧文件存在且移植标记未置位 → 打开 Legacy 库 → 逐表拷贝到新 5 库 → 关库并把旧文件改名 `deepcode_agent_db.migrated.v49` 留底 → 置位移植标记（幂等，只跑一次）。
 3. 新库为全新 v1，无需迁移链；表结构 = 现 v49 表定义（实体类不变，列 1:1，天然无损）。
 4. 移植失败：保留旧文件 + 告警，不删除、不覆盖，可重试。
 5. 后续版本：新库各自独立演进，互不影响；`LightweightSchemaRescue` 改为按库维护实体清单。

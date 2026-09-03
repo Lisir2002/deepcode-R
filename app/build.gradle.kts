@@ -76,7 +76,7 @@ fun gitCommitCount(): Int = try {
 }
 
 android {
-    namespace = "com.R.codecore"
+    namespace = "com.core.deepcode"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
 
@@ -134,7 +134,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.R.codecore"
+        applicationId = "com.core.deepcode"
         minSdk = 26
         // 锁定 targetSdk 28：Android 10+（API 29+）的 W^X/SELinux 策略禁止执行 App 可写
         // 数据目录里的文件，PRoot 二进制将无法运行（同 Termux 的取舍）。代价：不能上 Google Play。
@@ -166,9 +166,9 @@ android {
     }
 
     buildTypes {
-        // debug 加包名后缀 .debug → applicationId 变 com.R.codecore.debug，与 release（com.R.codecore）
+        // debug 加包名后缀 .debug → applicationId 变 com.core.deepcode.debug，与 release（com.core.deepcode）
         // 可同机共存、互不覆盖。IDE 跑 debug 不再因签名不同卸载已装的正式版。
-        // 注意：因 applicationId 不同，debug 变体私有目录为 /data/data/com.R.codecore.debug/，
+        // 注意：因 applicationId 不同，debug 变体私有目录为 /data/data/com.core.deepcode.debug/，
         // release 已解压的容器 rootfs 与工作区项目在 debug 下不可见（需重新解压/clone），属预期隔离行为。
         debug {
             applicationIdSuffix = ".debug"
@@ -321,8 +321,8 @@ androidComponents {
     }
 }
 
-/** 允许的 applicationId 白名单：release=com.R.codecore，debug 带 .debug 后缀（与 release 数据隔离）。 */
-val ALLOWED_APPLICATION_IDS = setOf("com.R.codecore", "com.R.codecore.debug")
+/** 允许的 applicationId 白名单：release=com.core.deepcode，debug 带 .debug 后缀（与 release 数据隔离）。 */
+val ALLOWED_APPLICATION_IDS = setOf("com.core.deepcode", "com.core.deepcode.debug")
 
 dependencies {
     // Compose BOM
@@ -431,7 +431,7 @@ dependencies {
 
 // ── 新数据层（data-layer-redesign）─ SQLDelight 6 库拓扑（设计文档 §4 / §12）──
 // 核心 5 域各自独立 Database 类（独立版本链）+ infra 一个 Database 类承载全部 Store。
-// 生成规则（SQLDelight 2.x）：Database 类在公共包 com.R.codecore.datalayer.sqldelight；
+// 生成规则（SQLDelight 2.x）：Database 类在公共包 com.core.deepcode.datalayer.sqldelight；
 // 查询类/数据类在 packageName + 相对 srcDir 的目录路径（agent/ → .sqldelight.agent 等）。
 // 文件布局：src/main/sqldelight/<域>/<域>/<文件>.sq（.sq 必须位于 srcDir 的子目录「包目录」）。
 // dialect = sqlite 3.38：schema 编译期校验按 3.38；运行期由设备 SQLite 提供（语句均兼容 3.18+，
@@ -439,32 +439,32 @@ dependencies {
 sqldelight {
     databases {
         create("AgentDb") {
-            packageName.set("com.R.codecore.datalayer.sqldelight")
+            packageName.set("com.core.deepcode.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/agent")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("CredentialsDb") {
-            packageName.set("com.R.codecore.datalayer.sqldelight")
+            packageName.set("com.core.deepcode.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/credentials")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("SettingsDb") {
-            packageName.set("com.R.codecore.datalayer.sqldelight")
+            packageName.set("com.core.deepcode.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/settings")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("WorkspaceDb") {
-            packageName.set("com.R.codecore.datalayer.sqldelight")
+            packageName.set("com.core.deepcode.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/workspace")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("T2iDb") {
-            packageName.set("com.R.codecore.datalayer.sqldelight")
+            packageName.set("com.core.deepcode.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/t2i")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("InfraDb") {
-            packageName.set("com.R.codecore.datalayer.sqldelight")
+            packageName.set("com.core.deepcode.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/infra")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }

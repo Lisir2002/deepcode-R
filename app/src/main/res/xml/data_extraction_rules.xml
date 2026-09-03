@@ -2,7 +2,7 @@
 <!--
   DB-SHIELD-PERSIST-1 RC68 P0-1：Android 12+ 自动备份细粒度规则（dataExtractionRules）。
   升级 APK 时允许系统 / OEM 换机克隆 / 云备份 自动保存：
-    - databases/ 下的所有 Room SQLite（含 rcodecore_agent.db .wal .shm）
+    - databases/ 下的所有 Room SQLite（含 deepcode_agent.db .wal .shm）
     - files/database_crashes/（Funnel4 崩溃备份）
     - files/zth_*/（ZTH 加密相关元数据）
     - shared_prefs/（设置项 DataStore 不在这里，语言/保活/日志等级走这个）

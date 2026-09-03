@@ -1,6 +1,6 @@
 # core 模块文档（公共基础层）
 
-> 模块路径：`app/src/main/java/com/R/codecore/core/` + `di/` + 应用入口
+> 模块路径：`app/src/main/java/com/core/deepcode/core/` + `di/` + 应用入口
 > 维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
@@ -30,7 +30,7 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 - **运行环境抽象**：`EnvironmentDetector` 在启动/首次使用时探测宿主 ABI（`arm64-v8a` / `x86_64`）与模拟器信号（fingerprint/product/qemu），导出 `hostIsArm64` / `hostIsX86_64` / `containerRunnable` / `defaultProfileId()`；被 `ContainerSettingsRepository`（默认容器 profile）、`ContainerInstaller`（proot 架构）、`LinuxContainerEngine`（容器启动）统一消费。探测仅用于**适配与降级**，绝不用于授权/安全判断。
 - **安全体系**：凭据/敏感字段经 `CredentialEncryptor` 加密落库，密钥由 `DEKManager` 管理；ZTH 敏感列走 `ZthSensitiveColumnCrypto`。`HostKeyManager` 管理 SSH host key 校验。
 - **启动链路**：`AIEditorApp` 初始化 `FileLogger`、`TerminalKeepaliveService`、`McpManager` 等核心服务；启动后调 `ConnectionPrewarmer.warmDefaults()` 后台预热三家模型默认 host（DNS+TCP+TLS，失败静默）；`MainActivity` 承载 Compose 导航。
-- **崩溃与内存自愈防线（预防闸门）**：`attachBaseContext` 最早安装全局 Java CrashHandler（落盘 + 导出 `Download/RCodeCore/logs/`）；`onTrimMemory` 在 `RUNNING_CRITICAL`/`lowMemory` 时主动降负——释放浏览器快照大对象缓存（`BrowserController.onMemoryPressure`）、对所有域库 `PRAGMA wal_checkpoint(TRUNCATE)`（缩小 LMKD 杀进程后的 WAL 损坏窗口，防 SQLite 原生崩溃）、落「内存临界」时间戳标记；下次启动 `diagnoseLastExit` 读出该标记自诊断「无日志闪退」（LMKD 静默杀绕过 Java CrashHandler），配合启动时自动导出上一轮日志，让此类闪退自动留痕。
+- **崩溃与内存自愈防线（预防闸门）**：`attachBaseContext` 最早安装全局 Java CrashHandler（落盘 + 导出 `Download/DeepCore-Code/logs/`）；`onTrimMemory` 在 `RUNNING_CRITICAL`/`lowMemory` 时主动降负——释放浏览器快照大对象缓存（`BrowserController.onMemoryPressure`）、对所有域库 `PRAGMA wal_checkpoint(TRUNCATE)`（缩小 LMKD 杀进程后的 WAL 损坏窗口，防 SQLite 原生崩溃）、落「内存临界」时间戳标记；下次启动 `diagnoseLastExit` 读出该标记自诊断「无日志闪退」（LMKD 静默杀绕过 Java CrashHandler），配合启动时自动导出上一轮日志，让此类闪退自动留痕。
 - **网络层优化**：共享 OkHttp 在 `di/AgentModule` 配 `ConnectionPool(8, 15min)`（C2）+ `CachingDns`（C3）；三家 provider 流式 SSE 解析改用 `SseFieldExtractor` 定点抽取（P1）。详见 `core/network/` 与设计文档。
 - **后台任务**：`core/worker` 的 WorkManager 任务负责审计日志清理等周期/一次性工作。
 
@@ -61,9 +61,9 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
-- **v0.0.0.1-rc7（2026-09-03）**：AGENT 库改为全新文件名（`rcodecore_agent_v2.db` → `rcodecore_agent_v3.db`，`LibName.AGENT`）。
+- **v0.0.0.1-rc7（2026-09-03）**：AGENT 库改为全新文件名（`deepcode_agent_v2.db` → `deepcode_agent_v3.db`，`LibName.AGENT`）。
   - 背景：即便 rc6 升 schema 到 v3 + 启动无条件预热自愈，仍有设备出现「预热确认 `agent_message.id` 存在、随后查询却报 `no such column: agent_message.id`」的自洽矛盾（见 [SchemaSelfHealer](../../CHANGELOG.md) 排查）；代码内仅单驱动单文件、`ensureSchema`/自愈只会加 `id`，指向磁盘上那份旧破文件已「坏到底、自愈救不回」（很早期 rc 创建、`id` 列从未存在，覆盖安装未被清除）。
-  - 处理：换新文件名让 `rcodecore_agent_v3.db` 全新创建（`current=0` → `schema.create`，`agent_message` 必然带 `id`），彻底甩开旧破文件，距今 6 个 rc 反复出现的 `no such column` 从机制上堵死不复发。代价：受影响设备的历史 AI 会话随旧文件一起弃置（全新文件为空）。全仓仅 `DatabasePathProvider.kt` 一处引用库名，换名安全；备份/恢复/自动迁移均经 `LibName.fileName` 钥匙映射，透明适配。
+  - 处理：换新文件名让 `deepcode_agent_v3.db` 全新创建（`current=0` → `schema.create`，`agent_message` 必然带 `id`），彻底甩开旧破文件，距今 6 个 rc 反复出现的 `no such column` 从机制上堵死不复发。代价：受影响设备的历史 AI 会话随旧文件一起弃置（全新文件为空）。全仓仅 `DatabasePathProvider.kt` 一处引用库名，换名安全；备份/恢复/自动迁移均经 `LibName.fileName` 钥匙映射，透明适配。
 - **v0.0.0.1-rc5（2026-09-03）**：结构自愈时机彻底前置——`AIEditorApp.onCreate` 最早期同步无条件预热 AGENT 库（`connectionPool.driver(LibName.AGENT)`），任何 ViewModel/数据门面查询前，`ConnectionPool.onOpened` 即完成 `ensureSchema` + `SchemaSelfHealer` 幂等自愈；自愈失败改为以语义明确的自定义错误崩溃（落 `no such column` 之外的完整表结构现场）。彻底消除「首个 UI 查询先于自愈」的竞态窗口。
 - **v0.0.0.1-rc1（2026-09-03）**：数据层迁移落定 + 网络/结构韧性与版本体系刷新。
   - 数据层完成 Room/DataStore → SQLDelight V2 全面接管（核心链路），`core/data`/`core/db` 目录按 V2 门面收敛。

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">R-CodeCore</string>
+    <string name="app_name">DeepCore-Code</string>
 
     <!-- 设置页菜单标题 -->
     <string name="settings_title">设置</string>
@@ -373,7 +373,7 @@
 
     <!-- 数据保全：外部安全备份（公共目录加密，包名无关） + 启动级全局告警 -->
     <string name="backup_external_title">外部安全备份</string>
-    <string name="backup_external_desc">把聊天历史等数据用应用签名密钥加密，备份到公共存储「下载/RCodeCore/backups」。仅同一签名应用可解密，卸载或包名变更后仍保留，是找回历史数据的安全网。</string>
+    <string name="backup_external_desc">把聊天历史等数据用应用签名密钥加密，备份到公共存储「下载/DeepCore-Code/backups」。仅同一签名应用可解密，卸载或包名变更后仍保留，是找回历史数据的安全网。</string>
     <string name="backup_external_last">上次外部安全备份：%1$s</string>
     <string name="backup_external_none_label">尚未生成外部安全备份</string>
     <string name="backup_external_backup_now">立即备份到外部安全区</string>
@@ -805,9 +805,9 @@
     <string name="providers_empty">还没有提供商，点右上角 + 添加</string>
     <string name="log_level">日志等级</string>
     <string name="log_level_desc">记录低于该等级的日志将被忽略。开发期建议 VERBOSE（全部记录）；NONE 关闭日志。</string>
-    <string name="log_file_location">日志文件位于 Android/data/&lt;包名&gt;/files/logs/，并会自动导出到 下载/RCodeCore/logs/（文件管理器可直接查看）。</string>
+    <string name="log_file_location">日志文件位于 Android/data/&lt;包名&gt;/files/logs/，并会自动导出到 下载/DeepCore-Code/logs/（文件管理器可直接查看）。</string>
     <string name="logs_export_action">导出日志到下载</string>
-    <string name="logs_export_toast">已导出到 下载/RCodeCore/logs/，可在文件管理器查看</string>
+    <string name="logs_export_toast">已导出到 下载/DeepCore-Code/logs/，可在文件管理器查看</string>
     <string name="logs_export_none">没有可导出的日志文件</string>
     <string name="provider_no_models_hint">未配置模型，点击编辑添加</string>
     <string name="provider_model_summary">模型：%1$s · 共 %2$s 个</string>
@@ -1057,7 +1057,7 @@
 
     <!-- About - 核心组件 -->
     <string name="about_core_components">核心组件</string>
-    <string name="about_core_components_subtitle">驱动 R-CodeCore 的四大引擎</string>
+    <string name="about_core_components_subtitle">驱动 DeepCore-Code 的四大引擎</string>
     <string name="about_host_core">宿主核心</string>
     <string name="about_host_core_desc">Android 原生运行时 · v%1$s</string>
     <string name="about_terminal_core">内终端核心</string>
@@ -1151,8 +1151,8 @@
     <string name="about_http_error">HTTP %1$d 错误</string>
 
     <!-- About - Share -->
-    <string name="about_share_title">分享 R-CodeCore</string>
-    <string name="about_share_text">R-CodeCore - Android 上的 AI 代码编辑器：\n%1$s</string>
+    <string name="about_share_title">分享 DeepCore-Code</string>
+    <string name="about_share_text">DeepCore-Code - Android 上的 AI 代码编辑器：\n%1$s</string>
 
     <!-- About - Copyright -->
     <string name="about_copyright">© 2025 Lisir2002 · Made with ❤ for mobile developers</string>

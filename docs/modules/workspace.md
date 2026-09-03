@@ -1,6 +1,6 @@
 # 工作区（Workspace）模块文档
 
-> 模块路径：`app/src/main/java/com/R/codecore/feature/workspace/`；维护规则：本模块代码变更必须同步更新本文档
+> 模块路径：`app/src/main/java/com/core/deepcode/feature/workspace/`；维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
 
@@ -8,7 +8,7 @@
 
 1. **工作区管理**：本地模式下所有项目位于内部私有 ext4 目录 `filesDir/projects/<name>`；远程模式下工作区为 SSH 服务器 `remoteWorkspacePath` 下的子文件夹。支持列列表/新建/删除/**重命名**/切换，当前选中工作区持久化于 DataStore。工作区是 AI 文件工具与命令执行的根范围，切换即切换 AI 操作范围。侧边栏「工作目录」页内嵌「当前工作台 / 所有工作台」两个子 tab：前者浏览当前工作区文件树（点击文件跳转独立阅读页，退出阅读页自动重开侧边栏），后者做工作区列表管理——**点击工作区弹出下拉菜单**（切换 / 重命名 / 删除 / 查看对话绑定，其中「查看对话绑定」以手风琴展开该工作区绑定的会话）。
 2. **文件访问抽象**：`FileAccessProvider` 把「在哪读写文件」从硬编码的 `java.io.File` 解耦，本地（`LocalFileAccess` + `WorkspacePathMapper`）与远程（`RemoteSftpFileAccess`）两套实现由 `DelegatingFileAccess` 按执行模式转发，AI 的文件类工具统一走容器路径（`~/workspace/...`）。
-3. **路径映射**：`WorkspacePathMapper` 在「容器内路径」与「宿主真实路径」之间互转（`~/workspace` ↔ 工作区、`/root/.rcodecore` ↔ AI 配置目录、其它容器绝对路径 ↔ rootfs），对 AI 只暴露容器路径。
+3. **路径映射**：`WorkspacePathMapper` 在「容器内路径」与「宿主真实路径」之间互转（`~/workspace` ↔ 工作区、`/root/.deepcode` ↔ AI 配置目录、其它容器绝对路径 ↔ rootfs），对 AI 只暴露容器路径。
 4. **远程连接/挂载与文件同步**：Room 持久化远程连接（SFTP/FTP/LOCAL）与挂载点；`RemoteRepository` 编排 `SyncEngine` + 三种 `RemoteSyncClient`，对挂载目录做增量监听同步/全量上传下载；内置 `FtpServerManager`（Apache FtpServer）把工作区共享为 FTP 服务；`RemoteAuditLogRepository` 记录连接/凭据/同步等审计事件。另通过 SAF `WorkspaceDocumentsProvider` 把私有目录暴露给系统文件管理器。
 
 **核心架构原则**：以「执行模式（本地/远程 SSH）」为路由键，文件访问与终端会话采用一致的委托模式；`~/workspace` 容器路径作为 AI 侧唯一可见路径，物理位置与外部可见性（SAF）解耦。
@@ -25,7 +25,7 @@
 | `data/local/entity/RemoteConnectionEntity.kt` | `remote_connections` 表：协议/主机/端口/用户名/`authType`（PASSWORD/PRIVATE_KEY）/加密后的 `authData`/`passphrase` |
 | `data/local/entity/RemoteMountEntity.kt` | `remote_mounts` 表：挂载点，外键 CASCADE 关联连接，`connectionId` 索引 |
 | `data/local/entity/RemoteAuditLogEntity.kt` | `remote_audit_logs` 表：分类/动作/连接快照/成功标志/脱敏主机/时间 |
-| `data/provider/WorkspaceDocumentsProvider.kt` | SAF DocumentsProvider：单一根暴露 `projects/` 与 `rcodecore/`，全链路沙箱校验，异常统一转 `FileNotFoundException` |
+| `data/provider/WorkspaceDocumentsProvider.kt` | SAF DocumentsProvider：单一根暴露 `projects/` 与 `deepcode/`，全链路沙箱校验，异常统一转 `FileNotFoundException` |
 | `domain/model/Workspace.kt` | `Workspace(name, path)` 工作区模型 |
 | `domain/model/RemoteModels.kt` | `RemoteProtocol`（SFTP/FTP/LOCAL）、`RemoteConnection`、`RemoteMount` 领域模型 |
 | `domain/FileAccessProvider.kt` | 文件读写抽象接口 + `FileEntry`（目录条目含权限/本地 File 引用） |
@@ -68,7 +68,7 @@ AI 的文件工具（`FileTools`/`EditFileTool`/`ListFilesTool`/`ImageTools`/`Se
 
 `toHostFile`（AI 路径 → 宿主文件）按优先级匹配：
 1. `~/workspace` / `$HOME/workspace` → 宿主工作区根（bind mount）；
-2. `/root/.rcodecore` → 宿主 AI 配置目录（skills/mcp.json，独立于 rootfs，**必须先于通用 `/` 规则匹配**，否则落到 rootfs 临时副本升级即丢）；
+2. `/root/.deepcode` → 宿主 AI 配置目录（skills/mcp.json，独立于 rootfs，**必须先于通用 `/` 规则匹配**，否则落到 rootfs 临时副本升级即丢）；
 3. 其它 `/xxx` → 当前 profile 的 rootfs 对应文件；
 4. 相对路径 → 挂到工作区根下。
 
@@ -90,7 +90,7 @@ AI 的文件工具（`FileTools`/`EditFileTool`/`ListFilesTool`/`ImageTools`/`Se
 
 ### 3.6 SAF 外部可见性（`WorkspaceDocumentsProvider`）
 
-单一根 = app 私有 `filesDir`，根下仅暴露 `projects/` 与 `rcodecore/`（其余 rootfs/DB 刻意隐藏）。三条铁律：
+单一根 = app 私有 `filesDir`，根下仅暴露 `projects/` 与 `deepcode/`（其余 rootfs/DB 刻意隐藏）。三条铁律：
 1. `onCreate` 先独立初始化 `FileLogger`（Provider 生命周期早于 Application.onCreate）；
 2. 所有 SAF 入口过 `providerSafe{}`，非 SAF 契约异常统一转 `FileNotFoundException`（Provider 抛 Runtime 直接杀进程）；
 3. `exposedChildren` 热路径绝不做 asset IO（docs 由 Application 后台协程异步提取）。

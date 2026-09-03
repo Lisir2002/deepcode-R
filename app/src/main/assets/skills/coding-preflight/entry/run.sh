@@ -265,7 +265,7 @@ fi
 
 # ---- P-3 项目结构与模块清单 ----
 if $is_android; then
-  FEAT="$(ls -1 "$ROOT/app/src/main/java/com/R/codecore/feature" 2>/dev/null | grep -v '^$' | tr '\n' ' ' | sed 's/ $//')"
+  FEAT="$(ls -1 "$ROOT/app/src/main/java/com/core/deepcode/feature" 2>/dev/null | grep -v '^$' | tr '\n' ' ' | sed 's/ $//')"
   if [ -n "$FEAT" ]; then
     echo "[结构] Android feature 模块: $FEAT"
     for m in $FEAT; do

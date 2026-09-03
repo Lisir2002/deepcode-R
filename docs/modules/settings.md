@@ -1,10 +1,10 @@
 # Settings（设置）模块文档
 
-> 模块路径：`app/src/main/java/com/R/codecore/feature/settings/`；维护规则：本模块代码变更必须同步更新本文档
+> 模块路径：`app/src/main/java/com/core/deepcode/feature/settings/`；维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
 
-负责 R-CodeCore 的**全部应用设置**：AI Provider（供应商/API Key/模型）管理与模型能力元数据解析、日志（等级/查看器/筛选/实时尾随）、主题、后台保活、MCP 服务器、权限规则、容器 Profile 与执行模式（本地 PRoot / 远程 SSH）、安全设置（凭据加密状态/密钥轮换/ZTH 档位）、技能中心、关于/更新等。
+负责 DeepCore-Code 的**全部应用设置**：AI Provider（供应商/API Key/模型）管理与模型能力元数据解析、日志（等级/查看器/筛选/实时尾随）、主题、后台保活、MCP 服务器、权限规则、容器 Profile 与执行模式（本地 PRoot / 远程 SSH）、安全设置（凭据加密状态/密钥轮换/ZTH 档位）、技能中心、关于/更新等。
 
 核心是 **Activity 级复用单例 `SettingsViewModel`**：一次性注入十几个 DataStore/Room 仓库 + 跨模块服务（MCP、权限、容器、远程 SSH），以多个 StateFlow 驱动设置页各二级分区（`SettingsSection`）。数据层统一两种持久化：**Room（`ai_providers` 表）** 存 AI 供应商，**DataStore/SharedPreferences** 存各类设置项，均以 `Flow` 对外暴露。
 

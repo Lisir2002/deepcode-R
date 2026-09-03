@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Android launcher icons from master artwork for R-CodeCore.
+"""Build Android launcher icons from master artwork for DeepCore-Code.
 
 v3 策略 —— 彻底消除"误裁切导致残缺"风险（用户反馈 rc138 图标右下 R 尾巴被截断）：
 
@@ -31,10 +31,10 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[2]   # 仓库根（docs/media/ 下移两级后再上一层）
 MEDIA = ROOT / "docs" / "media"              # 图片素材 + 图标脚本归并目录
-SRC = MEDIA / "rcodecore-launcher-master.jpg"
+SRC = MEDIA / "deepcode-launcher-master.jpg"
 RES = ROOT / "app" / "src" / "main" / "res"
-OUT_PLAY = MEDIA / "rcodecore-launcher-playstore-512.png"
-OUT_REVIEW = MEDIA / "rcodecore-launcher-v3-review.png"   # 生成 192 预览拼图
+OUT_PLAY = MEDIA / "deepcode-launcher-playstore-512.png"
+OUT_REVIEW = MEDIA / "deepcode-launcher-v3-review.png"   # 生成 192 预览拼图
 
 DENSITIES = {
     "mipmap-mdpi": 48,

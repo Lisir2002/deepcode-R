@@ -1,6 +1,6 @@
 # 终端（Terminal）模块文档
 
-> 模块路径：`app/src/main/java/com/R/codecore/feature/terminal/`；维护规则：本模块代码变更必须同步更新本文档
+> 模块路径：`app/src/main/java/com/core/deepcode/feature/terminal/`；维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
 

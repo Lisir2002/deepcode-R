@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">R-CodeCore</h1>
+  <h1 align="center">DeepCore-Code</h1>
   <p align="center">
     AI-powered coding assistant for Android · Built-in Linux terminal · AI Agent · MCP · Git integration
     <br />
@@ -21,8 +21,8 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/media/screenshots/home.png" alt="R-CodeCore home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
-      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="R-CodeCore terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/home.png" alt="DeepCore-Code home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="DeepCore-Code terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
     </tr>
     <tr>
       <td align="center">Home · AI Chat</td>
@@ -50,7 +50,7 @@
 
 ## Overview
 
-R-CodeCore is an AI-powered coding assistant that runs natively on Android. It integrates large language models with a local Linux development environment. The built-in Alpine Linux container and terminal emulator let the AI directly read/write files, execute shell commands, and run build tools. It also supports remote SSH servers as the execution backend, turning your phone into a mobile workstation for remote projects.
+DeepCore-Code is an AI-powered coding assistant that runs natively on Android. It integrates large language models with a local Linux development environment. The built-in Alpine Linux container and terminal emulator let the AI directly read/write files, execute shell commands, and run build tools. It also supports remote SSH servers as the execution backend, turning your phone into a mobile workstation for remote projects.
 
 ## Features
 
@@ -68,9 +68,9 @@ R-CodeCore is an AI-powered coding assistant that runs natively on Android. It i
 
 ## Installation
 
-> R-CodeCore is distributed as an APK. **No compilation needed** — just download and install.
+> DeepCore-Code is distributed as an APK. **No compilation needed** — just download and install.
 
-1. Go to the [Releases page](https://github.com/Lisir2002/deepcode-R/releases) and download the latest APK (`rcodecore-<tag>.apk` — one universal package for both physical devices and emulators).
+1. Go to the [Releases page](https://github.com/Lisir2002/deepcode-R/releases) and download the latest APK (`deepcode-<tag>.apk` — one universal package for both physical devices and emulators).
 2. Transfer the APK to your phone/emulator (browser download / cloud drive / USB).
 3. Tap the APK to install. If prompted about "unknown sources", allow "Install unknown apps" in system settings (path varies by brand).
 
@@ -116,13 +116,13 @@ R-CodeCore is an AI-powered coding assistant that runs natively on Android. It i
 Add to `app/keystore.properties`:
 
 ```properties
-storeFile=rcodecore.jks
+storeFile=deepcode.jks
 storePassword=your_password
 keyAlias=your_alias
 keyPassword=your_key_password
 ```
 
-> `storeFile` path is customizable (filename not fixed). CI restores it from secrets to `app/rcodecore.jks`. When signing config is not present, release build auto-falls back to the debug keystore, so `assembleRelease` always produces an APK.
+> `storeFile` path is customizable (filename not fixed). CI restores it from secrets to `app/deepcode.jks`. When signing config is not present, release build auto-falls back to the debug keystore, so `assembleRelease` always produces an APK.
 
 </details>
 
@@ -137,7 +137,7 @@ keyPassword=your_key_password
 
 ### Cloud build (GitHub Actions release automation)
 
-Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push origin v0.1.0-rc1` / `v0.1.0`) and [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) takes over automatically → unit tests → `assembleRelease` → production signing → **dual-ABI artifact validation** → upload R8 mapping → create GitHub Release → attach `rcodecore-<tag>.apk` → write Run Summary. RC tags (containing `-rc`) are auto-marked as prerelease.
+Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push origin v0.1.0-rc1` / `v0.1.0`) and [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) takes over automatically → unit tests → `assembleRelease` → production signing → **dual-ABI artifact validation** → upload R8 mapping → create GitHub Release → attach `deepcode-<tag>.apk` → write Run Summary. RC tags (containing `-rc`) are auto-marked as prerelease.
 
 - **Production-signing prerequisite**: the repository `Settings → Secrets → Actions` must define 4 secrets — `AICODE_KEYSTORE_BASE64` / `AICODE_KEYSTORE_PASSWORD` / `AICODE_KEY_ALIAS` / `AICODE_KEY_PASSWORD`. Missing any one silently falls back to the debug keystore, and the artifact cannot be published.
 - **Real-time monitoring & artifact verification**, full commands, and CI job details: see [docs/ci-release.md](./docs/ci-release.md) (cloud build & release operations manual).
@@ -165,7 +165,7 @@ Releases are tag-driven: push a `v*` tag on a `main` commit (e.g. `git push orig
 ## Project Structure
 
 ```
-app/src/main/java/com/R/codecore/
+app/src/main/java/com/core/deepcode/
 ├── core/                # Core infrastructure (FileLogger, AILogger, db/MigrationLoader, CredentialEncryptor, LineDiff, theme)
 ├── di/                  # Hilt DI (AgentModule, RepositoryModule, BackupModule)
 ├── feature/

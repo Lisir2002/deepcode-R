@@ -71,8 +71,8 @@ if $IS_GIT; then
 fi
 if [ -z "$CHANGED" ]; then
   # 非 git 仓库：退化为整树探测（限定常见关键目录）
-  if [ -d "$ROOT/app/src/main/java/com/R/codecore/feature" ]; then
-    CHANGED="$(find "$ROOT/app/src/main/java/com/R/codecore/feature" -type f -name '*.kt' | sed "s|^$ROOT/||")"
+  if [ -d "$ROOT/app/src/main/java/com/core/deepcode/feature" ]; then
+    CHANGED="$(find "$ROOT/app/src/main/java/com/core/deepcode/feature" -type f -name '*.kt' | sed "s|^$ROOT/||")"
   fi
 fi
 FCNT="$(printf '%s\n' "$CHANGED" | sed '/^$/d' | wc -l | tr -d ' ')"
@@ -95,7 +95,7 @@ if $IS_ANDROID; then
 
 # ================= 阻断项 C-1：模块文档同步 =================
 mods=$(printf '%s\n' "$CHANGED" | while read -r f; do
-  m=$(printf '%s\n' "$f" | sed -n 's|.*/com/R/codecore/feature/\([^/]*\)/.*|\1|p')
+  m=$(printf '%s\n' "$f" | sed -n 's|.*/com/core/deepcode/feature/\([^/]*\)/.*|\1|p')
   [ -n "$m" ] && printf '%s\n' "$m"
 done | sort -u)
 if [ -n "$mods" ]; then
@@ -112,7 +112,7 @@ if [ -d "$ROOT/docs/modules" ]; then
     [ -f "$doc" ] || continue   # 空目录时 glob 不展开为字面量，须跳过
     n=$(basename "$doc" .md)
     case "$n" in README|core) continue ;; esac
-    if [ ! -d "$ROOT/app/src/main/java/com/R/codecore/feature/$n" ]; then
+    if [ ! -d "$ROOT/app/src/main/java/com/core/deepcode/feature/$n" ]; then
       echo "❌ [C-1] 孤儿文档: docs/modules/$n.md 无对应 feature/$n/ 模块（删除模块时须同步删除文档）"
       BLOCKERS=$((BLOCKERS+1))
     fi
@@ -163,13 +163,13 @@ if [ -f "$ROOT/app/build.gradle.kts" ]; then
 fi
 
 # ================= 建议项 W-1：prompts/docs 资产同步 =================
-if has_pref '^app/src/main/assets/prompts/' || has_pref '^app/src/main/java/com/R/codecore/feature/.*/.*Tool\.kt' || has_pref '(AgentTool\.kt|StatefulAgentWorkflow\.kt)'; then
+if has_pref '^app/src/main/assets/prompts/' || has_pref '^app/src/main/java/com/core/deepcode/feature/.*/.*Tool\.kt' || has_pref '(AgentTool\.kt|StatefulAgentWorkflow\.kt)'; then
   echo "⚠️  [W-1] 变更涉 AI 工作流/工具：检查 assets/prompts/ 与 assets/docs/ 是否需同步（prompts/docs 资产同步纪律）"
   WARNINGS=$((WARNINGS+1))
 fi
 
 # ================= 建议项 W-2：模块文档反映行为变化 =================
-if has_pref '^app/src/main/java/com/R/codecore/'; then
+if has_pref '^app/src/main/java/com/core/deepcode/'; then
   echo "⚠️  [W-2] 涉及功能代码变更：确认对应 docs/modules/<模块>.md 已记录本次行为变化（六段式文档）"
   WARNINGS=$((WARNINGS+1))
 fi
@@ -415,7 +415,7 @@ done
 # 构建配置→build；其余源码→fix；否则 chore。修复「先 feat 后又被 fix 覆盖」的顺序 bug。
 suggested_type="chore"
 if $IS_ANDROID; then
-  if has_pref '^app/src/main/java/com/R/codecore/feature/'; then
+  if has_pref '^app/src/main/java/com/core/deepcode/feature/'; then
     suggested_type="feat"
   elif has_pref '(^app/src/test/|^app/src/androidTest/)'; then
     suggested_type="test"
@@ -494,7 +494,7 @@ done
 # ================= 建议项 W-8：提交原子性（通用） =================
 if $IS_ANDROID; then
   modcnt=$(printf '%s\n' "$CHANGED" | while read -r f; do
-    m=$(printf '%s\n' "$f" | sed -n 's|.*/com/R/codecore/feature/\([^/]*\)/.*|\1|p')
+    m=$(printf '%s\n' "$f" | sed -n 's|.*/com/core/deepcode/feature/\([^/]*\)/.*|\1|p')
     [ -n "$m" ] && printf '%s\n' "$m"
   done | sort -u | sed '/^$/d' | wc -l | tr -d ' ')
   if [ -n "$modcnt" ] && [ "$modcnt" -ge 3 ]; then

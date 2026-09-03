@@ -3,15 +3,15 @@
 > 评审状态：📝 草案
 >
 > 关联模块：`feature/agent`（工具系统 / 权限治理 / MCP）、`feature/terminal`、`feature/git`、`feature/settings`
-> 触发场景：以 anthropics/claude-code 公开仓库为范本，系统性挖掘对 R-CodeCore 可复用的产品/架构设计，形成分步落地方案。
+> 触发场景：以 anthropics/claude-code 公开仓库为范本，系统性挖掘对 DeepCore-Code 可复用的产品/架构设计，形成分步落地方案。
 > 调研源：anthropics/claude-code 公开仓库（深读 README / CHANGELOG / plugins / examples；调研用的本地克隆 `_research/claude-code/` 为临时调研产物，已随仓库整理移除，正式调研以公开仓库在线内容为准）
 > **执行清单**：落地优先级与逐条任务见 [claude-code-study-roadmap.md](./claude-code-study-roadmap.md)（R01–R22，P0–P4）
 
 ## 1. 背景与目的
 
-R-CodeCore 是运行在 Android 真机/虚拟环境上的 AI 编程工具，已具备：Agent 多 Provider、工具系统（`ToolRegistry` + File/Shell/MCP 工具）、权限治理（`ToolPermissionManager` / `ToolPermissionPolicyEngine`）、内置 MCP 客户端+服务器、PRoot 容器终端、git 集成。
+DeepCore-Code 是运行在 Android 真机/虚拟环境上的 AI 编程工具，已具备：Agent 多 Provider、工具系统（`ToolRegistry` + File/Shell/MCP 工具）、权限治理（`ToolPermissionManager` / `ToolPermissionPolicyEngine`）、内置 MCP 客户端+服务器、PRoot 容器终端、git 集成。
 
-Claude Code 是业界 agentic coding 工具的标杆，其公开仓库（官方设计范式库，非 CLI 闭源码）覆盖：插件五件套、子代理声明式定义、Hook 事件模型、声明式规则引擎、权限/Sandbox 模型、MDM 企业管控、Gateway 部署。本文档沉淀调研结论，并把可借鉴点映射到 R-CodeCore 现有模块，作为后续分步实施与逐步讨论的基础。
+Claude Code 是业界 agentic coding 工具的标杆，其公开仓库（官方设计范式库，非 CLI 闭源码）覆盖：插件五件套、子代理声明式定义、Hook 事件模型、声明式规则引擎、权限/Sandbox 模型、MDM 企业管控、Gateway 部署。本文档沉淀调研结论，并把可借鉴点映射到 DeepCore-Code 现有模块，作为后续分步实施与逐步讨论的基础。
 
 ## 2. Claude Code 公开仓库调研结论
 
@@ -19,7 +19,7 @@ Claude Code 是业界 agentic coding 工具的标杆，其公开仓库（官方�
 
 - 该公开仓库**不包含 CLI 本体源码**（`@anthropic-ai/claude-code` 是闭源 npm 包）。
 - 价值集中在**官方示例与设计范式**：`plugins/`（插件五件套）、`examples/hooks|settings|mdm|gateway/`、`CHANGELOG.md`（产品演进暴露的设计）。
-- 调研结论以「范式」为单位沉淀，落地到 R-CodeCore 时按本项目架构裁剪，不做机械照搬。
+- 调研结论以「范式」为单位沉淀，落地到 DeepCore-Code 时按本项目架构裁剪，不做机械照搬。
 
 ### 2.2 插件五件套结构（plugins/README.md）
 
@@ -83,9 +83,9 @@ plugin/
 - **MCP elicitation/forms**：工具参数的交互式补全。
 - **资源控制**：嵌套 subagent 默认关、并发上限、`--max-budget-usd` 阻止后台 subagent、subagent 结果后释放内存。
 
-## 3. 对 R-CodeCore 的可借鉴映射矩阵
+## 3. 对 DeepCore-Code 的可借鉴映射矩阵
 
-| # | 借鉴点 | 落地到 R-CodeCore 现有模块 | 改动面 | 收益 |
+| # | 借鉴点 | 落地到 DeepCore-Code 现有模块 | 改动面 | 收益 |
 |---|--------|--------------------------|--------|------|
 | 1 | Agent 声明式定义（frontmatter + 正文） | `feature/agent` 提示词资产：把 `assets/prompts/` 硬编码提示词升级为「元数据 + 正文」的 agent 定义，可热加载/复用 | 中 | 高（体系升级） |
 | 2 | 多 Agent 编排工作流 | `feature/agent`：新增「代码审查 / 功能开发」多阶段 skill/命令，按变更动态派专项 agent | 大 | 高 |
@@ -164,7 +164,7 @@ plugin/
 
 ### 5.7 方向 #5 设计决策（2026-08-23 已确认）
 
-- **规则载体**：**MD + JSON 共存**——新增 MD 规则文件层（项目 `.rcodecore/rules/*.md` + 全局，frontmatter + 正文）；现有 JSON（`permissions.json`）保留为「记忆授权」产物，职责分离。
+- **规则载体**：**MD + JSON 共存**——新增 MD 规则文件层（项目 `.deepcode/rules/*.md` + 全局，frontmatter + 正文）；现有 JSON（`permissions.json`）保留为「记忆授权」产物，职责分离。
 - **动作扩展**：**引入 warn**（allow/deny/warn 三态）——warn 不拦截只提示（正文喂模型/弹窗附注），对齐 hookify + #6 Warn。
 - **作用域**：**权限 + Hook 全上**——统一规则引擎双消费点（ToolPermissionPolicyEngine + #4 HookDispatcher），实施可分层（先权限后 Hook）。
 - **优先级**：内置安全底线（灾难 rm / #6 Block）> 用户 deny/block > 已记忆 ALLOW > 内置白名单 > warn 提示 > ASK；用户规则只增不减（沿用 #6 原则）。
@@ -217,7 +217,7 @@ plugin/
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
 1. ~~**范围确认**~~（已定：A→B→C，见 5.1）
-2. **Hook 事件模型**：R-CodeCore 是否需要完整 Hook 事件（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart）？还是先做「工具执行前后」两事件？asyncRewake 后台唤醒在无后台会话的 Android 端如何表达（是否借用终端会话/通知）？
+2. **Hook 事件模型**：DeepCore-Code 是否需要完整 Hook 事件（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart）？还是先做「工具执行前后」两事件？asyncRewake 后台唤醒在无后台会话的 Android 端如何表达（是否借用终端会话/通知）？
 3. ~~**Bash 预校验**~~（已定：内置表 + block/warn 分级 + 复用现有权限引擎/守卫体系，见 5.2 与 7）
 4. **规则引擎**：规则格式（YAML frontmatter 的 .local.md）在 Android 端是否合适？规则文件放哪（assets / 工作区 / 设置目录）？是否支持「仓库级规则」随项目走？
 5. **权限分级**：`ask/deny/allow` 三分模型是否引入 `deny` 白名单策略文件？`disableBypassPermissionsMode` 对应什么 UI/入口？
@@ -511,9 +511,9 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 12.2 现状与缺口
 
-- 现有 [PermissionRule](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/permission/PermissionModels.kt) 二元（toolName + pattern + ALLOW/DENY），**无条件表达式、无 warn、无事件维度**。
+- 现有 [PermissionRule](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/permission/PermissionModels.kt) 二元（toolName + pattern + ALLOW/DENY），**无条件表达式、无 warn、无事件维度**。
 - JSON（`permissions.json`）=「始终允许/拒绝」的**记忆授权**产物。
-- [evaluateShell](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/permission/ToolPermissionPolicyEngine.kt#L167-L229) 顺序：灾难 rm → DENY → 不可判定 → 内置白名单 → 已记忆 ALLOW → ASK。
+- [evaluateShell](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/permission/ToolPermissionPolicyEngine.kt#L167-L229) 顺序：灾难 rm → DENY → 不可判定 → 内置白名单 → 已记忆 ALLOW → ASK。
 - 已有 frontmatter 解析（SkillParser + #1 定稿 SnakeYAML）可复用。
 
 ### 12.3 设计（已确认：MD+JSON 共存、引入 warn、权限+Hook 双消费点）
@@ -522,7 +522,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
   - `Condition(field, operator, pattern)`，field ∈ command / file_path / content 等，operator 六种（对齐 hookify）。
   - `Rule(name, enabled, event, tool_matcher, conditions[], action(allow|deny|warn), message)`。
 - **存储**：
-  - MD 规则层：项目 `.rcodecore/rules/*.md` + 全局 `filesDir/rcodecore/rules/*.md`（frontmatter + 正文，可 git 追踪/回滚）。
+  - MD 规则层：项目 `.deepcode/rules/*.md` + 全局 `filesDir/deepcode/rules/*.md`（frontmatter + 正文，可 git 追踪/回滚）。
   - JSON 保留：记忆授权产物，职责分离。
 - **统一规则引擎 RuleEngine**：解析 MD → 评估（tool_matcher + conditions → action），**双消费点**：
   1. **权限评估**：接入 `ToolPermissionPolicyEngine.evaluateShell/evaluateGeneric`；deny 优先级最高，warn 附加提示（弹窗附注/注入对话）。
@@ -540,7 +540,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 ### 12.5 待办
 
 - [ ] RuleEngine（Condition/六运算符/评估，对齐 hookify rule_engine）
-- [ ] MD 规则层（`.rcodecore/rules/` + 全局）+ mtime 热加载
+- [ ] MD 规则层（`.deepcode/rules/` + 全局）+ mtime 热加载
 - [ ] 接入 ToolPermissionPolicyEngine（deny 优先、warn 附加）
 - [ ] 接入 #4 HookDispatcher（事件规则消费）
 - [ ] frontmatter 解析公共工具（SnakeYAML / SkillParser 抽取）
@@ -560,7 +560,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 13.2 设计（已确认：禁 AUTO + 禁记忆、独立 deny 文件）
 
-- **deny 白名单策略文件（独立）**：`.rcodecore/deny.json`（项目级）+ 全局 `filesDir/rcodecore/deny.json`，**管理级强制 deny**，最高优先（连已记忆 ALLOW 也拦）；区别于 #5 用户可配规则（#5 = 用户配置，deny 文件 = 管理/团队策略）。
+- **deny 白名单策略文件（独立）**：`.deepcode/deny.json`（项目级）+ 全局 `filesDir/deepcode/deny.json`，**管理级强制 deny**，最高优先（连已记忆 ALLOW 也拦）；区别于 #5 用户可配规则（#5 = 用户配置，deny 文件 = 管理/团队策略）。
 - **「禁绕过」开关**（settings 安全设置页，对齐 Claude Code `disableBypassPermissionsMode`）：
   - **禁切 AUTO**：入口禁用 + 已有 AUTO 会话降级提示；
   - **禁新增「始终允许」记忆**：权限弹窗不再提供「始终允许」。
@@ -573,7 +573,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 13.4 待办
 
-- [ ] `.rcodecore/deny.json`（项目 + 全局）加载与评估（最高优先）
+- [ ] `.deepcode/deny.json`（项目 + 全局）加载与评估（最高优先）
 - [ ] settings 安全设置页「禁绕过」开关 + DataStore
 - [ ] AUTO 入口禁用 + 存量会话降级
 - [ ] 权限弹窗「始终允许」按开关隐藏
@@ -593,7 +593,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 14.2 设计（已确认：L1 仅 HTTP 白名单、两级配置 + 默认关）
 
-- **allowedDomains 两级配置**：全局（DataStore）+ 项目级（`.rcodecore/network.json`）。
+- **allowedDomains 两级配置**：全局（DataStore）+ 项目级（`.deepcode/network.json`）。
 - **mihomo 规则注入**：启用时生成/追加白名单规则——allowedDomains → DIRECT（或走代理），**其余 → REJECT**（MATCH → REJECT），mode=rule 白名单策略。
 - **默认关闭**：默认不启用（软限制），启用即严格白名单。
 - **覆盖范围（诚实标注）**：HTTP(S) 代理流量受控；DNS / git ssh / 非标准端口 TCP 不受控（mihomo 只代理 HTTP(S)，非透明代理）。
@@ -605,7 +605,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 14.4 待办
 
-- [ ] allowedDomains 两级配置（DataStore + `.rcodecore/network.json`）
+- [ ] allowedDomains 两级配置（DataStore + `.deepcode/network.json`）
 - [ ] mihomo 规则生成/注入 + reload（白名单放行 + REJECT）
 - [ ] settings 网络代理页加 allowedDomains 编辑入口
 - [ ] 按资产同步纪律更新 `assets/docs/`（网络限制说明）与 `docs/modules/`（proxy/agent）
@@ -618,9 +618,9 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 15.1 现状（三个既有支撑）
 
-- **agent_type 雏形已存在**：[SkillScope.AGENT](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/skill/Skill.kt#L41) + `Skill.agentType`（默认 `"coding"`），`SkillStateRepository` 注释「多 Agent 演进后由调用方传入动态值」——#1 的 agent_type 动态化即 #9 基础。
-- **上下文预算体系成熟**：[ContextCompactor](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/workflow/ContextCompactor.kt#L211) + `ModelContextPolicy.preserveRecentTokens` 可被 subagent 复用。
-- **工具并行安全已就绪**：[ToolSessionState](file:///workspace/app/src/main/java/com/R/codecore/feature/agent/domain/tool/ToolSessionState.kt#L17)「并行工具同 key 串行安全」；provider 多 tool_use 已支持。
+- **agent_type 雏形已存在**：[SkillScope.AGENT](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/skill/Skill.kt#L41) + `Skill.agentType`（默认 `"coding"`），`SkillStateRepository` 注释「多 Agent 演进后由调用方传入动态值」——#1 的 agent_type 动态化即 #9 基础。
+- **上下文预算体系成熟**：[ContextCompactor](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/workflow/ContextCompactor.kt#L211) + `ModelContextPolicy.preserveRecentTokens` 可被 subagent 复用。
+- **工具并行安全已就绪**：[ToolSessionState](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/tool/ToolSessionState.kt#L17)「并行工具同 key 串行安全」；provider 多 tool_use 已支持。
 
 ### 15.2 设计（已确认：独立会话落库、继承环境+简报、并发/预算可配置、骨架先行）
 
@@ -694,9 +694,9 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ## 17. 插件五件套复用设计定稿（草案，延伸方向）
 
-### 17.1 现状映射（五件套 → R-CodeCore）
+### 17.1 现状映射（五件套 → DeepCore-Code）
 
-| Claude Code 五件套 | R-CodeCore 对应物 | 状态 |
+| Claude Code 五件套 | DeepCore-Code 对应物 | 状态 |
 |---|---|---|
 | `skills/` | Skill 系统（内置 `BuiltinSkillSeeder` + 本地目录扩展 `LocalDirectorySkillSource`） | ✅ 已有 |
 | `commands/` | `SlashCommandRegistry` | ✅ 已有 |
@@ -740,9 +740,9 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 18.1 可行性结论（三种硬差异）
 
-- **语言差异（最硬）**：hook 是 Python/shell 脚本（security-guidance 11 个 py、hookify 4 个 py、ralph-wiggum stop-hook.sh），R-CodeCore 运行时无 Python——**hooks 必须翻译**为 Kotlin 或 #5 规则引擎 MD 规则。
+- **语言差异（最硬）**：hook 是 Python/shell 脚本（security-guidance 11 个 py、hookify 4 个 py、ralph-wiggum stop-hook.sh），DeepCore-Code 运行时无 Python——**hooks 必须翻译**为 Kotlin 或 #5 规则引擎 MD 规则。
 - **格式差异**：插件是 Claude Code 格式（YAML frontmatter + plugin.json + hooks.json），需**格式转换层**（#17 插件化）。
-- **环境差异**：提示词含 `CLAUDE.md`/`gh pr`/`npm` 等 Claude Code 环境引用；agent tools 白名单需映射到 R-CodeCore ToolRegistry。
+- **环境差异**：提示词含 `CLAUDE.md`/`gh pr`/`npm` 等 Claude Code 环境引用；agent tools 白名单需映射到 DeepCore-Code ToolRegistry。
 
 ### 18.2 移植分类（13 个）
 
@@ -751,7 +751,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 | **A 轻改移植**（纯 Markdown，格式转换） | commit-commands、frontend-design、claude-opus-4-5-migration、explanatory-output-style、learning-output-style | 小 | 提示词为主，frontmatter 适配 + 工具映射 |
 | **B 适配移植**（多 agent 编排，改环境引用） | feature-dev、pr-review-toolkit、code-review、plugin-dev | 中 | `gh`→本地 git、`CLAUDE.md`→项目规则、tools 映射 |
 | **C 翻译移植**（Python hook → #5 规则） | hookify、security-guidance | 大 | 4+11 个 py 翻译为 Kotlin 规则/规则引擎 MD |
-| **D 自定义实现**（行为型） | ralph-wiggum、agent-sdk-dev | 中/低价值 | ralph 需 workflow 循环控制；SDK 开发对 R-CodeCore 低价值 |
+| **D 自定义实现**（行为型） | ralph-wiggum、agent-sdk-dev | 中/低价值 | ralph 需 workflow 循环控制；SDK 开发对 DeepCore-Code 低价值 |
 
 ### 18.3 决策记录
 
