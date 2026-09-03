@@ -42,9 +42,22 @@ class KVStore(private val db: InfraDb) {
     fun getAll(namespace: String): List<KvEntry> =
         queries.selectKvByNamespace(namespace).executeAsList().map { it.toEntry() }
 
+    /** 类型化 get 便捷方法：比 get().xVal?.let 更简洁。 */
+    fun getString(namespace: String, key: String): String? = get(namespace, key)?.stringVal
+    fun getInt(namespace: String, key: String): Long? = get(namespace, key)?.intVal
+    fun getBool(namespace: String, key: String): Boolean? = get(namespace, key)?.boolVal?.let { it != 0L }
+
     /** 响应式观察（替代 DataStore.data）。 */
     fun observe(namespace: String, key: String): Flow<KvEntry?> =
         queries.selectKv(namespace, key).asFlow().map { it.executeAsOneOrNull()?.toEntry() }
+
+    /** 类型化 observe 便捷方法：直接 Flow<String?> / Flow<Long?> / Flow<Boolean?>。 */
+    fun observeString(namespace: String, key: String): Flow<String?> =
+        observe(namespace, key).map { it?.stringVal }
+    fun observeInt(namespace: String, key: String): Flow<Long?> =
+        observe(namespace, key).map { it?.intVal }
+    fun observeBool(namespace: String, key: String): Flow<Boolean?> =
+        observe(namespace, key).map { it?.boolVal?.let { v -> v != 0L } }
 
     fun delete(namespace: String, key: String) =
         queries.tombstoneKv(now(), namespace, key)

@@ -1,18 +1,13 @@
 package com.R.codecore.feature.settings.data.repository
 
-import android.content.Context
 import com.R.codecore.R
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.R.codecore.datalayer.store.KVStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// 数据层重构 T2：统一 settings DataStore（settings_prefs），不再独享 theme_prefs
 enum class AppThemeMode(val labelRes: Int) {
     AUTO(R.string.theme_auto),
     DARK(R.string.theme_dark),
@@ -26,21 +21,22 @@ enum class AppThemeMode(val labelRes: Int) {
 /** 持久化 App 外观主题。默认跟随系统，也兼容旧版深色开关。 */
 @Singleton
 class ThemeSettingsRepository @Inject constructor(
-    @param:ApplicationContext private val context: Context
+    private val kv: KVStore
 ) {
     private companion object {
-        val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
-        val DARK_THEME_KEY = booleanPreferencesKey("dark_theme_enabled")
+        const val NS = "settings"
+        const val THEME_MODE_KEY = "theme_mode"
+        const val DARK_THEME_KEY = "dark_theme_enabled"
     }
 
-    val themeModeFlow: Flow<AppThemeMode> = context.settingsDataStore.data.map { prefs ->
-        AppThemeMode.fromPersisted(prefs[THEME_MODE_KEY])
-            ?: prefs[DARK_THEME_KEY]?.let { if (it) AppThemeMode.DARK else AppThemeMode.LIGHT }
+    val themeModeFlow: Flow<AppThemeMode> = kv.observeString(NS, THEME_MODE_KEY).map { stored ->
+        stored?.let { AppThemeMode.fromPersisted(it) }
+            ?: kv.getBool(NS, DARK_THEME_KEY)?.let { if (it) AppThemeMode.DARK else AppThemeMode.LIGHT }
             ?: AppThemeMode.AUTO
     }
 
     suspend fun setThemeMode(mode: AppThemeMode) {
-        context.settingsDataStore.edit { it[THEME_MODE_KEY] = mode.name }
+        kv.putString(NS, THEME_MODE_KEY, mode.name)
     }
 
     /** 备份快照：返回当前持久化的主题模式名（未设置时为 null，导入时回退默认）。 */
@@ -48,8 +44,6 @@ class ThemeSettingsRepository @Inject constructor(
 
     /** 从备份还原主题模式；null 时清除键回退默认。 */
     suspend fun restore(value: String?) {
-        context.settingsDataStore.edit {
-            if (value == null) it.remove(THEME_MODE_KEY) else it[THEME_MODE_KEY] = value
-        }
+        if (value == null) kv.delete(NS, THEME_MODE_KEY) else kv.putString(NS, THEME_MODE_KEY, value)
     }
 }
