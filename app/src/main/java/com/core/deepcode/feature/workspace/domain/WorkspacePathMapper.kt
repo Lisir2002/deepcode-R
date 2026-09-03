@@ -43,7 +43,7 @@ class WorkspacePathMapper @Inject constructor(
         /** AI 看到的工作区根路径。用 `~` 形式让提示词/工具描述更自然，内部用 [resolvedContainerRoot] 展开后匹配。 */
         const val CONTAINER_ROOT = "~/workspace"
         /** AI 配置目录在容器内的路径，绑定到宿主 [ContainerInstaller.deepcodeDir]（独立于 rootfs）。 */
-        const val AICODE_ROOT = "/root/.deepcode"
+        const val DEEPCODE_ROOT = "/root/.deepcode"
         private const val TAG = "WorkspacePathMapper"
     }
 
@@ -105,8 +105,8 @@ class WorkspacePathMapper @Inject constructor(
         val file = when {
             p == wsRoot || p == "$wsRoot/" || p == CONTAINER_ROOT || p == "$CONTAINER_ROOT/" -> root
             p.startsWith("$wsRoot/") -> File(root, p.removePrefix("$wsRoot/"))
-            p == AICODE_ROOT || p == "$AICODE_ROOT/" -> deepcodeRoot()
-            p.startsWith("$AICODE_ROOT/") -> File(deepcodeRoot(), p.removePrefix("$AICODE_ROOT/"))
+            p == DEEPCODE_ROOT || p == "$DEEPCODE_ROOT/" -> deepcodeRoot()
+            p.startsWith("$DEEPCODE_ROOT/") -> File(deepcodeRoot(), p.removePrefix("$DEEPCODE_ROOT/"))
             p.startsWith("/") -> File(rootfsRoot(), p.removePrefix("/"))
             else -> File(root, p)
         }
@@ -135,8 +135,8 @@ class WorkspacePathMapper @Inject constructor(
             // 展开后的 $HOME/workspace 形式也还原为 ~/workspace（bind mount 路径可能以绝对形式出现）
             abs == resolvedContainerRoot() -> CONTAINER_ROOT
             abs.startsWith(resolvedContainerRoot() + "/") -> CONTAINER_ROOT + "/" + abs.removePrefix(resolvedContainerRoot() + "/")
-            abs == deepcodePath -> AICODE_ROOT
-            abs.startsWith("$deepcodePath/") -> AICODE_ROOT + "/" + abs.removePrefix("$deepcodePath/")
+            abs == deepcodePath -> DEEPCODE_ROOT
+            abs.startsWith("$deepcodePath/") -> DEEPCODE_ROOT + "/" + abs.removePrefix("$deepcodePath/")
             abs == rootfsPath -> "/"
             abs.startsWith("$rootfsPath/") -> "/" + abs.removePrefix("$rootfsPath/")
             else -> hostPath

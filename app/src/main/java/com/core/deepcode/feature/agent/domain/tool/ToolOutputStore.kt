@@ -27,7 +27,7 @@ class ToolOutputStore @Inject constructor(
 ) {
     private companion object {
         const val TAG = "ToolOutputStore"
-        const val RCODECORE_ROOT = "/root/.deepcode"
+        const val DEEPCODE_ROOT = "/root/.deepcode"
         const val OUTPUT_DIR = "tool-output"
         const val HEAD_CHARS = 20_000
         const val TAIL_CHARS = 20_000
@@ -140,7 +140,7 @@ class ToolOutputStore @Inject constructor(
             val dir = File(containerInstaller.deepcodeDir, OUTPUT_DIR).apply { mkdirs() }
             val file = uniqueOutputFile(dir, toolName, callId)
             file.writeText(text, Charsets.UTF_8)
-            val path = "$RCODECORE_ROOT/$OUTPUT_DIR/${file.name}"
+            val path = "$DEEPCODE_ROOT/$OUTPUT_DIR/${file.name}"
             FileLogger.i(TAG, "工具输出已保存: $path (${text.length} chars)")
             StoredPathResult(outputPath = path)
         } catch (e: Exception) {

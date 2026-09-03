@@ -112,7 +112,7 @@ assets/ext/                       # 内置扩展（打包）
   skills/<name>/SKILL.md          # 技能：frontmatter(description/whenToUse/disable-model-invocation)
   hooks/<event>.json              # 生命周期钩子
   plugins/*/plugin.json           # 插件 manifest(name/version/description)
-<workspace>/.codecore/            # 用户扩展目录（热加载、优先级高于内置）
+<workspace>/.deepcode/ext/       # 用户扩展目录（热加载、优先级高于内置）
   agents/ commands/ skills/ hooks/
 ```
 
@@ -141,7 +141,7 @@ assets/ext/                       # 内置扩展（打包）
 #### B3. Plugins（插件分发）
 
 - `plugin.json` 极简 manifest（对齐 Claude Code：name/version/description/author）+ 约定目录。
-- 支持从用户目录导入（zip → 解压到 `.codecore/plugins/<name>/`），经 `ExtensionLoader` 注册。
+- 支持从用户目录导入（zip → 解压到 `.deepcode/ext/plugins/<name>/`），经 `ExtensionLoader` 注册。
 - **边界**：Android 端插件**只能声明** agents/commands/skills/hooks，**不能**注册任意原生代码（安全边界，对齐"无运行时插件 API"的克制）。
 
 ### 4.3 方向 C：工程编程（run_code 轻量版）
@@ -175,7 +175,7 @@ assets/ext/                       # 内置扩展（打包）
 | 方向 | 集成点 |
 |---|---|
 | A 任务编排 | agent 库新增 `Goal/Plan/Job/Schedule` 4 表（`AgentDatabase` v2 迁移）；`AgentEvent` 新增 GoalChanged/JobState/ScheduleFired；`StatefulAgentWorkflow` step 前注入 goal/plan；`core/worker/` 统一调度循环扩展 schedule；`TerminalKeepaliveService` 承载 jobs 进程 |
-| B 扩展生态 | 新增 `feature/agent/domain/ext/`（`ExtensionLoader`/`HookDispatcher`/`PluginManager`）；`ToolRegistry` 扩展 pre/post 钩子；`assets/ext/` + `.codecore/` 目录；`FileObserver` 热加载 |
+| B 扩展生态 | 新增 `feature/agent/domain/ext/`（`ExtensionLoader`/`HookDispatcher`/`PluginManager`）；`ToolRegistry` 扩展 pre/post 钩子；`assets/ext/` + `.deepcode/ext/` 目录；`FileObserver` 热加载 |
 | C run_code | 新增 `feature/agent/domain/tool/RunCodeTool.kt`；复用 `ExecuteCommandTool` 执行链与权限引擎；`run_code` 结果走 canonical output 解析 |
 | D 护栏 | `ToolPermissionPolicyEngine` 扩展三档模式与失败分类；workflow 循环层加 guard 统计；复用 `DeltaAccumulator` |
 | 数据注册表 | `core/data/DataRegistry` 登记新增 4 表，保证备份/恢复/自动迁移覆盖（遵守数据注册表单一声源纪律） |

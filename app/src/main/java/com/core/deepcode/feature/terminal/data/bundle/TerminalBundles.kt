@@ -320,7 +320,7 @@ object TerminalBundles {
             # 扫描 ANDROID_HOME/build-tools 下所有版本目录，把 x86/x86_64 静态/动态 ELF 改成同名 qemu wrapper。
             # 原二进制改名 <name>.x86bin（若已存在则跳过），新同名脚本 exec /usr/local/bin/qemu-x86_64 <原二进制> "${'$'}@"。
             set +e
-            QEMU="${'$'}{RCODECORE_QEMU_X86:-/usr/local/bin/qemu-x86_64}"
+            QEMU="${'$'}{DEEPCODE_QEMU_X86:-/usr/local/bin/qemu-x86_64}"
             if [ ! -x "${'$'}QEMU" ]; then
               echo "[ERROR] qemu-x86_64 未找到：${'$'}QEMU。请确认「x86 构建转译器」bundle 已安装。"
               exit 2

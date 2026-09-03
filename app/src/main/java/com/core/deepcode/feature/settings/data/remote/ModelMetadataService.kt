@@ -170,7 +170,7 @@ class ModelMetadataService @Inject constructor(
         runCatching {
             val request = Request.Builder()
                 .url(MODELS_DEV_URL)
-                .header("User-Agent", "r-codecore")
+                .header("User-Agent", "deepcore-code")
                 .get()
                 .build()
 
