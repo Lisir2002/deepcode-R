@@ -170,7 +170,7 @@ class FtpServerManager @Inject constructor(
             }
             if (_isAnonymous.value) {
                 val anonUser = BaseUser().apply {
-                    name = "anonymous"; homeDirectory = defaultSharedPath; authorities = authorities
+                    name = "anonymous"; homeDirectory = defaultSharedPath; this.authorities = authorities
                 }
                 userManager.save(anonUser)
             }
