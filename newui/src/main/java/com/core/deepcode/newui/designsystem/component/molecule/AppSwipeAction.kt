@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -59,6 +61,7 @@ import com.core.deepcode.newui.designsystem.token.generated.AppColor
 import com.core.deepcode.newui.designsystem.token.generated.AppRadius
 import com.core.deepcode.newui.designsystem.token.generated.AppSizing
 import com.core.deepcode.newui.designsystem.token.generated.AppSpacing
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -92,9 +95,13 @@ internal val LocalSwipeReveal = staticCompositionLocalOf { 1f }
  * 注意：`order++` 的副作用发生在 `remember` 的初始化里，因此必须在**组合作用域**先取
  * `LocalSwipeSequence.current`（在 remember 计算值 lambda 内读 CompositionLocal 不合法），
  * 再在 remember 初始化块内自增。
+ *
+ * **v9 修复**：`order` 初值由 `-1` 改为 `0`。原先首个按钮拿到 `-1`、第二个拿到 `0`，
+ * 两者 `basePhase`（`order * 0.3f`）都 `<= 0`，全部退化到 `reveal = totalReveal` 分支，
+ * 「逐盏亮起」完全失效（两个按钮同时亮）。改为从 0 起算后恢复级联相位。
  */
 internal class SwipeSequenceState {
-    var order = -1
+    var order = 0
 }
 internal val LocalSwipeSequence = staticCompositionLocalOf { SwipeSequenceState() }
 
@@ -110,7 +117,7 @@ enum class AppSwipeEdge { Start, End }
  * 滑扫操作的提升状态。
  *
  * 拖动跟手 / fling / settle / clamp / 全滑确认全由 `AnchoredDraggableState` 托管。
- * 如今暴露业务关心的收口 API：offset（px）、揭示进度（0..1）、是否稳定展开、开合、越界阻尼比例。
+ * 暴露业务关心的收口 API：位移、揭示进度（0..1）、是否稳定展开、开合、越界阻尼比例。
  *
  * **关键设计**：所有属性都**直接读取 `anchored.offset`**（这是一个 `MutableFloatState`），
  * 而不是通过 `derivedStateOf { requireOffset() }` 间接读取——避免普通方法 `requireOffset()`
@@ -149,7 +156,16 @@ class AppSwipeActionState internal constructor(
      * 覆盖 settle 动画中、手势 cancel 未 settle 等半开态。
      */
     val isEngaged: Boolean
-        get() = abs(offset) > startSwipeAbs * 0.8f
+        get() = isEngagedAt(offset)
+
+    /**
+     * 给定 offset 判定"非关闭态"。
+     *
+     * **v9 抽出**：原先「`abs(offset) > startSwipeAbs * 0.8f`」这一段阈值判断在
+     * `AppSwipeAction` 内散落三处（组合期派生、申报 effect、收起 effect），
+     * 魔数重复且易改歪。统一收口到此处，保证三处语义永远一致。
+     */
+    internal fun isEngagedAt(offset: Float): Boolean = abs(offset) > startSwipeAbs * 0.8f
 
     /** 是否正处于"全滑确认"阈值（拖超过动作栏），用于放大 + 阻尼反馈。 */
     val isBeyondReveal: Boolean
@@ -341,20 +357,32 @@ fun RowScope.AppSwipeButton(
 }
 
 /**
- * 滑扫操作（分子组 · AppSwipeAction v8）：横向拖出底层动作栏，弹簧锚定到 0 / ±actionWidth。
+ * 滑扫操作（分子组 · AppSwipeAction v9）：横向拖出底层动作栏，弹簧锚定到 0 / ±actionWidth。
  *
- * v7 → v8 关键修复：
+ * v8 → v9 修复（本次）：
  *
- *  - **Progress 追踪失效根因修复**：v7 的 `derivedStateOf { resolvedState.progress }` 里嵌套了
- *    `resolvedState.progress`（普通 Kotlin 属性 getter）→ `anchored.requireOffset()`（普通方法）→
- *    `getOffset()` 才最终读 State。Compose 快照追踪对这种多层封装不稳定，导致 progress
- *    始终缓存初始值 0，而 contentOffset（走 `graphicsLayer` layout 绘制阶段重读）拿到了真实 offset。
- *    v8 改为：**直接在组合作用域读 `anchored.offset`**（MutableFloatState），progress /
- *    resistedOffset / overshoot 全部从这个裸 offset 现算，消除追踪失效。
- *  - **内容层平移改用 Modifier.offset{}**：layout 阶段读 offset，避开 composition 阶段 NaN；
- *    直接从 rawOffset 现算，与 progress 同源同步。
- *  - **LocalSwipeSequence 用 remember 缓存**：不再每次重组 new 新实例，避免 stagger 相位每次重置。
- *  - **外层 clip 保留**防溢出 + 手势分流天然有效（水平拖动优先交给 anchoredDraggable）。
+ *  - **【B2】互斥「乒乓回环」根因修复**：v8 把 `expandedIndex` 放进了两个 `LaunchedEffect` 的 key。
+ *    于是每一次互斥切换都会重启 effect 与内部的 `snapshotFlow`，而 `snapshotFlow` **重启即立即重放
+ *    当前 offset**——此刻上一项的 `close()` 动画尚未跑完（offset 仍是展开值），上一项便把自己
+ *    重新申报为展开项，与新项互相抢夺 `expandedIndex`，形成 `0→1→0→1` 的无限乒乓；
+ *    同时 `close()` 是 suspend，effect 每次重启都 cancel 上一次动画，收起动画**永远做不完**，
+ *    表现为「卡顿 + 不回弹」。
+ *    修法：① 把 `expandedIndex` 从 key 中移除，改用 `rememberUpdatedState` 读最新值，
+ *    effect 不再因互斥切换而重启，`close()` 得以完整执行；② 申报侧对 engaged 布尔值做
+ *    `distinctUntilChanged`，只在真正跨越阈值时回调一次，杜绝拖动期高频重复回调。
+ *  - **【B1】整行宽度退化修复**：外层 `Box` 补 `fillMaxWidth()`。Compose `Box` 的
+ *    `boxWidth = max(minWidth, 非 matchParent 子项宽)`，而内容层原本是 `fillMaxSize()`（matchParent，
+ *    不贡献宽度），唯一非 matchParent 子项是动作栏 `Row(width = actionWidth)`，导致整行宽度
+ *    被压成 `actionWidth`（样板页即 128.dp），而非撑满父容器。
+ *  - **【B1】动作栏高度链修复**：动作栏原本直接 `fillMaxHeight()`，而样板页外层是
+ *    `verticalScroll`（**无界高度约束**），`fillMaxHeight` 拿不到可参照的最大高度而失效。
+ *    现在动作栏外套一层 `Box(Modifier.fillMaxSize())`（matchParent，尺寸由整行回填），
+ *    内部 `Row` 便处在**有界高度**下，`fillMaxHeight()` 正常生效，动作栏严格等同行高。
+ *    内容层同步由 `fillMaxSize()` 改为 `fillMaxWidth()`，让**内容**决定整行高度（wrap），
+ *    动作栏再跟随填满——高度来源唯一、不再互相依赖。
+ *  - **【cascade】序号初值修复**：`SwipeSequenceState.order` 由 `-1` 改 `0`，恢复「逐盏亮起」相位。
+ *  - **阈值判断收口**：`abs(offset) > startSwipeAbs * 0.8f` 统一收敛到
+ *    [AppSwipeActionState.isEngagedAt]，消除三处重复魔数。
  */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -379,11 +407,12 @@ fun AppSwipeAction(
     val currentOnProgress by rememberUpdatedState(onSwipeProgress)
     val currentOnTrigger by rememberUpdatedState(onTrigger)
     val currentPattern by rememberUpdatedState(pattern)
+    // v9：expandedIndex 不再作为 LaunchedEffect 的 key，改由此处持有最新值供 effect 内部读取。
+    val currentExpandedIndex by rememberUpdatedState(expandedIndex)
     val shape = RoundedCornerShape(AppRadius.Md)
 
-    // —— 核心修复：直接读 MutableFloatState，Compose 必然追踪变化。
-    // 所有派生量（progress / resistedOffset / overshoot / isEngaged）都从 rawOffset 现算。
-    // 彻底消除 v7 用 derivedStateOf{ requireOffset() } 封装导致的 State 追踪失效。
+    // —— 直接读 MutableFloatState，Compose 必然追踪变化。
+    // 所有派生量（progress / contentOffset / overshoot / isEngaged）都从 rawOffset 现算。
     val rawOffset = resolvedState.anchored.offset
 
     // progress：起始滑动阈值之后线性攀升，驱动按钮淡入/描边/阴影。
@@ -406,27 +435,42 @@ fun AppSwipeAction(
     val overshoot = (((rawAbs - openAbs) / (resolvedState.triggerAnchorAbs - openAbs).coerceAtLeast(1f)))
         .coerceIn(0f, 1f)
 
-    val isEngaged = abs(rawOffset) > resolvedState.startSwipeAbs * 0.8f
+    val isEngaged = resolvedState.isEngagedAt(rawOffset)
     val isBeyondReveal = rawAbs > openAbs * 1.02f
 
-    // 同批只开一项：isEngaged 覆盖 settle 动画 / 半开态。
-    LaunchedEffect(resolvedState, index, expandedIndex) {
+    // —— 互斥收起（同批只开一项）——
+    // ① 本项展开/收起 → 向外部申报展开位。
+    //    key 不含 expandedIndex，effect 不因互斥切换而重启，snapshotFlow 不会重放抢位；
+    //    distinctUntilChanged 保证只在「真正跨越 engaged 阈值」时回调一次。
+    LaunchedEffect(resolvedState, index) {
         if (index == null) return@LaunchedEffect
-        snapshotFlow { resolvedState.anchored.offset }
-            .collect { off ->
-                val engaged = abs(off) > resolvedState.startSwipeAbs * 0.8f
+        snapshotFlow { resolvedState.isEngagedAt(resolvedState.anchored.offset) }
+            .distinctUntilChanged()
+            .collect { engaged ->
                 val cb = currentOnExpanded ?: return@collect
+                val current = currentExpandedIndex
                 when {
-                    engaged && expandedIndex != index -> cb(index)
-                    !engaged && expandedIndex == index -> cb(null)
+                    // 我展开了，且当前展开位不是我 → 抢占展开位
+                    engaged && current != index -> cb(index)
+                    // 我收起了，且当前展开位就是我 → 交还展开位
+                    !engaged && current == index -> cb(null)
                 }
             }
     }
-    // 其它项被展开时，本项（只要非 Closed）自动收起。
-    LaunchedEffect(resolvedState, index, expandedIndex) {
-        if (index != null && expandedIndex != null && expandedIndex != index && isEngaged) {
-            resolvedState.close()
-        }
+
+    // ② 别的项被展开 → 收起自己。
+    //    同样不把 expandedIndex 放进 key，close() 因此不会在动画途中被 cancel；
+    //    改由 snapshotFlow 观察 expandedIndex 的真实变化来驱动。
+    LaunchedEffect(resolvedState, index) {
+        if (index == null) return@LaunchedEffect
+        snapshotFlow { currentExpandedIndex }
+            .distinctUntilChanged()
+            .collect { current ->
+                // 展开位被别的项占走，且自己确实处于非关闭态 → 收起
+                if (current != null && current != index && resolvedState.isEngagedAt(resolvedState.anchored.offset)) {
+                    resolvedState.close()
+                }
+            }
     }
 
     // 全滑确认：settle 到 Trigger 锚点即触发 onTrigger。
@@ -487,53 +531,63 @@ fun AppSwipeAction(
     // LocalSwipeSequence：用 remember 缓存，避免每次重组重置 order 计数。
     val swipeSequence = remember { SwipeSequenceState() }
 
-    // 外层 Box：clip(shape) 防内容溢出覆盖相邻行。
+    // 外层 Box：fillMaxWidth 保证整行撑满（v9 修复宽度退化）；clip(shape) 防内容溢出覆盖相邻行。
     Box(
-        modifier = modifier.clip(shape),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape),
         contentAlignment = if (edge == AppSwipeEdge.End) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
-        // 底层动作栏：固定贴选中边；shadow clip=true 让阴影不溢出。
-        Row(
-            modifier = Modifier
-                .width(actionWidth)
-                .fillMaxHeight()
-                .shadow(elevation = (12f * progress).dp, shape = shape, clip = true)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.surfaceContainerHighest,
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            MaterialTheme.colorScheme.surfaceContainerHigh,
+        // 底层动作栏（v9）：
+        // 外套 Box(fillMaxSize) 让动作栏容器尺寸由「整行」回填（matchParent，测量顺序在后），
+        // 内部 Row 因此处于**有界高度**约束下，fillMaxHeight() 才能生效——
+        // 直接把 fillMaxHeight 放在整行 Box 的子项上会因 verticalScroll 的无界高度约束而失效。
+        Box(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .width(actionWidth)
+                    .fillMaxHeight()
+                    .heightIn(min = AppSizing.TouchTarget)
+                    .align(if (edge == AppSwipeEdge.End) Alignment.CenterEnd else Alignment.CenterStart)
+                    .shadow(elevation = (12f * progress).dp, shape = shape, clip = true)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.surfaceContainerHighest,
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ),
                         ),
-                    ),
-                )
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant
-                        .copy(alpha = (0.5f * progress).coerceIn(0f, 0.7f)),
-                    shape = shape,
-                )
-                .graphicsLayer {
-                    scaleX = 1f + 0.10f * overshoot
-                    scaleY = 1f + 0.10f * overshoot
-                    alpha = 1f - 0.10f * overshoot
-                },
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CompositionLocalProvider(
-                LocalSwipeReveal provides progress,
-                LocalSwipeSequence provides swipeSequence,
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant
+                            .copy(alpha = (0.5f * progress).coerceIn(0f, 0.7f)),
+                        shape = shape,
+                    )
+                    .graphicsLayer {
+                        scaleX = 1f + 0.10f * overshoot
+                        scaleY = 1f + 0.10f * overshoot
+                        alpha = 1f - 0.10f * overshoot
+                    },
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                actions()
+                CompositionLocalProvider(
+                    LocalSwipeReveal provides progress,
+                    LocalSwipeSequence provides swipeSequence,
+                ) {
+                    actions()
+                }
             }
         }
 
-        // 顶层内容滑层：用 Modifier.offset{} 在 layout 阶段平移（官方 idiomatic），
-        // 与 progress 同源（都读 rawOffset），绝对同步，彻底消除 v7 脱钩问题。
+        // 顶层内容滑层（v9）：宽度撑满、高度 wrap——由 **内容** 决定整行高度，
+        // 动作栏再通过外层 fillMaxSize 容器跟随填满，高度来源唯一，不再循环依赖。
+        // 平移用 Modifier.offset{} 在 layout 阶段完成，与 progress 同源（都读 rawOffset）。
         Box(
             Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
                 .offset { IntOffset(contentOffset.roundToInt(), 0) }
                 .clickable(
