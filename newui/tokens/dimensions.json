@@ -1,0 +1,44 @@
+{
+  "spacing": {
+    "xs": { "$value": "4",   "$type": "dimension" },
+    "sm": { "$value": "8",   "$type": "dimension" },
+    "md": { "$value": "12",  "$type": "dimension" },
+    "lg": { "$value": "16",  "$type": "dimension" },
+    "xl": { "$value": "24",  "$type": "dimension" },
+    "xxl":{ "$value": "32",  "$type": "dimension" }
+  },
+  "radius": {
+    "none": { "$value": "0",   "$type": "dimension" },
+    "sm":   { "$value": "8",   "$type": "dimension" },
+    "md":   { "$value": "12",  "$type": "dimension" },
+    "lg":   { "$value": "16",  "$type": "dimension" },
+    "pill": { "$value": "999", "$type": "dimension" }
+  },
+  "elevation": {
+    "z0": { "$value": "0",  "$type": "dimension", "$description": "静止（无阴影，靠内容色分层）" },
+    "z1": { "$value": "1",  "$type": "dimension" },
+    "z2": { "$value": "3",  "$type": "dimension", "$description": "滚动抬升" },
+    "z3": { "$value": "8",  "$type": "dimension" },
+    "z4": { "$value": "12", "$type": "dimension" }
+  },
+  "sizing": {
+    "touchTarget": { "$value": "44", "$type": "dimension" },
+    "iconButton":  { "$value": "40", "$type": "dimension" },
+    "iconXs":      { "$value": "16", "$type": "dimension" },
+    "iconS":       { "$value": "18", "$type": "dimension" },
+    "iconM":       { "$value": "20", "$type": "dimension" },
+    "iconL":       { "$value": "24", "$type": "dimension" },
+    "iconBlock":   { "$value": "40", "$type": "dimension", "$description": "图标块规格" }
+  },
+  "layout": {
+    "pageHorizontal": { "$value": "16", "$type": "dimension" },
+    "blockGap":       { "$value": "16", "$type": "dimension" },
+    "rowGap":         { "$value": "8",  "$type": "dimension" },
+    "contentMaxWidth":{ "$value": "720", "$type": "dimension" }
+  },
+  "motion": {
+    "fast": { "$value": "150", "$type": "dimension" },
+    "med":  { "$value": "250", "$type": "dimension" },
+    "slow": { "$value": "400", "$type": "dimension" }
+  }
+}

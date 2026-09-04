@@ -1,0 +1,22 @@
+{
+  "color": {
+    "brand": {
+      "primary":   { "$value": "#6C5CE7", "$type": "color", "$description": "品牌主色（紫）" },
+      "surface":   { "$value": "#F7F8FA", "$type": "color", "$description": "页面底色" },
+      "surfaceDim":{ "$value": "#ECEDF1", "$type": "color", "$description": "次要面板底色" },
+      "ink":       { "$value": "#1A1C20", "$type": "color", "$description": "主文字/重色" },
+      "accent":    { "$value": "#00BFA6", "$type": "color", "$description": "高亮点缀（chat accent 收纳）" }
+    },
+    "status": {
+      "success":  { "$value": "#2E7D32", "$type": "color" },
+      "warning":  { "$value": "#F9A825", "$type": "color" },
+      "danger":   { "$value": "#C62828", "$type": "color" },
+      "info":     { "$value": "#1976D2", "$type": "color" }
+    },
+    "onDark": {
+      "primary":  { "$value": "#B8A6FF", "$type": "color" },
+      "surface":  { "$value": "#16181C", "$type": "color" },
+      "ink":      { "$value": "#EDEEF2", "$type": "color" }
+    }
+  }
+}

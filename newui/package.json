@@ -1,0 +1,12 @@
+{
+  "name": "deepcode-newui-tokens",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DeepCore :newui 设计令牌（W3C DTCG 2025.10 单一源），经 Style Dictionary 生成 Compose 常量",
+  "scripts": {
+    "tokens": "style-dictionary build --config style-dictionary.config.js"
+  },
+  "devDependencies": {
+    "style-dictionary": "^4.0.0"
+  }
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      :newui —— 独立全新 UI 层设计系统库。
+      S0 阶段 :app 不依赖本模块，仅作为独立 Compose 库与样板页宿主；
+      迁移期（§7 S2）由 :app 接入其产出。
+    -->
+    <uses-sdk android:minSdkVersion="26" />
+
+</manifest>

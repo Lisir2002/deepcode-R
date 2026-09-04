@@ -799,21 +799,21 @@ fun AppAdaptiveNav(
 
 ---
 
-## 7. 存量旧 UI 接管路线图
+## 7. 路线图（并行双子塔：独立新版 → 样板验证 → 逐步迁移）
 
-**分批收敛标准（每批通用）**：不破坏现有功能、每批 `./gradlew :app:assembleDebug` 通过、文案走 `strings.xml`、每批同步 `docs/modules/<module>.md` 与索引。
+> **策略（负责人已拍板）**：独立起一套全新的 `:newui` Gradle 模块承载全新 UI 层，**不动旧版 `:app` UI**（旧版继续可用、可发版）；在新的独立 UI 层内**完整落地本设计**；落地后用**样板页**验证并逐步敲定；敲定后**再逐步迁移**旧页面；全部迁移完才收口旧版。
 
-- **P0 先立地基（本轮，零功能变更）**：
-  - 本文档进入 `docs/plan-docs/` 并登记索引；评审通过后 §8 待拍板项定稿。
-  - 命名规范 + 四件套 + **令牌纪律**（禁 magic value，统一走 `AppTokens`）写入 `AGENTS.md` 边界纪律。
-  - 建 `core/theme/token/` 令牌门面 + `core/ui/` 空组件库骨架。
-  - **此后所有新增页面与视觉一律按 v2 走**。
+**分批收敛标准（每批通用）**：不破坏现有功能（`:app` 零依赖 `:newui` 前旧版不受影响）、每批 `./gradlew :app:assembleDebug` 通过、文案走 `strings.xml`、每批同步 `docs/modules/<module>.md` 与索引、编译型改动提交前过单元测试。
 
-- **P1 接最大模块（agent 聊天 + settings）**：拆 `AIAgentViewModel`→`ChatContract`+`ChatViewModel`；抽 `AgentRoutes`/`SettingsRoutes`；`AIChatPanel`→`ChatScreen`；settings 复数组件归并 `component/`（单数）；**魔法圆角/高度/色值/图标尺寸/页面留白先迁到令牌**（`AppRadius`/`AppSizing`/`AppColor`/`AppIcon`/`AppLayout`，样板工程验证）。
-
-- **P2 其余 feature**（git / terminal / proxy / workspace / credentials / capability / browser / backup）：按 P1 模板逐屏套用，各抽 Route + Contract + Screen，视觉引用令牌。
-
-- **P3 收口**：`AppComponents`/`CyberComponents` 并入 `core/ui/`；`CyberColors` 语义化并色（去第二套色板）；**组件集目录落地**（§3.12 收 `CyberCard/CyberMenuRow/CyberChip` 到 `App*`）；`MainActivity` 瘦身到图表组装；全量模块文档与索引核对。
+- **S0 起新版地基（本轮，对 `:app` 零改动）**：
+  - 本文档经评审转正 `✅`，§8 待拍板项定稿。
+  - 新建独立 module `:newui`（Compose + Material3 + adaptive），`settings.gradle.kts` 注册；`:app` **暂不依赖**（强隔离）。
+  - 令牌：`tokens/*.tokens.json`(DTCG) + 生成器 → `:newui` 内 `generated/App*`；**完整独立 M3 主题**（AppColorScheme/AppTypography/AppShape，含暗色，不碰旧 theme）。
+  - 骨架：原子包 + 四件套约定 + `AppTopBar`/`AppLayout`/三态 `AppState` + 槽位框架 `SlotSet`/`BlockSlot`/`SlotKey`（§2.3.4b）。
+  - **样板页 `DesignGallery`**：在一个演示页内把令牌/原子组件/骨架/三态/槽位/`AppTopBar` 全部陈列演示，供负责人检验并敲定「基本完整落地」。
+- **S1 补齐新版能力**：`AppAdaptiveNav`(BAR/RAIL/DRAWER) + 全部原子/分子组件 + §3.12 组件集目录 + 暗色完整 + 无障碍（§3.13）。新版在独立预览/测试路由可用。
+- **S2 逐步迁移**：优先高复用/高价值页（settings → agent-chat …），按 `:app` 页面逐个接入 `:newui` 产出，用 **路由替换/feature toggle** 切换默认并支持回退；每迁一页验证 + 模块文档同步。
+- **S3 收口**：旧版原子/`CyberComponents` 与 `:newui` 去重后移除；`:app` 依赖收口为"只引 `:newui` 产出"；`MainActivity` 瘦身到槽位组装；全量 `/docs/modules` 与索引核对；tokens 单一源最后确认。
 
 ---
 
@@ -836,6 +836,12 @@ fun AppAdaptiveNav(
 | T13 | 槽位模型 | ✅ 落地为框架 API（`core/ui/` 提供 `SlotContent`/`BlockSlot`/`SlotSet`） |
 | T14 | Tab 自适应 | ✅ 三策略默认（`FitContent`/`EqualWeight`/`Scrollable`）；舍弃 `OverflowCollapse` 本轮 |
 | T15 | 侧边栏收纳 | ✅ 本轮先静态挂载（收纳/切一次布局，展开动画后置） |
+| T16 | 令牌落地用 DTCG 2025.10 + 生成器 | ✅ 已采纳（§3.2 附带 JSON 样例与生成通路） |
+| T17 | 底栏/侧边栏合一 `AppAdaptiveNav` | ✅ 已采纳（§3.10 附机制与代码） |
+| T18 | 新版 UI 载体 | ✅ 独立 Gradle 模块 `:newui`，`:app` 暂不依赖 |
+| T19 | 新版主题 | ✅ 完整独立 M3 主题（AppColorScheme/AppType/AppShape，含暗色，不碰旧 theme） |
+| T20 | 首段落地范围 | ✅ 最小可自证集：令牌全部 + 原子组件 + 四件套 + `AppTopBar`/`AppLayout`/三态 + 槽位框架 `SlotSet` |
+| T21 | 迁移策略 | ✅ 先建样板页 `DesignGallery` 验证敲定，再逐步迁移（§7 S0→S3） |
 
 ## 9. 门禁与配套
 
@@ -844,8 +850,8 @@ fun AppAdaptiveNav(
 
 ## 10. 评审记录
 
-> T1–T4 已由负责人拍板并回填 §8（M3 圆角 / M3 全阴影规格 / 44dp 紧凑 / 并入单色板）；T5 默认精简够用；T13–T15 槽位模型已拍板（框架 API / 三策略 / 静态收纳）。
-> ⚠️ 本文档仍为 `📝 草案`：待负责人对整份设计（骨架 + 令牌 + 槽位 + 路线图）做最终确认后，将状态转正为 `✅ 已评审` 再进入 P0 实施。
+> T1–T4 已由负责人拍板并回填 §8（M3 圆角 / M3 全阴影规格 / 44dp 紧凑 / 并入单色板）；T5 默认精简够用；T13–T15 槽位模型已拍板（框架 API / 三策略 / 静态收纳）；T16–T21 并行双子塔实施策略已拍板（独立 `:newui` 模块 / 完整独立主题 / 最小自证集 / 样板页先行）。
+> ⚠️ 本文档仍为 `📝 草案`：待负责人对整份设计（骨架 + 令牌 + 槽位 + 路线图）做最终确认后，将状态转正为 `✅ 已评审` 再进入 S0 实施。
 
 ## 11. 业界高光设计对标（学习借鉴，2026-09）
 

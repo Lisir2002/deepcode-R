@@ -44,3 +44,5 @@ rootProject.name = "app"
 include(":app")
 include(":terminal-emulator")
 include(":terminal-view")
+// 独立全新 UI 层（并行双子塔，S0 起对 :app 零依赖；见 docs/plan-docs/ui-layer-design.md §7）
+include(":newui")
