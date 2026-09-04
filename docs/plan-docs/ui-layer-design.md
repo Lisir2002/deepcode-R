@@ -173,44 +173,187 @@ feature/<module>/presentation/
 - **`AppType`**（排版）：补全 Material3 完整 TypeScale（现仅魔改 6 档），统一字重/字距/行高；禁止在手写 `fontWeight=SemiBold` 时覆盖全局 style（局部覆盖收敛为组件令牌）。
 - **`AppMotion`**（动效）：统一时长刻度（`fast=150ms / med=250ms / slow=400ms`）+ 缓动（`FastOutSlowInEasing` 等），页面过渡 `tween(250/200)`、进度 `tween(1500/300)` 全部走令牌。
 
-### 3.6 图标令牌 `AppIcon`（新增，覆盖 345+ 处乱象）
+### 3.6 图标体系 `AppIcon` —— 完整规范
 
-现状 345 处 `material.icons` import + 244 处 `Icons.*`，`Rounded/Outlined/Filled` 三态混用、尺寸 20/18/24 混用、图标块背景全散落。统一为图标体系：
+**现状**：345 处 `material.icons` import + 244 处 `Icons.*`，`Rounded/Outlined/Filled` 三态混用、尺寸 20/18/24 混用、图标块背景全散落。以下为完整图标规范。
 
-| 令牌 | 内容 |
-|---|---|
-| **库统一** | 全局统一使用 Material Icons **`Rounded`**（拟合圆角调性）；`Outlined/Filled` 仅作有意的层级区分 |
-| **图标尺寸刻度** | `AppIcon.Xs=16 / S=18 / M=20 / L=24`（对齐 `AppSizing.Icon*`），禁止用中间值 |
-| **图标块规格** | `AppIcon.BlockSize=40.dp`（触点在 `AppSizing.IconButtonSize`）、圆角走 `AppRadius.sm`、背景走语义色 `AppColor.iconBlock`（统一 iconBg 规则：彩色块背景 + 白色图标，见 M3 设置页风格） |
-| **tint 规则** | 可点图标 `onSurfaceVariant`；功能图标走 `ChatAccent.resolve()`；禁用走 `disabled`；装饰图标 `onSurfaceVariant.copy(alpha)` 透明档统一 |
-| **内容描述** | 纯装饰 `contentDescription=null`；语义图标必填（已有纪律，补为图标规范） |
+#### 3.6.1 来源与方法
+- 全局统一 Material Icons **`Rounded`**（拟合圆角调性）；`Outlined` 仅用于"空/呼起"层级、`Filled` 仅用于"已选中/实心状态"，二者另作有意区分，**默认一律 Rounded**。
+- 业务专属图形（如 Provider logo、容器标识）走 `ProviderLogo`/自定义 ImageVector，**不占 Material 图库命名**，统一放 `core/ui/icon/`。
+- 新增图标先查组件集目录，禁止各页面手绘 `ImageVector` 堆 `ImageVector.Builder`（除非有统一收录）。
 
-> `CyberSearchBar`/`CyberMenuRow` 等现有硬编码图标尺寸/背景，P1 起迁到 `AppIcon`。
-
-### 3.7 布局令牌 `AppLayout`（新增，统一页面栅格与留白）
-
-现状 `padding(horizontal=16/14/12)`、`Arrangement.spacedBy(...)` 散落。统一为标准页面模板：
-
-| 令牌 | 取值 | 用途 |
+#### 3.6.2 图标尺寸刻度（唯一刻度，禁中间值）
+| 令牌 | 值 | 用途 |
 |---|---|---|
-| `PageHorizontal` | `Spacing.lg`(16.dp) | 标准页面左右留白 |
-| `PageTop` | `Spacing.lg` + statusBars | 页首留白 |
-| `BlockGap` | `Spacing.lg` | 区块间垂直间距 |
-| `RowGap` / `ItemGap` | `Spacing.sm/md` | 行内/列表项间距 |
-| `ListRowPaddingVertical` | `Sizing.RowPadV`(14.dp) | 菜单行垂直内边距 |
-| `AlignJustify` 约定 | 分组卡靠左 + `weight(1f)` | 文案/控件对齐口径 |
+| `AppIcon.Xs` | 16.dp | 角标/极小装饰 |
+| `AppIcon.S` | 18.dp | 搜索/输入区、进度旁、次级行内 |
+| `AppIcon.M` | 20.dp | 顶栏图标、行内图标（默认档） |
+| `AppIcon.L` | 24.dp | 首页/大按钮/空态主图标 |
 
-**标准页面模板**（新页面唯一布局骨架）：
+图标实际渲染文字对齐：`Modifier.size(AppIcon.X)` 固高，`Icon` 内部自动居中。
 
+#### 3.6.3 图标块 `IconContainer`（彩底白图标，Material You 设置页风格）
+| 属性 | 值 | 说明 |
+|---|---|---|
+| 尺寸 | `AppSizing.IconButton`(40.dp) | 外围可触点在此之上 |
+| 圆角 | `AppRadius.sm`(8.dp) | 图标块方角 |
+| 背景 | `AppColor.iconBlock`（语义） | 供 `iconBg` 传入的彩色块 |
+| 图标色 | 白 `Color.White` | 与彩色块成对（§3.4） |
+
+**两种图标展示**：
+- **纯线条图标**（无块）：tint 走 §3.6.4，尺寸 `AppIcon.M`。
+- **图标块图标**（`AppMenuRow`/设置行）：`Box(40dp, clip sm, bg iconBlock){ Icon(White) }`。`iconBg` 覆盖时 → 彩色块白图标；否则 → 灰块灰图标（兼容 About 等复用方）。
+
+#### 3.6.4 图标色彩 `tint` 规则
+| 场景 | tint |
+|---|---|
+| 可点击/行内图标 | `AppColor.onSurfaceVariant`（默认） |
+| 主色强调（选中等） | `AppColor.primary` |
+| 功能语义 | `ChatAccent.<Tone>.resolve()`（Build/Plan/Auto/…） |
+| 状态点 | `Brand.StatusGreen.Light/Dark` |
+| 禁用 | `AppColor.disabled` |
+| 装饰（非交互） | `onSurfaceVariant.copy(alpha=0.4-0.6)` 统一档 |
+
+#### 3.6.5 图标交互状态
+- pressed/selected/hover/disabled 跟随 §3.11；可点图标外圈放 `AppSizing.IconButton` 点击区（防 44dp 触控违规）。
+- 选中图标（如筛选 Chip）tint 升为 `primary`，未选中 `onSurfaceVariant`——对比满足 §3.13。
+
+#### 3.6.6 语义图标映射表（同义词优先引用，防一人一图标）
+| 语义 | 首选图标 | 备注 |
+|---|---|---|
+| 返回 | `ArrowBack`(AutoMirrored) | 顶栏统一 |
+| 设置 | `Settings` | 全局唯一 |
+| 搜索 | `Search` | 搜索栏唯一 |
+| 终端/命令 | `Terminal` | 终端入口 |
+| 工作区/文件夹 | `Folder` | 统一 |
+| Git/分支 | `GitBranch` | 统一 |
+| 文件 | `Description` / `Article` | 阅读页 |
+| 新增 | `Add` | 统一 |
+| 删除 | `DeleteOutline` | 破坏性前置确认 |
+| 导出/分享 | `Upload`/`Share` | 会话导出 |
+| 关闭 | `Close` | 弹窗/Sheet |
+| 提示/信息 | `InfoOutline` | Toast/提示 |
+| 警告/错误 | `WarningAmber`/`ErrorOutline` | 告警态 |
+| 播放/检查(状态点) | 圆点 `Box` 自绘 | 不用图标 |
+
+#### 3.6.7 内容描述
+- 语义图标：`contentDescription` 必填，走 `strings.xml`。
+- 纯装饰/冗余（旁有文字重复）：`contentDescription = null`；禁 `""`（TalkBack 会当作语义空）。
+- 图标块内图标视为语义需要时补描述；否则 `null`。
+
+#### 3.6.8 对齐与文字图标
+- 行内图标（`AppIcon.M`=20dp）与 `bodyMedium` 文字垂直对齐：`Row(verticalAlignment = Alignment.CenterVertically)`，行高由 `AppSizing.TouchTarget`(44dp) 定，勿用 `line height` 图配。
+- 图标 + 文本间距 `AppSpacing.sm`(8dp)；图标块 + 文本 `AppSpacing.md`(12dp)。
+- 禁用 `.size(Dp.Hairline)` 缩放图标到文字（破坏字形节奏）。
+
+#### 3.6.9 自定义/业务图标唯一规则
+- 新业务图标必须进 `core/ui/icon/` 并登记本节映射表；禁止散落页面内联。
+- 动态/渐变图标（如 `CyberStatCard` 刷子文字）仅用于深色彩效点缀，统一协议 `gradientTextStyle`（收 `core/ui`）。
+
+> 迁移：`CyberSearchBar`(18dp/`#F2F3F5`)、`CyberMenuRow`(灰块灰图标)、`AppTopBar`(`AppIcon.M`=20dp 已对齐) 等 P1 起迁到本节规范。
+
+### 3.7 布局体系 `AppLayout` —— 完整规范
+
+**现状**：`padding(horizontal=16/14/12)`、`Arrangement.spacedBy(...)`、`weight` 散落。以下为完整布局规范。
+
+#### 3.7.1 页面栅格与边距
+| 令牌 | 值 | 用途 |
+|---|---|---|
+| `PageHorizontal` | `AppSpacing.lg`(16.dp) | 标准页面左右留白（默认） |
+| `PageTop` | `AppSpacing.lg` + `statusBars` inset | 内容页首留白 |
+| `PageMaxWidth` | 720.dp | 宽屏内容上界（居中），防排版拉爆 |
+| `ContentTop/Bottom` | `AppSpacing.lg` | 页尾留白 |
+
+两列窄分区（如"项目/描述"小屏自适应）：紧凑用 `PageHorizontal=16`，图标块场景侧边 `=AppSpacing.lg`。**禁止页面同时出现两种水平留白**（对齐参考线唯一）。
+
+#### 3.7.2 间距刻度层级（值都来自 `AppSpacing`）
+| 层级 | 值 | 语义 |
+|---|---|---|
+| `StackGap` | `xl`(24dp) | 逻辑区块之间 |
+| `BlockGap` | `lg`(16dp) | 同区块内分组之间 |
+| `RowGap` | `sm`(8dp) | 行内元素/标题与副标题 |
+| `ItemGap` | `md`(12dp) | 列表项、字段间距 |
+
+每行铺满时用 `Arrangement.spacedBy(对应 Gap)`，**禁手写 3/6/10/14 等表外值**（§3.2 序列表）。
+
+#### 3.7.3 三区块层级（页面 → 区块 → 行）
 ```
-Surface(page bg) > Column(vert pad) {
-    SectionHeader(*Section)
-    AppSectionGroup { 每行: Row(padding PageHorizontal) }
-    BlockGap 分隔
+页面  | Surface(page bg)
+  └─Block  | 逻辑区块（SectionHeader + AppSectionGroup）
+       └─Row | 列表行/字段行（可点用 AppMenuRow/ListRow）
+```
+- **区块（Block）**：语义标题（`AppSectionHeader`）+ 统一分组容器（`AppSectionGroup`/`AppCard`）。
+- **分组（Group）**：内短行自间距 `RowGap`，组间 `BlockGap`。
+- **行（Row）**：高定 `Sizing.TouchTarget`，可点 + ripple（§3.11）。
+
+#### 3.7.4 标准页面模板（新页面唯一骨架）
+```
+Surface(fillMaxSize, page bg) {
+ Column(PageTop, weight(1f), bottom nav 可选) {
+   AppTopBar(title="…")            // §3.12，非必选
+   LazyColumn / Column(verticalScroll)(PageHorizontal) {
+     SectionHeader + AppSectionGroup { … }   // 区块1
+     StackGap
+     SectionHeader + AppSectionGroup { … }   // 区块2
+     ItemGap …
+   }
+ }
 }
 ```
+- **可滚动区块必包 `verticalScroll`/`LazyColumn`**（防大屏/旋转溢出）。
+- 页面自身**禁用整页 `fillMaxHeight` 平铺**（留系统 inset，保持内容流式）。
 
-> `Spacing` 现有的 xs/sm/md/lg/xl/xxl 为唯一间距刻度，`AppLayout` 只引用它、不新造数值。
+#### 3.7.5 表单布局模板（AddProviderSheet/Mcp 等）
+```
+每字段组:
+  Label (labelMedium, onSurfaceVariant)
+  OutlinedTextField / 控单   // 统一 TextFieldToken(§3.12)
+  校验错误 (error, bodySmall)
+字段间: ItemGap=12
+版面: 一列为主；两字段并排仅当短值(host/port)用 Row+weight
+保存条: 底部 Button 全宽 (FilledTonal / Button)
+```
+- 字段标签一律 `labelMedium` + `onSurfaceVariant`，错误文案走 `error`（§3.4）。
+- 校验错误紧贴字段下，业务文案走 `strings.xml`。
+
+#### 3.7.6 列表布局模板（设置/技能/凭据列表）
+```
+LazyColumn(PageHorizontal verticalScroll) {
+  ListRow/AppMenuRow {
+    IconContainer | 标题(weight1f) | 副标题(可选) | 尾部(chevron/开关/数值)
+  }
+  HorizontalDivider(padding start=68 dp 对齐行 icon 右侧)  // 分割线左缩进与 row 对齐
+}
+```
+- 行高 `TouchTarget`；分割线 `AppLayout.DividerThickness`（1dp）并 `padding(start)` 对齐图标块右缘（沿用 `CyberMenuRow` 既有 68dp 起点）。
+- 尾部控件（开关/chevron）保持 `ItemGap` 距，禁挤贴行尾。
+
+#### 3.7.7 对齐规则
+- 行内：图标与 `bodyMedium` `CenterVertically`；名称/主文本 `weight(1f)` 左对齐；副文本 `bodyMedium/onSurfaceVariant`。
+- 数字/状态：右对齐尾列（`Alignment.End`）。
+- 标题/区块：左对齐 + `AppSectionHeader` 装饰条（§3.12）。
+- 按钮条：底部操作全宽；靠右主操作 `Arrangement.End`。
+- **统一骨架 `Row`**，禁交叉用 `Box` + 绝对 `padding` 堆对齐。
+
+#### 3.7.8 尺寸与约束
+- 宽屏：内容 `widthIn(max=PageMaxWidth)` 居中（§3.10）；卡片宽自适应。
+- 元素高：按 `AppSizing`；文本行高走 `AppType`，勿改 Dp 硬对齐。
+- 行 icon 文本：图标 `AppIcon.M` + 文本 `bodyLarge`，行高 `TouchTarget`=44。
+
+#### 3.7.9 弹窗 / Sheet 布局
+- `AlertDialog`：宽度 `PageMaxWidth` 内；内 `pad=AppSpacing.lg`；按钮排底部 `ActionRow(End)`。
+- `ModalBottomSheet`：内容 `Column(verticalScroll)`，最大高 87% 屏，超出滚动；顶部拖拽 bar + 可选 `AppTopBar`。
+- 陷阱：`fillMaxWidth`+固定 `px` 双写成因屏不同价 → 统一 `Dp` 令牌 + 断点（§3.10）。
+
+#### 3.7.10 布局卫生禁止项
+- ❌ 页面同时两种水平留白（对齐基线唯一）。
+- ❌ 整页 `fillMaxHeight` 平铺（应滚）。
+- ❌ 分工消耗 `spacedBy(3/6/10/14)` 表外值。
+- ❌ 图标 `.size(文字高度)` 缩放；文字 `Dp` 硬对齐替代行高。
+- ❌ `weight(1f)` 滥用（顶栏 trailing/行尾按钮除外）导致空白失衡。
+- ✅ 一律 `AppLayout` + `AppSpacing`，新页面入模板（§3.7.4）。
+
+> 对齐：`AppLayout` 只引用 `AppSpacing`/`AppSizing`，不新造数值（§3.2 序列表纪律）。
 
 ### 3.8 状态组件 `AppState`（Loading / Empty / Error 统一）
 
