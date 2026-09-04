@@ -234,7 +234,7 @@ currentScreen.SlotSet(
 | 面 | 规格 |
 |---|---|
 | **职责** | 悬浮/抽屉式辅助区：收纳其它块级槽位（`TopTabs` 等）与子级插件，提供二级入口、快速跳转、密度摆放。 |
-| **形态** | 默认 `Drawer`（自左/右滑出，`ModalNavigationDrawer`）；宽屏可选常驻窄栏（`Permanent`）。由 `SideRail.Layout`（`Drawer|Floating`）切换。 |
+| **形态** | 采纳 M3 **navigation-rail 双态**：`Collapsed`（收叠窄栏，仅图标，3–7 项，不隐藏）/ `Expanded`（展开，图标+文字，可 modal 悬浮可 `Permanent` 常驻）。默认 `Collapsed`（中等屏），`SideRail.Layout`（`Drawer|Floating|Permanent`）切换形态。与 `BottomTabs` 同属 `AppAdaptiveNav`（§3.10），由断点自动换型。 |
 | **子级构成** | 收纳的 `BlockSlot*`（如 `TopTabs`，T15 静态）+ `SlotContent*`（顶栏会长、快捷项、其它块）。 |
 | **收纳交互** | 开启收纳 == 把目标块 `.subSlots[]` 插入自己；**先静态**（进/出一次布局切换，展开/收起动画后置 T15）。 |
 | **开合状态** | `open` 由 Screen `SideRailState` 持有；`scrim` 点击/返回键关闭（`BackHandler`）；状态不跨屏泄漏（每屏 `rememberSaveable`）。 |
@@ -297,6 +297,12 @@ currentScreen.SlotSet(
 | M1–M3 | `Motion.fast/med/slow` | 150/250/400ms | 动效时长刻度 | 魔法值 |
 
 > **序列表纪律**：表内 `序` 稳定不删改（新增追加序）；各 `AppXxx` object 由表生成；改值只改表。禁止在组件内出现表外数值。
+>
+> 📌 **对标业界（令牌分层 + W3C DTCG 2025.10）**：
+> - 三层模型已对齐业界共识 **Primitive → Semantic → Component**（与 M3 reference/system/component、SLDS base/alias/component 同构）；本文档序列表即"component 层之上"的命名事实源。
+> - **落地建议升级**：value 定义采用 **W3C DTCG 2025.10 稳定版 JSON** 单一源（`$value/$type/$description/$deprecated` + 别名引用 `{color.brand.primary}`），用 **Terrazzo / Style Dictionary** 生成 Kotlin-Compose 常量，**替代手写 `object AppXxx`** → 改色/改间距只改 tokens 文件，一套定义驱动全部。
+> - **命名规范借鉴**：token 名用 **scoped prefix**（`color-`/`spacing-`/`elevation-`/`motion-`），**禁止仅靠大小写区分**（如 `Primary`/`primary`）；分组按**功能**（text/bg/border/surface）而非纯按类型平铺；别名要校验**无循环/无缺失引用**。
+> - **Resolver 思路**：Light/Dark（及潜在品牌变体）用**组合规则**切换 `semantic` 层（value 指向哪个 primitive），**不复制**整份色板——这正是序列表"只改表层"的价值放大。
 
 ### 3.3 你点名的三大令牌——指定设计
 
@@ -565,6 +571,11 @@ LazyColumn(PageHorizontal verticalScroll) {
 - 页面级统一 `when(state) { Loading -> empty; Empty -> empty; Error -> error; Content -> screen }` 模板，杜绝各页各自造三态。
 - **禁止**新页面自造 loading/empty/error（除非有明确差异化需求，须标注）。
 
+> 📌 **对标业界（Sealed-State 模式）**：`UiState` 用 `sealed interface { Initial / Loading / Error / Empty / Content }` 定义，让 `when` 编译器强穷尽（漏分支即编译报错），杜绝"忘了错误态"。三个补充约定采纳：
+> 1. **Operation 与页面态分离**：表单"提交中/提交成功/提交失败"等**独立子状态**用单独 `sealed class OperationState { Idle/Submitting/Success/Error }` 挂到主 `UiState`，**不要塞进整屏四态**（避免整屏进 loading）。
+> 2. **单次事件（OneTimeEvent）隔离**：Toast/导航/Snackbar 属一次性事件，用 `Event<T>`（或 `Channel`）单独投递，**不落进持久 `UiState`**（否则旋转屏幕会重放 Toast）。
+> 3. **容器化 StatusBox**：加载/空/错可用统一容器包内容（loading 居中 spinner、error 中心图标+文案+重试、底部加载用 tick 指示），对齐 `AppLoadingState`/`AppErrorState` 插到 `Content` 内部任何区块（列表底部、局部卡片），不强制整屏。
+
 ### 3.9 组件库分级体系
 
 把"组件"分成**三级职责**，回答"组件该放哪、有多复杂"：
@@ -586,14 +597,15 @@ LazyColumn(PageHorizontal verticalScroll) {
 
 | 面 | 规范 |
 |---|---|
-| **断点** | 紧凑(<600dp) / 中等(600–840dp) / 展开(≥840dp) 三档（Material 3 window size class 约定） |
+| **断点** | 对齐 M3 最新 **五档 breakpoints**（取代三档 window size class）：紧凑 <600 / 中等 600–839 / 展开 840–1199 / 大 1200–1599 / 特大 ≥1600dp。移动为主页默认 Compact，宽屏按 840 升档启用多窗。 |
+| **导航自适应（关键借鉴）** | 采纳 M3 **`NavigationSuiteScaffold`** 思想：`BottomTabs ↔ SideRail` 由断点自动切换——Compact 用底栏 tab，中等用收叠 `SideRail`(rail)，展开用展开 rail。→ 落地为 §2.4 `BottomTabs` 与 §2.4.5 `SideRail` 的**统一 `AppAdaptiveNav` 槽位**，一处换形态。 |
 | **可滚动区块** | 长内容一律收进 `verticalScroll`/`LazyColumn`；禁用整页 `fillMaxHeight` 平铺（段用户平板/折叠屏顶部溢出） |
 | **最大内容宽** | 宽屏下内容区 `widthIn(max=PageMaxWidth)`（建议 720dp）居中，避免排版拉爆 |
 | **抽屉/弹窗** | Sheet/Dialog 宽度用 `Dp` 令牌 + 断点控制，不用固定像素 + `fillMaxWidth` 双写 |
 | **状态栏/insets** | 一律 `WindowInsets` + `AppLayout` 令牌，禁 `statusBarsPadding()` 与 `WindowInsets` 混用（收口到 `AppLayout`） |
 | **终端/WebView** | 原生 View 区高度用旁路尺寸（`Modifier.weight`/`Box` 约束），不做 breakpoint 走势（已有 MTerminal 逻辑保留） |
 
-> 响应式不改变现有手机端布局，只在新页面与大屏检测时应用；折叠屏中隔断仅作 diff 级收口，不重构既有页。
+> **对"reveal/divide/resize/reposition/swap"的回应**（M3 逐断点决策法）：每档只回答"隐藏/展开哪块、面板如何划分/重排/互换"，不做整个页面重写。响应式不改变现有手机端布局，只在新页面与大屏检测时应用；折叠屏中隔断仅作 diff 级收口，不重构既有页。
 
 ### 3.11 交互反馈与状态
 
@@ -730,5 +742,27 @@ LazyColumn(PageHorizontal verticalScroll) {
 
 ## 10. 评审记录
 
-> T1–T4 已由负责人拍板并回填 §8（M3 圆角 / M3 全阴影规格 / 44dp 紧凑 / 并入单色板）；T5 默认精简够用。
-> ⚠️ 本文档仍为 `📝 草案`：待负责人对整份设计（骨架 + 令牌 + 路线图）做最终确认后，将状态转正为 `✅ 已评审` 再进入 P0 实施。
+> T1–T4 已由负责人拍板并回填 §8（M3 圆角 / M3 全阴影规格 / 44dp 紧凑 / 并入单色板）；T5 默认精简够用；T13–T15 槽位模型已拍板（框架 API / 三策略 / 静态收纳）。
+> ⚠️ 本文档仍为 `📝 草案`：待负责人对整份设计（骨架 + 令牌 + 槽位 + 路线图）做最终确认后，将状态转正为 `✅ 已评审` 再进入 P0 实施。
+
+## 11. 业界高光设计对标（学习借鉴，2026-09）
+
+依负责人要求，对本设计方案逐主题全网检索对标，以下为**采纳结论**（对应正文已标注 `📌`/`✅`），供优化思路复盘。
+
+| 我们的设计 | 业界高光参照 | 采纳动作 |
+|---|---|---|
+| 页面槽位模型 §2.3 | **Compose Slot API**（`HomeSection(title, content…)` 插槽约定）+ 官方 **`NavigableListDetailPaneScaffold`**(list/detail/extra pane) + `ThreePaneScaffoldNavigator` | 印证"插槽/面板 = 组装元"，槽位模型是官方 slot 约定的高阶封装；落地框架时**复用官方 pane scaffold/slot 语义**，不重复造轮子 |
+| 槽位/导航自适应 §2.3/§3.10 | M3 **`NavigationSuiteScaffold`**：按 WindowSizeClass 在 bottom bar / rail / 展开 rail 间自动切换 | 采纳：`BottomTabs↔SideRail` 合一为 **`AppAdaptiveNav`** 槽位，断点换形（§3.10） |
+| 侧边栏悬浮窗 §2.4.5 | M3 **navigation-rail**：collapsed(3–7项不隐藏)/expanded、可 `Permanent`/modal | 采纳：`SideRail` 改 **Collapsed/Expanded 双态**（§2.4.5） |
+| 令牌序列表 §3.2 | **W3C DTCG 2025.10 稳定版**（2025-10-28）+ Style Dictionary / Terrazzo / Tokens Studio | 采纳：落地用 DTCG JSON + 生成器产出 Compose，替代手写 object；命名 scoped prefix、禁大小写-only（§3.2） |
+| 响应式 §3.10 | M3 **五档 breakpoints**(600/840/1200/1600) + "reveal/divide/resize/reposition/swap"决策法 | 采纳：三档升**五档**（§3.10），每档只做增删/重排 |
+| 状态组件 §3.8 | **sealed UiState** 强穷尽 + `OperationState` 独立 + `OneTimeEvent` + **Compose-StatusBox** 容器 | 采纳：三者约定补入 §3.8 |
+| 总组件库分层 §3.9 | M3 reference/system/component + IBM Carbon layer | 印证 atom/molecule/screen 与 token 同构，无新增改动 |
+
+**新增待拍板（待负责人确认后回填 §8）**：
+| # | 事项 | 现状 |
+|---|---|---|
+| T16 | 令牌落地采用 DTCG 2025.10 + 生成器（Terrazzo/Dictionary） | ⏳ 提议（对应 §3.2，改"手写 object"为"生成"） |
+| T17 | 底栏与侧边栏合一为 `AppAdaptiveNav`（断点自动换形） | ⏳ 提议（对应 §3.10，若采纳则将 BottomTabs/SideRail 统一） |
+
+> **Sources**：W3C DTCG 2025.10 稳定版(www.designtokens.org/TR/2025.10)、Style Dictionary、Compose Slot API / `NavigableListDetailPaneScaffold`(developer.android.com)、M3 breakpoints / navigation-rail / `NavigationSuiteScaffold`(m3.material.io / developer.android.com)、Compose-StatusBox(GitHub OCNYang)。
