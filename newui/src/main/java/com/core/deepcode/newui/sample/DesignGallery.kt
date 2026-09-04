@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -79,6 +81,16 @@ import com.core.deepcode.newui.designsystem.component.molecule.AppTabs
 import com.core.deepcode.newui.designsystem.component.molecule.AppTextField
 import com.core.deepcode.newui.designsystem.component.molecule.AppToast
 import com.core.deepcode.newui.designsystem.component.molecule.AppTypingIndicator
+import com.core.deepcode.newui.designsystem.component.molecule.AppConfetti
+import com.core.deepcode.newui.designsystem.component.molecule.AppDock
+import com.core.deepcode.newui.designsystem.component.molecule.AppDockItem
+import com.core.deepcode.newui.designsystem.component.molecule.AppGradientBorder
+import com.core.deepcode.newui.designsystem.component.molecule.AppMarquee
+import com.core.deepcode.newui.designsystem.component.molecule.AppRollingNumber
+import com.core.deepcode.newui.designsystem.component.molecule.AppScrambleText
+import com.core.deepcode.newui.designsystem.component.molecule.AppScrollProgress
+import com.core.deepcode.newui.designsystem.component.molecule.AppSpotlightCard
+import com.core.deepcode.newui.designsystem.component.molecule.AppTypewriterText
 import com.core.deepcode.newui.designsystem.component.molecule.AppSwipeAction
 import com.core.deepcode.newui.designsystem.component.molecule.AppTimeline
 import com.core.deepcode.newui.designsystem.component.molecule.AppTimelineItem
@@ -484,6 +496,77 @@ private fun GalleryBody() {
                     if (index != swipeRows.lastIndex) {
                         Spacer(Modifier.height(AppSpacing.Sm))
                     }
+                }
+            }
+        }
+
+        Section("分子组建族 · 高动效展示") {
+            var progress by remember { mutableStateOf(0f) }
+            var rolling by remember { mutableStateOf(0) }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    rolling = (24..180).random()
+                    progress = 0f
+                    delay(2000)
+                    progress = 1f
+                    delay(2400)
+                }
+            }
+            AppScrollProgress(fraction = progress)
+            Spacer(Modifier.height(AppSpacing.Sm))
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(AppSpacing.Sm),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text("令牌速率", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AppRollingNumber(value = rolling, style = MaterialTheme.typography.headlineMedium, color = AppColor.BrandPrimary)
+                }
+                AppDock(
+                    selectedIndex = 0,
+                    items = listOf(
+                        AppDockItem(Icons.Rounded.Home, "工作台"),
+                        AppDockItem(Icons.Rounded.Code, "代码"),
+                        AppDockItem(Icons.Rounded.Settings, "设置"),
+                        AppDockItem(Icons.Rounded.Notifications, "通知"),
+                    ),
+                )
+            }
+            Spacer(Modifier.height(AppSpacing.Xs))
+
+            AppMarquee { Text("　✦ DeepCore-Code · 容器已就绪 ● 终端已连接 → 构建中… 　", style = MaterialTheme.typography.bodyMedium) }
+            Spacer(Modifier.height(AppSpacing.Md))
+
+            AppGradientBorder(modifier = Modifier.fillMaxWidth()) {
+                AppMenuRow(title = "渐变描边卡", subtitle = "边缘锥形渐变缓慢流淌", icon = Icons.Rounded.Palette)
+            }
+            Spacer(Modifier.height(AppSpacing.Md))
+
+            AppTypewriterText(text = "正在生成 tool_call → 执行 shell 构建…")
+            Spacer(Modifier.height(AppSpacing.Md))
+
+            AppScrambleText(text = "AGENT_RUN_0.0.0.2")
+            Spacer(Modifier.height(AppSpacing.Md))
+
+            AppSpotlightCard(modifier = Modifier.fillMaxWidth().height(112.dp)) {
+                Column {
+                    Text("聚光高亮卡", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(AppSpacing.Xs))
+                    Text("舞台高光沿卡片缓慢游弋", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(AppSpacing.Md))
+
+            Box(Modifier.fillMaxWidth().height(88.dp)) {
+                AppConfetti(Modifier.fillMaxSize())
+                Column(
+                    Modifier.align(Alignment.Center).fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("发版成功", style = MaterialTheme.typography.titleMedium, color = AppColor.StatusSuccess)
+                    Text("v0.0.0.2 · 庆祝彩带", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
