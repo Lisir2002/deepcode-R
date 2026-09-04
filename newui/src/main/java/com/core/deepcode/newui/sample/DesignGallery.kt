@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlin.random.Random
 import com.core.deepcode.newui.designsystem.component.atom.AppCard
 import com.core.deepcode.newui.designsystem.component.atom.AppChip
 import com.core.deepcode.newui.designsystem.component.atom.AppIcon
@@ -157,6 +158,28 @@ private fun GalleryBody() {
             }
             fileState = AppFileState.Downloaded
             delay(1800)
+        }
+    }
+    // 可视化运行态：进度/环形/步骤/图表自动循环演示
+    var progressBar by remember { mutableStateOf(0f) }
+    var ringProgress by remember { mutableStateOf(0f) }
+    var stepIndex by remember { mutableStateOf(0) }
+    var sparkData by remember { mutableStateOf(listOf(20f, 34f, 28f, 52f, 48f, 70f, 86f, 66f, 92f)) }
+    var barData by remember { mutableStateOf(listOf(40f, 72f, 58f, 90f, 66f, 84f)) }
+    LaunchedEffect(Unit) {
+        val rnd = Random.Default
+        while (true) {
+            progressBar = 0f
+            ringProgress = 0f
+            repeat(10) { i ->
+                progressBar = (i + 1) / 10f
+                ringProgress = (i + 1) / 10f
+                delay(240)
+            }
+            stepIndex = (stepIndex + 1) % 4
+            sparkData = List(9) { 20f + rnd.nextFloat() * 80f }
+            barData = List(6) { 30f + rnd.nextFloat() * 70f }
+            delay(1500)
         }
     }
     Column(
@@ -306,7 +329,7 @@ private fun GalleryBody() {
         }
 
         Section("分子组建族 · 反馈高动效") {
-            AppProgressBar(progress = 0.66f)
+            AppProgressBar(progress = progressBar)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.Lg),
                 verticalAlignment = Alignment.CenterVertically,
@@ -371,11 +394,11 @@ private fun GalleryBody() {
 
         Section("分子组建族 · 数据可视化") {
             Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Xl), verticalAlignment = Alignment.CenterVertically) {
-                AppRingProgress(progress = 0.72f)
-                AppRingProgress(progress = 0.42f, boxSize = 64.dp, strokeWidth = 6.dp)
+                AppRingProgress(progress = ringProgress)
+                AppRingProgress(progress = ringProgress, boxSize = 64.dp, strokeWidth = 6.dp)
             }
             AppSparkline(
-                data = listOf(20f, 34f, 28f, 52f, 48f, 70f, 86f, 66f, 92f),
+                data = sparkData,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
             )
         }
@@ -450,7 +473,7 @@ private fun GalleryBody() {
                     AppTimelineItem(title = "检测远端变更", subtitle = "合入前需解决冲突", time = "10:23", tone = AppTimelineTone.Danger),
                 ),
             )
-            AppProgressSteps(steps = listOf("解析", "授权", "执行", "完成"), currentIndex = 2)
+            AppProgressSteps(steps = listOf("解析", "授权", "执行", "完成"), currentIndex = stepIndex)
         }
 
         Section("分子组建族 · 标签 / 分页") {
@@ -490,12 +513,12 @@ private fun GalleryBody() {
         Section("分子组建族 · 数据可视化 / 文件") {
             Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Md)) {
                 AppMiniBarChart(
-                    values = listOf(40f, 72f, 58f, 90f, 66f, 84f),
+                    values = barData,
                     highlightIndex = 3,
                     modifier = Modifier.weight(1f).height(72.dp),
                 )
                 AppMiniBarChart(
-                    values = listOf(50f, 30f, 20f, 80f, 60f),
+                    values = barData,
                     barColor = AppColor.StatusSuccess,
                     modifier = Modifier.weight(1f).height(72.dp),
                 )
