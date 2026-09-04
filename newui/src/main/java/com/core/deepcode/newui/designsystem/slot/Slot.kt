@@ -16,6 +16,10 @@ import androidx.compose.ui.Modifier
  *  - 槽位键 SlotKey：标识"哪个槽位挂了哪个插件"，用于收纳/搬移（渲染靠插槽 lambda，见 §2.3.4b）
  *  - 子级描述符 SlotContent（描述轨，可持久化）；渲染轨由调用方传 @Composable lambda
  *  - SlotSet：声明式装配顶栏/内容/底栏，对标官方 Scaffold 插槽语言
+ *
+ * 扩展方向见设计文档 §2.5（槽位插件扩展方案，全网检索对照）：
+ * 断点驱动装配（AppBreakpoint）/ 导航四态换型 / 停靠强度（DockPlacement）/ 多栏调宽（PaneSpec）
+ * / 装配图序列化（SlotAssembly），P1 起按该节落地；不重写官方 Scaffold 布局骨架。
  */
 
 /** 五种标准块级槽位（§2.3.2） */

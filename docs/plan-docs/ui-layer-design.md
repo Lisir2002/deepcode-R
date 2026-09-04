@@ -287,6 +287,144 @@ currentScreen.SlotSet(
 
 > 子级是**最小可复用手**（`SlotContent`），块级是**承载区**（`BlockSlot`）；同一 `SlotContent` 可出现在顶栏或收纳处，实现"一套子级、处处可插"。
 
+### 2.5 ★ 槽位插件扩展方案（全网检索对照落地）
+
+> **定位**：§2.3–2.4 定义了**静态默认装配**（块级/子级两级、五标准块级槽位、声明式 `SlotSet`）。本节基于对业界一流方案的检索对照（M3 Adaptive / NavigationSuiteScaffold / PaneScaffold、VS Code Workbench、Dockview、Lace、Linear / Vercel），把槽位模型从"**静态可拔插**"扩展为"**断点驱动 + 可停靠 + 可调宽 + 可重建**"，给出**逻辑思路与落地切分**。落地仍以官方 Scaffold 为编排基底，不重写布局骨架。
+
+#### 2.5.1 检索对标结论（借鉴点 → 落地映射）
+
+| 对标来源 | 关键机制 | 落到我们槽位模型的改造 |
+|---|---|---|
+| **M3 Breakpoints**（compact/medium/expanded/large/extra-large） | 布局随窗口宽断点整体切换，元素"显露/切分/重排/换装" | §2.5.3 断点驱动装配：每块级槽位声明 `showOn` + 断点形态 |
+| **M3 Panes**（1–3 pane，fixed/flexible，permanent/temporary，随时拖拽） | 多栏拼装，栏可固定/弹性、可临时出现与收起 | §2.5.6 Content 升级为线性栏位，支持 split 拖拽调宽 |
+| **NavigationSuiteScaffold**（BottomNav→Rail→Drawer 自动换型） | 同套目的地随断点换"导航容器" | §2.5.4 BottomTabs/TopTabs 四态自动换型，SlotKey 复用 |
+| **ListDetailPaneScaffold 窗格展开/收起 + BackBehavior** | 窄屏单屏导航、宽屏多栏并排；预测性返回驱动收合 | §2.5.6 栏位与 `BackHandler` 联动，窄屏降级为单屏 |
+| **VS Code Workbench 容器**（Activity Bar / Primary·Secondary Sidebar / Panel / StatusBar 全可选，可停靠抽屉） | 区域即容器、可左/右翻转、可隐藏、面板可定位对齐 | §2.5.5 SideRail 升级为"Activity Bar + 视图容器"，停靠四级强度 |
+| **Dockview / Lace 停靠（split 嵌套 / tab 分组 / 悬浮窗 / 拖拽重停靠 / 最大化 / 自动隐藏）** | 停靠布局可拖拽重排、可序列化还原 | §2.5.5 / §2.5.7 收纳可拖拽（后置）+ 装配图可 JSON 还原 |
+| **Linear / Vercel 侧边栏连续扁平导航**（Settings 收尾、中部内容填充、无大空隙） | 导航密度与分组决策 | §2.5.3 侧栏子插件的密度分组规则（`SlotNavDensity`） |
+
+#### 2.5.2 槽位插件能力分层（四级）
+
+原两级（块级/子级）扩展为**四级能力槽位**，全部以 `SlotKey` 对齐：
+
+- **RenderSlot（渲染轨）**：`@Composable () -> Unit` 插槽 lambda，定义"画什么"（沿用 §2.3.4b）。
+- **DataSlot（数据轨）**：可序列化 `SlotContent` / 装配图，定义"谁在哪"（沿用 §2.3.4b）。
+- **LayoutSlot（布局轨）**：块级 `BlockSlot` + 断点形态 + 停靠强度，定义"怎么摆"（本节新增）。
+- **StrategySlot（策略轨）**：槽位级的自适应/收纳/调宽/重建策略（如 `TopTabs` 的三策略选路、`BottomTabs` 的四态换型、`SideRail` 的收纳策略），以**策略接口注入**（后置，P1）。
+
+> **逻辑主线**：同一 `SlotKey` 同时挂渲染 lambda（Render）与装配码（Data），由 `LayoutSlot` 决定其在当前断点/停靠态**落在哪个容器、以何种形态渲染**；`StrategySlot` 在形态切换时决定**位移/换装/调宽**方案。→ 一句话：**渲染跟随键、摆放跟随断点、行为跟随策略。**
+
+#### 2.5.3 断点驱动装配（Breakpoint-Driven Assembly）
+
+引入统一断点作用域，替代散落的 `BoxWithConstraints` 判定：
+
+```kotlin
+enum class AppBreakpoint { Compact, Medium, Expanded, Large, ExtraLarge }
+@Composable fun AppAdaptiveScope(content: @Composable AppAdaptiveContext.() -> Unit)   // 由 currentWindowAdaptiveInfo 驱动
+class AppAdaptiveContext(val breakpoint: AppBreakpoint)
+```
+
+**每个块级槽位声明断点可见性 + 断点形态**（默认装配表由框架解析，屏可覆盖）：
+
+| 块级槽位 | Compact | Medium | Expanded+ |
+|---|---|---|---|
+| `TopAppBar` | 常显 | 常显 | 可收纳进 `SideRail`/顶层栏合并 |
+| `TopTabs` | 收敛进顶栏二级(Collapse→`更多`) | 独立一行 | 独立一行或收纳进 SideRail |
+| `Content` | 单栏 | 单栏/双栏 | ≥2 栏（见 §2.5.6） |
+| `BottomTabs` | **BottomNav** | **NavigationRail** | 收纳进 SideRail（Activity Bar 化） |
+| `SideRail` | 隐藏/悬浮抽屉 | NavigationRail 形态 | Expanded + `Float`/`Permanent` |
+
+> **缺省装配原则**（对齐 M3 "reveal / divide / resize / reposition / swap" 五问）：断点放大时——**显露**隐藏区（rail 展开）、**切分**单栏为多栏、**重排**底部导航迁到侧栏、**换装** tab 形态。用户自定义只能覆盖局部，不改动即走缺省。
+
+#### 2.5.4 导航四态自动换型（对齐 NavigationSuiteScaffold）
+
+`BottomTabs`/`TopTabs` 的**目的地数据**（`TabItem*`）与**导航容器**解耦：目的地即子级 `SlotKey`，容器由断点选择。
+
+```kotlin
+enum class NavigationContainer { BottomNav, NavigationRail, NavigationDrawer, TopTabs }
+// AppAdaptiveContext 内自动选型：
+Compact →  BottomNav（BottomTabs）      · 域内用 TopTabs
+Medium →   NavigationRail（SideRail）   · 顶栏保留 TopTabs
+Expanded+ → NavigationRail/ExpandedRail / 收纳进 SideRail（Activity Bar 化）
+```
+
+> **逻辑**：换型**不重建目的地**，只换 `SlotKey` 挂载的容器——这正是 §2.3.4b "同一子级处处可插"在导航维度的复用；选中态经 `LocalModNavigationState`/`NavHost` 在容器间共享，切换平滑（`AnimatedContent`）。
+
+#### 2.5.5 停靠/收纳四级强度 + 拖拽重停靠（对齐 VS Code / Dockview）
+
+收纳从"静态一次搬移"升级为**四级停靠强度**，由 `SideRail` 的视图容器承载（对标 VS Code Activity Bar / Dockview region）：
+
+```kotlin
+enum class DockPlacement { Hidden, Pinned, AutoHide, Floating, Maximized }
+// Pinned     固定停靠（常驻显形）
+// AutoHide   自动隐藏：hover/点击唤起滑出（VS Code 侧栏行为）
+// Floating   悬浮玻璃窗（levitated pane，见 §2.5.8），可夹 scrim
+// Maximized  最大化占满内容区
+```
+
+- 每个 `BlockSlot` 声明 `dockable`（可被收纳/搬移）；`SideRail` 是 "Activity Bar 图标条 + 视图容器"，`subKeys` 即"当前停靠了哪些视图"。
+- **拖拽重停靠**（把容器图标从侧栏拖到另一侧/浮起、`Modifier.dragAndDrop` + 落点高亮）**后置 T17**，先做 `Pinned ↔ AutoHide ↔ Floating` 三态静态切换。
+- **停靠宽令牌**：栏 `widthLimit(max=320dp)`（沿用），`ActivityBar` 窄条 `TouchTarget`。
+
+#### 2.5.6 多栏与拖拽调宽（对齐 Pane Expansion / SplitLayout）
+
+`Content` 块级升级为**线性栏位组合**（一条协议、多栏共识，替代硬编码单栏）：
+
+```kotlin
+// Content 声明为 1..3 栏
+data class PaneSpec(id: String, min: Dp, flexible: Boolean, weight: Float = 1f)
+fun Content(panes: List<PaneSpec>, onResize: (id: String, weight: Float) -> Unit)
+```
+
+- **栏型**：`fixed`（定宽，如侧栏 360dp）与 `flexible`（弹性瓜分剩余）混排；至少一个 flexible；临时栏可收起并回弹（permanent vs temporary）。
+- **拖拽调宽**：栏间 `SplitHandle` 用 `pointerInput` 拖拽，写到 `widgets/存 ratio`，经 `rememberSaveable` 持久；对齐官方 `paneExpansion` 的 api 语义。
+- **窄屏降级**：多栏在 Compact 折叠为**单屏导航序列**（列表→详情），配 `BackHandler` 逐栏回退（对齐 ListDetailPane 的 `BackNavigationBehavior`）。
+
+#### 2.5.7 装配图可序列化 / 还原
+
+把"哪个 `SlotKey` 挂哪个容器、处在何种停靠态、栏位权重"固化为一棵可 JSON 树（对齐 Dockview `toJSON/fromJSON`、VS Code workspace state）：
+
+```kotlin
+data class SlotAssembly(
+    val placements: Map<SlotKey, PlacementState>, // 容器 + 停靠强度 + 栏权重
+    val order: List<SlotKey>,
+)
+// 计时/进程重建时由 slotAssembly 还原布局；屏状态（选中 tab）另走 rememberSaveable
+```
+
+> **逻辑**：渲染靠 lambda（不序列化）、装配靠数据（可序列化）——两轨分离正是 §2.5.2 的落地收益；用户手排的布局（停靠/调宽）可与固码装配融合。
+
+#### 2.5.8 悬浮玻璃窗（对齐 levitated pane + Glassmorphism 2.0）
+
+`DockPlacement.Floating` 形态复用 §3.12 玻璃态语言：半透明背景 + 模糊 + 微边框、`shadow z4`；夹 `scrim` 时 `BackHandler` 关闭；停靠边 `Edge(Start|End)` 令牌化，统一 `widthIn(max=360dp)`。
+
+#### 2.5.9 关键代码骨架（落地参考，非最终 API）
+
+```kotlin
+// LayoutSlot：块级 + 断点形态 + 停靠
+interface BlockSlot {
+    val slot: BlockSlotKind
+    val subKeys: List<SlotKey>
+    val showOn: Set<AppBreakpoint> = AppBreakpoint.entries.toSet()     // 断点可见性
+    val dock: DockPlacement = DockPlacement.Pinned                     // 停靠强度
+    @Composable fun Expose(scope: SlotScope)
+}
+
+// StrategySlot：形态切换时的位移/换装/调宽策略（P1 注入式）
+interface SlotStrategy {
+    fun step(from: AppBreakpoint, to: AppBreakpoint, key: SlotKey): NodeChange   // Move/Remount/Dock/Resize
+}
+```
+
+> **一致性**：本节新增的所有枚举/接口与 §2.3.4/2.3.4b 的 `SlotKey`/`SlotScope`/`BlockSlot` 同源，不改"声明式装配"用法；`SlotSet` 骨架原文脉保持，仅新增可选的 `adaptive`、`dock`、`panes` 装配参数。
+
+#### 2.5.10 落地切分
+
+- **P1 首批（静态断点 + 换型）**：`AppAdaptiveScope`/`AppBreakpoint` + 缺省装配表；`BottomTabs` 四态换型；`TopTabs` 断点收敛；`SideRail` `Pinned/AutoHide`。
+- **P1 增强**：`Content` 双栏（fixed+flexible）与 split 拖拽调宽。
+- **P2 后置**：`DockPlacement.Floating` 玻璃窗、拖拽重停靠、`paneExpansion` 记忆、装配图 JSON 还原、`SlotStrategy` 注入式策略。
+- **同步纪律**：落地 `docs/modules/` 时补 `ui` 模块文档一节「槽位插件扩展」，并在 §3.12 组件族补 `AppSplitHandle`/`AppActivityBar`（若立组件）。
+
 ---
 
 ## 3. 设计令牌体系（Design Tokens）——视觉原子统一管理
