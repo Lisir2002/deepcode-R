@@ -16,14 +16,18 @@ import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -36,11 +40,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.core.deepcode.newui.designsystem.token.generated.AppRadius
+import com.core.deepcode.newui.designsystem.token.generated.AppSizing
 import com.core.deepcode.newui.designsystem.token.generated.AppSpacing
 import kotlinx.coroutines.launch
 
@@ -93,8 +101,8 @@ fun rememberAppSwipeActionState(
         AnchoredDraggableState(
             initialValue = SwipeValue.Closed,
             anchors = anchors,
-            // settle 前半程非速度触发的宽松阈值：约 50% 处可翻转
-            positionalThreshold = { distance -> distance * 0.5f },
+            // settle 前半程非速度触发的宽松阈值：约 40% 处可翻转，左滑更易保持展开
+            positionalThreshold = { distance -> distance * 0.4f },
             velocityThreshold = { velocityThreshold },
             snapAnimationSpec = spring(
                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -108,8 +116,51 @@ fun rememberAppSwipeActionState(
 }
 
 /**
+ * 滑扫操作按钮（预留多按钮接口）：图标 + 文字垂直排布，等宽平分动作区宽度，
+ * 单个按钮的次序即从靠右的方向开始填充（配合动作区 [Arrangement.End]），
+ * 支持任意数量的操作按钮（删除 / 置顶 / 归档…）与独立色调定制。
+ *
+ * 内部以 [RowScope.weight] 平分 [AppSwipeAction] 的 `actionWidth`，保证按钮
+ * 永远恰好铺满动作区、不溢出也不留白，最右侧按钮严格贴卡片右缘。
+ */
+@Composable
+fun RowScope.AppSwipeButton(
+    icon: ImageVector,
+    label: String,
+    background: Color,
+    tint: Color = Color.White,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .background(background)
+            .clickable { onClick() }
+            .padding(horizontal = AppSpacing.Sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(AppSizing.IconM),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = AppSpacing.Xs),
+        )
+    }
+}
+
+/**
  * 滑扫操作（分子组 · AppSwipeAction）：横向拖出底层操作（锚定 snap 到 0 / -actionWidth），
- * 用于 ListRow / 会话卡片右滑露出删除/置顶等高频操作，替代突兀的长按菜单。
+ * 用于 ListRow / 会话卡片左滑露出删除/置顶等高频操作，替代突兀的长按菜单。
  *
  * 设计要点（对齐行业成熟实现与官方手势原语）：
  *  - 布局**纯几何叠加**：动作区固定贴右缘、内容层带不透明 surface 背景随 offset 平移遮挡 /
@@ -180,13 +231,12 @@ fun AppSwipeAction(
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
     ) {
-        // 底层动作区：fixed 贴右，Arrangement.End 让按钮紧贴卡片右缘，透明度由展开态决定。
+        // 底层动作区：fixed 贴右，Arrangement.End 让按钮严格贴卡片右缘排列，透明度由展开态决定。
         Row(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .width(actionWidth)
                 .fillMaxHeight()
-                .padding(start = AppSpacing.Sm)
                 .graphicsLayer { alpha = actionsAlpha },
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,

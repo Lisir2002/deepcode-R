@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Home
@@ -92,6 +93,7 @@ import com.core.deepcode.newui.designsystem.component.molecule.AppScrollProgress
 import com.core.deepcode.newui.designsystem.component.molecule.AppSpotlightCard
 import com.core.deepcode.newui.designsystem.component.molecule.AppTypewriterText
 import com.core.deepcode.newui.designsystem.component.molecule.AppSwipeAction
+import com.core.deepcode.newui.designsystem.component.molecule.AppSwipeButton
 import com.core.deepcode.newui.designsystem.component.molecule.AppTimeline
 import com.core.deepcode.newui.designsystem.component.molecule.AppTimelineItem
 import com.core.deepcode.newui.designsystem.component.molecule.AppTimelineTone
@@ -487,11 +489,23 @@ private fun GalleryBody() {
                         index = index,
                         expandedIndex = swipeExpanded,
                         onExpanded = { swipeExpanded = it },
+                        actionWidth = 128.dp,
                         actions = {
-                            IconContainer(icon = Icons.Rounded.Delete, tint = Color.White, background = AppColor.StatusDanger)
+                            AppSwipeButton(
+                                icon = Icons.Rounded.Archive,
+                                label = "归档",
+                                background = AppColor.StatusInfo,
+                                onClick = { /* 预留接入归档逻辑 */ },
+                            )
+                            AppSwipeButton(
+                                icon = Icons.Rounded.Delete,
+                                label = "删除",
+                                background = AppColor.StatusDanger,
+                                onClick = { /* 预留接入删除逻辑 */ },
+                            )
                         },
                     ) {
-                        AppMenuRow(title = title, subtitle = "右滑露出操作 · 点击内容收起 · 同批只开一项", icon = Icons.Rounded.Code)
+                        AppMenuRow(title = title, subtitle = "左滑露出操作 · 点击内容收起 · 同批只开一项", icon = Icons.Rounded.Code)
                     }
                     if (index != swipeRows.lastIndex) {
                         Spacer(Modifier.height(AppSpacing.Sm))
