@@ -63,6 +63,118 @@ feature/<module>/presentation/
 4. **ViewModel 职责收敛**：一屏一 Holder，只持本屏 `Contract`；跨屏共享（会话/工作区/设置）经显式注入共享 `ViewModel`，不靠巨型聚合。
 5. **视觉一律引用令牌**：任何 modifier/组件出现的圆角、阴影、高度、间距、颜色、字号、动效，必须引用 §3 令牌，禁止 magic value（pre-commit 可选校验见 §7）。
 
+### 2.3 页面布局槽位模型（Slot Model）
+
+> **定位**：§2.1/§2.2 是"静态四件套"（页面的文件组织模板）；本节是同一 `*Screen` 的**运行时布局组装模型**——把页面拆成一组可插拔、可嵌套、自适应的**槽位（Slot）**，代替每页手写 `Scaffold`/`TopAppBar`/tab 布局。静态简单页仍可用 §2.1 直接写；需要多区/自适应/tab/收纳能力的页面**一律按本节槽位模型装配**。
+>
+> ✅ **已拍板**：槽位模型**落地为框架 API**（`core/ui/` 提供 `SlotContent`/`BlockSlot`/`SlotSet`），非仅协议。
+
+#### 2.3.1 槽位类型与层级（递归树）
+
+槽位分**两级类型**，且**块级可收纳块级**，构成递归的槽位树：
+
+- **块级槽位（Block Slot）**：占据一块布局区域的容器。五类标准块级槽位——
+  `TopAppBar`（顶栏） / `TopTabs`（顶栏 tab 菜单） / `Content`（内容区） / `BottomTabs`（底栏 tab 菜单） / `SideRail`（侧边栏悬浮窗）。
+  
+  块级槽位既可以是**叶子**（如 `Content`），也可以是**容器**：容器内可再挂子级槽位，或**收纳其它块级槽位**（如 `SideRail` 把 `TopTabs` 收纳为自身子级）。
+- **子级槽位（Sub Slot）**：挂在块级槽位内的具体内容插槽。如——
+  - `TopAppBar` 下的 `ActionButton` / `Title`（顶栏按钮与文字）；
+  - `TopTabs`/`BottomTabs` 下的 `TabItem`（单个 tab）；
+  - `SideRail` 收纳块级槽位时，被收纳块作为其子级。
+
+> 规则：**块级可收纳块级、子级只在块级之下**；任一槽位可"空置"（不挂插件时就回退默认/隐藏）。→ 这就是"块级槽位插件 + 子级槽位插件"的递归含义。
+
+#### 2.3.2 标准页面槽位树（默认装配）
+
+```
+Screen (整屏)
+├─ TopAppBar            [块级，容器]
+│   ├─ Title            [子级] label | actions
+│   ├─ ActionButton*    [子级，顶栏按钮]  ← AppIcon + 可点区
+│   │     └─ 图标/文字（子槽位：图标块 IconContainer 或 文字）
+├─ TopTabs              [块级，可选，自适应宽度]  ← 容器
+│   └─ TabItem*         [子级，tab]  ← 每个 tab 是"按钮+文字"
+├─ Content              [块级，叶子，weight(1f)]
+│   └─ 页面内容（state/ViewModel 渲染）
+├─ BottomTabs           [块级，可选，自适应宽度]  ← 同 TopTabs
+│   └─ TabItem*
+└─ SideRail             [块级，可选，悬浮窗/抽屉]
+    ├─ 收纳: TopTabs / 其它块级槽位   ← 收纳为子级
+    └─ 子级插件（顶栏会长、其它块）
+```
+
+槽位树由 `Screen` 用 **`SlotSet` 声明式装配**（§2.3.5），哪些块显示/哪些 tab 挂载由该屏配置决定，未挂载槽位自然隐藏。
+
+#### 2.3.3 自适应 Tab 菜单协议（按个数 × 可用宽度自适应）
+
+`TopTabs`/`BottomTabs` 接收 **tabs 列表 + 可用宽度**，布局策略自适应：
+
+| 策略 | 行为 | 适用 |
+|---|---|---|
+| `EqualWeight` | 均分 `availableWidth / tabCount`，居中文字 | 2–4 个 tab 均匀铺满 |
+| `FitContent` | 按各 tab 文字/图标内容自然宽，`spacedBy(ItemGap)` | 文字长短不一、个数少 |
+| `Scrollable` | 超宽时可横向滚动 | tab 很多（>4）或超窄屏 |
+| `OverflowCollapse` | 超出可视宽时收敛进 `更多`（`ExpandMore`）二级收纳 | ⏳ 后置（非本轮默认） |
+
+**选择算法（默认，三策略）**：先 `FitContent` 估宽；若总宽 ≤ 可用宽 → `FitContent`；若超宽且 tab ≤ 4 → `EqualWeight` 均分；若 tab > 4 或仍超宽 → `Scrollable`。→ **个数字宽自适应，杜绝 tab 挤压换行。**（`OverflowCollapse` 作为后续可选增强，不纳入本轮选路）
+
+宽度由父槽位测量给出：`Content(contentPadding={ TopTabs 吸到该宽 })`、`BoxWithConstraints`/`onSizeChanged` 提供 `availableWidth`。
+
+#### 2.3.4 槽位插件接口（可插拔）
+
+为"块级槽位插件"与"子槽位插件"定义统一协议，任何插件（页面内、甚至收纳进 SideRail）都能挂接：
+
+```kotlin
+// 子级槽位插件：一块可渲染内容
+sealed interface SlotContent {
+    data class Text(val text: String, val style: SlotText) : SlotContent   // 顶栏/底栏文字
+    data class Button(val icon: ImageVector, val tint: SlotTint, val onClick: () -> Unit, val description: String?) : SlotContent
+    object Divider : SlotContent
+    // …（可扩展：徽标、下拉、数据展示）
+}
+
+// 块级槽位插件：一块可挂子级的区域
+interface BlockSlot {
+    val slot: BlockSlotKind                 // TopAppBar / TopTabs / Content / BottomTabs / SideRail / 自定义
+    val subSlots: Map<SubSlotKey, SlotContent>? // 子级槽位（按钮/文字/tab）
+    @Composable fun Blocks(): @Composable () -> Unit   // 块区域渲染（内部装配 subSlots）
+}
+```
+
+- **子级 RESIZABLE**：`Title`/`ActionButton` 都实现为 `SlotContent`，插到 `TopAppBar.actions` 或收纳处，同一组件装着跑（复用 §3.12 的 `Icon`/`IconContainer`/`AppHaptics`）。
+- **收纳即嵌套**：`SideRail` 的 `subSlots` 可插入一个 `BlockSlot`（如 `TopTabs`），块级即成为子级 —— 实现"侧边栏把顶栏 tab 收纳进来"。✅ **本轮先作静态挂载**（收纳进/出为一次布局切换，不追求展开/收起动画，动画后置）。
+
+#### 2.3.5 Screen 装配 `SlotSet`（声明式）
+
+`*Screen` 只需声明挂载，不写布局：
+
+```kotlin
+currentScreen.SlotSet(
+    topBar = TopAppBar.Block(           // 块级：顶栏
+        title = SlotContent.Text("设置"),
+        actions = [ SlotContent.Button(icon = Icons.Rounded.Add, tint=…, onClick={…}),
+                    SlotContent.Button(icon = Icons.Rounded.MoreVert, tint=…) ],
+        nav = IconButton(Back),          // 返回钮
+    ),
+    tabs = TopTabs.Block( items = [Tab("工具", Tool), Tab("Agent", Agent), Tab("技能", Skill)] ),  // 自适应
+    content = Content.Block { ChatScaffold(...) },   // 叶子
+    bottomTabs = BottomTabs.Block( items = […] ),    // 可选
+    sideRail = SideRail.Block { /* 可收纳 topTabs / 其它块 */ },  // 可选悬浮窗
+)
+```
+
+> **装配只做挂载**：标题文案/按钮/参数构造放 Screen，业务回调下沉到 ViewModel，遵循 §2.2 职责。
+> **槽位树是设计级协议**：§2.3.4 的接口与 §2.3.5 `SlotSet` 为**待开发框架**；本轮 `docs/modules/ui.md`（若建）记录协议，落地列为 P1 首批（与 `AppIcon`/`AppLayout` 同批）。
+
+#### 2.3.6 与静态四件套的关系
+
+| 页面复杂度 | 采用 |
+|---|---|
+| 简单单区页（对话框/详情 toast/静态面板） | §2.1/§2.2 直接写（无需槽位树） |
+| 多区 / 含 tab / 需收纳 / 需悬浮抽屉的页 | **§2.3 槽位模型**装配 |
+
+> 两者**不冲突**：槽位模型是 `*Screen` 内部布局的一种实现，文件仍落 `presentation/` 四件套；`SlotSet` 可视为 `*Screen` 的骨架装配入口，不强加给所有页。
+
 ---
 
 ## 3. 设计令牌体系（Design Tokens）——视觉原子统一管理
@@ -525,6 +637,9 @@ LazyColumn(PageHorizontal verticalScroll) {
 | T10 | 响应式 | ⏳ 待拍板——默认按 §3.10 三断点(600/840) + 最大内容宽 720dp，仅新页与大屏生效 |
 | T11 | 组件集目录 | ✅ 采纳 §3.12：新增页面统一走 Component Catalog，收 `Cyber*` 到 `App*` |
 | T12 | 无障碍 | ⏳ 待拍板——默认按 §3.13（对比度/触控/语义标签/TalkBack）；动效降档后置 |
+| T13 | 槽位模型 | ✅ 落地为框架 API（`core/ui/` 提供 `SlotContent`/`BlockSlot`/`SlotSet`） |
+| T14 | Tab 自适应 | ✅ 三策略默认（`FitContent`/`EqualWeight`/`Scrollable`）；舍弃 `OverflowCollapse` 本轮 |
+| T15 | 侧边栏收纳 | ✅ 本轮先静态挂载（收纳/切一次布局，展开动画后置） |
 
 ## 9. 门禁与配套
 
