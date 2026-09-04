@@ -26,6 +26,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import com.core.deepcode.newui.designsystem.component.atom.AppCard
 import com.core.deepcode.newui.designsystem.component.atom.AppChip
 import com.core.deepcode.newui.designsystem.component.atom.AppIcon
@@ -142,7 +144,21 @@ private fun GalleryBody() {
     var filterSet by remember { mutableStateOf(setOf(0, 2)) }
     var page by remember { mutableStateOf(2) }
     var tags by remember { mutableStateOf(listOf("kotlin", "compose", "agent")) }
-    var fileProgress by remember { mutableStateOf(0.62f) }
+    // 文件卡运行态：自动循环演示（上传推进 → 完成）
+    var fileProgress by remember { mutableStateOf(0f) }
+    var fileState by remember { mutableStateOf(AppFileState.Uploading) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            fileState = AppFileState.Uploading
+            fileProgress = 0f
+            while (fileProgress < 1f) {
+                delay(360)
+                fileProgress = (fileProgress + 0.10f).coerceAtMost(1f)
+            }
+            fileState = AppFileState.Downloaded
+            delay(1800)
+        }
+    }
     Column(
         modifier = Modifier
             .verticalScroll(scroll)
@@ -484,11 +500,11 @@ private fun GalleryBody() {
                     modifier = Modifier.weight(1f).height(72.dp),
                 )
             }
-            AppFileCard(fileName = "patch-2026-09.diff", fileSize = "2.4 KB", state = AppFileState.Downloaded)
+            AppFileCard(fileName = "README.md", fileSize = "4.1 KB", state = AppFileState.Ready)
             AppFileCard(
                 fileName = "tokens.json",
                 fileSize = "—",
-                state = AppFileState.Uploading,
+                state = fileState,
                 progress = fileProgress,
                 icon = Icons.Rounded.Code,
             )
