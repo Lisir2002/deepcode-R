@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,7 +34,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.core.deepcode.newui.designsystem.token.generated.AppColor
 import com.core.deepcode.newui.designsystem.token.generated.AppRadius
@@ -60,6 +61,7 @@ import com.core.deepcode.newui.designsystem.token.generated.AppSizing
 import com.core.deepcode.newui.designsystem.token.generated.AppSpacing
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * 滑扫锚点：Closed（收起）/ Open（展开露出动作栏）/ Trigger（全滑确认点）。
@@ -84,7 +86,7 @@ enum class AppSwipePattern { Reveal, Dismiss }
 internal val LocalSwipeReveal = staticCompositionLocalOf { 1f }
 
 /**
- * 揭示序号计数器：由 [AppSwipeAction] 在每次组合时为整条动作栏注入一个全新实例，
+ * 揭示序号计数器：由 [AppSwipeAction] 在每次组合时为整条动作栏注入一个**remember 缓存的全新实例**，
  * [AppSwipeButton] 按出现顺序自增序号，实现「级联/递进逐盏亮起」（cascade reveal）。
  *
  * 注意：`order++` 的副作用发生在 `remember` 的初始化里，因此必须在**组合作用域**先取
@@ -108,7 +110,11 @@ enum class AppSwipeEdge { Start, End }
  * 滑扫操作的提升状态。
  *
  * 拖动跟手 / fling / settle / clamp / 全滑确认全由 `AnchoredDraggableState` 托管。
- * 如今暴露业务关心的收口 API：位移、揭示进度（0..1）、是否稳定展开、开合、越界阻尼比例。
+ * 如今暴露业务关心的收口 API：offset（px）、揭示进度（0..1）、是否稳定展开、开合、越界阻尼比例。
+ *
+ * **关键设计**：所有属性都**直接读取 `anchored.offset`**（这是一个 `MutableFloatState`），
+ * 而不是通过 `derivedStateOf { requireOffset() }` 间接读取——避免普通方法 `requireOffset()`
+ * 封装导致的 State 追踪失效（offset 变了但 derivedStateOf 不 recompute）。
  */
 class AppSwipeActionState internal constructor(
     internal val anchored: AnchoredDraggableState<SwipeValue>,
@@ -116,9 +122,10 @@ class AppSwipeActionState internal constructor(
     internal val triggerAnchorAbs: Float,
     internal val startSwipeAbs: Float,
 ) {
-    /** 当前内容层横向位移（px），Closed 为 0，Open 为 ±actionWidth。 */
+    /** 当前内容层横向位移（px），Closed 为 0，Open 为 ±actionWidth。
+     *  直接读 State，Compose 必然追踪变化。 */
     val offset: Float
-        get() = anchored.requireOffset()
+        get() = anchored.offset
 
     /**
      * 揭示进度 0..1：在**起始滑动阈值**之后才线性攀升，驱动动作按钮的淡入/上滑/缩放。
@@ -139,7 +146,7 @@ class AppSwipeActionState internal constructor(
 
     /**
      * 是否"非关闭态"——无论 settle 与否，只要 offset 越过起始阈值就算正在/已展开。
-     * 用于替换旧的 `isOpen` 判断半开态（settle 动画期间、手势被 cancel 未 settle 等）。
+     * 覆盖 settle 动画中、手势 cancel 未 settle 等半开态。
      */
     val isEngaged: Boolean
         get() = abs(offset) > startSwipeAbs * 0.8f
@@ -212,7 +219,6 @@ fun rememberAppSwipeActionState(
         AnchoredDraggableState(
             initialValue = SwipeValue.Closed,
             anchors = anchors,
-            // 越过约 30% 即保持展开（不自动回弹，对齐 iOS reveal 行为）；未过则弹簧弹回。
             positionalThreshold = { distance -> abs(distance) * 0.30f },
             velocityThreshold = { velocityThreshold },
             snapAnimationSpec = spring(
@@ -241,7 +247,7 @@ internal fun Color.blend(target: Color, t: Float): Color = Color(
  * 以「圆角渐变块」呈现——顶部内高光 + 底部微深 + **单元格细描边**（相邻按钮共享形成分段线），
  * 按压时轻微收缩回弹；揭示进度超过阈值后**风险色 morph**（如删除键随拖拽加深变红）。
  *
- * **级联逐盏亮起（cascade）**：默认开启 `stagger`——按出现顺序设相位偏移（已降为 0.3），
+ * **级联逐盏亮起（cascade）**：默认开启 `stagger`——按出现顺序设相位偏移（0.3），
  * 形成"逐盏点亮"但不会让第二个按钮晚出现太久。
  */
 @Composable
@@ -335,23 +341,20 @@ fun RowScope.AppSwipeButton(
 }
 
 /**
- * 滑扫操作（分子组 · AppSwipeAction v7）：横向拖出底层动作栏，弹簧锚定到 0 / ±actionWidth。
+ * 滑扫操作（分子组 · AppSwipeAction v8）：横向拖出底层动作栏，弹簧锚定到 0 / ±actionWidth。
  *
- * 用于 ListRow / 会话卡片左滑（End，破坏性）或右滑（Start，正向）露出删除/置顶等高频操作。
+ * v7 → v8 关键修复：
  *
- * v7 修缮说明（本次）：
- *
- *  - **防溢出裁剪**：外层 Box 加 clip 形状；内容层/动作栏阴影带 shape，避免内容溢出覆盖相邻行；
- *  - **手势冲突治理**：通过 anchoredDraggable 的 Orientation.Horizontal 让 Compose 手势系统
- *    天然优先于垂直嵌套滚动（Compose 会按主轴/副轴分流，水平拖动不会被 verticalScroll 抢夺）；
- *  - **progress / contentOffset 同步**：去掉 animateFloatAsState 间接层，progress 与 contentOffset
- *    都直接从同一个 offset 数据源 derived，消除"内容移开了但按钮还没出现"的空窗；
- *  - **半开态判断**：同批只开一项 & clickable 收起改用 `isEngaged = abs(offset) > threshold`，
- *    覆盖 settle 动画中、手势 cancel 未 settle 等场景；
- *  - **stagger 降低门槛**：staggerFactor 从 0.5 降到 0.3，第二个按钮在 progress≈0.3+ 就开始出现；
- *  - **触感分级优化**：LongPress → TextHandleMove（更轻的触感，对齐阈值反馈语义）；
- *  - **confirmValueChange 守卫**：显式允许三个锚点值；
- *  - **spacedBy(0) 清理**：动作栏 Arrangement 直接用 Start，消除冗余调用。
+ *  - **Progress 追踪失效根因修复**：v7 的 `derivedStateOf { resolvedState.progress }` 里嵌套了
+ *    `resolvedState.progress`（普通 Kotlin 属性 getter）→ `anchored.requireOffset()`（普通方法）→
+ *    `getOffset()` 才最终读 State。Compose 快照追踪对这种多层封装不稳定，导致 progress
+ *    始终缓存初始值 0，而 contentOffset（走 `graphicsLayer` layout 绘制阶段重读）拿到了真实 offset。
+ *    v8 改为：**直接在组合作用域读 `anchored.offset`**（MutableFloatState），progress /
+ *    resistedOffset / overshoot 全部从这个裸 offset 现算，消除追踪失效。
+ *  - **内容层平移改用 Modifier.offset{}**：layout 阶段读 offset，避开 composition 阶段 NaN；
+ *    直接从 rawOffset 现算，与 progress 同源同步。
+ *  - **LocalSwipeSequence 用 remember 缓存**：不再每次重组 new 新实例，避免 stagger 相位每次重置。
+ *  - **外层 clip 保留**防溢出 + 手势分流天然有效（水平拖动优先交给 anchoredDraggable）。
  */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -378,17 +381,40 @@ fun AppSwipeAction(
     val currentPattern by rememberUpdatedState(pattern)
     val shape = RoundedCornerShape(AppRadius.Md)
 
-    // —— 手势冲突治理：关键是用 Box.fillMaxSize + anchoredDraggable 作为主轴手势源。
-    // Compose 的手势系统会将"沿主轴的拖动"交给 anchoredDraggable，
-    // 而将"沿副轴的拖动"让给父级（verticalScroll）——天然分流，无需手动 nestedScroll 桥接。
-    // 实测在 verticalScroll 内带一点垂直分量的水平拖动仍能被正确识别为水平拖动，
-    // 因为 anchoredDraggable 的 Orientation.Horizontal 会过滤掉副轴位移。
+    // —— 核心修复：直接读 MutableFloatState，Compose 必然追踪变化。
+    // 所有派生量（progress / resistedOffset / overshoot / isEngaged）都从 rawOffset 现算。
+    // 彻底消除 v7 用 derivedStateOf{ requireOffset() } 封装导致的 State 追踪失效。
+    val rawOffset = resolvedState.anchored.offset
 
-    // 同批只开一项：isEngaged（基于 offset 阈值）覆盖 settle 动画/半开态，比旧 isOpen 鲁棒。
+    // progress：起始滑动阈值之后线性攀升，驱动按钮淡入/描边/阴影。
+    val travelled = abs(rawOffset) - resolvedState.startSwipeAbs
+    val span = (resolvedState.openAnchorAbs - resolvedState.startSwipeAbs).coerceAtLeast(1f)
+    val progress = (travelled / span).coerceIn(0f, 1f)
+
+    // 越界阻尼化 offset：rawOffset 不超过 openAnchorAbs 时原样；超过后按抛物线衰减。
+    val openAbs = resolvedState.openAnchorAbs
+    val rawAbs = abs(rawOffset)
+    val contentOffset: Float = if (rawAbs <= openAbs) {
+        rawOffset
+    } else {
+        val excess = rawAbs - openAbs
+        val maxExcess = (resolvedState.triggerAnchorAbs - openAbs).coerceAtLeast(1f)
+        val t = (excess / maxExcess).coerceIn(0f, 1f)
+        val damped = openAbs + maxExcess * (0.5f + 0.5f * t) * t
+        if (rawOffset < 0) -damped else damped
+    }
+    val overshoot = (((rawAbs - openAbs) / (resolvedState.triggerAnchorAbs - openAbs).coerceAtLeast(1f)))
+        .coerceIn(0f, 1f)
+
+    val isEngaged = abs(rawOffset) > resolvedState.startSwipeAbs * 0.8f
+    val isBeyondReveal = rawAbs > openAbs * 1.02f
+
+    // 同批只开一项：isEngaged 覆盖 settle 动画 / 半开态。
     LaunchedEffect(resolvedState, index, expandedIndex) {
         if (index == null) return@LaunchedEffect
-        snapshotFlow { resolvedState.isEngaged }
-            .collect { engaged ->
+        snapshotFlow { resolvedState.anchored.offset }
+            .collect { off ->
+                val engaged = abs(off) > resolvedState.startSwipeAbs * 0.8f
                 val cb = currentOnExpanded ?: return@collect
                 when {
                     engaged && expandedIndex != index -> cb(index)
@@ -398,7 +424,7 @@ fun AppSwipeAction(
     }
     // 其它项被展开时，本项（只要非 Closed）自动收起。
     LaunchedEffect(resolvedState, index, expandedIndex) {
-        if (index != null && expandedIndex != null && expandedIndex != index && resolvedState.isEngaged) {
+        if (index != null && expandedIndex != null && expandedIndex != index && isEngaged) {
             resolvedState.close()
         }
     }
@@ -423,32 +449,32 @@ fun AppSwipeAction(
             }
     }
 
-    // progress 与 contentOffset 同 offset 数据源，无动画间接层——完全同步。
-    val progress by remember { derivedStateOf { resolvedState.progress } }
-    val overshoot by remember { derivedStateOf { resolvedState.overshoot } }
-    val contentOffset by remember { derivedStateOf { resolvedState.resistedOffset } }
-
-    // 拖拽 / 回弹过程中实时上报揭示进度（0..1）。
+    // 拖拽过程中实时上报揭示进度（0..1），供外部做渐变色 / 图标 morph。
     LaunchedEffect(resolvedState) {
-        snapshotFlow { resolvedState.progress }
-            .collect { p -> currentOnProgress?.invoke(p) }
+        snapshotFlow { resolvedState.anchored.offset }
+            .collect { off ->
+                val t = (abs(off) - resolvedState.startSwipeAbs) /
+                    (resolvedState.openAnchorAbs - resolvedState.startSwipeAbs).coerceAtLeast(1f)
+                currentOnProgress?.invoke(t.coerceIn(0f, 1f))
+            }
     }
 
     // 阈值触感分级：揭示跨越 ~25% 轻震；越过全滑确认区再震。
     LaunchedEffect(resolvedState) {
         var armed = false
         var armedBeyond = false
-        snapshotFlow { resolvedState.progress }
-            .collect { p ->
-                if (p >= 0.25f && !armed) {
+        snapshotFlow { resolvedState.anchored.offset }
+            .collect { off ->
+                val p = (abs(off) - resolvedState.startSwipeAbs) /
+                    (resolvedState.openAnchorAbs - resolvedState.startSwipeAbs).coerceAtLeast(1f)
+                val clamped = p.coerceIn(0f, 1f)
+                if (clamped >= 0.25f && !armed) {
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     armed = true
-                } else if (p < 0.25f) {
+                } else if (clamped < 0.25f) {
                     armed = false
                 }
-            }
-        snapshotFlow { resolvedState.isBeyondReveal }
-            .collect { beyond ->
+                val beyond = abs(off) > resolvedState.openAnchorAbs * 1.02f
                 if (beyond && !armedBeyond) {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     armedBeyond = true
@@ -458,7 +484,10 @@ fun AppSwipeAction(
             }
     }
 
-    // 外层 Box：加 clip(shape) 防内容溢出覆盖相邻行。
+    // LocalSwipeSequence：用 remember 缓存，避免每次重组重置 order 计数。
+    val swipeSequence = remember { SwipeSequenceState() }
+
+    // 外层 Box：clip(shape) 防内容溢出覆盖相邻行。
     Box(
         modifier = modifier.clip(shape),
         contentAlignment = if (edge == AppSwipeEdge.End) Alignment.CenterEnd else Alignment.CenterStart,
@@ -480,7 +509,8 @@ fun AppSwipeAction(
                 )
                 .border(
                     width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = (0.5f * progress).coerceIn(0f, 0.7f)),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                        .copy(alpha = (0.5f * progress).coerceIn(0f, 0.7f)),
                     shape = shape,
                 )
                 .graphicsLayer {
@@ -493,21 +523,21 @@ fun AppSwipeAction(
         ) {
             CompositionLocalProvider(
                 LocalSwipeReveal provides progress,
-                LocalSwipeSequence provides SwipeSequenceState(),
+                LocalSwipeSequence provides swipeSequence,
             ) {
                 actions()
             }
         }
 
-        // 顶层内容滑层：带不透明 surface 盖住动作栏，随阻尼化 offset 平移遮挡/露出。
-        // clickable 启用条件改用 isEngaged（覆盖半开态），settle 动画期间也能立即收起。
+        // 顶层内容滑层：用 Modifier.offset{} 在 layout 阶段平移（官方 idiomatic），
+        // 与 progress 同源（都读 rawOffset），绝对同步，彻底消除 v7 脱钩问题。
         Box(
             Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
-                .graphicsLayer { translationX = contentOffset }
+                .offset { IntOffset(contentOffset.roundToInt(), 0) }
                 .clickable(
-                    enabled = resolvedState.isEngaged,
+                    enabled = isEngaged,
                     onClick = { scope.launch { resolvedState.close() } },
                 )
                 .anchoredDraggable(

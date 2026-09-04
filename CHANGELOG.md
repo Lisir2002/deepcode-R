@@ -27,7 +27,17 @@
 
 ---
 
-## [v0.0.0.2-rc7] - 2026-09-04
+## [v0.0.0.2-rc8] - 2026-09-04
+
+滑扫操作「左滑后按钮完全不可见」根因修复（Compose State 追踪失效）。
+
+### Fixed（修复）
+
+- **滑扫按钮揭示失效**：修复滑扫后内容层正确左移但动作按钮 alpha 始终为 0 的核心 Bug——根因为 v7 用 `derivedStateOf { anchored.requireOffset() }` 多层封装读取 State，Compose 快照追踪在这种普通方法链路下不稳定性导致 progress 始终缓存初始值 0。改为直接在组合作用域读取 `anchored.offset`（MutableFloatState），progress / contentOffset / overshoot 全部同源现算，Compose 必然追踪，彻底消除脱钩。
+- **内容层平移改用 Modifier.offset{}**：从 `graphicsLayer { translationX }` 迁移到官方 idiomatic 的 layout 阶段 offset，避免 composition 阶段 NaN。
+- **LocalSwipeSequence remember 缓存**：不再每次重组 new 新实例，级联 stagger 相位稳定。
+
+---
 
 滑扫操作 Bug 修复（溢出/卡半开/按钮滞后显现）+ 弹窗外部阴影统一裁剪。
 
