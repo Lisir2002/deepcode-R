@@ -175,6 +175,88 @@ currentScreen.SlotSet(
 
 > 两者**不冲突**：槽位模型是 `*Screen` 内部布局的一种实现，文件仍落 `presentation/` 四件套；`SlotSet` 可视为 `*Screen` 的骨架装配入口，不强加给所有页。
 
+### 2.4 各槽位针对性细化
+
+> 五个块级槽位各承担一个明确的布局职责。下表是**每个槽位的完整规格**：职责、子级构成（子槽位）、尺寸/令牌、自适应、交互、收纳、空置行为。框架接口 `BlockSlot.Slot` 落在 `core/ui/`，各槽位均为 `BlockSlotKind` 的标准化实现，Screen 经 §2.3.5 装配。
+
+#### 2.4.1 顶栏槽位 `TopAppBar`
+
+| 面 | 规格 |
+|---|---|
+| **职责** | 页面标题 + 主导航返回 + 一组操作按钮；顶部全局信息承载（在线态点、同步状态）。 |
+| **子级构成** | `nav`（返回钮，二级页必填）；`title`（`SlotContent.Text`，`titleLarge`/`onSurface`）；`actions`（`SlotContent.Button*`，右端操作）；可选 `statusDot`（`AppStatusDot` 在线态）。 |
+| **尺寸/高度** | `AppSizing.TouchTarget`(44dp) 定高；左右 padding `AppLayout.PageHorizontal`；进 remote 态吸到顶不预留 statusBars（全屏模式）。 |
+| **阴影/分层** | 静止 `Elevation.z0`（无阴影，靠内容色）；**滚动抬升** `z2`（内容滚动过栏时给 1dp shadow，需父槽位上报 `scrolled` 布尔）。 |
+| **交互** | `nav` 优先级 > `actions`；破坏性操作（删除/重置）前缀 `AppHaptics` + 二次确认（§3.11）。 |
+| **收纳** | 可整体被 `SideRail` 收纳为子级（自定义 Siderail 收纳页）。|
+| **空置** | 无 `title`/`nav` 的极简页（全屏终端）可不挂顶栏；缺省返回钮隐藏。 |
+| **令牌对齐** | `AppTopBar`(§3.12) + `AppIcon` 尺寸 + `AppColor.onSurfaceVariant` tint。 |
+
+#### 2.4.2 顶栏 Tab 槽位 `TopTabs`
+
+| 面 | 规格 |
+|---|---|
+| **职责** | 页面内次级导航（同域 tab 切换）；窗口标题下方，与 `Content` 顶对齐。 |
+| **子级构成** | `TabItem*`（子槽位：`Text`(icon+text) / `Text`(纯文) / `Icon+X`）；每项 = "按钮+文字"，选中态可加角标 `Badge`。 |
+| **自适应** | §2.3.3 三策略：`FitContent`→`EqualWeight`→`Scrollable`；`availableWidth` 由父槽位 `onSizeChanged` 提供。 |
+| **指示条** | 选中项下 2dp 指示器 `AppColor.primary`（`TabRow` indicator），圆角 `AppRadius.pill`。 |
+| **选中态** | 文字 `onSurface`（选）/`onSurfaceVariant`（未选）；tint 同步（§3.6.5）。 |
+| **交互** | 切换即替换 `Content`；可 `DisposableEffect` 重置内容状态；tab 单击反馈 `AppHaptics.click`。 |
+| **收纳** | **可被 `SideRail` 收纳**：整组 `TopTabs.Block` 作为块级插入 `SideRail.subSlots`（T15 静态）。 |
+| **空置** | 单 tab 或缺省 → 整体隐藏，`Content` 直达顶栏。 |
+| **令牌对齐** | 高度 `TouchTarget`；tab 间距 `ItemGap`；指示色 `primary`；图标 `AppIcon.S/M`。 |
+
+#### 2.4.3 内容槽位 `Content`
+
+| 面 | 规格 |
+|---|---|
+| **职责** | 唯一"叶子"业务区，渲染 §2.1 的页面正文（`state`/`ViewModel` 内容）。 |
+| **尺寸** | `weight(1f)` 吸满父槽位高；`contentPadding` 提供 `TopTabs` 同宽基准，宽屏 `widthIn(max=PageMaxWidth)` 居中。 |
+| **滚动卫生** | 可滚动区必须包 `verticalScroll`/`LazyColumn`；禁整页 `fillMaxHeight` 平铺（§3.7.10）。 |
+| **三态** | 页内走 §3.8 `AppState`：`Loading/Empty/Error/Content` 统一分支，禁自造。 |
+| **insets** | `WindowInsets` 统一由 `AppLayout` 注入（§3.10）；终端/WebView 原生区旁路尺寸保留。 |
+| **空置** | 无内容时展示 `AppEmptyState`（不保留空白粘堆）。 |
+
+#### 2.4.4 底栏 Tab 槽位 `BottomTabs`
+
+| 面 | 规格 |
+|---|---|
+| **职责** | 应用级主导航（跨域跳转），替换原"扩展脚手架"底部 map；与 `TopTabs` 一个协议。 |
+| **子级构成** | `TabItem*`：常显 `Icon+Text`（`AppIcon.M`）；Badge（角标/红点）放图标右上。 |
+| **与 TopTabs 差异** | 顶栏 tab 是域内切换，**底部 tab 是跨域**；选中持久（`LocalModNavigationState`/NavHost backStack）；高度 56dp（含 label）+ `navigationBars` inset；禁纵向压缩。 |
+| **自适应** | 同 §3.7 三策略；应用级常 2–5 个 → 默认 `EqualWeight`。 |
+| **选中态** | `primary` 色 icon+text / 灰 `onSurfaceVariant`；切换即导航，`NavHost` 维护 backStack。 |
+| **收纳** | 一般**不收纳**（应用级定位移动到底/侧，桌面宽屏可收纳进 `SideRail` 垂直排列，作为增强）。 |
+| **空置** | 单 Tab/无 → 隐藏；WebView 全屏等沉浸页收起。 |
+
+#### 2.4.5 侧边栏悬浮窗槽位 `SideRail`
+
+| 面 | 规格 |
+|---|---|
+| **职责** | 悬浮/抽屉式辅助区：收纳其它块级槽位（`TopTabs` 等）与子级插件，提供二级入口、快速跳转、密度摆放。 |
+| **形态** | 默认 `Drawer`（自左/右滑出，`ModalNavigationDrawer`）；宽屏可选常驻窄栏（`Permanent`）。由 `SideRail.Layout`（`Drawer|Floating`）切换。 |
+| **子级构成** | 收纳的 `BlockSlot*`（如 `TopTabs`，T15 静态）+ `SlotContent*`（顶栏会长、快捷项、其它块）。 |
+| **收纳交互** | 开启收纳 == 把目标块 `.subSlots[]` 插入自己；**先静态**（进/出一次布局切换，展开/收起动画后置 T15）。 |
+| **开合状态** | `open` 由 Screen `SideRailState` 持有；`scrim` 点击/返回键关闭（`BackHandler`）；状态不跨屏泄漏（每屏 `rememberSaveable`）。 |
+| **停靠边** | `SideRail.Edge`(`Start|End`) 令牌化，单屏固定一边，禁运行时左右横跳。 |
+| **内容宽** | `widthIn(max=320dp)`（`Layout` 令牌）自适应；内容 `verticalScroll`。 |
+| **a11y** | 打开时焦点迁入抽屉、关闭返回触发器；scrim 关闭有 `onDismiss`（§3.13）。 |
+| **空置** | 未挂任何块/子级 → 整个 `SideRail` 不渲染（不占位）。 |
+
+#### 2.4.6 子级槽位规格
+
+统一「按钮/文字/tab」三级子槽位，全部复用 §3.6/§3.12 组件，可插到上述任一块级 `subSlots`：
+
+| 子级槽位 | 渲染 | 尺寸 | tint | 备注 |
+|---|---|---|---|---|
+| `Title`(`Text`) | `AppType.titleLarge` | 高度随栏 | `onSurface` | 顶栏标题；可 `SlotText.iconless` |
+| `ActionButton`(`Button`) | `IconButton`(40dp) 内 `Icon(Rounded)` | `AppSizing.IconButton` | 见 §3.6.4 | `contentDescription` 语义，禁装饰位 |
+| `TabItem`(`Text/Icon`) | `Tab` = 按钮 + label | `TouchTarget` | 选中`primary`/未选灰 | 指示条见 §2.4.2 |
+| `statusDot` | `AppStatusDot` | 8dp | `Brand.StatusGreen` | 顶栏在线态 |
+| `Badge` | `BadgedBox` + 数字/红点 | 16dp | `error` | 底部/顶栏 tab 角标 |
+
+> 子级是**最小可复用手**（`SlotContent`），块级是**承载区**（`BlockSlot`）；同一 `SlotContent` 可出现在顶栏或收纳处，实现"一套子级、处处可插"。
+
 ---
 
 ## 3. 设计令牌体系（Design Tokens）——视觉原子统一管理
