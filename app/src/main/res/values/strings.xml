@@ -37,6 +37,7 @@
     <string name="settings_security">安全设置</string>
     <string name="settings_remote_audit_logs">远程连接审计</string>
     <string name="settings_about">关于应用</string>
+    <string name="settings_design_gallery">UI 组件样板</string>
 
     <!-- SettingsScreen 通用 -->
     <string name="common_back">返回</string>
@@ -102,6 +103,7 @@
     <string name="settings_norm_flow_idle_converge_desc">连续多轮无实质产出时自动结束回合（默认关闭，按需开启）</string>
     <string name="settings_backup_subtitle">加密导出/导入配置、聊天历史与凭据</string>
     <string name="settings_about_subtitle">核心组件 · 使用统计 · 版本检查</string>
+    <string name="settings_design_gallery_subtitle">新 UI 令牌 · 组件族 · 槽位模型 · 运行态演示</string>
 
     <!-- 能力中心 -->
     <string name="capability_center_title">能力中心</string>

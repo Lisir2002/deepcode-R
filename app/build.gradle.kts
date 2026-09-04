@@ -393,6 +393,9 @@ dependencies {
     implementation(project(":terminal-emulator"))
     implementation(project(":terminal-view"))
 
+    // 新版设计系统库：设置页「UI 组件样板」入口展示 DesignGallery（独立主题，含高级分子组件族与槽位模型）
+    implementation(project(":newui"))
+
     // Material Icons
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.material:material-icons-extended")

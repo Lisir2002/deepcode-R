@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
@@ -23,6 +24,8 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -108,15 +111,23 @@ import com.core.deepcode.newui.designsystem.token.generated.AppSpacing
  * 样板页（§7 S0）：在一个页面内陈列令牌 / 原子组件 / 布局 / 三态 / 槽位，
  * 供负责人检验并敲定"基本完整落地"。附 android @Preview 可独立预览。
  */
-
 @Composable
-fun DesignGallery() {
+fun DesignGallery(onNavigateBack: (() -> Unit)? = null) {
     AppTheme {
         SlotSet(
             topBar = {
                 AppTopBar(
                     title = "Design Gallery",
-                    navigationIcon = null,
+                    navigationIcon = if (onNavigateBack != null) {
+                        {
+                            IconButton(onClick = onNavigateBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = "返回",
+                                )
+                            }
+                        }
+                    } else null,
                 )
             },
             content = {

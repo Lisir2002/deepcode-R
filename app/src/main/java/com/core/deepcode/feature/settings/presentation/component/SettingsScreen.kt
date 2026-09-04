@@ -93,6 +93,7 @@ import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Notes
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -116,7 +117,8 @@ enum class SettingsSection(@param:StringRes val titleRes: Int) {
     Backup(R.string.settings_backup),
     Security(R.string.settings_security),
     RemoteAuditLogs(R.string.settings_remote_audit_logs),
-    About(R.string.settings_about)
+    About(R.string.settings_about),
+    DesignGallery(R.string.settings_design_gallery)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -224,6 +226,14 @@ fun SettingsScreen(
 
     if (section == SettingsSection.RemoteServers) {
         com.core.deepcode.feature.workspace.presentation.remote.RemoteServerScreen(
+            onNavigateBack = { section = SettingsSection.Menu }
+        )
+        return
+    }
+
+    // 新 UI 样板页：独立全屏渲染（自带 AppTheme + 顶栏返回），不嵌套设置页 Scaffold。
+    if (section == SettingsSection.DesignGallery) {
+        com.core.deepcode.newui.sample.DesignGallery(
             onNavigateBack = { section = SettingsSection.Menu }
         )
         return
@@ -434,6 +444,7 @@ fun SettingsScreen(
                 SettingsSection.ProviderEditor -> {} // 已在上方 early return 处理
                 SettingsSection.RemoteServers -> {} // 已在上方 early return 处理
                 SettingsSection.About -> AboutSection()
+                SettingsSection.DesignGallery -> {} // 已在上方 early return 处理（独立全屏页）
             }
         }
     }
@@ -787,6 +798,17 @@ internal fun SettingsMenu(
             iconBgDark = Color(0xFF0369A1),
             keywords = listOf("about", stringResource(R.string.ui____81d9f505), "version", "release", stringResource(R.string.ui____32ac152b), stringResource(R.string.ui_____20a28457), "license", stringResource(R.string.ui____62cea749)),
             action = { onOpen(SettingsSection.About) }
+        ),
+        MenuItem(
+            section = SettingsSection.DesignGallery,
+            group = groupSystem,
+            title = stringResource(SettingsSection.DesignGallery.titleRes),
+            subtitle = stringResource(R.string.settings_design_gallery_subtitle),
+            icon = Icons.Rounded.Palette,
+            iconBgLight = Color(0xFFA855F7),
+            iconBgDark = Color(0xFF6B21A8),
+            keywords = listOf("gallery", "sample", "ui", "design", "component", "new ui", "designsystem", "molecule", "槽位"),
+            action = { onOpen(SettingsSection.DesignGallery) }
         )
     )
 
