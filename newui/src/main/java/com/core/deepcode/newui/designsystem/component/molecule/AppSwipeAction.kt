@@ -1,13 +1,8 @@
 package com.core.deepcode.newui.designsystem.component.molecule
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -40,6 +35,11 @@ import com.core.deepcode.newui.designsystem.token.generated.AppSpacing
 /**
  * 滑扫操作（分子组 · AppSwipeAction）：横向拖出底层操作（锚定 snap 到 0 / -actionWidth），
  * 用于 ListRow / 会话卡片右滑露出删除/置顶等高频操作，替代突兀的长按菜单。
+ *
+ * 实现采用**纯几何叠加**，无透明度/缩放动画：
+ *  - 底层动作区固定贴卡片右缘（Arrangement.End，无缩进），滑开后稳定可见、不会自己消失；
+ *  - 顶层内容层带不透明 surface 背景，左移 `settle` 距离来遮挡/露出动作区，
+ *    展开态按钮始终在右缘、位置稳定，杜绝"消失 / 跑到卡片中间"两类缺陷。
  */
 @Composable
 fun AppSwipeAction(
@@ -51,48 +51,42 @@ fun AppSwipeAction(
     var dragOffset by remember { mutableStateOf(0.dp) }
     var dragStart by remember { mutableStateOf(0.dp) }
     var dragging by remember { mutableStateOf(false) }
+
+    // 手指拖动时跟随位移；松开后按是否过半 snap 到 展开(-actionWidth) 或 收起(0)
+    val open = dragOffset < -actionWidth / 2
     val settle by animateDpAsState(
-        targetValue = if (dragging) dragOffset else if (dragOffset < -actionWidth / 2) -actionWidth else 0.dp,
+        targetValue = if (dragging) dragOffset else if (open) -actionWidth else 0.dp,
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
         label = "swipeSettle",
     )
     val shape = RoundedCornerShape(AppRadius.Md)
+
     Box(
         modifier = modifier
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
     ) {
-        // 底层动作区（滑开时随 `settle` 展开出现，未滑动不绘制）
-        AnimatedVisibility(
-            visible = settle < 0.dp,
+        // 底层动作区：fixed 贴右，Arrangement.End 让按钮紧贴卡片右缘，
+        // 不设透明度/缩放——显隐完全由上方内容层的几何偏移决定。
+        Row(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .fillMaxHeight(),
-            enter = expandHorizontally(
-                expandFrom = Alignment.End,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
-            ) + fadeIn(),
-            exit = shrinkHorizontally(
-                shrinkTowards = Alignment.End,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
-            ) + fadeOut(),
+                .width(actionWidth)
+                .fillMaxHeight()
+                .padding(start = AppSpacing.Sm),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier
-                    .width(actionWidth)
-                    .fillMaxHeight()
-                    .padding(end = AppSpacing.Sm),
-                horizontalArrangement = Arrangement.spacedBy(AppSpacing.Sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                actions()
-            }
+            actions()
         }
-        // 顶层内容滑层
+
+        // 顶层内容滑层：带不透明 surface 背景以盖住底层动作区，
+        // 左移 settle 露出右缘动作区，全部由几何呈现、稳定不消失。
         Box(
             Modifier
                 .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
                 .offset(x = settle)
                 .pointerInput(actionWidth) {
                     detectHorizontalDragGestures(
