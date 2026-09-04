@@ -118,8 +118,7 @@ internal fun AppDialogSurface(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(shape)
-                    .shadow(16.dp, shape, clip = false)
+                    .shadow(16.dp, shape, clip = true)
                     .background(MaterialTheme.colorScheme.surface)
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
                     .padding(horizontal = AppSpacing.Lg, vertical = AppSpacing.Xl),
@@ -498,8 +497,7 @@ fun AppProgressDialog(
     ) {
         Column(
             modifier = modifier
-                .clip(shape)
-                .shadow(16.dp, shape, clip = false)
+                .shadow(16.dp, shape, clip = true)
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(horizontal = AppSpacing.Xl, vertical = AppSpacing.Xl),
             horizontalAlignment = Alignment.CenterHorizontally,

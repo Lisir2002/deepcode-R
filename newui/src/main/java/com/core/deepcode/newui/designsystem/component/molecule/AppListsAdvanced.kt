@@ -787,8 +787,7 @@ private fun CascadeLevel(
             modifier = Modifier
                 .offset { IntOffset(x = index * slotPx, y = 0) }
                 .width(columnWidth)
-                .shadow(16.dp, corner, clip = false)
-                .clip(corner)
+                .shadow(16.dp, corner, clip = true)
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(vertical = AppSpacing.Xs),
         ) {

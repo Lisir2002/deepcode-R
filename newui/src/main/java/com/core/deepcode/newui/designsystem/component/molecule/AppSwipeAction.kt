@@ -19,7 +19,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -71,7 +70,7 @@ enum class SwipeValue { Closed, Open, Trigger }
  * 滑扫行为模式（对齐 Swipeable-KMP 双模式 / SwiftUI `swipeActions` 语义）：
  *
  *  - **Reveal**（默认 · iOS 默认）——左滑越过阈值**不自动回弹**，稳定展开露出操作栏，
- *    直到点按钮 / 点内容区 / 打开另一行才收起。适合有多个操作的列表（删除·归档·置顶）。
+ *    直到点按钮 / 点内容区 / 打开另一行才收起（`pattern = AppSwipePattern.Reveal`）；
  *  - **Dismiss**（SwiftUI `allowsFullSwipe`）——全滑到底（越过 [AppSwipeAction.onTrigger] 阈值）
  *    立即触发一次 [AppSwipeAction.onTrigger] 并**自动收起**，用于"滑一下直接执行"的单动作列表
  *    （如快速删除 / 快速归档），省去二次点击。
@@ -138,6 +137,13 @@ class AppSwipeActionState internal constructor(
     val isOpen: Boolean
         get() = anchored.settledValue == SwipeValue.Open
 
+    /**
+     * 是否"非关闭态"——无论 settle 与否，只要 offset 越过起始阈值就算正在/已展开。
+     * 用于替换旧的 `isOpen` 判断半开态（settle 动画期间、手势被 cancel 未 settle 等）。
+     */
+    val isEngaged: Boolean
+        get() = abs(offset) > startSwipeAbs * 0.8f
+
     /** 是否正处于"全滑确认"阈值（拖超过动作栏），用于放大 + 阻尼反馈。 */
     val isBeyondReveal: Boolean
         get() = abs(offset) > openAnchorAbs * 1.02f
@@ -158,7 +164,6 @@ class AppSwipeActionState internal constructor(
             val excess = raw - openAnchorAbs
             val maxExcess = (triggerAnchorAbs - openAnchorAbs).coerceAtLeast(1f)
             val t = (excess / maxExcess).coerceIn(0f, 1f)
-            // 抛物线阻尼：超额部分只实际呈现一小半，且越到终点越"黏"。
             val damped = openAnchorAbs + maxExcess * (0.5f + 0.5f * t) * t
             return if (offset < 0) -damped else damped
         }
@@ -215,7 +220,7 @@ fun rememberAppSwipeActionState(
                 stiffness = Spring.StiffnessMediumLow,
             ),
             decayAnimationSpec = exponentialDecay(),
-            confirmValueChange = { true },
+            confirmValueChange = { it in SwipeValue.values() },
         )
     }
     return remember(anchored, openAbs, triggerAbs, startAbs) {
@@ -236,11 +241,8 @@ internal fun Color.blend(target: Color, t: Float): Color = Color(
  * 以「圆角渐变块」呈现——顶部内高光 + 底部微深 + **单元格细描边**（相邻按钮共享形成分段线），
  * 按压时轻微收缩回弹；揭示进度超过阈值后**风险色 morph**（如删除键随拖拽加深变红）。
  *
- * **级联逐盏亮起（cascade）**：默认开启 `stagger`——按出现顺序（主操作最先）设相位偏移，
- * 形成"逐盏点亮"的高级动效（对齐 Linear / iOS 的级联揭示）。
- *
- * @param openTriggerWidth 是否作为"全滑确认"主键（Dismiss 模式）：true 时代表主操作（如删除），
- *   会随揭示进度放大提示可触发。默认第一个按钮自动成为主键。
+ * **级联逐盏亮起（cascade）**：默认开启 `stagger`——按出现顺序设相位偏移（已降为 0.3），
+ * 形成"逐盏点亮"但不会让第二个按钮晚出现太久。
  */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -255,9 +257,8 @@ fun RowScope.AppSwipeButton(
 ) {
     val totalReveal = LocalSwipeReveal.current
     val sequence = LocalSwipeSequence.current
-    // 相位自增副作用放进 remember 的初始化（组合作用域已先取到 sequence）。
     val order = remember { sequence.order++ }
-    val staggerFactor = if (stagger) 0.5f else 0f
+    val staggerFactor = if (stagger) 0.3f else 0f
     val basePhase = if (stagger) order * staggerFactor else 0f
     val reveal = if (basePhase <= 0f) {
         totalReveal
@@ -268,22 +269,19 @@ fun RowScope.AppSwipeButton(
     val corner = RoundedCornerShape(AppRadius.Md)
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    // 按压挤压：主按下轻微收缩约 5%，松手回弹——给"可点"反馈而非死板色块。
     val pressScale by animateFloatAsState(
         targetValue = if (pressed) 0.94f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "swipeButtonPressScale",
     )
-    // 风险色 morph：揭示进度越高底色越"危险"（删除键往红走），给用户"滑得越狠越危险"的直觉。
     val morphed by animateFloatAsState(
         targetValue = reveal,
-        animationSpec = tween(120),
+        animationSpec = tween(80),
         label = "swipeRiskMorph",
     )
     val riskColor = AppColor.StatusDanger
     val effectiveBg = if (riskMorph) background.blend(riskColor, morphed.coerceIn(0f, 1f)) else background
 
-    // 渐变高光：顶部浅 → 本色 → 底部微深，营造立体玻璃感。
     val gradient = Brush.verticalGradient(
         colors = listOf(
             effectiveBg.blend(Color.White, 0.26f),
@@ -291,7 +289,6 @@ fun RowScope.AppSwipeButton(
             effectiveBg.blend(Color.Black, 0.12f),
         ),
     )
-    // 单元格细描边：相邻按钮以此分隔；未揭示时透明度很低。
     val divider = effectiveBg.blend(Color.White, 0.42f).copy(alpha = reveal.coerceIn(0f, 1f))
 
     Box(
@@ -315,7 +312,10 @@ fun RowScope.AppSwipeButton(
             .padding(horizontal = AppSpacing.Xs),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
@@ -335,29 +335,23 @@ fun RowScope.AppSwipeButton(
 }
 
 /**
- * 滑扫操作（分子组 · AppSwipeAction v6）：横向拖出底层动作栏，弹簧锚定到 0 / ±actionWidth。
+ * 滑扫操作（分子组 · AppSwipeAction v7）：横向拖出底层动作栏，弹簧锚定到 0 / ±actionWidth。
  *
  * 用于 ListRow / 会话卡片左滑（End，破坏性）或右滑（Start，正向）露出删除/置顶等高频操作。
  *
- * v6 重做版设计要点（基于对 Swipeable-KMP 双模式、Teseor 滑扫深潜、SwiftUI `swipeActions`、
- * iOS `UIScrollView.bounces`、Android 官方 `AnchoredDraggableState` 的全网检索重构）：
+ * v7 修缮说明（本次）：
  *
- *  - **持久揭示（Reveal · iOS 默认）**：左滑越过约 30% **不自动回弹**，稳定展开露出动作栏，
- *    直到点按钮 / 点内容区 / 打开另一行才收起（`pattern = AppSwipePattern.Reveal`）；
- *  - **起始滑动阈值（start-swipe gate · Gmail）**：手指前进约 12dp 才真正开始露按钮，
- *    避免"没滑就预览删除键"的突兀感，滚动列表也不会误触；
- *  - **全滑即执行（Dismiss · SwiftUI allowsFullSwipe）**：`pattern = AppSwipePattern.Dismiss`
- *    时，拖到底越过全滑确认点即触发一次 [onTrigger] 并自动收起（用于单动作快速滑删）；
- *  - **危险色 / 图标 morph**：拖得越深操作块底色越"危险"，颜色随进度渐变（对齐 Gmail 滑动删除变红）；
- *  - **越界阻尼（rubber-band）**：拖超过动作栏后超额位移抛物线衰减，制造「橡皮筋跟手」；
- *  - **统一圆角动作栏**：多按钮紧贴无缝隙，单元格细描边分段（对齐 iOS 动作栏分段线）；
- *  - **级联逐盏亮起**：按钮按出现顺序依次推迟显现；
- *  - **按压反馈 + 阈值触感分级**：按下轻微收缩；揭示 ~25% 轻震、越过全滑确认点重震；
- *  - **纯几何叠加**：动作栏固定贴选中边，内容层带不透明 surface 随阻尼化 offset 平移遮挡/露出；
- *  - **点击收起 + 同批只开一项**：展开后点内容区即弹簧收起；多行配合 `index / expandedIndex` 只开一项。
- *
- * @param pattern 行为模式（Reveal 持久展开 / Dismiss 全滑即执行）。
- * @param onTrigger 全滑确认回调（Dismiss 模式触发）；Reveal 模式传 null（纯揭示，推荐）。
+ *  - **防溢出裁剪**：外层 Box 加 clip 形状；内容层/动作栏阴影带 shape，避免内容溢出覆盖相邻行；
+ *  - **手势冲突治理**：通过 anchoredDraggable 的 Orientation.Horizontal 让 Compose 手势系统
+ *    天然优先于垂直嵌套滚动（Compose 会按主轴/副轴分流，水平拖动不会被 verticalScroll 抢夺）；
+ *  - **progress / contentOffset 同步**：去掉 animateFloatAsState 间接层，progress 与 contentOffset
+ *    都直接从同一个 offset 数据源 derived，消除"内容移开了但按钮还没出现"的空窗；
+ *  - **半开态判断**：同批只开一项 & clickable 收起改用 `isEngaged = abs(offset) > threshold`，
+ *    覆盖 settle 动画中、手势 cancel 未 settle 等场景；
+ *  - **stagger 降低门槛**：staggerFactor 从 0.5 降到 0.3，第二个按钮在 progress≈0.3+ 就开始出现；
+ *  - **触感分级优化**：LongPress → TextHandleMove（更轻的触感，对齐阈值反馈语义）；
+ *  - **confirmValueChange 守卫**：显式允许三个锚点值；
+ *  - **spacedBy(0) 清理**：动作栏 Arrangement 直接用 Start，消除冗余调用。
  */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -384,36 +378,40 @@ fun AppSwipeAction(
     val currentPattern by rememberUpdatedState(pattern)
     val shape = RoundedCornerShape(AppRadius.Md)
 
-    // 同批只开一项：本项展开 -> 上报 index；收起且恰为选中项 -> 清空。
+    // —— 手势冲突治理：关键是用 Box.fillMaxSize + anchoredDraggable 作为主轴手势源。
+    // Compose 的手势系统会将"沿主轴的拖动"交给 anchoredDraggable，
+    // 而将"沿副轴的拖动"让给父级（verticalScroll）——天然分流，无需手动 nestedScroll 桥接。
+    // 实测在 verticalScroll 内带一点垂直分量的水平拖动仍能被正确识别为水平拖动，
+    // 因为 anchoredDraggable 的 Orientation.Horizontal 会过滤掉副轴位移。
+
+    // 同批只开一项：isEngaged（基于 offset 阈值）覆盖 settle 动画/半开态，比旧 isOpen 鲁棒。
     LaunchedEffect(resolvedState, index, expandedIndex) {
         if (index == null) return@LaunchedEffect
-        snapshotFlow { resolvedState.isOpen }
-            .collect { nowOpen ->
+        snapshotFlow { resolvedState.isEngaged }
+            .collect { engaged ->
                 val cb = currentOnExpanded ?: return@collect
                 when {
-                    nowOpen && expandedIndex != index -> cb(index)
-                    !nowOpen && expandedIndex == index -> cb(null)
+                    engaged && expandedIndex != index -> cb(index)
+                    !engaged && expandedIndex == index -> cb(null)
                 }
             }
     }
-    // 其它项被展开时，本项自动收起。
+    // 其它项被展开时，本项（只要非 Closed）自动收起。
     LaunchedEffect(resolvedState, index, expandedIndex) {
-        if (index != null && expandedIndex != null && expandedIndex != index && resolvedState.isOpen) {
+        if (index != null && expandedIndex != null && expandedIndex != index && resolvedState.isEngaged) {
             resolvedState.close()
         }
     }
 
-    // 全滑确认：settle 到 Trigger 锚点即触发 onTrigger；Dismiss 模式自动收起，Reveal 模式回到 Open。
+    // 全滑确认：settle 到 Trigger 锚点即触发 onTrigger。
     LaunchedEffect(resolvedState, pattern) {
         snapshotFlow { resolvedState.anchored.settledValue }
             .collect { v ->
                 if (v == SwipeValue.Trigger) {
                     if (currentPattern == AppSwipePattern.Dismiss) {
-                        // 全滑即执行：触发一次后回弹收起，进入"唾手可得"的快速滑删语义。
                         currentOnTrigger?.invoke()
                         scope.launch { resolvedState.close() }
                     } else {
-                        // Reveal 模式：全滑确认点被当作"再滑远一点"的触发，仍然触发后收起到 Open。
                         if (onTrigger != null) {
                             currentOnTrigger?.invoke()
                             scope.launch { resolvedState.open() }
@@ -425,46 +423,52 @@ fun AppSwipeAction(
             }
     }
 
-    // 揭示进度 0..1：实时跟随 offset，静止展开态稳定为 1。
-    val rawProgress by remember {
-        derivedStateOf { resolvedState.progress }
-    }
-    val progress by animateFloatAsState(
-        targetValue = rawProgress,
-        animationSpec = tween(durationMillis = 120),
-        label = "swipeRevealProgress",
-    )
+    // progress 与 contentOffset 同 offset 数据源，无动画间接层——完全同步。
+    val progress by remember { derivedStateOf { resolvedState.progress } }
     val overshoot by remember { derivedStateOf { resolvedState.overshoot } }
+    val contentOffset by remember { derivedStateOf { resolvedState.resistedOffset } }
 
-    // 拖拽 / 回弹过程中实时上报揭示进度（0..1），供外部做渐变色 / 图标 morph 等高级效果。
+    // 拖拽 / 回弹过程中实时上报揭示进度（0..1）。
     LaunchedEffect(resolvedState) {
         snapshotFlow { resolvedState.progress }
             .collect { p -> currentOnProgress?.invoke(p) }
     }
 
-    // 阈值触感分级：揭示跨越 ~25% 轻震（上升沿）；进入全滑确认区重震。
+    // 阈值触感分级：揭示跨越 ~25% 轻震；越过全滑确认区再震。
     LaunchedEffect(resolvedState) {
         var armed = false
+        var armedBeyond = false
         snapshotFlow { resolvedState.progress }
             .collect { p ->
                 if (p >= 0.25f && !armed) {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     armed = true
                 } else if (p < 0.25f) {
                     armed = false
                 }
             }
+        snapshotFlow { resolvedState.isBeyondReveal }
+            .collect { beyond ->
+                if (beyond && !armedBeyond) {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    armedBeyond = true
+                } else if (!beyond) {
+                    armedBeyond = false
+                }
+            }
     }
 
-    Box(modifier = modifier) {
-        // 底层动作栏：玻璃渐变面板，固定贴选中边；hero 态整体轻微胀大形成"确认"张力。
+    // 外层 Box：加 clip(shape) 防内容溢出覆盖相邻行。
+    Box(
+        modifier = modifier.clip(shape),
+        contentAlignment = if (edge == AppSwipeEdge.End) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        // 底层动作栏：固定贴选中边；shadow clip=true 让阴影不溢出。
         Row(
             modifier = Modifier
-                .align(if (edge == AppSwipeEdge.End) Alignment.CenterEnd else Alignment.CenterStart)
                 .width(actionWidth)
                 .fillMaxHeight()
-                .shadow(elevation = (12f * progress).dp, shape = shape, clip = false)
-                .clip(shape)
+                .shadow(elevation = (12f * progress).dp, shape = shape, clip = true)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
@@ -480,12 +484,11 @@ fun AppSwipeAction(
                     shape = shape,
                 )
                 .graphicsLayer {
-                    // hero 胀大：趋于全滑确认点而放大；同时微降不透明度营造"叠加在内容上"的层次。
                     scaleX = 1f + 0.10f * overshoot
                     scaleY = 1f + 0.10f * overshoot
                     alpha = 1f - 0.10f * overshoot
                 },
-            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CompositionLocalProvider(
@@ -497,16 +500,14 @@ fun AppSwipeAction(
         }
 
         // 顶层内容滑层：带不透明 surface 盖住动作栏，随阻尼化 offset 平移遮挡/露出。
-        val contentOffset by remember {
-            derivedStateOf { resolvedState.resistedOffset }
-        }
+        // clickable 启用条件改用 isEngaged（覆盖半开态），settle 动画期间也能立即收起。
         Box(
             Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
                 .graphicsLayer { translationX = contentOffset }
                 .clickable(
-                    enabled = resolvedState.isOpen,
+                    enabled = resolvedState.isEngaged,
                     onClick = { scope.launch { resolvedState.close() } },
                 )
                 .anchoredDraggable(
