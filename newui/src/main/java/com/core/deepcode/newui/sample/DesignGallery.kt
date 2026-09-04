@@ -156,6 +156,8 @@ private fun GalleryBody() {
     var filterSet by remember { mutableStateOf(setOf(0, 2)) }
     var page by remember { mutableStateOf(2) }
     var tags by remember { mutableStateOf(listOf("kotlin", "compose", "agent")) }
+    // 滑扫协调：同批只开一项
+    var swipeExpanded by remember { mutableStateOf<Int?>(null) }
     // 文件卡运行态：自动循环演示（上传推进 → 完成）
     var fileProgress by remember { mutableStateOf(0f) }
     var fileState by remember { mutableStateOf(AppFileState.Uploading) }
@@ -466,12 +468,23 @@ private fun GalleryBody() {
         }
 
         Section("分子组建族 · 滑扫操作") {
-            AppSwipeAction(
-                actions = {
-                    IconContainer(icon = Icons.Rounded.Delete, tint = Color.White, background = AppColor.StatusDanger)
-                },
-            ) {
-                AppMenuRow(title = "右滑删除示例", subtitle = "向右滑动露出操作", icon = Icons.Rounded.Code)
+            val swipeRows = listOf("会话 A · deepcode-agent", "会话 B · settings refactor", "会话 C · terminal local")
+            swipeRows.forEachIndexed { index, title ->
+                Column {
+                    AppSwipeAction(
+                        index = index,
+                        expandedIndex = swipeExpanded,
+                        onExpanded = { swipeExpanded = it },
+                        actions = {
+                            IconContainer(icon = Icons.Rounded.Delete, tint = Color.White, background = AppColor.StatusDanger)
+                        },
+                    ) {
+                        AppMenuRow(title = title, subtitle = "右滑露出操作 · 点击内容收起 · 同批只开一项", icon = Icons.Rounded.Code)
+                    }
+                    if (index != swipeRows.lastIndex) {
+                        Spacer(Modifier.height(AppSpacing.Sm))
+                    }
+                }
             }
         }
 
