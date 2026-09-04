@@ -434,9 +434,14 @@ LazyColumn(PageHorizontal verticalScroll) {
 | **弹窗/Sheet** | M3 `AlertDialog`/`ModalBottomSheet` + `AppTokens` 圆角/边距 | 尺寸走断点（§3.10） |
 | **导航顶栏** | `AppTopBar`（紧凑 44dp） | 全项目唯一顶栏 |
 | **状态圆点/徽标** | `AppStatusDot`（`Brand.StatusGreen`） | 状态点统一 |
+| **区块标题** | `AppSectionHeader`（左竖条装饰 + label） | 页面区块统一标题样式（§3.7.3/3.7.7） |
+| **图标** | `AppIcon`（Rounded / 尺寸刻度）| 语义映射见 §3.6.6；禁止裸手绘 ImageVector |
+| **图标块** | `IconContainer`（40dp 色块 + 白图标） | `AppMenuRow`/设置行统一形态（§3.6.3） |
+| **分组容器** | `AppSectionGroup` / `AppCard`（收 `CyberCard`） | 页内区块统一形态 |
+| **触觉反馈** | `AppHaptics.click`（封装 `LocalHapticFeedback`） | 破坏性操作二次确认（§3.11） |
 | **富文本/工具消息** | `MarkdownContent`/segment 体系（跨模块） | 聊天独有，收敛 `core/ui` |
 
-> 组件集目录为**新增页面默认首选**；确需 M3 原生替代时标注理由。
+> 组件集目录为**新增页面默认首选**；确需 M3 原生替代时标注理由。图标/布局两套完整规范见 §3.6 / §3.7（组件需对齐其令牌与禁止项）。
 
 ### 3.13 无障碍（a11y）
 
