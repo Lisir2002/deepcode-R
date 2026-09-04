@@ -751,6 +751,55 @@ fun AppAdaptiveNav(
 
 > 组件集目录为**新增页面默认首选**；确需 M3 原生替代时标注理由。图标/布局两套完整规范见 §3.6 / §3.7（组件需对齐其令牌与禁止项）。
 
+#### 3.12.a 分子组建族（高级动效扩展，`:newui` 已落地其一）
+
+在基础组件之上，扩展一支**高动效分子组建族**，统一对齐 Design Tokens（`AppMotion` 时长/缓动）、`AppRadius`/`AppSizing`/`AppColor`，动效参照 Linear/Vercel 的 Precision Micro-interactions（150–300ms、FastOutSlowIn/弹簧缓动、骨架 shimmer、列表 stagger）。已实现组件以 `✅` 标注：
+
+| 域 | 组件 | 动效/样式要点 |
+|---|---|---|
+| **反馈** | `AppShimmerBox` ✅ | 骨架微光：`surfaceVariant` 底 + 周期扫光（`LinearEasing` 无限过渡），加载占位替代灰色块 |
+| | `AppToast` ✅ | 底部滑入+淡出卡片（`slideInVertically`+`fadeIn`），icon+文案，宿主驱动自动消失 |
+| | `AppProgressBar` ✅ | determinate，`animateFloat`+`FastOutSlowIn` 平滑过渡，pill 圆角 `StrokeCap.Round` |
+| | `AppBadge` / `AppBadgeDot` ✅ | 数字徽标（N+ 折叠）弹簧回弹缩放 / 8dp 红点，覆盖图标右上角 |
+| | `AppInlineAlert` ✅ | 四色调低饱和底（Info/Success/Warning/Danger）+ 品牌图标 + 可选关闭，顶入滑出+淡出 |
+| **表单** | `AppSwitch` / `AppSwitchRow` ✅ | 迷你弹簧开关：knob 弹簧回弹 + 轨道色过渡；行组件带标题/副标题 |
+| | `AppSegmentedToggle` ✅ | pill 分段：surface 高亮块随选择滑动（`animateDpAsState`），选中加粗浮起 |
+| | `AppStepper` ✅ | 步进器：加减按钮 + 数值 `AnimatedContent` 数字过渡，min/max/step 受控 |
+| | `AppSearchBar` ✅ | pill 搜索栏：前置放大镜 + 占位浮字 + 可清空，行高 `TouchTarget(44dp)` |
+| | `AppTextField` ✅ | 统一输入：标签浮起/下沉、聚焦色、可选 error/消息，对齐 baseline |
+| | `AppSlider` ✅ | 高级滑杆：thumb 上方浮动态数值气泡（`animateDpAsState` 跟随），平滑取值 |
+| | `AppRatingBar` ✅ | 星级评分：点选星星弹簧放大回弹（`spring`+`graphicsLayer` scale），容量 max/色可配 |
+| | `AppCheckRow` / `AppCheckbox` ✅ | 复选行：勾选态弹性缩放+颜色过渡（`animateColorAsState`+spring），带副标题 |
+| | `AppTagInput` ✅ | 标签输入：回车添加 chip（`scaleIn`+`expandHorizontally` 回弹进入、可删），FlowRow 自适应换行 |
+| **数据展示** | `AppStatCard` ✅ | 统计卡：数字 count-up（`animateFloat`）、趋势徽标、可选图标块、描边+阴影 |
+| | `AppAvatar` ✅ | 品牌渐变圆 + 首字母，可选右下在线/离线状态环 |
+| | `AppBreadcrumb` ✅ | 面包屑：ChevronRight 分隔，末级加粗高亮，超长用 `…` 折叠 |
+| | `AppRingProgress` ✅ | 环形仪表：品牌 `sweepGradient` 渐变扫环 + 中心百分比 count-up，替代朴素进度环 |
+| | `AppSparkline` ✅ | 迷你趋势线：折线自左向右生长（`PathMeasure`）+ 面积渐隐渐变，结尾高亮圆点 |
+| | `AppMiniBarChart` ✅ | 迷你柱状图：柱体自下而上交错生长（smoothstep）+ 纵向渐变，highlight 高亮柱 |
+| | `AppStatusDot` ✅ | 状态圆点 + 可选文本标签（Success/Warning/Danger…） |
+| **操作** | `AppFAB` ✅ | 扩展式 FAB：pill 品牌胶囊，标签横向展开（`expandHorizontally`）+ 内边距动画 |
+| | `AppSwipeAction` ✅ | 滑扫操作：右滑露出底部动作区（`detectHorizontalDragGesures`+`animateDpAsState` 回中/展开） |
+| | `AppFileCard` ✅ | 文件卡：状态着色图标 + 上传动态进度条 + 终态图标（Check/Error） |
+| | `AppButton` ✅ | 统一按钮：Filled/Tonal/Outlined/Text 四变体 + 禁用，触感回馈（`AppHaptics`） |
+| **导航** | `AppBreadcrumb`（同上） | 深层路径定位，比 Tab 更轻量 |
+| | `AppTabs` ✅ | 滑动指示器 Tab：指示条 `animateDpAsState` 平滑游动，文字色/粗细跟随 |
+| | `AppFilterChips` ✅ | 过滤芯片组：横向可滚动多选，选中勾号回弹缩放+填充色过渡 |
+| | `AppAccordion` ✅ | 折叠面板：箭头 90° 旋转 + `expandVertically/shrinkVertically` 内容展开收起 |
+| | `AppPagination` ✅ | 分页：页码+省略号+前后翻页，活跃页码弹簧放大浮起 |
+| | `AppKeyCap` / `AppKeyCombo` ✅ | 拟物键帽（底部暗边+轻投影）及快捷键组合（⌘K / Ctrl+⇧P 串联） |
+| | `AppMenuRow` ✅ | 列表行：图标块/纯色前置/尾随插槽，分组内结构统一 |
+| | `AppSectionHeader` / `AppSectionGroup` ✅ | 区块标题（装饰条）+ 分组容器（圆角描边内聚同类项） |
+| | `AppTimeline` ✅ | 垂直时间线：节点回弹色点 + 连接线 + 条目交错浮现，色调/图标/时间可配 |
+| | `AppProgressSteps` ✅ | 步骤进度：已完成对勾回弹、当前节点脉冲光环、连线从左向右填充 |
+| **通知** | `AppNotificationItem` ✅ | 通知项：左滑浮现 + 未读色点 + 圆角图标底，标题/正文/时间 |
+| **AI 对话** | `AppChatBubble` ✅ | 会话气泡：入场上浮+淡入（spring），用户/assistant 双色异形圆角 |
+| | `AppTypingIndicator` ✅ | 正在输入：三点错峰波浪弹跳（`rememberInfiniteTransition`+正弦），呼吸透明度 |
+| **流程占位** | `AppSkeletonList` ✅ | 骨架列表：行内条块 shimmer，行间 stagger 淡入（`delay`+`expandVertically`） |
+| | `AppDialog` ✅ | 弹窗：Confirm/Danger 双主色，遮罩滑入，破坏性提醒 |
+
+> **族集命名统一 `App*`**（atom/molecule 同源），全部走 `component/molecule/`。当前已覆盖反馈 / 表单 / 数据展示 / 操作 / 导航 / 通知 / AI 对话 / 流程占位八大域的 **60+ 组件**，动效全部对齐 `AppMotion` 时长与缓动（FastOutSlowIn / 弹簧 / 交错）。候选后续：命令面板 `AppCommandPalette`、树形节点 `AppTreeItem`、对比热力图 `AppHeatmap`。
+
 ### 3.13 无障碍（a11y）
 
 延续既有正确做法的同时补齐规范：
