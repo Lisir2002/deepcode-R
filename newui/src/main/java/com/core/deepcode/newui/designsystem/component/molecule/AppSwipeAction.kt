@@ -1,8 +1,13 @@
 package com.core.deepcode.newui.designsystem.component.molecule
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -58,17 +63,31 @@ fun AppSwipeAction(
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
     ) {
-        // 底层动作区（右滑后露出）
-        Row(
+        // 底层动作区（滑开时随 `settle` 展开出现，未滑动不绘制）
+        AnimatedVisibility(
+            visible = settle < 0.dp,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .width(actionWidth)
-                .fillMaxHeight()
-                .padding(end = AppSpacing.Sm),
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Sm),
-            verticalAlignment = Alignment.CenterVertically,
+                .fillMaxHeight(),
+            enter = expandHorizontally(
+                expandFrom = Alignment.End,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+            ) + fadeIn(),
+            exit = shrinkHorizontally(
+                shrinkTowards = Alignment.End,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+            ) + fadeOut(),
         ) {
-            actions()
+            Row(
+                modifier = Modifier
+                    .width(actionWidth)
+                    .fillMaxHeight()
+                    .padding(end = AppSpacing.Sm),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.Sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                actions()
+            }
         }
         // 顶层内容滑层
         Box(
