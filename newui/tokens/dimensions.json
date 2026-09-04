@@ -34,7 +34,8 @@
     "pageHorizontal": { "$value": "16", "$type": "dimension" },
     "blockGap":       { "$value": "16", "$type": "dimension" },
     "rowGap":         { "$value": "8",  "$type": "dimension" },
-    "contentMaxWidth":{ "$value": "720", "$type": "dimension" }
+    "contentMaxWidth":{ "$value": "720", "$type": "dimension" },
+    "dividerThickness":{ "$value": "1", "$type": "dimension", "$description": "分割线统一厚度" }
   },
   "motion": {
     "fast": { "$value": "150", "$type": "dimension" },

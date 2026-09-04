@@ -61,6 +61,7 @@ object AppLayout {
     val BlockGap = 16.dp
     val RowGap = 8.dp
     val ContentMaxWidth = 720.dp
+    val DividerThickness = 1.dp // 分割线统一厚度
 }
 
 object AppMotion {

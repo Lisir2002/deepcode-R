@@ -19,7 +19,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,6 +31,15 @@ import com.core.deepcode.newui.designsystem.component.atom.AppCard
 import com.core.deepcode.newui.designsystem.component.atom.AppChip
 import com.core.deepcode.newui.designsystem.component.atom.AppIcon
 import com.core.deepcode.newui.designsystem.component.atom.IconContainer
+import com.core.deepcode.newui.designsystem.component.molecule.AppButton
+import com.core.deepcode.newui.designsystem.component.molecule.AppButtonVariant
+import com.core.deepcode.newui.designsystem.component.molecule.AppDialog
+import com.core.deepcode.newui.designsystem.component.molecule.AppDivider
+import com.core.deepcode.newui.designsystem.component.molecule.AppMenuRow
+import com.core.deepcode.newui.designsystem.component.molecule.AppSectionGroup
+import com.core.deepcode.newui.designsystem.component.molecule.AppSectionHeader
+import com.core.deepcode.newui.designsystem.component.molecule.AppStatusDot
+import com.core.deepcode.newui.designsystem.component.molecule.AppTextField
 import com.core.deepcode.newui.designsystem.layout.AppEmptyState
 import com.core.deepcode.newui.designsystem.layout.AppErrorState
 import com.core.deepcode.newui.designsystem.layout.AppLoadingState
@@ -68,6 +80,8 @@ fun DesignGallery() {
 @Composable
 private fun GalleryBody() {
     val scroll = rememberScrollState()
+    var showDialog by remember { mutableStateOf(false) }
+    var fieldText by remember { mutableStateOf("") }
     Column(
         modifier = Modifier
             .verticalScroll(scroll)
@@ -117,6 +131,77 @@ private fun GalleryBody() {
             }
         }
 
+        Section("分子组件 · 按钮") {
+            AppButton(text = "Primary", onClick = {})
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Sm)) {
+                AppButton(
+                    text = "Tonal",
+                    variant = AppButtonVariant.FilledTonal,
+                    onClick = {},
+                )
+                AppButton(
+                    text = "Outlined",
+                    variant = AppButtonVariant.Outlined,
+                    onClick = {},
+                )
+                AppButton(
+                    text = "Text",
+                    variant = AppButtonVariant.Text,
+                    onClick = {},
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Sm)) {
+                AppButton(text = "禁用", enabled = false, onClick = {})
+                AppButton(
+                    text = "危险",
+                    variant = AppButtonVariant.Outlined,
+                    onClick = {},
+                )
+            }
+        }
+
+        Section("分子组件 · 输入") {
+            AppTextField(
+                value = fieldText,
+                onValueChange = { fieldText = it },
+                label = "示例输入",
+                placeholder = "请输入内容…",
+            )
+        }
+
+        Section("分子组件 · 分组 / 列表行 / 状态") {
+            AppSectionHeader(title = "区块标题")
+            AppSectionGroup {
+                AppMenuRow(
+                    title = "设置项（无图标）",
+                    subtitle = "副标题说明",
+                    trailing = { Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                )
+                AppDivider()
+                AppMenuRow(
+                    title = "带图标块",
+                    subtitle = "iconContainer = true",
+                    icon = Icons.Rounded.Code,
+                    iconContainer = true,
+                )
+                AppDivider()
+                AppMenuRow(
+                    title = "纯色前置图标",
+                    icon = Icons.Rounded.Settings,
+                    iconContainer = false,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Lg)) {
+                AppStatusDot(color = AppColor.StatusSuccess, label = "成功")
+                AppStatusDot(color = AppColor.StatusWarning, label = "警告")
+                AppStatusDot(color = AppColor.StatusDanger)
+            }
+        }
+
+        Section("分子组件 · 弹窗") {
+            AppButton(text = "打开弹窗", onClick = { showDialog = true })
+        }
+
         Section("三态") {
             Box(Modifier.fillMaxWidth().size(96.dp), contentAlignment = Alignment.Center) {
                 AppLoadingState()
@@ -130,6 +215,18 @@ private fun GalleryBody() {
                 AppErrorState(message = "网络异常，请重试。")
             }
         }
+    }
+
+    if (showDialog) {
+        AppDialog(
+            title = "确认操作",
+            text = "这是 AppDialog 演示：破坏性操作请用 Confirm/Danger 配色。",
+            onDismiss = { showDialog = false },
+            dismissText = "取消",
+            confirmText = "确认",
+            onConfirm = { showDialog = false },
+            confirmButtonColor = AppColor.StatusDanger,
+        )
     }
 }
 
