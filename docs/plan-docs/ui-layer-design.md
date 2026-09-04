@@ -144,6 +144,36 @@ interface BlockSlot {
 - **子级 RESIZABLE**：`Title`/`ActionButton` 都实现为 `SlotContent`，插到 `TopAppBar.actions` 或收纳处，同一组件装着跑（复用 §3.12 的 `Icon`/`IconContainer`/`AppHaptics`）。
 - **收纳即嵌套**：`SideRail` 的 `subSlots` 可插入一个 `BlockSlot`（如 `TopTabs`），块级即成为子级 —— 实现"侧边栏把顶栏 tab 收纳进来"。✅ **本轮先作静态挂载**（收纳进/出为一次布局切换，不追求展开/收起动画，动画后置）。
 
+#### 2.3.4b ★ 与官方 Slot API 的深度融合（Composable 插槽惯例）
+
+> **学习结论**：官方 Compose 的"插槽"就是 **命名参数 + `@Composable () -> Unit` lambda**（`Scaffold(topBar=…, bottomBar=…)`、`NavigationSuiteScaffold(navigationSuiteItems=…, content=…)`、`NavigableListDetailPaneScaffold(listPane/detailPane…)` 都是同一语言）。因此我们**以官方 scaffold 为基底、在其上加一层"装配定义"，而不是另起一套 data-class 框架** —— 这样 recomposition、keep alive、背压等全部交给官方。
+
+**双轨融合**（关键）：
+- **渲染轨（Composable 插槽 lambda）**：子级用什么由插槽 lambda 决定，能放任意 Composable、正确处理状态与重组。**这是页面的真渲染源。**
+- **描述轨（数据化 SlotContent /装配图）**：只描述"哪个 slot 装了哪个插件"（顶栏按钮、tab 项、被收纳块），**用于可收纳搬移、无状态持久化、导航参数传递**，渲染时按 `SlotKey` 从插槽 lambda 取。两轨靠 **`SlotKey` 对齐**。
+
+```kotlin
+// 子级 = 命令为 @Composable 插槽（渲染轨） + 可选 SlotContent 装配码（描述轨）
+@Composable
+fun AppTopBarBlock(
+    slotScope: SlotScope,                   // 装配上下文（当前 Screen 的 SlotKey 空间）
+    nav: (@Composable () -> Unit)? = null,  // 返回钮插槽
+    title: @Composable () -> Unit,          // 标题插槽
+    actions: List<SlotKey> = emptyList(),   // 操作按钮装配码（可收纳/可持久化）
+    actionSlots: Map<SlotKey, @Composable () -> Unit> = emptyMap(), // 对应插槽 lambda
+)
+
+// 块级 = 组合"命名插槽"的编排器（对标官方 Scaffold 插槽语言）；收纳 = 把某个 SlotKey 插到它的作用域
+interface BlockSlot {
+    val slot: BlockSlotKind
+    val subKeys: List<SlotKey>              // 一块挂哪些子级（顶栏 tabs / 侧边栏收纳的块）
+    @Composable fun Expose(scope: SlotScope)
+}
+```
+
+- **收纳不重写组件**：`TopTabs` 从顶栏搬到侧边栏，只需把它的 `SlotKey` 从 `TopAppBar.subKeys` 移到 `SideRail.subKeys`（其插槽 lambda 原样复用），这就是"同一子级处处可插"的官方化实现。
+- **与官方 scaffold 的映射**：`SlotScope` 即官方 scaffold 的 slot 参数空间；`AppAdaptiveNav`/普通页面的 `Scaffold`/`NavigableListDetailPaneScaffold` 是"编排基底"，`SlotKey` 装配图是"内容定价"。—— P0 落地时，**优先用官方 Scaffold/NavigationSuiteScaffold/NavigableListDetailPaneScaffold 组装，我们的 SlotKey 仅描述"谁放哪"，不重写布局骨架**。
+
 #### 2.3.5 Screen 装配 `SlotSet`（声明式）
 
 `*Screen` 只需声明挂载，不写布局：
@@ -303,6 +333,31 @@ currentScreen.SlotSet(
 > - **落地建议升级**：value 定义采用 **W3C DTCG 2025.10 稳定版 JSON** 单一源（`$value/$type/$description/$deprecated` + 别名引用 `{color.brand.primary}`），用 **Terrazzo / Style Dictionary** 生成 Kotlin-Compose 常量，**替代手写 `object AppXxx`** → 改色/改间距只改 tokens 文件，一套定义驱动全部。
 > - **命名规范借鉴**：token 名用 **scoped prefix**（`color-`/`spacing-`/`elevation-`/`motion-`），**禁止仅靠大小写区分**（如 `Primary`/`primary`）；分组按**功能**（text/bg/border/surface）而非纯按类型平铺；别名要校验**无循环/无缺失引用**。
 > - **Resolver 思路**：Light/Dark（及潜在品牌变体）用**组合规则**切换 `semantic` 层（value 指向哪个 primitive），**不复制**整份色板——这正是序列表"只改表层"的价值放大。
+>
+> **★ 落地样例（DTCG 2025.10 + 生成器通路，深度化）**：序列表（文档）为人工事实源，**转一份 `tokens/*.tokens.json`**（DTCG 格式），由生成器产出 Compose 与预览船型，改色只改 JSON：
+>
+> ```jsonc
+> // tokens/color/primitive.json —— 基元
+> { "color": { "brand": {
+>     "primary": { "$value": "#6C5CE7", "$type": "color", "$description": "品牌主色" },
+>     "surface": { "$value": "#F7F8FA", "$type": "color" } } } }
+> // tokens/color/semantic.json —— 语义（引用基元）
+> { "color": { "text": {
+>     "primary":   { "$value": "{color.brand.primary}", "$type": "color" },
+>     "onSurface": { "$value": "{color.ink.d900}",       "$type": "color" } } } }
+> // tokens/color/mode.json —— Light/Dark 组合规则（Resolver）
+> { "color": { "scheme": {
+>     "dark": { "$value": { "source": "{color.brand.primary}" }, "$type": "colorScheme", "$description": "dark 方案下语义层如何解析" } } } }
+> // tokens/component/button.json —— 组件令牌（三层之顶）
+> { "button": { "background": { "default": { "$value": "{color.text.primary}", "$type": "color" } } } }
+> ```
+>
+> ```kotlin
+> // Style Dictionary / Terrazzo 生成到 core/theme/token/generated/：
+> @Immutable object AppColors { val Primary = Color(0xFF6C5CE7); val OnSurface = Color(...) }
+> ```
+
+通路：`tokens/*.json`(源) → 生成器(Dictionary/Terrazzo) → `core/theme/token/generated/*.kt` + Compose `ColorScheme`/Typography 装配 → 组件引用 Component 层。**校验**：生成器加"别名无循环/无缺失、无重复 uri"插件（Style Dictionary 有现成 transforms）；`generated/` 与 tokens 逐一 CR 同步。
 
 ### 3.3 你点名的三大令牌——指定设计
 
@@ -606,6 +661,53 @@ LazyColumn(PageHorizontal verticalScroll) {
 | **终端/WebView** | 原生 View 区高度用旁路尺寸（`Modifier.weight`/`Box` 约束），不做 breakpoint 走势（已有 MTerminal 逻辑保留） |
 
 > **对"reveal/divide/resize/reposition/swap"的回应**（M3 逐断点决策法）：每档只回答"隐藏/展开哪块、面板如何划分/重排/互换"，不做整个页面重写。响应式不改变现有手机端布局，只在新页面与大屏检测时应用；折叠屏中隔断仅作 diff 级收口，不重构既有页。
+
+**`AppAdaptiveNav` 具体机制（对标 `NavigationSuiteScaffold` 深度化）**
+
+`BottomTabs` 与 `SideRail` 不再分别写，统一定义为 `AppAdaptiveNav`：由**断点决策函数**在三种 `NavSuiteType` 间切换（对齐官方的 `NavigationSuiteType.NavigationBar/Rail/Drawer`）：
+
+| 断点 | `NavSuiteType` | 形态 |
+|---|---|---|
+| <600dp | `BAR` | `BottomTabs` 底栏 |
+| 600–839dp | `RAIL_COLLAPSED` | `SideRail` 收叠窄栏（仅图标） |
+| 840–1599dp | `RAIL_EXPANDED` | `SideRail` 展开（图标+文字，`Permanent` 常驻） |
+| ≥1600dp | `DRAWER`(可选) | 展开侧栏/`PermanentModal` 大抽屉 |
+
+```kotlin
+@Composable
+fun WindowWidthSizeClassToNavSuiteType(width: Int): NavSuiteType {
+    return when {
+        width < 600 -> NavSuiteType.BAR
+        width < 840 -> NavSuiteType.RAIL_COLLAPSED
+        width < 1600 -> NavSuiteType.RAIL_EXPANDED
+        else -> NavSuiteType.DRAWER
+    }
+}
+
+@Composable
+fun AppAdaptiveNav(
+    navSuiteType: NavSuiteType,           // 由断点决策函数给出
+    items: List<AppNavItem>,              // 同一组搭配项（icon+label+route）
+    currentRoute: String?,
+    onNavigate: (String) -> Unit,
+) {
+    NavigationSuiteScaffold(
+        navigationSuiteItems = {
+            navSuiteType.items.forEach { item ->
+                item(item.icon, item.label, selected = item.route == currentRoute) {
+                    onNavigate(item.route)
+                }
+            }
+        },
+        layoutType = navSuiteType,        // 委托官方换形
+        content = { /* 页面正文 */ },
+    )
+}
+```
+
+- **状态保持**：切换类型时**不重建选中项**——`currentRoute` 取自 `NavHost` backStack/`LocalModNavigationState`，`onNavigate` 只改 route；跨断点换 shape 不丢当前页。
+- **切换动画**：`layoutType` 变化用 `AnimatedContent`（或 `MutableTransitionState`）平滑过渡（可后置，T15 同批）。
+- **懒加载对齐**：`RAIL` 用 `NavigationRailItem`，`BAR` 用 `NavigationBarItem`，`DRAWER` 用 `ModalNavDrawer`+rail —— 全套直接复用官方组件，不手写 tab 布局。
 
 ### 3.11 交互反馈与状态
 
