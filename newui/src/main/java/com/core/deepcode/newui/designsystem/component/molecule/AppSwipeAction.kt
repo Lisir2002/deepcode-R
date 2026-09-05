@@ -191,17 +191,42 @@ class AppSwipeActionState internal constructor(
             return if (offset < 0) -damped else damped
         }
 
-    /** 展开露出动作栏（Reveal 模式收起后再次展开用）。 */
-    suspend fun open() = anchored.animateTo(SwipeValue.Open)
+/** 展开露出动作栏（Reveal 模式收起后再次展开用）。保留轻微弹性手感——过冲方向远离 Closed，安全。 */
+suspend fun open() = anchored.animateTo(
+    SwipeValue.Open,
+    spring(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+    ),
+)
 
-    /** 收起（弹回原位）。 */
-    suspend fun close() = anchored.animateTo(SwipeValue.Closed)
+/**
+ * 收起（弹回原位）。
+ *
+ * **v10 修复**：由默认 snap spec（MediumBouncy 弹簧）改为**无过冲弹簧**。
+ * 原先 MediumBouncy 收起时 offset 会从 -actionWidth 过冲越过 0 冲到正值
+ * （实测 Robolectric -128 → +13.6px），反向穿越 `isEngagedAt` 阈值，
+ * 触发申报 effect 误判「重新展开」→ 抢报 expandedIndex → 其他行被连坐收起 →
+ * 互斥状态机雪崩（真机表现为「互斥不彻底」）。临界阻尼彻底消除过冲。
+ */
+suspend fun close() = anchored.animateTo(
+    SwipeValue.Closed,
+    spring(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+    ),
+)
 }
 
 /**
  * 创建可提升的滑扫状态；`actionWidth` 必须与 [AppSwipeAction] 保持一致。
  *
  * @param triggerWidth 从 [actionWidth] 到全滑确认点的额外宽度；拖超过该范围即触发 [AppSwipeAction.onTrigger]。
+ * @param pattern 滑扫模式（v10 起参与锚点表构造）：
+ *   **Reveal** 时锚点表**不含 Trigger**——高速 fling 最多锚定到 Open，杜绝内容层冲过动作栏
+ *   露出空白缝（真机实测：fling 速度超过 velocityThreshold 时 `computeTarget` 走速度路径，
+ *   直接冲到 Trigger 锚点，内容层停在 -（actionWidth+triggerWidth)，动作栏右侧出现
+ *   triggerWidth 宽的空白，且触发-回弹过程肉眼可见抖动）；**Dismiss** 时保留 Trigger 锚点支撑全滑确认。
  */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -210,6 +235,7 @@ fun rememberAppSwipeActionState(
     actionWidth: Dp = 120.dp,
     triggerWidth: Dp = 56.dp,
     startSwipeThreshold: Dp = 12.dp,
+    pattern: AppSwipePattern = AppSwipePattern.Reveal,
 ): AppSwipeActionState {
     val density = LocalDensity.current
     val (openAbs, triggerAbs, startAbs) = remember(edge, actionWidth, triggerWidth, startSwipeThreshold) {
@@ -220,14 +246,17 @@ fun rememberAppSwipeActionState(
     }
     val velocityThreshold = remember(openAbs) { openAbs.coerceAtLeast(48f) }
 
-    val anchors = remember(edge, openAbs, triggerAbs) {
+    val anchors = remember(edge, openAbs, triggerAbs, pattern) {
         val sign = if (edge == AppSwipeEdge.End) -1f else 1f
         val open = sign * openAbs
         val trigger = sign * triggerAbs
         DraggableAnchors {
             SwipeValue.Closed at 0f
             SwipeValue.Open at open
-            SwipeValue.Trigger at trigger
+            // v10：仅 Dismiss 模式提供 Trigger 锚点；Reveal 模式 fling 最多到 Open（见 KDoc）。
+            if (pattern == AppSwipePattern.Dismiss) {
+                SwipeValue.Trigger at trigger
+            }
         }
     }
 
@@ -357,9 +386,32 @@ fun RowScope.AppSwipeButton(
 }
 
 /**
- * 滑扫操作（分子组 · AppSwipeAction v9）：横向拖出底层动作栏，弹簧锚定到 0 / ±actionWidth。
+ * 滑扫操作（分子组 · AppSwipeAction v10）：横向拖出底层动作栏，弹簧锚定到 0 / ±actionWidth。
  *
- * v8 → v9 修复（本次）：
+ * v9 → v10 修复（真机复测「互斥不彻底 + 高速滑开露空白」）：
+ *
+ *  - **【B2】收起弹簧过冲引发互斥雪崩（根治）**：v9 的 `close()` 走默认 snap spec
+ *    （`DampingRatioMediumBouncy` 弹簧），收起时 offset 会从 -actionWidth **过冲越过 0 冲到正值**
+ *    （Robolectric 实测 -128 → +13.6px），反向穿越 `isEngagedAt` 阈值。申报 effect ① 误判
+ *    「重新展开」抢报 expandedIndex → 别行 effect ② 连坐收起 → expanded 状态雪崩归 null。
+ *    双重修复：① `close()` 改用 `DampingRatioNoBouncy` 临界阻尼弹簧，物理上不过冲
+ *    （`open()` 保留弹性——其过冲方向远离 Closed，安全且手感好）；
+ *    ② 申报 effect 发射 `(engaged, settlingOpen)` 二元组，抢报额外要求
+ *    `settledValue != Closed`（正朝展开方向 settle）——即便未来任何实现细节再产生过冲，
+ *    收起路径也绝不抢报，逻辑层兜底。
+ *  - **【B1】高速 fling 冲过动作栏露空白缝（根治）**：fling 速度超过 velocityThreshold 时，
+ *    foundation 的 `computeTarget` 走**速度路径**（`closestAnchor(offset, 速度方向)`），
+ *    一次性冲到 **Trigger 锚点**（actionWidth+triggerWidth），内容层越过动作栏左缘，
+ *    右侧露出 triggerWidth 宽的空白缝并可见触发-回弹抖动；Reveal 语义下全滑本不该发生。
+ *    修复：[rememberAppSwipeActionState] 新增 `pattern` 参数并参与锚点表构造——
+ *    **Reveal 模式锚点表不含 Trigger**，fling 最多锚定 Open；Dismiss 模式保留 Trigger 支撑全滑确认。
+ *    同时全滑触发 effect（settledValue == Trigger）实际仅在 Dismiss 模式下被触发。
+ *  - **【测试】**：真机缺陷复现依赖**真实拖拽手势**（连续帧 + 事件间隔 + 带速度抬起）——
+ *    两步瞬时手势速度≈0，走位置阈值路径，掩盖了速度路径全部缺陷（v9 的测试假绿教训）；
+ *    位置断言必须用 `positionInRoot`——`boundsInRoot` 会被外层 `clip(shape)` 裁剪
+ *    （实测内容滑出后 left 恒为 0）。
+ *
+ * v8 → v9 修复：
  *
  *  - **【B2】互斥「乒乓回环」根因修复**：v8 把 `expandedIndex` 放进了两个 `LaunchedEffect` 的 key。
  *    于是每一次互斥切换都会重启 effect 与内部的 `snapshotFlow`，而 `snapshotFlow` **重启即立即重放
@@ -400,7 +452,9 @@ fun AppSwipeAction(
     actions: @Composable RowScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val resolvedState = state ?: rememberAppSwipeActionState(edge, actionWidth)
+    // v10：pattern 参与锚点表构造（Reveal 无 Trigger 锚点，见 rememberAppSwipeActionState KDoc）。
+    // 注意 pattern 应保持静态；动态切换 pattern 会重建锚点与状态。
+    val resolvedState = state ?: rememberAppSwipeActionState(edge, actionWidth, pattern = pattern)
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val currentOnExpanded by rememberUpdatedState(onExpanded)
@@ -442,17 +496,26 @@ fun AppSwipeAction(
     // ① 本项展开/收起 → 向外部申报展开位。
     //    key 不含 expandedIndex，effect 不因互斥切换而重启，snapshotFlow 不会重放抢位；
     //    distinctUntilChanged 保证只在「真正跨越 engaged 阈值」时回调一次。
+    //
+    //    **v10 抢报防线**：发射 (engaged, settlingOpen) 二元组——settlingOpen =
+    //    `settledValue != Closed`，表示本项正朝展开方向 settle。收起弹簧即便因任何实现
+    //    细节发生过冲、offset 反向穿越 engaged 阈值（v9 实测 MediumBouncy 会冲到 +13.6px），
+    //    只要 settle 目标仍是 Closed 就**绝不抢报**，从根上杜绝
+    //    「A 收起过冲 → A 抢报 → B 被连坐收起 → expanded 雪崩」的互斥错乱链。
     LaunchedEffect(resolvedState, index) {
         if (index == null) return@LaunchedEffect
-        snapshotFlow { resolvedState.isEngagedAt(resolvedState.anchored.offset) }
+        snapshotFlow {
+            resolvedState.isEngagedAt(resolvedState.anchored.offset) to
+                (resolvedState.anchored.settledValue != SwipeValue.Closed)
+        }
             .distinctUntilChanged()
-            .collect { engaged ->
+            .collect { (engaged, settlingOpen) ->
                 val cb = currentOnExpanded ?: return@collect
                 val current = currentExpandedIndex
                 when {
-                    // 我展开了，且当前展开位不是我 → 抢占展开位
-                    engaged && current != index -> cb(index)
-                    // 我收起了，且当前展开位就是我 → 交还展开位
+                    // 我正展开/已展开，且当前展开位不是我 → 抢占展开位
+                    engaged && settlingOpen && current != index -> cb(index)
+                    // 我确实回到关闭位，且当前展开位就是我 → 交还展开位
                     !engaged && current == index -> cb(null)
                 }
             }
@@ -474,6 +537,7 @@ fun AppSwipeAction(
     }
 
     // 全滑确认：settle 到 Trigger 锚点即触发 onTrigger。
+    // v10：Reveal 模式锚点表已不含 Trigger，此 effect 实际仅在 Dismiss 模式下被触发。
     LaunchedEffect(resolvedState, pattern) {
         snapshotFlow { resolvedState.anchored.settledValue }
             .collect { v ->

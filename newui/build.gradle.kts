@@ -59,7 +59,23 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 
+    // 组件 UI 测试（Robolectric 上跑 Compose 语义树/手势，不需要真机）：
+    // 用途：滑扫组件等手势分子的回归验证（按钮揭示、互斥收起等视觉/状态断言）。
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.compose.ui:ui-test-manifest")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+
     testImplementation("junit:junit:4.13.2")
+}
+
+android {
+    testOptions {
+        unitTests {
+            // Robolectric + Compose UI 测试必需：让 unit test 能访问 res 与主题资源。
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 /**
