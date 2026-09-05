@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
@@ -34,6 +35,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -99,6 +102,14 @@ import com.core.deepcode.newui.designsystem.component.molecule.AppLoadingOverlay
 import com.core.deepcode.newui.designsystem.component.molecule.AppUpdateDialog
 import com.core.deepcode.newui.designsystem.component.molecule.AppFAB
 import com.core.deepcode.newui.designsystem.component.molecule.AppFilterChips
+import com.core.deepcode.newui.designsystem.component.molecule.AppFilterField
+import com.core.deepcode.newui.designsystem.component.molecule.AppChecklistFilter
+import com.core.deepcode.newui.designsystem.component.molecule.AppChecklistToolbar
+import com.core.deepcode.newui.designsystem.component.molecule.AppRangeFilter
+import com.core.deepcode.newui.designsystem.component.molecule.AppBooleanFilter
+import com.core.deepcode.newui.designsystem.component.molecule.AppRatingFilter
+import com.core.deepcode.newui.designsystem.component.molecule.AppDateFilter
+import com.core.deepcode.newui.designsystem.component.molecule.AppFilterSheet
 import com.core.deepcode.newui.designsystem.component.molecule.AppInlineAlert
 import com.core.deepcode.newui.designsystem.component.molecule.AppMenuRow
 import com.core.deepcode.newui.designsystem.component.molecule.AppProgressBar
@@ -137,6 +148,13 @@ import com.core.deepcode.newui.designsystem.component.molecule.AppTimelineItem
 import com.core.deepcode.newui.designsystem.component.molecule.AppTimelineTone
 import com.core.deepcode.newui.designsystem.component.molecule.AppProgressSteps
 import com.core.deepcode.newui.designsystem.component.molecule.AppTagInput
+import com.core.deepcode.newui.designsystem.component.molecule.AppFilledTextField
+import com.core.deepcode.newui.designsystem.component.molecule.AppPasswordField
+import com.core.deepcode.newui.designsystem.component.molecule.AppCountedTextField
+import com.core.deepcode.newui.designsystem.component.molecule.AppValidatedTextField
+import com.core.deepcode.newui.designsystem.component.molecule.AppInputValidity
+import com.core.deepcode.newui.designsystem.component.molecule.AppMultiLineTextField
+import com.core.deepcode.newui.designsystem.component.molecule.AppMessageField
 import com.core.deepcode.newui.designsystem.component.molecule.AppPagination
 import com.core.deepcode.newui.designsystem.component.molecule.AppKeyCombo
 import com.core.deepcode.newui.designsystem.component.molecule.AppKeyCap
@@ -238,6 +256,21 @@ private fun GalleryBody() {
     var navIndex by remember { mutableStateOf(0) }
     var showCountdownDialog by remember { mutableStateOf(false) }
     var showLoadingOverlay by remember { mutableStateOf(false) }
+    // 筛选组件族演示状态
+    var filterText by remember { mutableStateOf("") }
+    var checklistSel by remember { mutableStateOf(setOf(0, 2)) }
+    var rangeVal by remember { mutableStateOf(30f..80f) }
+    var boolIdx by remember { mutableStateOf(0) }
+    var ratingFilter by remember { mutableStateOf(3) }
+    var dateIdx by remember { mutableStateOf(0) }
+    // 输入框族演示状态
+    var passText by remember { mutableStateOf("secret123") }
+    var countedText by remember { mutableStateOf("Compose 语法") }
+    var validText by remember { mutableStateOf("user@example.com") }
+    var multiText by remember { mutableStateOf("") }
+    var msgText by remember { mutableStateOf("") }
+    var dialogInput by remember { mutableStateOf("") }
+    var showDialogInput by remember { mutableStateOf(false) }
     // 文件卡运行态：自动循环演示（上传推进 → 完成）
     var fileProgress by remember { mutableStateOf(0f) }
     var fileState by remember { mutableStateOf(AppFileState.Uploading) }
@@ -360,6 +393,153 @@ private fun GalleryBody() {
                 label = "示例输入",
                 placeholder = "请输入内容…",
             )
+        }
+
+        Section("分子组建族 · 筛选（按数据类型个性化）") {
+            // 综合筛选面板：把多种数据类型的筛选控件组合进抽屉卡片，联动「已选计数」。
+            val sheetActive =
+                (if (filterText.isNotEmpty()) 1 else 0) +
+                    (if (boolIdx != 0) 1 else 0) +
+                    (if (rangeVal != 30f..80f) 1 else 0) +
+                    (if (ratingFilter > 0) 1 else 0) +
+                    checklistSel.size
+            AppFilterSheet(
+                title = "数据筛选",
+                activeCount = sheetActive,
+                onClearAll = {
+                    filterText = ""; boolIdx = 0; rangeVal = 30f..80f
+                    ratingFilter = 0; checklistSel = emptySet()
+                },
+                onReset = {
+                    boolIdx = 0; rangeVal = 30f..80f; ratingFilter = 0; checklistSel = emptySet()
+                },
+                onApply = {},
+            ) {
+                // 文本型：关键字筛选
+                AppFilterField(
+                    value = filterText,
+                    onValueChange = { filterText = it },
+                    placeholder = "按名称 / 标签筛查…",
+                )
+                // 布尔型：三态（全部 / 进行中 / 已完成）
+                AppBooleanFilter(
+                    labels = listOf("全部状态", "进行中", "已完成"),
+                    selectedIndex = boolIdx,
+                    onSelect = { boolIdx = it },
+                )
+                // 数值型：价格 / 大小范围双滑块
+                AppRangeFilter(
+                    value = rangeVal,
+                    onValueChange = { rangeVal = it },
+                    prefix = "¥",
+                )
+                // 评分型：星级筛选
+                AppRatingFilter(
+                    value = ratingFilter,
+                    onValueChange = { ratingFilter = it },
+                )
+            }
+            // 枚举型：多选 + 计数 + 全选/清空
+            AppChecklistToolbar(
+                selectedCount = checklistSel.size,
+                total = 4,
+                onSelectAll = { checklistSel = setOf(0, 1, 2, 3) },
+                onClear = { checklistSel = emptySet() },
+            )
+            AppChecklistFilter(
+                options = listOf("聊天对话", "代码文件", "设计文档", "终端会话"),
+                counts = listOf(128, 45, 23, 67),
+                selected = checklistSel,
+                onToggle = { i ->
+                    checklistSel = if (i in checklistSel) checklistSel - i else checklistSel + i
+                },
+            )
+            // 日期型：预设范围
+            AppDateFilter(
+                presets = listOf("不限", "今日", "本周", "本月"),
+                selectedIndex = dateIdx,
+                onSelect = { dateIdx = it },
+                selectedRangeText = if (dateIdx == 0) {
+                    "不限时间"
+                } else {
+                    listOf("2026/9/5 至今", "2026/8/31 ~9/5", "2026/9/1 ~9/5")[dateIdx - 1]
+                },
+            )
+        }
+
+        Section("分子组建族 · 输入框") {
+            // 填充式文本输入框（带前置图标 + 一键清除）
+            AppFilledTextField(
+                value = fieldText,
+                onValueChange = { fieldText = it },
+                label = "填充式文本框",
+                placeholder = "例如：项目名称",
+                leadingIcon = Icons.Rounded.Person,
+            )
+            // 密码输入框（可见性切换）
+            AppPasswordField(
+                value = passText,
+                onValueChange = { passText = it },
+                label = "密码输入框",
+                placeholder = "输入密码",
+            )
+            // 带字符计数输入框（超限截断）
+            AppCountedTextField(
+                value = countedText,
+                onValueChange = { countedText = it },
+                label = "带计数输入框",
+                maxLength = 16,
+            )
+            // 验证态输入框（Normal / Error / Success）
+            AppValidatedTextField(
+                value = validText,
+                onValueChange = { validText = it },
+                label = "验证态输入框",
+                placeholder = "请输入邮箱",
+                validity = when {
+                    validText.isBlank() -> AppInputValidity.Normal
+                    "@" in validText && "." in validText -> AppInputValidity.Success
+                    else -> AppInputValidity.Error
+                },
+                helper = when {
+                    validText.isBlank() -> "邮箱 / 手机号等格式校验"
+                    "@" in validText && "." in validText -> "校验通过"
+                    else -> "请输入合法邮箱地址"
+                },
+            )
+            // 多行文本域（随内容增高）
+            AppMultiLineTextField(
+                value = multiText,
+                onValueChange = { multiText = it },
+                label = "多行文本域",
+                placeholder = "支持多行输入，随内容增高…",
+            )
+            // 消息输入框（Chat Composer）：输入后发送按钮亮起
+            AppMessageField(
+                value = msgText,
+                onValueChange = { msgText = it },
+                onSend = { if (msgText.isNotBlank()) msgText = "" },
+                placeholder = "消息输入框：输入后发送按钮亮起…",
+            )
+            // 弹窗输入框：输入框在弹窗 / 表单内的标准用法
+            TextButton(onClick = { showDialogInput = true }) { Text("打开弹窗输入") }
+            if (showDialogInput) {
+                AlertDialog(
+                    onDismissRequest = { showDialogInput = false },
+                    title = { Text("弹窗输入框") },
+                    text = {
+                        AppFilledTextField(
+                            value = dialogInput,
+                            onValueChange = { dialogInput = it },
+                            label = "名称",
+                            placeholder = "请输入…",
+                            leadingIcon = Icons.Rounded.Person,
+                        )
+                    },
+                    confirmButton = { TextButton(onClick = { showDialogInput = false }) { Text("确定") } },
+                    dismissButton = { TextButton(onClick = { showDialogInput = false }) { Text("取消") } },
+                )
+            }
         }
 
         Section("分子组件 · 分组 / 列表行 / 状态") {
