@@ -1,6 +1,6 @@
 # agent 模块文档
 
-> 模块路径：`app/src/main/java/com/core/deepcode/feature/agent/`
+> 模块路径：`app/src/main/java/com/mini/me_core/feature/agent/`
 > 维护规则：本模块代码变更必须同步更新本文档。新增/重命名/删除类、接口、工具、命令、Provider、DAO 或调整关键流程后，请一并修订对应小节。
 
 ## 1. 模块定位

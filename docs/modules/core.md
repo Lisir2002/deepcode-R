@@ -1,6 +1,6 @@
 # core 模块文档（公共基础层）
 
-> 模块路径：`app/src/main/java/com/core/deepcode/core/` + `di/` + 应用入口
+> 模块路径：`app/src/main/java/com/mini/me_core/core/` + `di/` + 应用入口
 > 维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位

@@ -95,7 +95,7 @@ fun gitVersionCode(): Int = try {
 }
 
 android {
-    namespace = "com.core.deepcode"
+    namespace = "com.mini.me_core"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
 
@@ -340,7 +340,7 @@ androidComponents {
     }
 }
 
-/** 允许的 applicationId 白名单：release=com.core.deepcode，debug 带 .debug 后缀（与 release 数据隔离）。 */
+/** 允许的 applicationId 白名单：release=com.mini.me_core，debug 带 .debug 后缀（与 release 数据隔离）。 */
 val ALLOWED_APPLICATION_IDS = setOf("com.mini.me_core", "com.mini.me_core.debug")
 
 dependencies {
@@ -453,7 +453,7 @@ dependencies {
 
 // ── 新数据层（data-layer-redesign）─ SQLDelight 6 库拓扑（设计文档 §4 / §12）──
 // 核心 5 域各自独立 Database 类（独立版本链）+ infra 一个 Database 类承载全部 Store。
-// 生成规则（SQLDelight 2.x）：Database 类在公共包 com.core.deepcode.datalayer.sqldelight；
+// 生成规则（SQLDelight 2.x）：Database 类在公共包 com.mini.mecore.datalayer.sqldelight；
 // 查询类/数据类在 packageName + 相对 srcDir 的目录路径（agent/ → .sqldelight.agent 等）。
 // 文件布局：src/main/sqldelight/<域>/<域>/<文件>.sq（.sq 必须位于 srcDir 的子目录「包目录」）。
 // dialect = sqlite 3.38：schema 编译期校验按 3.38；运行期由设备 SQLite 提供（语句均兼容 3.18+，
@@ -461,32 +461,32 @@ dependencies {
 sqldelight {
     databases {
         create("AgentDb") {
-            packageName.set("com.core.deepcode.datalayer.sqldelight")
+            packageName.set("com.mini.mecore.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/agent")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("CredentialsDb") {
-            packageName.set("com.core.deepcode.datalayer.sqldelight")
+            packageName.set("com.mini.mecore.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/credentials")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("SettingsDb") {
-            packageName.set("com.core.deepcode.datalayer.sqldelight")
+            packageName.set("com.mini.mecore.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/settings")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("WorkspaceDb") {
-            packageName.set("com.core.deepcode.datalayer.sqldelight")
+            packageName.set("com.mini.mecore.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/workspace")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("T2iDb") {
-            packageName.set("com.core.deepcode.datalayer.sqldelight")
+            packageName.set("com.mini.mecore.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/t2i")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }
         create("InfraDb") {
-            packageName.set("com.core.deepcode.datalayer.sqldelight")
+            packageName.set("com.mini.mecore.datalayer.sqldelight")
             srcDirs("src/main/sqldelight/infra")
             dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.2.1")
         }

@@ -144,7 +144,7 @@
 ### Changed（变更）
 
 - **应用名：`R-CodeCore` → `MiniMe-core`**：桌面名称、调试变体名（`MiniMe-core (Debug)`）、主题样式 `Theme.DeepCoreCode`、README / 应用内文档 / AI 版本日志中的品牌自述全数更新。
-- **包名（applicationId）：`com.R.codecore` → `com.core.deepcode`**：同步 `namespace`、Hilt / BuildConfig / SQLDelight 生成包、源码目录树 `com/R/codecore` → `com/core/deepcode`（含 6 个 SQLDelight 域的 `.sq` 包目录）、R8 混淆规则、agent 库文件名 `deepcode_agent_v3.db`、容器运行时目录 `/root/.deepcode`、APK 产物名 `deepcode-<版本>.apk`。
+- **包名（applicationId）：`com.R.codecore` → `com.mini.me_core`**：同步 `namespace`、Hilt / BuildConfig / SQLDelight 生成包、源码目录树 `com/R/codecore` → `com/core/deepcode`（含 6 个 SQLDelight 域的 `.sq` 包目录）、R8 混淆规则、agent 库文件名 `deepcode_agent_v3.db`、容器运行时目录 `/root/.deepcode`、APK 产物名 `deepcode-<版本>.apk`。
 - **三道数据保全门禁同步迁移**：Gradle 白名单换为新包名；`ApplicationIdStabilityTest` 断言新包名并把旧包名 `com.R.codecore` 纳入防回退黑名单；CI 发版门禁新增显式 `REBRAND_TRANSITIONS` 迁移对（仅放行本次登记的旧→新过渡，其他任何包名变更仍被阻断）。
 
 ### Added（新增）

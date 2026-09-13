@@ -1,6 +1,6 @@
 # 工作区（Workspace）模块文档
 
-> 模块路径：`app/src/main/java/com/core/deepcode/feature/workspace/`；维护规则：本模块代码变更必须同步更新本文档
+> 模块路径：`app/src/main/java/com/mini/me_core/feature/workspace/`；维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
 

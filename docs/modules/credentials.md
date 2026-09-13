@@ -1,6 +1,6 @@
 # Credentials（凭据）模块文档
 
-> 模块路径：`app/src/main/java/com/core/deepcode/feature/credentials/`；维护规则：本模块代码变更必须同步更新本文档
+> 模块路径：`app/src/main/java/com/mini/me_core/feature/credentials/`；维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
 

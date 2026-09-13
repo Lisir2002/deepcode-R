@@ -1,6 +1,6 @@
 # 备份（Backup）模块文档
 
-> 模块路径：`app/src/main/java/com/core/deepcode/feature/backup/`；维护规则：本模块代码变更必须同步更新本文档
+> 模块路径：`app/src/main/java/com/mini/me_core/feature/backup/`；维护规则：本模块代码变更必须同步更新本文档
 
 ## 1. 模块定位
 
@@ -83,16 +83,16 @@
 
 `BackupSection` 顶部有 `LegacyDataRecoveryBanner`：通过 `PackageManager` 检测历史遗留包名（`com.aicodeeditor`、`com.deep.rcode`）是否仍安装且**签名与当前包一致**（`GET_SIGNING_CERTIFICATES`/`GET_SIGNATURES` 取首个签名比对）。若命中则展示提示卡，引导用户「旧版本导出备份 → 本版本导入备份」找回因包名变更而隔离的历史对话。
 
-> 背景：applicationId 三次变更（`com.aicodeeditor` → `com.deep.rcode` → `com.core.deepcode`），每次变更是完全不同的 App，新包名全新安装导致旧包数据不可见。该横幅与 `ApplicationIdStabilityTest`（锁死 release applicationId）共同防止用户数据再次因改包名而丢失。
+> 背景：applicationId 三次变更（`com.aicodeeditor` → `com.deep.rcode` → `com.mini.me_core`），每次变更是完全不同的 App，新包名全新安装导致旧包数据不可见。该横幅与 `ApplicationIdStabilityTest`（锁死 release applicationId）共同防止用户数据再次因改包名而丢失。
 
 ### 3.7 数据保全（数据完整性哨兵 + 本机自动备份）
 
 针对「历史对话在升级后清空」这一根因（包名变更 = 全新安装、数据被异常清空不可感知、无自动备份），数据保全用**三层防线**覆盖编译期/发布期/运行期：
 
 - **防变更（编译/发布期）**：
-  - D1 单测 `ApplicationIdStabilityTest`（release classpath，锁死 `com.core.deepcode`，禁回退遗留包名）。
+  - D1 单测 `ApplicationIdStabilityTest`（release classpath，锁死 `com.mini.me_core`，禁回退遗留包名）。
   - D2 CI 发版门禁 `.github/workflows/android-release.yml` 的 `Verify applicationId stability`：比对当前 tag 与上一 tag 的 `applicationId`，不一致则 `::error::` 阻断发版。
-  - D3 构建期白名单 `app/build.gradle.kts` 的 `androidComponents.onVariants`：`applicationId` 不在 `ALLOWED_APPLICATION_IDS`（`com.core.deepcode` / `com.core.deepcode.debug`）内 → 构建直接失败。
+  - D3 构建期白名单 `app/build.gradle.kts` 的 `androidComponents.onVariants`：`applicationId` 不在 `ALLOWED_APPLICATION_IDS`（`com.mini.me_core` / `com.mini.me_core.debug`）内 → 构建直接失败。
   - D3b 系统级云备份兜底（AndroidManifest + `res/xml/`）：`android:allowBackup="true"` + `full_backup_rules.xml`（Android 9-11）+ `data_extraction_rules.xml`（Android 12+），让系统/OEM 换机克隆/Google 云备份保留 Room DB、崩溃备份、ZTH 元数据与 shared_prefs。局限：按包名路由，rebrand 后旧备份不可达，故仅作第三层兜底，主防线仍是应用层双保险备份（D5/D6b）。
 - **防丢失（运行时数据安全网）**：
   - D4 数据完整性哨兵（`DataSentinel` + `AppRunMeta` + `SentinelLogic` + `LegacyPackageDetector`）：启动时读运行元数据与 `ChatSessionDao.count()`，判定 `FIRST_RUN / UPGRADED / NORMAL / DATA_LOST / PACKAGE_CHANGED`。判定优先级：未初始化且无同签名旧包→`FIRST_RUN`；未初始化但有同签名旧包→`PACKAGE_CHANGED`（哨兵记忆随包名隔离丢失时，靠 `LegacyPackageDetector` 识别 rebrand 升级，不再静默当全新安装）；包名不一致→`PACKAGE_CHANGED`（优先于 DATA_LOST）；已初始化但会话数=0→`DATA_LOST`；versionCode 增大→`UPGRADED`；其余→`NORMAL`。`DATA_LOST`/`PACKAGE_CHANGED` 不更新 `lastRun`，保留告警态供 UI 持续提示。
@@ -160,4 +160,4 @@
 > 本模块开发维度演进；用户可见变更见仓库根 [CHANGELOG.md](../../CHANGELOG.md)。
 
 - **v0.1.0（2026-08-22）**：新增**数据保全三层防线**（防历史对话丢失）、修复历史对话因包名变更丢失的数据救济与可见性、外部备份轮转（含启动级全局告警与签名密钥加密的外部安全备份）。
-- **更早（迁移前）**：R-DeepCode → DeepCore-Code 品牌与包名迁移（`com.deep.rcode` → `com.core.deepcode`）。
+- **更早（迁移前）**：R-DeepCode → DeepCore-Code 品牌与包名迁移（`com.deep.rcode` → `com.mini.me_core`）。

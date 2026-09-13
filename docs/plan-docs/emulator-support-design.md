@@ -42,11 +42,11 @@
 |---|---|---|---|
 | P1 | **ABI 单架构打包** | [app/build.gradle.kts](file:///workspace/deepcode-R/app/build.gradle.kts#L141) `ndk { abiFilters += "arm64-v8a" }` | x86_64 宿主模拟器**安装即失败**（缺 x86_64 so） |
 | P2 | **targetSdk 锁定 28** | [app/build.gradle.kts](file:///workspace/deepcode-R/app/build.gradle.kts#L127-L129) | PRoot 需在 app 可写目录执行二进制（Android 10+ W^X）。**在模拟器上同样成立，不是额外负担** |
-| P3 | **容器 rootfs 架构资产** | [ContainerInstaller.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/agent/domain/container/ContainerInstaller.kt#L19-L25) 已留双容器架构设计；`_x86Assets` 已按旧决策删除 | 容器/终端运行期能力 |
+| P3 | **容器 rootfs 架构资产** | [ContainerInstaller.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/agent/domain/container/ContainerInstaller.kt#L19-L25) 已留双容器架构设计；`_x86Assets` 已按旧决策删除 | 容器/终端运行期能力 |
 
 **关键利好**：执行后端**已经是可插拔的**——
 
-- [DelegatingFileAccess.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/workspace/domain/DelegatingFileAccess.kt) 按执行模式自动分发本地/远程文件访问；
+- [DelegatingFileAccess.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/workspace/domain/DelegatingFileAccess.kt) 按执行模式自动分发本地/远程文件访问；
 - 终端有本地 PRoot 与远程 SSH 双后端；
 - **远程 SSH 执行模式完全不依赖容器**，是「模拟器上 AI 核心可用」的天然地基。
 
@@ -167,7 +167,7 @@ object EnvironmentDetector {
 
 - **可用**：AI 对话、本地文件读写（`LocalFileAccess` 不依赖容器）、Git 可视化、远程 SSH 模式、备份恢复；
 - **降级提示**：容器内执行命令 / 终端等依赖 PRoot 的能力，提示「当前环境不支持容器，请使用远程 SSH 模式或真机」；
-- 复用现有 [DelegatingFileAccess.kt](file:///workspace/deepcode-R/app/src/main/java/com/core/deepcode/feature/workspace/domain/DelegatingFileAccess.kt) 分发骨架，新增一条「无容器」路由即可。
+- 复用现有 [DelegatingFileAccess.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/workspace/domain/DelegatingFileAccess.kt) 分发骨架，新增一条「无容器」路由即可。
 
 ### 6.6 CI 门禁（方向 D）
 

@@ -511,9 +511,9 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 12.2 现状与缺口
 
-- 现有 [PermissionRule](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/permission/PermissionModels.kt) 二元（toolName + pattern + ALLOW/DENY），**无条件表达式、无 warn、无事件维度**。
+- 现有 [PermissionRule](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/permission/PermissionModels.kt) 二元（toolName + pattern + ALLOW/DENY），**无条件表达式、无 warn、无事件维度**。
 - JSON（`permissions.json`）=「始终允许/拒绝」的**记忆授权**产物。
-- [evaluateShell](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/permission/ToolPermissionPolicyEngine.kt#L167-L229) 顺序：灾难 rm → DENY → 不可判定 → 内置白名单 → 已记忆 ALLOW → ASK。
+- [evaluateShell](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/permission/ToolPermissionPolicyEngine.kt#L167-L229) 顺序：灾难 rm → DENY → 不可判定 → 内置白名单 → 已记忆 ALLOW → ASK。
 - 已有 frontmatter 解析（SkillParser + #1 定稿 SnakeYAML）可复用。
 
 ### 12.3 设计（已确认：MD+JSON 共存、引入 warn、权限+Hook 双消费点）
@@ -618,9 +618,9 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 15.1 现状（三个既有支撑）
 
-- **agent_type 雏形已存在**：[SkillScope.AGENT](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/skill/Skill.kt#L41) + `Skill.agentType`（默认 `"coding"`），`SkillStateRepository` 注释「多 Agent 演进后由调用方传入动态值」——#1 的 agent_type 动态化即 #9 基础。
-- **上下文预算体系成熟**：[ContextCompactor](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/workflow/ContextCompactor.kt#L211) + `ModelContextPolicy.preserveRecentTokens` 可被 subagent 复用。
-- **工具并行安全已就绪**：[ToolSessionState](file:///workspace/app/src/main/java/com/core/deepcode/feature/agent/domain/tool/ToolSessionState.kt#L17)「并行工具同 key 串行安全」；provider 多 tool_use 已支持。
+- **agent_type 雏形已存在**：[SkillScope.AGENT](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/skill/Skill.kt#L41) + `Skill.agentType`（默认 `"coding"`），`SkillStateRepository` 注释「多 Agent 演进后由调用方传入动态值」——#1 的 agent_type 动态化即 #9 基础。
+- **上下文预算体系成熟**：[ContextCompactor](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/workflow/ContextCompactor.kt#L211) + `ModelContextPolicy.preserveRecentTokens` 可被 subagent 复用。
+- **工具并行安全已就绪**：[ToolSessionState](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/ToolSessionState.kt#L17)「并行工具同 key 串行安全」；provider 多 tool_use 已支持。
 
 ### 15.2 设计（已确认：独立会话落库、继承环境+简报、并发/预算可配置、骨架先行）
 

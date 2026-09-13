@@ -4,7 +4,7 @@
 >
 > 主题：数据层重构（「新写法」）——以现有数据层（「旧版写法」）为参照，收敛碎片化存储、统一持久化注册与备份/恢复链路，实现「数据库不被任何外部因素影响 + 包变更/升级无感自动迁移」。
 >
-> 关联问题：日志显示 `PACKAGE_CHANGED`（`com.deep.rcode` → `com.core.deepcode`）后需手动从备份恢复；且现有备份为手工白名单，大量数据不参与迁移。
+> 关联问题：日志显示 `PACKAGE_CHANGED`（`com.deep.rcode` → `com.mini.me_core`）后需手动从备份恢复；且现有备份为手工白名单，大量数据不参与迁移。
 > 关联模块：`feature/backup`、`feature/settings`、`feature/agent`、`feature/credentials`、`feature/workspace`、`feature/t2i`。
 
 ## 0. 决策记录（评审确认）

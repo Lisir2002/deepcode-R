@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.core.deepcode.newui"
+    namespace = "com.mini.me_core.newui"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
 

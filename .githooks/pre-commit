@@ -10,7 +10,7 @@
 set -u
 
 ROOT="$(git rev-parse --show-toplevel)"
-FEATURE_DIR="$ROOT/app/src/main/java/com/core/deepcode/feature"
+FEATURE_DIR="$ROOT/app/src/main/java/com/mini/me_core/feature"
 DOCS_DIR="$ROOT/docs/modules"
 
 # 允许存在的非模块文档：索引 + 公共基础层

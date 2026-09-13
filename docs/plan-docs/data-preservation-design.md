@@ -15,7 +15,7 @@
 `applicationId`（包名）历史上变更过三次：
 
 ```
-com.aicodeeditor → com.deep.rcode → com.R.codecore → com.core.deepcode
+com.aicodeeditor → com.deep.rcode → com.R.codecore → com.mini.me_core
 （第四次为 rc11 MiniMe-core 品牌迭代：显式 rebrand，内测阶段执行；
   旧包名 `com.R.codecore` 已纳入 Gradle 白名单、CI 门禁与单测的防回退黑名单）
 ```
@@ -87,8 +87,8 @@ Android 按包名隔离应用私有数据（`/data/data/<包名>/`）。**包名
 ```kotlin
 // 数据保全：applicationId 白名单硬校验（改动即编译失败）
 val allowedApplicationIds = setOf(
-    "com.core.deepcode",            // 正式/Release
-    "com.core.deepcode.debug",      // 本地 Debug（.debug 后缀，与 release 数据隔离）
+    "com.mini.me_core",            // 正式/Release
+    "com.mini.me_core.debug",      // 本地 Debug（.debug 后缀，与 release 数据隔离）
 )
 tasks.register("checkApplicationIdWhitelist") {
     doFirst {
@@ -184,7 +184,7 @@ suspend fun count(): Int
 
 ### 4.6 已实施部分（本次战役已完成）
 
-- **D1**：`app/src/test/java/com/core/deepcode/core/applicationid/ApplicationIdStabilityTest.kt`（release 包名锁死 + 禁回退遗留包名，3 用例）。
+- **D1**：`app/src/test/java/com/mini/me_core/core/applicationid/ApplicationIdStabilityTest.kt`（release 包名锁死 + 禁回退遗留包名，3 用例）。
 - **D7**：`BackupSection.kt` 的 `LegacyDataRecoveryBanner`（同签名旧包检测 → 引导备份迁移）。
 - **D9**：`AboutSection.kt` 的 `VariantPill` + 包名展示（debug/release 混装可见性）。
 
