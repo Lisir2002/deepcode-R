@@ -147,7 +147,7 @@ done
 
 # ================= 阻断项 C-3：手写 versionName/versionCode =================
 if [ -f "$ROOT/app/build.gradle.kts" ]; then
-  if grep -nE 'version(Name|Code)[[:space:]]*=' "$ROOT/app/build.gradle.kts" | grep -v 'gitVersionName\|gitCommitCount' | grep -q '='; then
+  if grep -nE 'version(Name|Code)[[:space:]]*=' "$ROOT/app/build.gradle.kts" | grep -v 'gitVersionName\|gitVersionCode' | grep -q '='; then
     echo "❌ [C-3] app/build.gradle.kts 中出现手写 versionName/versionCode（应由 Git Tag 动态推导）"
     BLOCKERS=$((BLOCKERS+1))
   fi

@@ -40,8 +40,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          # versionCode 由 build.gradle.kts 的 gitCommitCount() 在配置阶段取
-          # git rev-list --count HEAD，浅克隆（默认 depth=1）会得到 1，必须拉完整历史。
+          # versionCode/versionName 由 build.gradle.kts 的 gitVersionCode()/gitVersionName() 在配置阶段
+          # 基于 git tag 推导，浅克隆（默认 depth=1）会拿不到 tag，必须拉完整历史。
           fetch-depth: 0
 
       - name: Set up JDK 17

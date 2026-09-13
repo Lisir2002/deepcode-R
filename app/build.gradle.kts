@@ -59,20 +59,39 @@ fun gitVersionName(): String = try {
     "$BASE_VERSION-dev"
 }
 
-// versionCode 从 git 提交数自动生成：随每次提交单调递增，无需手动维护，
-// 杜绝"升 versionName 忘升 versionCode"导致升级判定失效。
-// 工作目录用 rootProject.projectDir（仓库根），无 git 环境（如下载 zip 构建）时 fallback 到 1。
-// CI 额外校验 versionCode 单调（见 .github/workflows/android-release.yml），防 rebase/squash 改写历史导致回退。
-fun gitCommitCount(): Int = try {
-    val process = Runtime.getRuntime().exec(
-        arrayOf("git", "rev-list", "--count", "HEAD"),
+// versionCode 从 git tag 四段版本号映射生成（语义见 docs/versioning.md），随版本单调递增：
+//   versionCode = BASE + A*1_000_000_000 + B*10_000_000 + C*10_000 + D*10
+//   - A/B 段当前预留为 0，实际迭代在 C/D 段；C 段间距 10_000 > D 段最大映射 999*10=9990，
+//     保证「C+1 且 D 归零」时仍严格单调；rcN 与同版本正式号映射相同，RC 转正允许相等覆盖升级。
+// 历史教训：早期用 git rev-list --count HEAD（提交数）作 versionCode，一旦 rebase/squash 改写历史，
+// 提交数回退会导致新版本 versionCode < 旧版、Android 升级判定失效。现改为 tag 驱动，与提交历史
+// 解耦——历史可随时压缩/重写，versionCode 依然单调。
+// 无 tag（dev 构建 / 旧三段 tag / 无 git 环境）时回退 BASE + 提交数（dev 包不发布，仅保证可覆盖安装）。
+// CI 额外校验 versionCode 单调（见 .github/workflows/android-release.yml），映射规则与本函数一致。
+fun gitVersionCode(): Int = try {
+    val describeProcess = Runtime.getRuntime().exec(
+        arrayOf("git", "describe", "--tags", "--always", "--dirty"),
         null,
         rootProject.projectDir
     )
-    process.waitFor()
-    process.inputStream.bufferedReader().readText().trim().toIntOrNull() ?: 1
+    describeProcess.waitFor()
+    val raw = describeProcess.inputStream.bufferedReader().readText().trim().removePrefix("v")
+    val tagMatch = Regex("""^(\d+)\.(\d+)\.(\d+)\.(\d+)(?:-rc\d+)?$""").matchEntire(raw)
+    if (tagMatch != null) {
+        val (a, b, c, d) = tagMatch.destructured
+        (10_000_000L + a.toLong() * 1_000_000_000L + b.toLong() * 10_000_000L +
+            c.toLong() * 10_000L + d.toLong() * 10L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    } else {
+        val countProcess = Runtime.getRuntime().exec(
+            arrayOf("git", "rev-list", "--count", "HEAD"),
+            null,
+            rootProject.projectDir
+        )
+        countProcess.waitFor()
+        10_000_000 + (countProcess.inputStream.bufferedReader().readText().trim().toIntOrNull() ?: 0)
+    }
 } catch (e: Exception) {
-    1
+    10_000_000
 }
 
 android {
@@ -139,7 +158,7 @@ android {
         // 锁定 targetSdk 28：Android 10+（API 29+）的 W^X/SELinux 策略禁止执行 App 可写
         // 数据目录里的文件，PRoot 二进制将无法运行（同 Termux 的取舍）。代价：不能上 Google Play。
         targetSdk = 28
-        versionCode = gitCommitCount()
+        versionCode = gitVersionCode()
         versionName = gitVersionName()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

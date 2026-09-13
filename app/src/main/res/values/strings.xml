@@ -147,6 +147,8 @@
     <string name="settings_category_other">其他</string>
     <string name="settings_security_subtitle">凭据加密 · 生物识别 · 紧急通道</string>
     <string name="settings_remote_audit_subtitle">SSH 连接 · 凭据操作 · 备份事件</string>
+    <string name="security_http_warning_title">检测到明文 HTTP 请求</string>
+    <string name="security_http_warning_desc">应用正在通过未加密的明文 HTTP 与 %1$s 通信，数据存在被窃听或篡改风险。请优先改用 HTTPS 地址，或确认该服务位于可信的本地网络。</string>
 
     <!-- i18n: UI 文案 -->
     <!-- Common -->

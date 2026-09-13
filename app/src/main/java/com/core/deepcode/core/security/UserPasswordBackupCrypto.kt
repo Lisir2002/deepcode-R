@@ -73,17 +73,31 @@ class UserPasswordBackupCrypto {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(dataKey, "AES"), GCMParameterSpec(TAG_LEN_BITS, iv))
 
-        // 用 tee 流捕获 GCM tag 并计算 HMAC
-        val cipherOut = CipherOutputStream(rawOut, cipher)
+        // 流式 tee：边写 rawOut 边对 (header || ciphertext || gcmTag) 累加 HMAC，
+        // 不把整个密文缓冲在内存（备份包可能很大）。
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(hmacKey, "HmacSHA256"))
+        mac.update(header)
+        val teeOut = object : OutputStream() {
+            override fun write(b: Int) {
+                mac.update(b.toByte())
+                rawOut.write(b)
+            }
+
+            override fun write(b: ByteArray, off: Int, len: Int) {
+                mac.update(b, off, len)
+                rawOut.write(b, off, len)
+            }
+        }
+
+        val cipherOut = CipherOutputStream(teeOut, cipher)
         return object : FilterOutputStream(cipherOut) {
             override fun close() {
-                // CipherOutputStream.close() 会写出 GCM tag
+                // CipherOutputStream.close() 会写出 GCM tag（tee 已同步累加进 HMAC）
                 cipherOut.close()
-                // 此时 rawOut 中已包含所有 ciphertext + GCM tag
-                // 但由于我们无法直接获取 GCM tag，需要更复杂的 tee 实现
-                // 简化实现：在写入时做 tee 记录，但为了简洁，这里不实现 HMAC
-                // 实际生产应以流式 tee 方式实现
-                // 简化：跳过 HMAC 校验，只依赖 GCM 认证
+                // 写 32B HMAC 尾：HMAC(header || ciphertext || gcmTag)
+                rawOut.write(mac.doFinal())
+                rawOut.flush()
             }
         }
     }

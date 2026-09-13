@@ -98,6 +98,10 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var credentialRequestBridge: com.core.deepcode.feature.credentials.data.CredentialRequestBridge
 
+    /** 明文 HTTP 请求警告桥：主 OkHttpClient 探测到非回环 http:// 请求时上报，全局弹窗提示改用 HTTPS。 */
+    @Inject
+    lateinit var httpWarningBridge: com.core.deepcode.core.network.HttpWarningBridge
+
     /** 内置服务浏览器：用户与模型共享的 WebView 会话（浏览器页/模型工具共用）。 */
     @Inject
     lateinit var browserController: com.core.deepcode.feature.browser.domain.BrowserController
@@ -198,6 +202,10 @@ class MainActivity : ComponentActivity() {
                         // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
                         com.core.deepcode.feature.credentials.presentation.component.GlobalCredentialDialogHost(
                             bridge = credentialRequestBridge
+                        )
+                        // 全局明文 HTTP 警告弹窗：覆盖所有页面，探测到非回环 http:// 请求时提示改用 HTTPS。
+                        com.core.deepcode.core.ui.GlobalHttpWarningDialogHost(
+                            bridge = httpWarningBridge
                         )
                     }
                 }

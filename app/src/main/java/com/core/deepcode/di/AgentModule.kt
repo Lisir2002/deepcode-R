@@ -88,13 +88,18 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(proxyRouteHolder: com.core.deepcode.feature.proxy.domain.ProxyRouteHolder): OkHttpClient {
+    fun provideOkHttpClient(
+        proxyRouteHolder: com.core.deepcode.feature.proxy.domain.ProxyRouteHolder,
+        httpWarningBridge: com.core.deepcode.core.network.HttpWarningBridge
+    ): OkHttpClient {
         // 流式 SSE 下读超时是「相邻数据块之间」的等待上限；120s 给慢启动/长思考留足空间，
         // 真正卡死由上层阶梯重试（RetryPolicy）兜底。
         return OkHttpClient.Builder()
             .connectTimeout(120, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
+            // 安全审计 P2-7：探测非回环明文 http:// 请求并全局弹窗提示改用 HTTPS（仅上报不阻断）。
+            .addInterceptor(com.core.deepcode.core.network.HttpWarningInterceptor(httpWarningBridge))
             // 网络代理（§4.2）：注入 ProxyRouteHolder 的路由选择器，启用时代理走 mihomo mixed-port，
             // 未启用直连；以 @Singleton 无依赖 Holder 避免与 ClashProxyManager 成环。
             .proxySelector(proxyRouteHolder.selector)

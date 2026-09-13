@@ -131,10 +131,10 @@ jobs:
             echo "dex_method_count=${method_count:-0}" >> "$GITHUB_OUTPUT"
           fi
 
-          # commit count (= versionCode)
+          # 提交数参考值（versionCode 已改为 git tag 版本映射，见 build.gradle.kts gitVersionCode()）
           vc=$(git rev-list --count HEAD)
-          echo "versionCode (commit count): $vc"
-          echo "version_code=${vc}" >> "$GITHUB_OUTPUT"
+          echo "commit count (reference): $vc"
+          echo "commit_count=${vc}" >> "$GITHUB_OUTPUT"
 
       # 5. 生成健康检查摘要
       - name: Generate health check summary

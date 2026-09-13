@@ -37,6 +37,7 @@
 | browser | `feature/browser/` | [browser.md](./browser.md) | 内置浏览器：WebView 会话、登录接管、动态数据捕获 |
 | capability | `feature/capability/` | [capability.md](./capability.md) | 能力中心：工具/Agent/技能聚合视图 |
 | t2i | `feature/t2i/` | [t2i.md](./t2i.md) | 文生图：Provider 抽象、SYNC/ASYNC/AUTO 端点、权限策略 |
+| newui（新版 UI 层） | `newui/`（根级独立 Gradle 模块，非 `feature/` 下） | 设计文档 [ui-layer-design.md](../plan-docs/ui-layer-design.md) | 新版设计系统库：DTCG tokens 生成、独立 M3 主题、页面/槽位框架、设计画廊样板（`:app` 暂不依赖） |
 | core（公共基础层） | `core/` + `di/` + 应用入口 | [core.md](./core.md) | 跨模块基础设施：数据库迁移、安全加密、主题、日志、Worker、Hilt DI、App 入口 |
 
 ## 设计文档（docs/plan-docs/）

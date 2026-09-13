@@ -150,7 +150,7 @@ keyPassword=your_key_password
 | 构建 | Android Gradle Plugin 8.9.3 + KSP |
 | UI | Jetpack Compose (BOM 2025.12.01) + Material 3 |
 | 依赖注入 | Hilt 2.56.1 (Dagger) |
-| 数据库 | Room 2.7.1（按域拆库 5 库：agent v4 / settings / credentials / workspace / t2i；旧单库文件驱动 SQL 迁移仅历史读取用） |
+| 数据库 | SQLDelight 2.2.1（6 库拓扑：agent / credentials / settings / workspace / t2i / infra；SQLCipher 加密读写；旧 Room 数据层已完全移除） |
 | 网络 | Retrofit 2.11.0 + OkHttp 4.12.0 + Gson |
 | 异步 | Kotlin Coroutines / Flow |
 | 终端 | Termux terminal-emulator + terminal-view（JNI libtermux.so） |

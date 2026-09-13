@@ -24,8 +24,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          # versionCode 由 build.gradle.kts 的 gitCommitCount() 取 git rev-list --count HEAD，
-          # 浅克隆（默认 depth=1）会得到 1，必须拉完整历史，否则 Release APK 版本号错乱。
+          # versionCode 由 build.gradle.kts 的 gitVersionCode() 取 git tag 四段版本号映射生成
+          # （BASE + A*1e9 + B*1e7 + C*1e4 + D*10），与提交历史解耦——rebase/squash 改写历史不影响单调性。
+          # 浅克隆（默认 depth=1）会拿不到 tag，versionName/versionCode 推导错乱，必须拉完整历史。
           fetch-depth: 0
 
       - name: Set up JDK 17
@@ -109,27 +110,35 @@ jobs:
           echo "tag version (without v) = $tag_ver"
           echo "✓ tag 将直接驱动应用 versionName ($tag_ver)"
 
-      # 校验 versionCode 单调递增：versionCode = git commit count，rebase/squash 改写历史
-      # 可能让 commit count 变小，导致新版本 versionCode < 旧版本、升级判定失效。
-      # 取按提交时间倒序最近的非当前 tag，算其 commit count，要求当前 HEAD 不小于上个 Release。
+      # 校验 versionCode 单调递增：versionCode = git tag 四段版本号映射（见 build.gradle.kts gitVersionCode()），
+      # 与提交数无关，rebase/squash 改写历史不影响单调性；此处按同一映射比较当前 tag 与上个 Release tag。
       # 允许相等：rc 转正式版时常在同一提交上打 tag，versionCode 相等是正常的。
       # 仅打 tag 触发时校验；workflow_dispatch（手动，无 tag）跳过。
       - name: Verify versionCode monotonic
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           set -e
-          cur_vc=$(git rev-list --count HEAD)
-          prev_tag=$(git tag --sort=-creatordate | grep -vE "^${GITHUB_REF_NAME}$" | head -1)
+          vc_of_tag() {
+            local ver="${1#v}"
+            if [[ "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)(-rc[0-9]+)?$ ]]; then
+              echo $(( 10000000 + ${BASH_REMATCH[1]} * 1000000000 + ${BASH_REMATCH[2]} * 10000000 + ${BASH_REMATCH[3]} * 10000 + ${BASH_REMATCH[4]} * 10 ))
+            else
+              echo 0
+            fi
+          }
+          cur_tag="${GITHUB_REF_NAME}"
+          prev_tag=$(git tag --sort=-creatordate | grep -vE "^${cur_tag}$" | head -1)
           if [[ -z "$prev_tag" ]]; then
             echo "无历史 tag，跳过 versionCode 单调校验（首次发版）"
-            echo "当前 versionCode(commit count) = $cur_vc"
+            echo "当前 tag 映射 versionCode = $(vc_of_tag "$cur_tag")"
             exit 0
           fi
-          prev_vc=$(git rev-list --count "$prev_tag")
+          cur_vc=$(vc_of_tag "$cur_tag")
+          prev_vc=$(vc_of_tag "$prev_tag")
           echo "上个 Release($prev_tag) versionCode = $prev_vc"
-          echo "当前(${GITHUB_REF_NAME}) versionCode     = $cur_vc"
+          echo "当前(${cur_tag}) versionCode     = $cur_vc"
           if [[ "$cur_vc" -lt "$prev_vc" ]]; then
-            echo "::error::versionCode 回退: 当前 $cur_vc < 上个 Release($prev_tag) $prev_vc。通常因 rebase/squash 改写历史使 commit count 变小。请确保新版本在旧 tag 之上线性推进。"
+            echo "::error::versionCode 回退: 当前 $cur_vc < 上个 Release($prev_tag) $prev_vc。请确保新 tag 版本号（四段式 x.x.x.x）在上个 Release 之上按语义推进。"
             exit 1
           fi
           echo "✓ versionCode 单调递增: $prev_vc -> $cur_vc"
