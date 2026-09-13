@@ -90,7 +90,7 @@ object BackupCrypto {
         var offset = 0
         while (offset < len) {
             val n = input.read(result, offset, len - offset)
-            if (n < 0) throw IllegalArgumentException("不是有效的加密 DeepCore-Code 备份文件")
+            if (n < 0) throw IllegalArgumentException("不是有效的加密 MiniMe-core 备份文件")
             offset += n
         }
         return result

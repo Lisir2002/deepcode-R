@@ -153,7 +153,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.core.deepcode"
+        applicationId = "com.mini.me_core"
         minSdk = 26
         // 锁定 targetSdk 28：Android 10+（API 29+）的 W^X/SELinux 策略禁止执行 App 可写
         // 数据目录里的文件，PRoot 二进制将无法运行（同 Termux 的取舍）。代价：不能上 Google Play。
@@ -185,9 +185,9 @@ android {
     }
 
     buildTypes {
-        // debug 加包名后缀 .debug → applicationId 变 com.core.deepcode.debug，与 release（com.core.deepcode）
+        // debug 加包名后缀 .debug → applicationId 变 com.mini.me_core.debug，与 release（com.mini.me_core）
         // 可同机共存、互不覆盖。IDE 跑 debug 不再因签名不同卸载已装的正式版。
-        // 注意：因 applicationId 不同，debug 变体私有目录为 /data/data/com.core.deepcode.debug/，
+        // 注意：因 applicationId 不同，debug 变体私有目录为 /data/data/com.mini.me_core.debug/，
         // release 已解压的容器 rootfs 与工作区项目在 debug 下不可见（需重新解压/clone），属预期隔离行为。
         debug {
             applicationIdSuffix = ".debug"
@@ -341,7 +341,7 @@ androidComponents {
 }
 
 /** 允许的 applicationId 白名单：release=com.core.deepcode，debug 带 .debug 后缀（与 release 数据隔离）。 */
-val ALLOWED_APPLICATION_IDS = setOf("com.core.deepcode", "com.core.deepcode.debug")
+val ALLOWED_APPLICATION_IDS = setOf("com.mini.me_core", "com.mini.me_core.debug")
 
 dependencies {
     // Compose BOM

@@ -11,7 +11,7 @@ class BackupCryptoTest {
 
     @Test
     fun encryptStream_and_decryptStream_roundTrip() {
-        val plain = "DeepCore-Code encrypted backup payload".toByteArray(Charsets.UTF_8)
+        val plain = "MiniMe-core encrypted backup payload".toByteArray(Charsets.UTF_8)
         val password = "correct horse battery staple".toCharArray()
 
         val encryptedStream = ByteArrayOutputStream()

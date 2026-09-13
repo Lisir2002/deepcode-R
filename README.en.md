@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">DeepCore-Code</h1>
+  <h1 align="center">MiniMe-core</h1>
   <p align="center">
     AI-powered coding assistant for Android · Built-in Linux terminal · AI Agent · MCP · Git integration
     <br />
@@ -21,8 +21,8 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/media/screenshots/home.png" alt="DeepCore-Code home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
-      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="DeepCore-Code terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/home.png" alt="MiniMe-core home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
+      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="MiniMe-core terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
     </tr>
     <tr>
       <td align="center">Home · AI Chat</td>
@@ -50,7 +50,7 @@
 
 ## Overview
 
-DeepCore-Code is an AI-powered coding assistant that runs natively on Android. It integrates large language models with a local Linux development environment. The built-in Alpine Linux container and terminal emulator let the AI directly read/write files, execute shell commands, and run build tools. It also supports remote SSH servers as the execution backend, turning your phone into a mobile workstation for remote projects.
+MiniMe-core is an AI-powered coding assistant that runs natively on Android. It integrates large language models with a local Linux development environment. The built-in Alpine Linux container and terminal emulator let the AI directly read/write files, execute shell commands, and run build tools. It also supports remote SSH servers as the execution backend, turning your phone into a mobile workstation for remote projects.
 
 ## Features
 
@@ -68,7 +68,7 @@ DeepCore-Code is an AI-powered coding assistant that runs natively on Android. I
 
 ## Installation
 
-> DeepCore-Code is distributed as an APK. **No compilation needed** — just download and install.
+> MiniMe-core is distributed as an APK. **No compilation needed** — just download and install.
 
 1. Go to the [Releases page](https://github.com/Lisir2002/deepcode-R/releases) and download the latest APK (`deepcode-<tag>.apk` — one universal package for both physical devices and emulators).
 2. Transfer the APK to your phone/emulator (browser download / cloud drive / USB).

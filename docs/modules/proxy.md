@@ -4,7 +4,7 @@
 
 ## 1. 模块定位
 
-为 DeepCore-Code 提供基于 **mihomo（Clash Meta）内核**的全局代理能力，涵盖：
+为 MiniMe-core 提供基于 **mihomo（Clash Meta）内核**的全局代理能力，涵盖：
 
 - **Profile 播种与管理**：用户经 UI 导入「订阅 URL / 手动 YAML / 文件」形成长存 profile（订阅列表），敏感内容加密存储。
 - **内核生命周期**：自举下载并校验 mihomo 二进制 → 合成 Clash 配置 → 拉启/停止内核子进程（App 子进程，绑定 `127.0.0.1:7890`）。

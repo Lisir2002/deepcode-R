@@ -1,4 +1,4 @@
-# 新版 UI 层统一架构设计（DeepCore-Code）
+# 新版 UI 层统一架构设计（MiniMe-core）
 
 > 评审状态：📝 草案
 > 关联模块：全部 feature（agent / settings / git / terminal / proxy / workspace / credentials / capability / browser / backup）+ 核心主题（core/theme）+ 仓库治理（AGENTS.md / docs / githooks）
@@ -6,7 +6,7 @@
 
 ## 1. 背景与目标
 
-DeepCore-Code 的 UI 层经过多轮迭代，已形成可用的功能矩阵，但随着 feature 模块增长，UI 侧出现两类问题：
+MiniMe-core 的 UI 层经过多轮迭代，已形成可用的功能矩阵，但随着 feature 模块增长，UI 侧出现两类问题：
 1. **结构漂移**：目录命名 `component`/`components` 并存、整屏塞进 `component/`、导航魔法串、命名口径不一、巨型 ViewModel；—— 已有骨架治理，见 §2/§4。
 2. **视觉原子失管**（本轮重点）：圆角 / 阴影 / 高度 / 间距 / 颜色 / 排版 / 动效缺少统一令牌，魔法值满天飞、两套并行色板不同源，导致各模块视觉不统一、无法"照模板"一致落地。
 

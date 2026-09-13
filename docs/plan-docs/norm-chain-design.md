@@ -1,4 +1,4 @@
-# 四类规范流程针对性落地设计（DeepCore-Code）
+# 四类规范流程针对性落地设计（MiniMe-core）
 
 > 评审状态：📝 草案
 > 关联模块：agent（workflow / tool / prompt / sop / playbook）+ 仓库治理（docs / githooks）

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">DeepCore-Code</string>
+    <string name="app_name">MiniMe-core</string>
 
     <!-- Settings page menu titles -->
     <string name="settings_title">Settings</string>
@@ -377,7 +377,7 @@
 
     <!-- Data preservation: external secure backup (public dir encrypted, package-independent) + startup global alert -->
     <string name="backup_external_title">External Secure Backup</string>
-    <string name="backup_external_desc">Encrypt chat history and other data with the app signature key and back it up to public storage \"Download/DeepCore-Code/backups\". Only apps with the same signature can decrypt it. It survives uninstall or package name changes and is a safety net for recovering history.</string>
+    <string name="backup_external_desc">Encrypt chat history and other data with the app signature key and back it up to public storage \"Download/MiniMe-core/backups\". Only apps with the same signature can decrypt it. It survives uninstall or package name changes and is a safety net for recovering history.</string>
     <string name="backup_external_last">Last external secure backup: %1$s</string>
     <string name="backup_external_none_label">No external secure backup yet</string>
     <string name="backup_external_backup_now">Back up to external secure area now</string>
@@ -809,9 +809,9 @@
     <string name="providers_empty">No providers yet. Tap + in the top-right corner to add.</string>
     <string name="log_level">Log level</string>
     <string name="log_level_desc">Logs below this level are ignored. VERBOSE is recommended during development (record everything); NONE disables logging.</string>
-    <string name="log_file_location">Log files are stored in Android/data/&lt;package&gt;/files/logs/ and exported to Download/DeepCore-Code/logs/ (visible in a file manager).</string>
+    <string name="log_file_location">Log files are stored in Android/data/&lt;package&gt;/files/logs/ and exported to Download/MiniMe-core/logs/ (visible in a file manager).</string>
     <string name="logs_export_action">Export logs to Downloads</string>
-    <string name="logs_export_toast">Exported to Download/DeepCore-Code/logs/, viewable in a file manager</string>
+    <string name="logs_export_toast">Exported to Download/MiniMe-core/logs/, viewable in a file manager</string>
     <string name="logs_export_none">No log files to export</string>
     <string name="provider_no_models_hint">No models configured. Tap Edit to add.</string>
     <string name="provider_model_summary">Model: %1$s · %2$s total</string>
@@ -1061,7 +1061,7 @@
 
     <!-- About - Core components -->
     <string name="about_core_components">Core Components</string>
-    <string name="about_core_components_subtitle">The four engines powering DeepCore-Code</string>
+    <string name="about_core_components_subtitle">The four engines powering MiniMe-core</string>
     <string name="about_host_core">Host Core</string>
     <string name="about_host_core_desc">Android native runtime · v%1$s</string>
     <string name="about_terminal_core">Terminal Core</string>
@@ -1155,8 +1155,8 @@
     <string name="about_http_error">HTTP %1$d error</string>
 
     <!-- About - Share -->
-    <string name="about_share_title">Share DeepCore-Code</string>
-    <string name="about_share_text">DeepCore-Code - AI code editor on Android:\n%1$s</string>
+    <string name="about_share_title">Share MiniMe-core</string>
+    <string name="about_share_text">MiniMe-core - AI code editor on Android:\n%1$s</string>
 
     <!-- About - Copyright -->
     <string name="about_copyright">© 2025 Lisir2002 · Made with ❤ for mobile developers</string>

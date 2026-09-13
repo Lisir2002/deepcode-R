@@ -1651,7 +1651,7 @@ class BrowserController @Inject constructor(
             // 共享 OkHttp 下载（代理启用时经 mihomo 出口）；旧实现 HttpURLConnection 直连会绕过代理。
             val req = Request.Builder()
                 .url(url)
-                .header("User-Agent", userAgent ?: "DeepCore-Code-Browser")
+                .header("User-Agent", userAgent ?: "MiniMe-core-Browser")
                 .apply { if (cookies.isNotBlank()) header("Cookie", cookies) }
                 .build()
             okHttp.newCall(req).execute().use { resp ->

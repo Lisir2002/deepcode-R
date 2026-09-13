@@ -21,7 +21,7 @@ class UserPasswordBackupCryptoTest {
 
     @Test
     fun encrypt_decrypt_roundTrip() {
-        val plain = "DeepCore-Code 用户密码加密备份 payload（中文 + emoji 🚀）".toByteArray(Charsets.UTF_8)
+        val plain = "MiniMe-core 用户密码加密备份 payload（中文 + emoji 🚀）".toByteArray(Charsets.UTF_8)
         val password = "correct horse battery staple".toCharArray()
 
         val out = ByteArrayOutputStream()

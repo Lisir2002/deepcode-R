@@ -1,7 +1,7 @@
 # 虚拟环境（模拟器/虚拟机）支持 · 设计文档 v1.0（已实施）
 
 > 状态：✅ 已实施（M0~M2 落地，M3 CI 模拟器冒烟为后续增强）
-> 目标：让 DeepCore-Code 从「真机专用」平滑演进到「真机 + 虚拟环境（模拟器 / 虚拟机）均可用」
+> 目标：让 MiniMe-core 从「真机专用」平滑演进到「真机 + 虚拟环境（模拟器 / 虚拟机）均可用」
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 相关入口：`AGENTS.md` / `docs/modules/`（模块文档）/ `docs/ci-release.md`（发版运维）
 

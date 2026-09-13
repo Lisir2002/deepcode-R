@@ -22,7 +22,7 @@ import javax.inject.Singleton
  *
  * 背景：自动备份此前只写应用私有目录（filesDir/auto-backups/）。applicationId（包名）变更 =
  * 全新安装，私有目录随包名隔离，旧备份「看得到摸不着」，无法用于找回——这正是历史对话丢失且
- * 无法自动恢复的底层原因之一。本存储把备份写到「公共外部存储」Download/DeepCore-Code/backups：
+ * 无法自动恢复的底层原因之一。本存储把备份写到「公共外部存储」Download/MiniMe-core/backups：
  *   - Android 10+（API 29+）：MediaStore.Downloads 集合（写入 Downloads 无需权限，卸载/包名变更后仍保留）；
  *   - Android 9-（API <29）：Environment.getExternalStoragePublicDirectory(DIRECTORY_DOWNLOADS)
  *     （需 WRITE_EXTERNAL_STORAGE，MainActivity 已运行时申请）。
@@ -37,7 +37,7 @@ class ExternalBackupStore @Inject constructor(
 ) {
     private companion object {
         const val TAG = "ExternalBackupStore"
-        const val RELATIVE_SUB = "DeepCore-Code/backups"
+        const val RELATIVE_SUB = "MiniMe-core/backups"
         const val RELATIVE_PATH_PREFIX = "Download/$RELATIVE_SUB"
         const val PREFIX = "backup-"
         const val SUFFIX = ".tar.gz"

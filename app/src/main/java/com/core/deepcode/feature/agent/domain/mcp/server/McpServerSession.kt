@@ -85,7 +85,7 @@ class McpServerSession(
         }
         put(
             "instructions",
-            "DeepCore-Code 内置 MCP 服务器：把设备的 Linux 编码后端（容器/文件/git/搜索/AI 工具）开放给外部 MCP 客户端。"
+            "MiniMe-core 内置 MCP 服务器：把设备的 Linux 编码后端（容器/文件/git/搜索/AI 工具）开放给外部 MCP 客户端。"
         )
     }
 

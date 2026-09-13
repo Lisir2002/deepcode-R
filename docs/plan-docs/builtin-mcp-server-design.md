@@ -1,7 +1,7 @@
 # 内置 MCP 服务器 · 设计文档 v1.0
 
 > 状态：✅ 已评审（2026-08-19，决策已回填，进入实施期；M0 为首个里程碑）
-> 定位：让 DeepCore-Code 从「MCP 客户端」同时成为「MCP 服务器」，把设备能力（容器/终端/文件/git/搜索/AI Agent 工具）开放给外部 MCP 客户端（Claude Desktop / Trae / Cursor / 任意脚本）
+> 定位：让 MiniMe-core 从「MCP 客户端」同时成为「MCP 服务器」，把设备能力（容器/终端/文件/git/搜索/AI Agent 工具）开放给外部 MCP 客户端（Claude Desktop / Trae / Cursor / 任意脚本）
 > 对应代码库：[deepcode-R](/workspace/deepcode-R)
 > 相关入口：`AGENTS.md` / `docs/modules/`（模块文档）
 
@@ -9,9 +9,9 @@
 
 ## 1. 背景与目标
 
-当前 DeepCore-Code 是 **MCP 客户端**（`feature/agent/domain/mcp/`），负责「连别人」——连接远程 HTTP / 本地 stdio server 扩展自身工具。本设计是**方向反转**：让 App 自己作为 **MCP 服务器**，对外提供一套「真实 Linux 编码后端」。
+当前 MiniMe-core 是 **MCP 客户端**（`feature/agent/domain/mcp/`），负责「连别人」——连接远程 HTTP / 本地 stdio server 扩展自身工具。本设计是**方向反转**：让 App 自己作为 **MCP 服务器**，对外提供一套「真实 Linux 编码后端」。
 
-**核心场景（用户决策）**：手机当开发后端——DeepCore-Code 已内置容器 + Linux 终端 + git + AI Agent 工具，把这套能力以 MCP server 暴露，PC 上的 Claude Desktop / Trae / Cursor 连上来即可调用手机的终端、文件、git，相当于给外部 AI 一个随身 Linux 运行环境。
+**核心场景（用户决策）**：手机当开发后端——MiniMe-core 已内置容器 + Linux 终端 + git + AI Agent 工具，把这套能力以 MCP server 暴露，PC 上的 Claude Desktop / Trae / Cursor 连上来即可调用手机的终端、文件、git，相当于给外部 AI 一个随身 Linux 运行环境。
 
 **能力范围（用户决策）**：暴露**全部 AgentTool**（文件读写、终端、git、搜索、浏览器、T2I、skills 等），带逐工具权限开关，复用现有审批体系。**实施采用渐进式（评审决策）**：M0 先只读子集验证链路，再逐步开放终端/写文件（配合远程审批）。
 
@@ -51,7 +51,7 @@
 ## 4. 目标架构
 
 ```
-┌──────────────────────────── DeepCore-Code（Android） ────────────────────────────┐
+┌──────────────────────────── MiniMe-core（Android） ────────────────────────────┐
 │                                                                              │
 │  ┌──────────────────────────────┐      ┌──────────────────────────────────┐  │
 │  │  McpServerManager（对标 D4）    │      │  AgentTool 体系（D2，已存在）        │  │

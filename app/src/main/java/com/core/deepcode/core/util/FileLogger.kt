@@ -31,11 +31,11 @@ enum class LogLevel {
 /**
  * 把日志落盘到 App 的存储，方便在没有连接 adb 的情况下调试。
  *
- * 日志写入**公共外部存储** `Documents/DeepCore-Code/logs/`（当 WRITE_EXTERNAL_STORAGE 权限已授予时），
+ * 日志写入**公共外部存储** `Documents/MiniMe-core/logs/`（当 WRITE_EXTERNAL_STORAGE 权限已授予时），
  * 该目录在应用卸载后**仍然保留**，便于卸载后排查问题；权限未授予时回退到外部私有目录
  * `getExternalFilesDir/logs/`（不可用时再回退内部 `filesDir/logs/`），按天分文件
  * （log-yyyy-MM-dd.txt）。公共外部目录可通过文件管理器在
- * `/storage/emulated/0/Documents/DeepCore-Code/logs/` 直接查看，无需 root。
+ * `/storage/emulated/0/Documents/MiniMe-core/logs/` 直接查看，无需 root。
  * 所有写入都串行化到单线程后台执行，避免阻塞主线程与多线程交错。同时镜像一份到 [android.util.Log]。
  *
  * 支持按等级过滤：低于 [minLevel] 的日志（含 logcat 镜像与落盘）一律跳过。等级由
@@ -51,8 +51,8 @@ object FileLogger {
     private const val MAX_AGE_DAYS = 7
     private const val MAX_FILE_BYTES = 5 * 1024 * 1024 // 单个日志文件上限 5MB（VERBOSE 下增长较快）
 
-    // 公共外部存储目录（卸载后仍保留）：/storage/emulated/0/Documents/DeepCore-Code/logs
-    private const val PUBLIC_ROOT_DIR = "DeepCore-Code"
+    // 公共外部存储目录（卸载后仍保留）：/storage/emulated/0/Documents/MiniMe-core/logs
+    private const val PUBLIC_ROOT_DIR = "MiniMe-core"
     private const val PUBLIC_LOG_SUBDIR = "logs"
 
     private val ioExecutor = Executors.newSingleThreadExecutor { r ->
@@ -104,7 +104,7 @@ object FileLogger {
     }
 
     /**
-     * 解析日志目录：优先公共外部存储 `Documents/DeepCore-Code/logs`（卸载后保留，需 WRITE_EXTERNAL_STORAGE
+     * 解析日志目录：优先公共外部存储 `Documents/MiniMe-core/logs`（卸载后保留，需 WRITE_EXTERNAL_STORAGE
      * 权限，targetSdk=28 下可写）；权限未授予时回退外部私有目录，再回退内部存储。
      */
     @Suppress("DEPRECATION") // targetSdk=28 下 getExternalStoragePublicDirectory 仍可用且不受分区存储限制
@@ -159,13 +159,13 @@ object FileLogger {
 
     // ── 导出到公共外部存储（解决 Android/data 私有目录在文件管理器不可见的问题） ──
 
-    // 公共导出目录：Download/DeepCore-Code/logs/（卸载后仍保留）
-    private const val EXPORT_ROOT_DIR = "DeepCore-Code"
+    // 公共导出目录：Download/MiniMe-core/logs/（卸载后仍保留）
+    private const val EXPORT_ROOT_DIR = "MiniMe-core"
     private const val EXPORT_LOG_SUBDIR = "logs"
-    private const val EXPORT_RELATIVE_PATH = "Download/DeepCore-Code/logs"
+    private const val EXPORT_RELATIVE_PATH = "Download/MiniMe-core/logs"
 
     /**
-     * 把所有日志文件导出到公共外部存储 `Download/DeepCore-Code/logs/`：
+     * 把所有日志文件导出到公共外部存储 `Download/MiniMe-core/logs/`：
      *   - API 29+：MediaStore.Downloads 集合（免权限，文件管理器可见）；
      *   - API <29：legacy 公共 Download 目录（需 WRITE_EXTERNAL_STORAGE）。
      * [extraFile] 可附带一个额外文件（如崩溃快照 summary），名称形如 `crash-xxx.log`。
@@ -189,7 +189,7 @@ object FileLogger {
         return exported
     }
 
-    /** 写一个文件到公共 Download/DeepCore-Code/logs/。API 29+ 走 MediaStore；API <29 走 legacy 目录。 */
+    /** 写一个文件到公共 Download/MiniMe-core/logs/。API 29+ 走 MediaStore；API <29 走 legacy 目录。 */
     private fun writeToPublic(context: Context, name: String, content: String): Boolean = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             writeViaMediaStore(context, name, content)

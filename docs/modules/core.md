@@ -30,7 +30,7 @@ core 不是业务功能模块，而是**跨模块共享的基础设施层**：�
 - **运行环境抽象**：`EnvironmentDetector` 在启动/首次使用时探测宿主 ABI（`arm64-v8a` / `x86_64`）与模拟器信号（fingerprint/product/qemu），导出 `hostIsArm64` / `hostIsX86_64` / `containerRunnable` / `defaultProfileId()`；被 `ContainerSettingsRepository`（默认容器 profile）、`ContainerInstaller`（proot 架构）、`LinuxContainerEngine`（容器启动）统一消费。探测仅用于**适配与降级**，绝不用于授权/安全判断。
 - **安全体系**：凭据/敏感字段经 `CredentialEncryptor` 加密落库，密钥由 `DEKManager` 管理；ZTH 敏感列走 `ZthSensitiveColumnCrypto`。`HostKeyManager` 管理 SSH host key 校验。
 - **启动链路**：`AIEditorApp` 初始化 `FileLogger`、`TerminalKeepaliveService`、`McpManager` 等核心服务；启动后调 `ConnectionPrewarmer.warmDefaults()` 后台预热三家模型默认 host（DNS+TCP+TLS，失败静默）；`MainActivity` 承载 Compose 导航。
-- **崩溃与内存自愈防线（预防闸门）**：`attachBaseContext` 最早安装全局 Java CrashHandler（落盘 + 导出 `Download/DeepCore-Code/logs/`）；`onTrimMemory` 在 `RUNNING_CRITICAL`/`lowMemory` 时主动降负——释放浏览器快照大对象缓存（`BrowserController.onMemoryPressure`）、对所有域库 `PRAGMA wal_checkpoint(TRUNCATE)`（缩小 LMKD 杀进程后的 WAL 损坏窗口，防 SQLite 原生崩溃）、落「内存临界」时间戳标记；下次启动 `diagnoseLastExit` 读出该标记自诊断「无日志闪退」（LMKD 静默杀绕过 Java CrashHandler），配合启动时自动导出上一轮日志，让此类闪退自动留痕。
+- **崩溃与内存自愈防线（预防闸门）**：`attachBaseContext` 最早安装全局 Java CrashHandler（落盘 + 导出 `Download/MiniMe-core/logs/`）；`onTrimMemory` 在 `RUNNING_CRITICAL`/`lowMemory` 时主动降负——释放浏览器快照大对象缓存（`BrowserController.onMemoryPressure`）、对所有域库 `PRAGMA wal_checkpoint(TRUNCATE)`（缩小 LMKD 杀进程后的 WAL 损坏窗口，防 SQLite 原生崩溃）、落「内存临界」时间戳标记；下次启动 `diagnoseLastExit` 读出该标记自诊断「无日志闪退」（LMKD 静默杀绕过 Java CrashHandler），配合启动时自动导出上一轮日志，让此类闪退自动留痕。
 - **网络层优化**：共享 OkHttp 在 `di/AgentModule` 配 `ConnectionPool(8, 15min)`（C2）+ `CachingDns`（C3）；三家 provider 流式 SSE 解析改用 `SseFieldExtractor` 定点抽取（P1）。详见 `core/network/` 与设计文档。
 - **后台任务**：`core/worker` 的 WorkManager 任务负责审计日志清理等周期/一次性工作。
 

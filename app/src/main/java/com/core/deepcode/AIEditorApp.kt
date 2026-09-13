@@ -235,7 +235,7 @@ class AIEditorApp : Application() {
         appScope.launch {
             ContainerInstaller.extractPrompts(this@AIEditorApp)
         }
-        // 启动即自动导出上一轮日志到公共外部存储 Download/DeepCore-Code/logs/。
+        // 启动即自动导出上一轮日志到公共外部存储 Download/MiniMe-core/logs/。
         // 目的：解决「进入应用即闪退」时崩溃处理来不及同步导出（或 CrashHandler 前的早期崩溃）
         // 拿不到日志的问题——只要 App 能再次启动，上一轮的全部日志（含 CRASH 记录）就会自动
         // 落到文件管理器可见的公共目录（API 29+ MediaStore 免权限，卸载后仍保留）。
@@ -410,14 +410,14 @@ class AIEditorApp : Application() {
             }.onFailure {
                 android.util.Log.e("CRASH", "⚠️ 连同步落盘都失败了，此时只能靠上面 logcat 追溯", it)
             }
-            // Step 2.5: 崩溃日志同步导出到公共外部存储 Download/DeepCore-Code/logs/。
+            // Step 2.5: 崩溃日志同步导出到公共外部存储 Download/MiniMe-core/logs/。
             //   私有目录（Android/data/...）在 Android 11+ 文件管理器不可见，用户拿不到日志；
             //   这里把全部日志 + 一份带时间戳的崩溃快照写进公共 Downloads（API 29+ MediaStore 免权限），
             //   保证闪退后用户/开发者能在文件管理器直接定位崩溃栈。
             runCatching {
                 val stamp = java.time.Instant.now().toString().replace(":", "-")
                 val snapshot = buildString {
-                    append("DeepCore-Code 崩溃快照  ").append(stamp).append('\n')
+                    append("MiniMe-core 崩溃快照  ").append(stamp).append('\n')
                     append("version=").append(BuildConfig.VERSION_NAME).append('\n')
                     append("schemaVersion=AGENT-v3").append('\n')
                     append("agentPreheatRan=").append(AIEditorApp.agentPreheatCompleted.get()).append('\n')
@@ -527,7 +527,7 @@ class AIEditorApp : Application() {
                     TAG,
                     "预防闸门：上次运行 ${agoMin} 分钟前曾触发内存临界（RUNNING_CRITICAL/lowMemory），" +
                         "进程可能已被系统静默回收（LMKD 杀无 Java 日志）；" +
-                        "排查见 Download/DeepCore-Code/logs/（本次启动已自动导出）"
+                        "排查见 Download/MiniMe-core/logs/（本次启动已自动导出）"
                 )
             }
         }

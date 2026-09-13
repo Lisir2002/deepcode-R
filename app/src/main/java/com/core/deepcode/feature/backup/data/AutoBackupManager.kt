@@ -21,7 +21,7 @@ import javax.inject.Singleton
  *
  * - **本机（私有目录）**：无口令明文写 `filesDir/auto-backups/`，仅本应用可读、升级前后立即可用；
  * - **外部（公共目录）**：用 [SignatureKeyStore] 派生的签名密钥加密写
- *   `Download/DeepCore-Code/backups`（见 [ExternalBackupStore]），包名无关、卸载/包名变更后仍保留，
+ *   `Download/MiniMe-core/backups`（见 [ExternalBackupStore]），包名无关、卸载/包名变更后仍保留，
  *   是「包名变更后找回历史数据」的底层保证。
  *
  * 背景：applicationId 变更 = 全新安装，私有目录随包名隔离，旧备份无法用于找回；

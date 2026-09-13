@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * 与 [FileLogger]（按天分文件的通用应用日志）相互独立：本类按「会话」维度归档，体量更大、
  * 内容更全（含完整对话历史、工具定义、原始 SSE 流），因此单独成文件、单独清理。
  *
- * 文件写入**公共外部存储** `Documents/DeepCore-Code/ai-logs/session-<id>.log`（当 WRITE_EXTERNAL_STORAGE
+ * 文件写入**公共外部存储** `Documents/MiniMe-core/ai-logs/session-<id>.log`（当 WRITE_EXTERNAL_STORAGE
  * 权限已授予时），该目录在应用卸载后**仍然保留**；权限未授予时回退外部私有目录
  * `getExternalFilesDir/ai-logs/`（不可用时再回退内部 `filesDir/ai-logs/`）。
  * 所有写入串行化到单线程后台执行，不阻塞调用方协程。
@@ -37,8 +37,8 @@ object AILogger {
     private const val MAX_AGE_DAYS = 7
     private const val MAX_FILE_BYTES = 20 * 1024 * 1024 // 单会话文件上限 20MB（每轮重发完整历史，增长快）
 
-    // 公共外部存储目录（卸载后仍保留）：/storage/emulated/0/Documents/DeepCore-Code/ai-logs
-    private const val PUBLIC_ROOT_DIR = "DeepCore-Code"
+    // 公共外部存储目录（卸载后仍保留）：/storage/emulated/0/Documents/MiniMe-core/ai-logs
+    private const val PUBLIC_ROOT_DIR = "MiniMe-core"
     private const val PUBLIC_LOG_SUBDIR = "ai-logs"
 
     private val ioExecutor = Executors.newSingleThreadExecutor { r ->
@@ -79,7 +79,7 @@ object AILogger {
     }
 
     /**
-     * 解析日志目录：优先公共外部存储 `Documents/DeepCore-Code/ai-logs`（卸载后保留，需 WRITE_EXTERNAL_STORAGE
+     * 解析日志目录：优先公共外部存储 `Documents/MiniMe-core/ai-logs`（卸载后保留，需 WRITE_EXTERNAL_STORAGE
      * 权限，targetSdk=28 下可写）；权限未授予时回退外部私有目录，再回退内部存储。
      */
     @Suppress("DEPRECATION") // targetSdk=28 下 getExternalStoragePublicDirectory 仍可用且不受分区存储限制

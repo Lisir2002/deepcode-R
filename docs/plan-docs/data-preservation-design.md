@@ -16,7 +16,7 @@
 
 ```
 com.aicodeeditor → com.deep.rcode → com.R.codecore → com.core.deepcode
-（第四次为 rc11 DeepCore-Code 品牌迭代：显式 rebrand，内测阶段执行；
+（第四次为 rc11 MiniMe-core 品牌迭代：显式 rebrand，内测阶段执行；
   旧包名 `com.R.codecore` 已纳入 Gradle 白名单、CI 门禁与单测的防回退黑名单）
 ```
 

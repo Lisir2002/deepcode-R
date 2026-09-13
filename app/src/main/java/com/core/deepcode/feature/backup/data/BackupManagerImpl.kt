@@ -224,7 +224,7 @@ class BackupManagerImpl @Inject constructor(
                         if (pw != null) {
                             "备份文件已损坏，或口令与备份文件不匹配"
                         } else {
-                            "不是有效的 DeepCore-Code 备份文件；如果这是加密备份，请输入导出口令"
+                            "不是有效的 MiniMe-core 备份文件；如果这是加密备份，请输入导出口令"
                         },
                         e
                     )
@@ -424,7 +424,7 @@ class BackupManagerImpl @Inject constructor(
             }
             entry = tar.nextEntry
         }
-        val meta = metadata ?: error("不是有效的 DeepCore-Code 备份文件：缺少 metadata.json")
+        val meta = metadata ?: error("不是有效的 MiniMe-core 备份文件：缺少 metadata.json")
         return stats + restoreMeta(meta)
     }
 

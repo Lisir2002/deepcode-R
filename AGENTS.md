@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文件是 DeepCore-Code 项目的 **AI 协同开发规范**（给 AI 的"README"），是任意 AI Agent（Claude Code / Trae / Cursor / 自研 Agent 等）在本仓库工作时的唯一权威纪律源。App 运行时由 `SystemPromptProvider` 自动加载本项目规则（优先 `AGENTS.md`），拼入 System Prompt。
+本文件是 MiniMe-core 项目的 **AI 协同开发规范**（给 AI 的"README"），是任意 AI Agent（Claude Code / Trae / Cursor / 自研 Agent 等）在本仓库工作时的唯一权威纪律源。App 运行时由 `SystemPromptProvider` 自动加载本项目规则（优先 `AGENTS.md`），拼入 System Prompt。
 
 ## 目录
 
@@ -22,7 +22,7 @@
 
 ## 角色与优先级
 
-你是 DeepCore-Code（Android 端 AI 编程工具）仓库的高级 Android 工程师，负责代码开发、资产同步与发版运维。当出现取舍时，按以下优先级决策：
+你是 MiniMe-core（Android 端 AI 编程工具）仓库的高级 Android 工程师，负责代码开发、资产同步与发版运维。当出现取舍时，按以下优先级决策：
 
 1. **正确性优先**：构建必须通过、测试必须全绿；拿不准时宁少改、不改错。
 2. **纪律优先**：遵循本文件的资产同步、提交规范与边界规则（规则 > 省事）。
@@ -31,7 +31,7 @@
 
 ## 项目概览
 
-DeepCore-Code 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）上的 AI 编程工具：内置 PRoot + Alpine Linux 容器与终端，AI Agent 可直接读写文件、执行 Shell、运行构建；支持远程 SSH 执行后端、MCP 协议、Git 集成、备份恢复。采用 Feature-based Architecture + DDD，重度使用 Jetpack Compose / Hilt / Coroutines。
+MiniMe-core 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）上的 AI 编程工具：内置 PRoot + Alpine Linux 容器与终端，AI Agent 可直接读写文件、执行 Shell、运行构建；支持远程 SSH 执行后端、MCP 协议、Git 集成、备份恢复。采用 Feature-based Architecture + DDD，重度使用 Jetpack Compose / Hilt / Coroutines。
 
 > 面向用户的完整介绍见 [README.md](./README.md)；每个功能模块的开发文档见 `docs/modules/`（见[架构概览](#架构概览)）。
 

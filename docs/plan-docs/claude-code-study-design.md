@@ -3,15 +3,15 @@
 > 评审状态：📝 草案
 >
 > 关联模块：`feature/agent`（工具系统 / 权限治理 / MCP）、`feature/terminal`、`feature/git`、`feature/settings`
-> 触发场景：以 anthropics/claude-code 公开仓库为范本，系统性挖掘对 DeepCore-Code 可复用的产品/架构设计，形成分步落地方案。
+> 触发场景：以 anthropics/claude-code 公开仓库为范本，系统性挖掘对 MiniMe-core 可复用的产品/架构设计，形成分步落地方案。
 > 调研源：anthropics/claude-code 公开仓库（深读 README / CHANGELOG / plugins / examples；调研用的本地克隆 `_research/claude-code/` 为临时调研产物，已随仓库整理移除，正式调研以公开仓库在线内容为准）
 > **执行清单**：落地优先级与逐条任务见 [claude-code-study-roadmap.md](./claude-code-study-roadmap.md)（R01–R22，P0–P4）
 
 ## 1. 背景与目的
 
-DeepCore-Code 是运行在 Android 真机/虚拟环境上的 AI 编程工具，已具备：Agent 多 Provider、工具系统（`ToolRegistry` + File/Shell/MCP 工具）、权限治理（`ToolPermissionManager` / `ToolPermissionPolicyEngine`）、内置 MCP 客户端+服务器、PRoot 容器终端、git 集成。
+MiniMe-core 是运行在 Android 真机/虚拟环境上的 AI 编程工具，已具备：Agent 多 Provider、工具系统（`ToolRegistry` + File/Shell/MCP 工具）、权限治理（`ToolPermissionManager` / `ToolPermissionPolicyEngine`）、内置 MCP 客户端+服务器、PRoot 容器终端、git 集成。
 
-Claude Code 是业界 agentic coding 工具的标杆，其公开仓库（官方设计范式库，非 CLI 闭源码）覆盖：插件五件套、子代理声明式定义、Hook 事件模型、声明式规则引擎、权限/Sandbox 模型、MDM 企业管控、Gateway 部署。本文档沉淀调研结论，并把可借鉴点映射到 DeepCore-Code 现有模块，作为后续分步实施与逐步讨论的基础。
+Claude Code 是业界 agentic coding 工具的标杆，其公开仓库（官方设计范式库，非 CLI 闭源码）覆盖：插件五件套、子代理声明式定义、Hook 事件模型、声明式规则引擎、权限/Sandbox 模型、MDM 企业管控、Gateway 部署。本文档沉淀调研结论，并把可借鉴点映射到 MiniMe-core 现有模块，作为后续分步实施与逐步讨论的基础。
 
 ## 2. Claude Code 公开仓库调研结论
 
@@ -19,7 +19,7 @@ Claude Code 是业界 agentic coding 工具的标杆，其公开仓库（官方�
 
 - 该公开仓库**不包含 CLI 本体源码**（`@anthropic-ai/claude-code` 是闭源 npm 包）。
 - 价值集中在**官方示例与设计范式**：`plugins/`（插件五件套）、`examples/hooks|settings|mdm|gateway/`、`CHANGELOG.md`（产品演进暴露的设计）。
-- 调研结论以「范式」为单位沉淀，落地到 DeepCore-Code 时按本项目架构裁剪，不做机械照搬。
+- 调研结论以「范式」为单位沉淀，落地到 MiniMe-core 时按本项目架构裁剪，不做机械照搬。
 
 ### 2.2 插件五件套结构（plugins/README.md）
 
@@ -83,9 +83,9 @@ plugin/
 - **MCP elicitation/forms**：工具参数的交互式补全。
 - **资源控制**：嵌套 subagent 默认关、并发上限、`--max-budget-usd` 阻止后台 subagent、subagent 结果后释放内存。
 
-## 3. 对 DeepCore-Code 的可借鉴映射矩阵
+## 3. 对 MiniMe-core 的可借鉴映射矩阵
 
-| # | 借鉴点 | 落地到 DeepCore-Code 现有模块 | 改动面 | 收益 |
+| # | 借鉴点 | 落地到 MiniMe-core 现有模块 | 改动面 | 收益 |
 |---|--------|--------------------------|--------|------|
 | 1 | Agent 声明式定义（frontmatter + 正文） | `feature/agent` 提示词资产：把 `assets/prompts/` 硬编码提示词升级为「元数据 + 正文」的 agent 定义，可热加载/复用 | 中 | 高（体系升级） |
 | 2 | 多 Agent 编排工作流 | `feature/agent`：新增「代码审查 / 功能开发」多阶段 skill/命令，按变更动态派专项 agent | 大 | 高 |
@@ -217,7 +217,7 @@ plugin/
 ## 6. 待深入讨论的问题清单（逐步讨论用）
 
 1. ~~**范围确认**~~（已定：A→B→C，见 5.1）
-2. **Hook 事件模型**：DeepCore-Code 是否需要完整 Hook 事件（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart）？还是先做「工具执行前后」两事件？asyncRewake 后台唤醒在无后台会话的 Android 端如何表达（是否借用终端会话/通知）？
+2. **Hook 事件模型**：MiniMe-core 是否需要完整 Hook 事件（PreToolUse/PostToolUse/UserPromptSubmit/Stop/SessionStart）？还是先做「工具执行前后」两事件？asyncRewake 后台唤醒在无后台会话的 Android 端如何表达（是否借用终端会话/通知）？
 3. ~~**Bash 预校验**~~（已定：内置表 + block/warn 分级 + 复用现有权限引擎/守卫体系，见 5.2 与 7）
 4. **规则引擎**：规则格式（YAML frontmatter 的 .local.md）在 Android 端是否合适？规则文件放哪（assets / 工作区 / 设置目录）？是否支持「仓库级规则」随项目走？
 5. **权限分级**：`ask/deny/allow` 三分模型是否引入 `deny` 白名单策略文件？`disableBypassPermissionsMode` 对应什么 UI/入口？
@@ -694,9 +694,9 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ## 17. 插件五件套复用设计定稿（草案，延伸方向）
 
-### 17.1 现状映射（五件套 → DeepCore-Code）
+### 17.1 现状映射（五件套 → MiniMe-core）
 
-| Claude Code 五件套 | DeepCore-Code 对应物 | 状态 |
+| Claude Code 五件套 | MiniMe-core 对应物 | 状态 |
 |---|---|---|
 | `skills/` | Skill 系统（内置 `BuiltinSkillSeeder` + 本地目录扩展 `LocalDirectorySkillSource`） | ✅ 已有 |
 | `commands/` | `SlashCommandRegistry` | ✅ 已有 |
@@ -740,9 +740,9 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 18.1 可行性结论（三种硬差异）
 
-- **语言差异（最硬）**：hook 是 Python/shell 脚本（security-guidance 11 个 py、hookify 4 个 py、ralph-wiggum stop-hook.sh），DeepCore-Code 运行时无 Python——**hooks 必须翻译**为 Kotlin 或 #5 规则引擎 MD 规则。
+- **语言差异（最硬）**：hook 是 Python/shell 脚本（security-guidance 11 个 py、hookify 4 个 py、ralph-wiggum stop-hook.sh），MiniMe-core 运行时无 Python——**hooks 必须翻译**为 Kotlin 或 #5 规则引擎 MD 规则。
 - **格式差异**：插件是 Claude Code 格式（YAML frontmatter + plugin.json + hooks.json），需**格式转换层**（#17 插件化）。
-- **环境差异**：提示词含 `CLAUDE.md`/`gh pr`/`npm` 等 Claude Code 环境引用；agent tools 白名单需映射到 DeepCore-Code ToolRegistry。
+- **环境差异**：提示词含 `CLAUDE.md`/`gh pr`/`npm` 等 Claude Code 环境引用；agent tools 白名单需映射到 MiniMe-core ToolRegistry。
 
 ### 18.2 移植分类（13 个）
 
@@ -751,7 +751,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 | **A 轻改移植**（纯 Markdown，格式转换） | commit-commands、frontend-design、claude-opus-4-5-migration、explanatory-output-style、learning-output-style | 小 | 提示词为主，frontmatter 适配 + 工具映射 |
 | **B 适配移植**（多 agent 编排，改环境引用） | feature-dev、pr-review-toolkit、code-review、plugin-dev | 中 | `gh`→本地 git、`CLAUDE.md`→项目规则、tools 映射 |
 | **C 翻译移植**（Python hook → #5 规则） | hookify、security-guidance | 大 | 4+11 个 py 翻译为 Kotlin 规则/规则引擎 MD |
-| **D 自定义实现**（行为型） | ralph-wiggum、agent-sdk-dev | 中/低价值 | ralph 需 workflow 循环控制；SDK 开发对 DeepCore-Code 低价值 |
+| **D 自定义实现**（行为型） | ralph-wiggum、agent-sdk-dev | 中/低价值 | ralph 需 workflow 循环控制；SDK 开发对 MiniMe-core 低价值 |
 
 ### 18.3 决策记录
 

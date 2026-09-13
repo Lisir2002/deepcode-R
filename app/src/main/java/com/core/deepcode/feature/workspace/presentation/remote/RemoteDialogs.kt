@@ -111,7 +111,7 @@ fun AddRemoteConnectionDialog(
                 onValueChange = { host = it },
                 label = { Text(if (isLocal) stringResource(R.string.remote_internal_dir) else stringResource(R.string.remote_host_address)) },
                 placeholder = if (isLocal) {
-                    { Text("/storage/emulated/0/DeepCore-Code/projects") }
+                    { Text("/storage/emulated/0/MiniMe-core/projects") }
                 } else {
                     null
                 },

@@ -973,7 +973,7 @@ private fun GalleryBody() {
             }
             Spacer(Modifier.height(AppSpacing.Xs))
 
-            AppMarquee { Text("　✦ DeepCore-Code · 容器已就绪 ● 终端已连接 → 构建中… 　", style = MaterialTheme.typography.bodyMedium) }
+            AppMarquee { Text("　✦ MiniMe-core · 容器已就绪 ● 终端已连接 → 构建中… 　", style = MaterialTheme.typography.bodyMedium) }
             Spacer(Modifier.height(AppSpacing.Md))
 
             AppGradientBorder(modifier = Modifier.fillMaxWidth()) {

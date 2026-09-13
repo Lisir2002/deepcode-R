@@ -149,7 +149,7 @@ jobs:
       #       com.R.codecore → com.core.deepcode），每次都是不可逆的数据丢失事故
       #       （详见 docs/plan-docs/data-preservation-design.md）。
       # 因此发版 Tag 必须与上个 Release 保持同包名，不一致直接阻断，杜绝带新包名的包流入用户。
-      # 例外：REBRAND_TRANSITIONS 登记的显式品牌迁移对（rc11 DeepCore-Code 迭代）允许通过，
+      # 例外：REBRAND_TRANSITIONS 登记的显式品牌迁移对（rc11 MiniMe-core 迭代（原 DeepCore-Code 品牌））允许通过，
       #       但打 warning 提示数据迁移；未登记的任何变更仍然阻断。
       # 仅打 tag 触发时校验；workflow_dispatch（手动，无 tag）跳过。
       - name: Verify applicationId stability
@@ -171,7 +171,7 @@ jobs:
           declare -A REBRAND_TRANSITIONS=( ["com.R.codecore"]="com.core.deepcode" )
           if [[ -z "$prev_id" || "$cur_id" != "$prev_id" ]]; then
             if [[ -n "$prev_id" && "${REBRAND_TRANSITIONS[$prev_id]:-}" == "$cur_id" ]]; then
-              echo "::warning::applicationId 按登记的 rebrand 迁移对过渡: $prev_id -> $cur_id（DeepCore-Code 品牌迭代，rc11）。已装旧包用户历史数据不可见，请走「备份导出/导入」迁移（详见 docs/plan-docs/data-preservation-design.md）。"
+              echo "::warning::applicationId 按登记的 rebrand 迁移对过渡: $prev_id -> $cur_id（MiniMe-core 品牌迭代，rc11；原 DeepCore-Code）。已装旧包用户历史数据不可见，请走「备份导出/导入」迁移（详见 docs/plan-docs/data-preservation-design.md）。"
             else
               echo "::error::applicationId 变更: $prev_id -> $cur_id。包名变更在 Android 上是全新安装，会导致用户历史对话不可见。禁止变更 applicationId（如需 rebrand 请在 REBRAND_TRANSITIONS 登记迁移对并评审数据保全影响，详见 docs/plan-docs/data-preservation-design.md）。"
               exit 1
@@ -351,7 +351,7 @@ jobs:
           apk="dist/deepcode-${TAG}.apk"
           sha256="$(sha256sum "$apk" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
           {
-            echo "## DeepCore-Code Release — ${TAG}"
+            echo "## MiniMe-core Release — ${TAG}"
             echo ""
             echo "- **Prerelease**: ${IS_PRERELEASE}"
             echo "- **APK**: \`deepcode-${TAG}.apk\` (双 ABI 通用包：arm64-v8a + x86_64)"

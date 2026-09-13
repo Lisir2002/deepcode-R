@@ -4,7 +4,7 @@
 
 ## 1. 模块定位
 
-负责 DeepCore-Code 的 **Git 远程仓库凭据（host + username + token）管理**与**提交署名/仓库地址配置**，并承担「容器内 git 缺凭据时向 App 请求回填」的文件 IPC 桥。
+负责 MiniMe-core 的 **Git 远程仓库凭据（host + username + token）管理**与**提交署名/仓库地址配置**，并承担「容器内 git 缺凭据时向 App 请求回填」的文件 IPC 桥。
 
 三件事，一条链：
 

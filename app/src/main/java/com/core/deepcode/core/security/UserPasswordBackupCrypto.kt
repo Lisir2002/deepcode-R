@@ -50,7 +50,7 @@ class UserPasswordBackupCrypto {
      * 密码错误的异常。
      */
     class BackupWrongPasswordException : Exception("密码不正确或备份文件已损坏")
-    class BackupTamperedException : Exception("不是有效的 DeepCore-Code 加密备份文件")
+    class BackupTamperedException : Exception("不是有效的 MiniMe-core 加密备份文件")
 
     /**
      * 加密写入：返回的 OutputStream 关流时自动写 GCM tag + HMAC 尾。

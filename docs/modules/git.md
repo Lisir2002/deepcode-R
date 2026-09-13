@@ -4,7 +4,7 @@
 
 ## 1. 模块定位
 
-负责 DeepCore-Code 的**图形化 Git 客户端**：在容器内执行 git 命令并解析输出，提供状态（status）、分支/标签（branches）、提交日志拓扑图（log）与文件 diff 四大视图。命令直接复用容器 `CommandEngine.runCommandSync`（cwd = 当前工作区），不经 agent 工具链/权限引擎——Git 页是用户主动操作。
+负责 MiniMe-core 的**图形化 Git 客户端**：在容器内执行 git 命令并解析输出，提供状态（status）、分支/标签（branches）、提交日志拓扑图（log）与文件 diff 四大视图。命令直接复用容器 `CommandEngine.runCommandSync`（cwd = 当前工作区），不经 agent 工具链/权限引擎——Git 页是用户主动操作。
 
 对外提供：暂存/提交/拉取/推送/建删改分支/建删标签/切换分支/身份与仓库地址配置/提交文件 diff / 工作区 diff。远程凭据不自管，统一交给 `credential.helper=store` + credentials 模块的落盘文件与文件 IPC 桥兜底。
 

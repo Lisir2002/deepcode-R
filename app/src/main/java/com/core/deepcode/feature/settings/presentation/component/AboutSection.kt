@@ -1365,7 +1365,7 @@ private suspend fun downloadApk(
     runCatching {
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: context.filesDir
-        val fileName = "DeepCore-Code-${tag}.apk"
+        val fileName = "MiniMe-core-${tag}.apk"
         val targetFile = File(dir, fileName)
         val filePath = targetFile.absolutePath
 

@@ -1614,7 +1614,7 @@ class StatefulAgentWorkflow @Inject constructor(
             "- ${skill.name}（类型: ${skill.type}；${skill.description.take(150)}）\n  触发条件：${skill.triggerConditions ?: skill.description}\n  典型触发信号词（仅供参考，非硬性规则）：$kw"
         }
         val systemPrompt = """
-            你是 DeepCore-Code 的技能自动触发决策器。当新任务到来时，由你主导判断哪些「自动触发技能」应该在本任务开始时自动触发，作为自动化流程的一环。
+            你是 MiniMe-core 的技能自动触发决策器。当新任务到来时，由你主导判断哪些「自动触发技能」应该在本任务开始时自动触发，作为自动化流程的一环。
             判断原则：
             1. 任务的意图/场景与技能的「触发条件」高度匹配时才触发；弱相关、纯问答、纯阅读、与技能无关的任务一律不触发（宁可少触发，不可误触发）。
             2. 典型应触发场景（命中即应触发，不要犹豫）：

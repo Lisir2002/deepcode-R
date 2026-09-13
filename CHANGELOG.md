@@ -1,6 +1,6 @@
 # Changelog
 
-本文件记录 DeepCore-Code 各版本的用户可见变更，采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格。版本号采用四段式 `x.x.x.x(-rcN)`（从 `0.0.0.1` 迭代），完整规则见 [docs/versioning.md](./docs/versioning.md)。
+本文件记录 MiniMe-core 各版本的用户可见变更，采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格。版本号采用四段式 `x.x.x.x(-rcN)`（从 `0.0.0.1` 迭代），完整规则见 [docs/versioning.md](./docs/versioning.md)。
 
 - **用户日志**：本文档面向用户，只记录用户可感知的变化；内部实现细节（重构、DB 迁移、测试）不在此展开。
 - **开发者日志**：各模块内部演进见 `docs/modules/<module>.md` 的「版本演进记录」章节。
@@ -143,13 +143,13 @@
 
 ### Changed（变更）
 
-- **应用名：`R-CodeCore` → `DeepCore-Code`**：桌面名称、调试变体名（`DeepCore-Code (Debug)`）、主题样式 `Theme.DeepCoreCode`、README / 应用内文档 / AI 版本日志中的品牌自述全数更新。
+- **应用名：`R-CodeCore` → `MiniMe-core`**：桌面名称、调试变体名（`MiniMe-core (Debug)`）、主题样式 `Theme.DeepCoreCode`、README / 应用内文档 / AI 版本日志中的品牌自述全数更新。
 - **包名（applicationId）：`com.R.codecore` → `com.core.deepcode`**：同步 `namespace`、Hilt / BuildConfig / SQLDelight 生成包、源码目录树 `com/R/codecore` → `com/core/deepcode`（含 6 个 SQLDelight 域的 `.sq` 包目录）、R8 混淆规则、agent 库文件名 `deepcode_agent_v3.db`、容器运行时目录 `/root/.deepcode`、APK 产物名 `deepcode-<版本>.apk`。
 - **三道数据保全门禁同步迁移**：Gradle 白名单换为新包名；`ApplicationIdStabilityTest` 断言新包名并把旧包名 `com.R.codecore` 纳入防回退黑名单；CI 发版门禁新增显式 `REBRAND_TRANSITIONS` 迁移对（仅放行本次登记的旧→新过渡，其他任何包名变更仍被阻断）。
 
 ### Added（新增）
 
-- **全新桌面图标**：源自官方品牌图（蓝色渐变 `D` + `</>` + DeepCore-Code 字样），生成全套 adaptive icon（整图置于 70% 安全区 + 米白背景 `#FCFCFA`）与各密度方形 / 圆形 webp。
+- **全新桌面图标**：源自官方品牌图（蓝色渐变 `D` + `</>` + MiniMe-core 字样），生成全套 adaptive icon（整图置于 70% 安全区 + 米白背景 `#FCFCFA`）与各密度方形 / 圆形 webp。
 
 ## [v0.0.0.1-rc10] - 2026-09-03
 

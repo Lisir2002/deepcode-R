@@ -409,7 +409,7 @@ private fun AutoBackupCard(
 /**
  * 外部安全备份卡片（数据保全防线 D6b）：展示外部安全区备份时间/份数，支持立即备份与恢复。
  *
- * 外部安全区 = 公共存储「下载/DeepCore-Code/backups」的加密备份（包名无关，卸载/包名变更后仍保留），
+ * 外部安全区 = 公共存储「下载/MiniMe-core/backups」的加密备份（包名无关，卸载/包名变更后仍保留），
  * 是「applicationId 变更导致历史数据隔离」后仍能找回数据的底层保证（见 AutoBackupManager）。
  */
 @Composable
