@@ -250,31 +250,26 @@ jobs:
           fi
 
       # GitHub 的 generate_release_notes 只列 merged PR，直接 push 的 commit 不会出现。
-      # 本仓库在 main 上直接 commit，不走 PR 流程，所以手动用 git log 生成 changelog。
-      - name: Generate changelog from git log
+      # 本仓库在 main 上直接 commit，不走 PR 流程，所以手动用 release-log.py 生成用户层 Release 正文。
+      # 三层规范见 AGENTS.md「版本日志（发版必做 · 三层写法规约）」——
+      #   本步骤只产「用户层」（用户语体），开发者层（CHANGELOG.md）、大模型层（AGENTS.md）由
+      #   发版前 gitops 生成并人工复核；CI 专注于发布正文本自动生成。
+      - name: Generate release notes (user layer)
         id: changelog
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cur_tag="${GITHUB_REF_NAME}"
           prev_tag=$(git tag --sort=-creatordate | grep -vE "^${cur_tag}$" | head -1)
-          if [[ -z "$prev_tag" ]]; then
-            echo "无历史 tag，列出最近 30 条提交"
-            log=$(git log --oneline --no-decorate -30)
-          else
-            echo "生成 ${prev_tag}..${cur_tag} 的 changelog"
-            log=$(git log --oneline --no-decorate "${prev_tag}..HEAD")
-          fi
-          # 转义为 GitHub Actions 输出（多行用 EOF 分隔符）
+          version="${cur_tag#v}"
+          # 多行输出用 EOF 分隔符；--layer user 直接产出 GitHub Release 用户层正文
           delimiter="EOF_$(date +%s)"
           echo "body<<${delimiter}" >> "$GITHUB_OUTPUT"
-          echo "## What's Changed" >> "$GITHUB_OUTPUT"
-          echo "" >> "$GITHUB_OUTPUT"
-          echo "$log" | while IFS= read -r line; do
-            # 提取 commit hash 和 message，格式化为列表项
-            sha=$(echo "$line" | cut -d' ' -f1)
-            msg=$(echo "$line" | cut -d' ' -f2-)
-            echo "- ${msg} (${sha})" >> "$GITHUB_OUTPUT"
-          done
+          python3 scripts/gitops/release-log.py \
+            --layer user \
+            --prev "$prev_tag" \
+            --cur "$cur_tag" \
+            --version "$version" \
+            --date "$(date +%Y-%m-%d)"
           echo "" >> "$GITHUB_OUTPUT"
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${prev_tag}...${cur_tag}" >> "$GITHUB_OUTPUT"
           echo "${delimiter}" >> "$GITHUB_OUTPUT"
