@@ -159,9 +159,18 @@ MiniMe-core 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 3. **真机装 rc 包**，至少跑通 AI 对话 + 终端 + 容器启动三条主线。
 4. 有问题 -> 从该 RC Tag 拉 `hotfix/xxx` 分支修复（**勿从最新 `main` 拉**，否则会把已合入的未发版功能带进修复包）-> 升 rc 序号打 Tag（`v1.7.0-rc2`）推送重发 -> 将修复合回 `main` 并推送 -> 删除 hotfix 分支；无问题 -> 直接打正式 Tag（`v1.7.0`）推远端转正。
 
-### 版本日志（发版必做）
+### 版本日志（发版必做 · 三层写法规约）
 
-每次发版（RC 或正式）前，必须维护版本日志。`docs/modules/` 各模块「版本演进记录」章节与仓库根 `CHANGELOG.md` 已随项目文档清理整体删除，不再作为仓库文档维护；用户可见变更由 CI 从 `git log <prev-tag>..<tag>`（Conventional Commits）汇总，过滤内部实现细节后生成 GitHub Release 发布说明。
+每次发版（RC 或正式）前，必须维护版本日志。**同一份来源（Conventional Commits 的 `git log <prev-tag>..<tag>`）按受众渲染成三层不同语体，各司其职、互不污染**：
+
+| 层 | 受众 | 载体 | 语体 / 要点 |
+|---|---|---|---|
+| **用户层** | 终端用户 | GitHub Release 正文 | 叙事、价值导向、无内部术语；「亮点/新功能/改进/修复/已知问题」置顶最新最有价值条款，单条 ≤ 一行 |
+| **开发者层** | 开发者 / AI 排障 | 仓库根 `CHANGELOG.md` | Keep a Changelog 六类（Added/Changed/Deprecated/Removed/Fixed/Security），版本倒序 + ISO 日期，逐条带 scope，**Breaking 用 ⚠️ 标注并附迁移说明** |
+| **大模型层** | AI Agent | 本文件 `AGENTS.md`（运行时被 `SystemPromptProvider` 拼入 System Prompt） | 结构化、机器可解析、单向演进；**与 AI 工作流相关（工具 / prompt / schema / 接口）的变更必须在「资产同步纪律」与相关章节登记影响**，无 schema 变化也须显式声明 |
+
+- **生成路径**：开发者/base 层由 `git log` 归类润色；过滤纯 `chore`/`style`/`test`/非行为 `refactor`/`ci` 噪音。用户层由发布说明额外做价值化润色。
+- **不重复**：用户/开发者层写「变更是什么」；大模型层写「对 AI 工作流的影响与注意事项」。三者只在尾部互相链接，不互相复制。
 
 > 🔧 **云端构建的完整运维手册**（CI 全流程 6 阶段 / 实时监控 GitHub API 命令 / 产物校验清单 / 签名 secrets 配置与回退说明）：见 **[docs/ci-release.md](./docs/ci-release.md)**。AI 或维护者推 Tag 发版后，必须按该手册实时监控并校验产物。
 

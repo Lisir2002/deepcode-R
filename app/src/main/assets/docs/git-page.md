@@ -88,6 +88,6 @@
 2. `gitops release-check vX.Y.Z-rc1` 取 RC 判定建议
 3. 若建议 RC：`gitops release-tag vX.Y.Z-rc1` → Bash 执行 `git push origin vX.Y.Z-rc1` 推送触发 CI → 真机验证 AI 对话 / 终端 / 容器启动三条主线
 4. 若无阻塞且直接发正式：`gitops release-tag vX.Y.Z` → Bash 执行 `git push origin vX.Y.Z` → CI 自动构建 Release
-5. 每次发版前用 `gitops changelog <prev-tag>` 生成版本日志草稿，润色后写入 `CHANGELOG.md` 与 `docs/modules/<module>.md` 版本演进
+5. 每次发版前用 `gitops changelog <prev-tag>` 生成开发者层版本日志草稿，润色后写入 `CHANGELOG.md`；用户在 GitHub Release 正文，AI 工作流相关变更写入 `AGENTS.md`（三层口径见 AGENTS.md「版本日志」）
 
 **注意**：`release-tag` 仅在本地创建 tag，推送由外部 Bash 完成，凭据由 `credential.helper=store` 自动注入。

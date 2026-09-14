@@ -65,7 +65,7 @@ fun gitVersionName(): String = try {
     "$BASE_VERSION-dev"
 }
 
-// versionCode 从 git tag 四段版本号映射生成（语义见 docs/versioning.md），随版本单调递增：
+// versionCode 从 git tag 四段版本号映射生成（语义见 AGENTS.md「版本号规范」），随版本单调递增：
 //   versionCode = BASE + A*1_000_000_000 + B*10_000_000 + C*10_000 + D*10
 //   - A/B 段当前预留为 0，实际迭代在 C/D 段；C 段间距 10_000 > D 段最大映射 999*10=9990，
 //     保证「C+1 且 D 归零」时仍严格单调；rcN 与同版本正式号映射相同，RC 转正允许相等覆盖升级。

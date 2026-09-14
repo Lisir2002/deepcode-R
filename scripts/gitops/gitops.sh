@@ -336,7 +336,7 @@ cmd_changelog() {
   [[ -n "$removed" ]] && { echo "### Removed（删除）"; echo ""; echo "$removed"; echo ""; }
   [[ -n "$adjusted" ]] && { echo "### Adjusted（调整）"; echo ""; echo "$adjusted"; echo ""; }
   [[ -n "$unclassified" ]] && { echo "### Unclassified（待归类）"; echo ""; echo "$unclassified"; echo ""; }
-  echo "下一步：复核 draft → 追加到 CHANGELOG.md → 在 docs/modules/<module>.md 追加版本演进记录"
+  echo "下一步：复核 draft → 追加到 CHANGELOG.md（开发者层）；用户在 GitHub Release 正文（用户层）；AI 工作流相关变更入 AGENTS.md（大模型层）"
 }
 
 usage() {
