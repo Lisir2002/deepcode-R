@@ -45,7 +45,7 @@ jobs:
       #   但只要签名证书稳定，用户从 rc23→rc24→rc25→正式版之间都能 OTA 式覆盖升级，不用每次清数据。
       #
       # 如果有正式 keystore（secrets.AICODE_KEYSTORE_BASE64），下面的 "Restore release keystore" 步骤会
-      # 用 AICODE_KEYSTORE_BASE64 在 app/minime.jks 生成一份不同的 keystore，并写 app/keystore.properties
+      # 用 AICODE_KEYSTORE_BASE64 在 app/${KEYSTORE_FILE} 生成一份不同的 keystore，并写 app/keystore.properties
       # 指向它 → Gradle 的 signingConfigs.release 会优先生效 → 产物为正式签名（SHA256 另算但同样稳定）。
       #
       # 若 secrets 未配置（绝大多数测试/迭代场景）：Restore release keystore 跳过 → 本步骤写的
@@ -87,6 +87,23 @@ jobs:
         with:
           # 复用 Gradle 构建缓存，加速后续构建。
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # 读取品牌参数（单一事实源：app/branding.gradle.kts，与 app/build.gradle.kts 共享同源）。
+      # 用 grep 提取 APK_PREFIX / KEYSTORE_FILE / APP_NAME 到 GITHUB_ENV，后续所有产物名/keystore
+      # 引用统一起自这里，避免在 workflow 里重复硬编码品牌名导致"改配置但 CI 还沿用旧名"。
+      - name: Read branding config (single source)
+        run: |
+          set -e
+          APK_PREFIX=$(grep -oE 'APK_PREFIX = "[^"]+"' app/branding.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          KEYSTORE_FILE=$(grep -oE 'KEYSTORE_FILE = "[^"]+"' app/branding.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          APP_NAME=$(grep -oE 'APP_NAME = "[^"]+"' app/branding.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "APK_PREFIX=$APK_PREFIX" >> "$GITHUB_ENV"
+          echo "KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
+          echo "branding: APK_PREFIX=$APK_PREFIX / KEYSTORE_FILE=$KEYSTORE_FILE / APP_NAME=$APP_NAME"
+          : "${APK_PREFIX:?branding 读取失败: APK_PREFIX 为空}"
+          : "${KEYSTORE_FILE:?branding 读取失败: KEYSTORE_FILE 为空}"
+          : "${APP_NAME:?branding 读取失败: APP_NAME 为空}"
 
       - name: Grant execute permission for gradlew + env sanity
         run: |
@@ -185,8 +202,8 @@ jobs:
         run: |
           # 如果 Secrets 未配置则跳过，后续 assembleRelease 会回退到 debug keystore。
           if [[ -n "$KEYSTORE_BASE64" ]]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > app/minime.jks
-            echo "keystore restored ($(stat -c%s app/minime.jks) bytes)"
+            echo "$KEYSTORE_BASE64" | base64 -d > "app/${KEYSTORE_FILE}"
+            echo "keystore restored ($(stat -c%s "app/${KEYSTORE_FILE}") bytes)"
           else
             echo "AICODE_KEYSTORE_BASE64 not set — skipping release keystore restore, will use debug keystore fallback."
           fi
@@ -200,8 +217,8 @@ jobs:
         run: |
           # 仅当 release keystore 存在时才生成 properties 文件。
           if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
-            printf 'storeFile=minime.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
-              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > app/keystore.properties
+            printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_FILE" "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > app/keystore.properties
             echo "app/keystore.properties generated"
           else
             echo "Release keystore secrets not fully configured — skipping keystore.properties, will use debug keystore fallback."
@@ -219,7 +236,7 @@ jobs:
       - name: Build Release APK
         run: ./gradlew --warning-mode=all assembleRelease --stacktrace
 
-      # 重命名 APK 为「品牌-版本」格式（单包通用，双 ABI 一并打入，不带 ABI 标签）：
+      # 重命名 APK 为「品牌-版本」格式（品牌前缀来自 branding.gradle.kts 的 APK_PREFIX）：
       #   minime-v1.0.0-rc1.apk
       - name: Rename APK
         run: |
@@ -227,7 +244,7 @@ jobs:
           ver="${GITHUB_REF_NAME:-manual}"   # tag 如 v1.0.0-rc1；手动触发时为 manual-N
           src="app/build/outputs/apk/release/app-release.apk"
           if [[ -f "$src" ]]; then
-            out="dist/minime-${ver}.apk"
+            out="dist/${APK_PREFIX}-${ver}.apk"
             cp "$src" "$out"
             echo "packaged $out"
             ls -lh "$out"
@@ -264,7 +281,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-apk-${{ github.ref_name }}
-          path: dist/minime-**.apk
+          path: dist/${APK_PREFIX}-**.apk
           if-no-files-found: warn
           retention-days: 90
 
@@ -330,9 +347,9 @@ jobs:
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           fail_on_unmatched_files: true
           generate_release_notes: false
-          # 产物名约定 minime-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
+          # 产物名约定 <APK_PREFIX>-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
           files: |
-            dist/minime-**.apk
+            dist/${APK_PREFIX}-**.apk
         env:
           # RC70 修复：softprops action 对 tag/release 写操作 + 附件 upload 用 GH_RELEASE_TOKEN (细粒度 PAT)，
           # 避免默认 secrets.GITHUB_TOKEN 在 tag 已经存在 + repo 限制 Release write / tag push 时竞态失败。
@@ -348,13 +365,13 @@ jobs:
           IS_PRERELEASE: ${{ steps.prerelease.outputs.is_prerelease }}
           REPO: ${{ github.repository }}
         run: |
-          apk="dist/minime-${TAG}.apk"
+          apk="dist/${APK_PREFIX}-${TAG}.apk"
           sha256="$(sha256sum "$apk" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
           {
-            echo "## MiniMe-core Release — ${TAG}"
+            echo "## ${APP_NAME} Release — ${TAG}"
             echo ""
             echo "- **Prerelease**: ${IS_PRERELEASE}"
-            echo "- **APK**: \`minime-${TAG}.apk\` (双 ABI 通用包：arm64-v8a + x86_64)"
+            echo "- **APK**: \`${APK_PREFIX}-${TAG}.apk\` (双 ABI 通用包：arm64-v8a + x86_64)"
             echo "- **SHA256**: \`${sha256}\`"
             echo "- **Release page**: https://github.com/${REPO}/releases/tag/${TAG}"
             echo "- **Artifact**: r8-mapping-${TAG} (Run artifact, 90d retention)"

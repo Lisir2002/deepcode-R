@@ -12,6 +12,12 @@ plugins {
     id("app.cash.sqldelight")
 }
 
+// 品牌 / 产物参数单一事实源（应用名、APK产物前缀、keystore 文件名、图标族名），定义见 branding.gradle.kts。
+// apply(from=…) 场景下 cross-script 顶层 const 不能直接 import，故经 extra 读取。
+apply(from = file("branding.gradle.kts"))
+val brandAppName: String = extra["brandAppName"] as String
+val brandIconFamily: String = extra["brandIconFamily"] as String
+
 // 从本地 keystore.properties 读取 release 签名密钥（已 gitignore，不入库）。
 // 若文件不存在（如 CI 环境）则跳过，release 产出 unsigned 包。
 val keystorePropertiesFile = file("keystore.properties")
@@ -160,6 +166,13 @@ android {
         targetSdk = 28
         versionCode = gitVersionCode()
         versionName = gitVersionName()
+
+        // 品牌参数注入（单一事实源：branding.gradle.kts）：
+        //   - 应用显示名：resValue 覆盖 res/values/strings.xml 的 app_name（构建期生效，配置改动即全局改名）；
+        //     英文翻译仍由 values-en/strings.xml 提供（本品牌名中英一致）。
+        //   - launcher 图标资源族名：manifestPlaceholder 注入 android:icon（见 AndroidManifest.xml）。
+        resValue("string", "app_name", brandAppName)
+        manifestPlaceholders["brandIcon"] = brandIconFamily
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
