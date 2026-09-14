@@ -303,6 +303,23 @@ gradle.projectsEvaluated {
     tasks.matching { it.name.startsWith("lintVital") }.configureEach { enabled = false }
 }
 
+// ── 安装包命名规则 ─────────────────────────────────────────────────
+// 发版/开发产物统一命名：MiniMe-Core-<versionName>-<buildType>.apk
+//   - 品牌前缀固定 MiniMe-Core（对外软件主品牌）；
+//   - 版本号 = gitVersionName() 动态推导（如 0.0.0.1 / 0.0.0.1-rc1 / dev 基线）；
+//   - buildType = release / debug，作为「软件主信息」区分正式与开发包。
+//   依赖同一份 app/build.gradle.kts 的构建配置，CI 与本地产出命名一致。
+android {
+    applicationVariants.all {
+        // applicationVariants.all 走 legacy Variant API，output 需强转 internal BaseVariantOutputImpl 才能改 outputFileName。
+        val buildType = this.buildType.name
+        outputs.all {
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
+                "MiniMe-Core-${gitVersionName()}-${buildType}.apk"
+        }
+    }
+}
+
 // ── 数据保全：applicationId 白名单硬校验 ──────────────────────────────
 // 包名（applicationId）变更在 Android 眼里是"全新安装"，私有数据目录随之隔离，
 // 历史对话会全部"消失"（历史上已因此丢失三次，见 docs/plan-docs/data-preservation-design.md）。

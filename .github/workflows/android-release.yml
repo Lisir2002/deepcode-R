@@ -210,32 +210,31 @@ jobs:
       - name: Build Release APK
         run: ./gradlew --warning-mode=all assembleRelease --stacktrace
 
-      # 重命名 APK 为「品牌-版本」格式（单包通用，双 ABI 一并打入，不带 ABI 标签）：
-      #   deepcode-v1.0.0-rc1.apk
-      - name: Rename APK
+      # APK 命名统一由 build.gradle.kts 的 androidComponents 产出：MiniMe-Core-<版本>-<buildType>.apk
+      #   - 版本号 = 顶点 push 的 tag 去 v 前缀（GitHub Tag 驱动 versionName）
+      #   - buildType = release（正式包）
+      # 这里只做 ABI 双架构校验 + 记录产物名，不再手动重命名（避免命名规则在 CI 与 Gradle 两处漂移）。
+      - name: Verify Release APK (naming + ABI)
         run: |
-          mkdir -p dist
-          ver="${GITHUB_REF_NAME:-manual}"   # tag 如 v1.0.0-rc1；手动触发时为 manual-N
-          src="app/build/outputs/apk/release/app-release.apk"
-          if [[ -f "$src" ]]; then
-            out="dist/deepcode-${ver}.apk"
-            cp "$src" "$out"
-            echo "packaged $out"
-            ls -lh "$out"
-            # 产物校验：通用包必须同时包含 arm64-v8a 与 x86_64 两套原生库（解 zip 列出 lib/ 下架构目录）
-            echo "--- ABI 校验：lib/ 下应有 arm64-v8a 与 x86_64 ---"
-            unzip -l "$out" | awk '/\.so$/ {print $4}' | awk -F/ 'NF>=3 {print $2}' | sort -u
-            has_arm=$(unzip -l "$out" | grep -c 'lib/arm64-v8a/.*\.so' || true)
-            has_x86=$(unzip -l "$out" | grep -c 'lib/x86_64/.*\.so' || true)
-            if [[ "$has_arm" -eq 0 || "$has_x86" -eq 0 ]]; then
-              echo "::error::ABI 校验失败：arm64-v8a($has_arm) / x86_64($has_x86) 未同时包含，请检查 build.gradle.kts abiFilters=[arm64-v8a,x86_64] 与双架构资产。"
-              exit 1
-            fi
-            echo "✓ ABI 校验通过：arm64-v8a + x86_64 双架构齐备"
-          else
-            echo "::error::missing $src — assembleRelease 产出未找到，请检查 build.gradle.kts 已移除 flavor 且 abiFilters 含 arm64-v8a 与 x86_64。"
+          set -e
+          ver="${GITHUB_REF_NAME:-dev}"
+          ver="${ver#v}"
+          expected="app/build/outputs/apk/release/MiniMe-Core-${ver}-release.apk"
+          if [[ ! -f "$expected" ]]; then
+            echo "::error::构建产物名不符合命名规则，期望 $expected，实际存在："
+            ls -1 app/build/outputs/apk/release/ || true
             exit 1
           fi
+          echo "✓ 产物命名符合规则: $expected"
+          echo "--- ABI 校验：lib/ 下应有 arm64-v8a 与 x86_64 ---"
+          unzip -l "$expected" | awk '/\.so$/ {print $4}' | awk -F/ 'NF>=3 {print $2}' | sort -u
+          has_arm=$(unzip -l "$expected" | grep -c 'lib/arm64-v8a/.*\.so' || true)
+          has_x86=$(unzip -l "$expected" | grep -c 'lib/x86_64/.*\.so' || true)
+          if [[ "$has_arm" -eq 0 || "$has_x86" -eq 0 ]]; then
+            echo "::error::ABI 校验失败：arm64-v8a($has_arm) / x86_64($has_x86) 未同时包含，请检查 build.gradle.kts abiFilters=[arm64-v8a,x86_64] 与双架构资产。"
+            exit 1
+          fi
+          echo "✓ ABI 校验通过：arm64-v8a + x86_64 双架构齐备"
 
       # 上传 R8 mapping.txt 作为 Run artifact（仅 release build 才会产出）。
       # 用于线上 crash stack 反混淆与版本回溯。文件不存在时跳过，不阻塞流程。
@@ -248,14 +247,14 @@ jobs:
           if-no-files-found: ignore
           retention-days: 90
 
-      # RC70 新增：独立上传 APK artifact（Rename → Release 创建之间的安全网）
+      # RC70 新增：独立上传 APK artifact（Release 创建之间的安全网）
       # 即使 Create GitHub Release step 因 tag 竞态 / GITHUB_TOKEN 权限失败，APK 仍在 Run Artifacts 内 90 天可下载。
       - name: Upload release APK (Run artifact safety net)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: release-apk-${{ github.ref_name }}
-          path: dist/deepcode-*.apk
+          path: app/build/outputs/apk/release/MiniMe-Core-*.apk
           if-no-files-found: warn
           retention-days: 90
 
@@ -321,9 +320,9 @@ jobs:
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           fail_on_unmatched_files: true
           generate_release_notes: false
-          # 产物名约定 deepcode-<版本>.apk（见 Rename 步骤），版本段用 * 兼容 tag/manual-*。
+          # 产物名约定 MiniMe-Core-<版本>-release.apk（见 Gradle androidComponents 命名），版本段用 * 兼容 tag/manual-*。
           files: |
-            dist/deepcode-*.apk
+            app/build/outputs/apk/release/MiniMe-Core-*.apk
         env:
           # RC70 修复：softprops action 对 tag/release 写操作 + 附件 upload 用 GH_RELEASE_TOKEN (细粒度 PAT)，
           # 避免默认 secrets.GITHUB_TOKEN 在 tag 已经存在 + repo 限制 Release write / tag push 时竞态失败。
@@ -339,13 +338,14 @@ jobs:
           IS_PRERELEASE: ${{ steps.prerelease.outputs.is_prerelease }}
           REPO: ${{ github.repository }}
         run: |
-          apk="dist/deepcode-${TAG}.apk"
+          ver="${TAG#v}"
+          apk="app/build/outputs/apk/release/MiniMe-Core-${ver}-release.apk"
           sha256="$(sha256sum "$apk" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
           {
-            echo "## DeepCore-Code Release — ${TAG}"
+            echo "## MiniMe-Core Release — ${TAG}"
             echo ""
             echo "- **Prerelease**: ${IS_PRERELEASE}"
-            echo "- **APK**: \`deepcode-${TAG}.apk\` (双 ABI 通用包：arm64-v8a + x86_64)"
+            echo "- **APK**: \`MiniMe-Core-${ver}-release.apk\` (双 ABI 通用包：arm64-v8a + x86_64)"
             echo "- **SHA256**: \`${sha256}\`"
             echo "- **Release page**: https://github.com/${REPO}/releases/tag/${TAG}"
             echo "- **Artifact**: r8-mapping-${TAG} (Run artifact, 90d retention)"
