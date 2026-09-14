@@ -52,8 +52,8 @@ class PermissionRulesRepository @Inject constructor(
     private companion object {
         const val TAG = "PermissionRules"
         const val PERMISSIONS_FILE = "permissions.json"
-        const val AICODE_DIR = ".minime"
-        const val LEGACY_AICODE_DIR = ".deepcode"
+        const val MINIME_DIR = ".minime"
+        const val LEGACY_MINIME_DIR = ".deepcode"
         val JSON = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
     }
 
@@ -63,7 +63,7 @@ class PermissionRulesRepository @Inject constructor(
 
     /** 当前工作区的项目级权限文件：`workspacePath/.minime/permissions.json`。 */
     private fun projectFileForPath(workspacePath: String): File =
-        File(File(workspacePath, AICODE_DIR), PERMISSIONS_FILE)
+        File(File(workspacePath, MINIME_DIR), PERMISSIONS_FILE)
 
     // ── 内存缓存与响应式流 ──────────────────────────────────────
 
@@ -94,9 +94,9 @@ class PermissionRulesRepository @Inject constructor(
             if (newFile.isFile) {
                 state.value = loadFromFile(newFile)
             } else {
-                val legacyFile = File(File(workspacePath, LEGACY_AICODE_DIR), PERMISSIONS_FILE)
+                val legacyFile = File(File(workspacePath, LEGACY_MINIME_DIR), PERMISSIONS_FILE)
                 state.value = loadFromFile(legacyFile)
-                if (legacyFile.isFile) FileLogger.i(TAG, "项目级权限从旧路径 .deepcode/permissions.json 迁移到 .minime")
+                if (legacyFile.isFile) FileLogger.i(TAG, "项目级权限从旧品牌路径迁移到新品牌")
             }
         }
     }

@@ -803,7 +803,7 @@ private fun GalleryBody() {
 
         Section("分子组建族 · 数据 / 导航 / 操作") {
             Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Md)) {
-                AppAvatar(text = "DeepCore", online = true)
+                AppAvatar(text = "MiniMe-core", online = true)
                 AppAvatar(text = "AI", online = false)
             }
             AppBreadcrumb(items = listOf("工作区", "remote", "agents", "prompts"))

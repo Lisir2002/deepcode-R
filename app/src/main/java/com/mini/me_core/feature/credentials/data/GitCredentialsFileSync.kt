@@ -34,12 +34,12 @@ class GitCredentialsFileSync @Inject constructor(
     private companion object {
         const val TAG = "GitCredentialsFileSync"
         /** 容器内 `.minime` 挂载点对应的宿主目录（即文件实际落盘处）。 */
-        const val AICODE_DIR_NAME = "minime"
+        const val MINIME_DIR_NAME = "minime"
         const val CREDENTIALS_NAME = "git-credentials"
     }
 
     /** 目标宿主目录（容器内 /root/.minime 的物理后端）。懒建。 */
-    private val minimeDir: File get() = File(context.filesDir, AICODE_DIR_NAME).apply { mkdirs() }
+    private val minimeDir: File get() = File(context.filesDir, MINIME_DIR_NAME).apply { mkdirs() }
 
     /** 全量重建凭据文件。幂等、可重复调用。凭据为空时写空文件（不删文件，让 git 知无凭据）。 */
     suspend fun syncAll() {

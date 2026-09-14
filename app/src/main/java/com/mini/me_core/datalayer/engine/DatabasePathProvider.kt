@@ -20,7 +20,7 @@ import java.io.File
  *
  * ⚠️ 改 `fileName` 后缀（如 v2 → v3）= 放弃旧文件名指向的物理文件 = **清空该库的全部历史数据**
  * （App 之后只会去读新文件名，旧文件不再被打开）。rc7 曾因误判 `no such column: agent_message.id`
- * 根因（实为 SQL 形态不合法，非库损坏）而把 agent 库改名 `rcodecore_agent_v3.db`，
+ * 根因（实为 SQL 形态不合法，非库损坏）而把 agent 库改名 `minime_agent_v3.db`，
  * 导致所有历史会话被静默清空——这是一次过度反应，代价不可逆。
  *
  * 纪律（固化，防复发）：
