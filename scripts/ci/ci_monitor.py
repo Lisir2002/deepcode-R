@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-DeepCore-Code 实时 CI/CD 监控器
+MiniMe-core 实时 CI/CD 监控器
 实时轮询 GitHub Actions，展示构建进度、失败告警、产物信息。
 
-用法:
-  python3 ci_monitor.py                    # 监控最新一次 run
-  python3 ci_monitor.py --run <run_id>     # 监控指定 run
-  python3 ci_monitor.py --watch            # 持续监控（按 Ctrl+C 退出）
-  python3 ci_monitor.py --release          # 监控最新 release 构建
+用法（仓库根执行）:
+  python3 scripts/ci/ci_monitor.py                    # 监控最新一次 run
+  python3 scripts/ci/ci_monitor.py --run <run_id>     # 监控指定 run
+  python3 scripts/ci/ci_monitor.py --watch            # 持续监控（按 Ctrl+C 退出）
+  python3 scripts/ci/ci_monitor.py --release          # 监控最新 release 构建
 """
 
 import argparse
@@ -264,7 +264,7 @@ def watch_mode(workflow=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="DeepCore-Code CI/CD 实时监控")
+    parser = argparse.ArgumentParser(description="MiniMe-core CI/CD 实时监控")
     parser.add_argument("--run", type=str, help="监控指定 run ID")
     parser.add_argument("--watch", action="store_true", help="持续监控模式")
     parser.add_argument("--release", action="store_true", help="监控最新 release 构建")

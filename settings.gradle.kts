@@ -44,5 +44,5 @@ rootProject.name = "app"
 include(":app")
 include(":terminal-emulator")
 include(":terminal-view")
-// 独立全新 UI 层（并行双子塔，S0 起对 :app 零依赖；见 docs/plan-docs/ui-layer-design.md §7）
+// 独立设计系统 / 全新 UI 层模块（被 :app 依赖，见 app/build.gradle.kts 的 dependencies）
 include(":newui")

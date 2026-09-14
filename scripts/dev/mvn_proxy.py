@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-反向代理式本地 Maven 缓存。
+反向代理式本地 Maven 缓存（受限沙箱开发环境专用辅助脚本，非 App/CI 构建依赖）。
+
+位置：scripts/dev/mvn_proxy.py。仅在出口策略拦截直连 443、但用户态 curl 可下载的
+沙箱里，为本地 Gradle 构建提供代理缓存；普通开发机与 CI 均不需要本脚本。
 
 Gradle HttpClient 用的是 Apache HC 4.x，沙箱到外网 443 TCP 端口被出口策略拦截（SYN 超时）。
 但用户态 curl 可用并能正常下载，可能是沙箱对 curl 做了 socket 级别的放行。
@@ -24,7 +27,8 @@ import urllib.parse
 import threading
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# 脚本位于 <root>/scripts/dev/mvn_proxy.py，向上三级回到仓库根。
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CACHE_DIR = PROJECT_ROOT / ".local-maven-cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
