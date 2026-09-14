@@ -21,10 +21,6 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/media/screenshots/home.png" alt="MiniMe-core home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
-      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="MiniMe-core terminal - built-in Alpine Linux container, full command-line environment" width="270"/></td>
-    </tr>
-    <tr>
       <td align="center">Home · AI Chat</td>
       <td align="center">Terminal · Alpine Linux</td>
     </tr>
@@ -77,7 +73,7 @@ MiniMe-core is an AI-powered coding assistant that runs natively on Android. It 
 **Prerequisites**
 
 - **Physical device (officially supported)**: Android 8.0+ (API 26) **arm64-v8a** device (the mainstream ABI for current Android handsets)
-- **Virtual environment (emulator / VM)**: x86_64 or arm64 system images both work — the same universal package installs and runs; the container auto-selects by host architecture (x86_64 → native x86_64 proot, arm64 → native execution); see [docs/plan-docs/emulator-support-design.md](docs/plan-docs/emulator-support-design.md)
+- **Virtual environment (emulator / VM)**: x86_64 or arm64 system images both work — the same universal package installs and runs; the container auto-selects by host architecture (x86_64 → native x86_64 proot, arm64 → native execution)
 
 ## Quick Start
 
@@ -184,15 +180,12 @@ app/src/main/java/com/mini/me_core/
 └── MainActivity.kt      # Main Activity (NavHost + Drawer + global credential dialog)
 ```
 
-> Detailed per-module developer docs: see [docs/modules/](./docs/modules/README.md) (one doc per module: responsibilities, architecture, interfaces, maintenance guide).
-
 ## Documentation
 
 | Document | Description |
 |---|---|
-| [docs/modules/README.md](./docs/modules/README.md) | **Module docs index**: one document per feature module (architecture, interfaces, maintenance guide) |
-| [docs/plan-docs/](./docs/plan-docs/) | **Design docs**: architecture/feature design proposals (with review status), e.g. [Virtual environment support](./docs/plan-docs/emulator-support-design.md) |
 | [AGENTS.md](./AGENTS.md) | **AI collaboration guidelines**: asset sync discipline, Conventional Commits, branching workflow, release process |
+| [docs/ci-release.md](./docs/ci-release.md) | **Cloud build & release operations manual**: full CI pipeline, artifact verification, signing strategy |
 | `app/src/main/assets/docs/` | In-app help documents (viewable at runtime via Settings → Help) |
 
 ## Known Limitations
@@ -204,7 +197,7 @@ app/src/main/java/com/mini/me_core/
 
 ## Contributing
 
-Issues and PRs are welcome. Please follow the rules in [AGENTS.md](./AGENTS.md): Conventional Commits, asset sync discipline (UI strings go to `strings.xml`, code changes sync module docs, etc.). Enable local validation before committing: `git config core.hooksPath .githooks`.
+Issues and PRs are welcome. Please follow the rules in [AGENTS.md](./AGENTS.md): Conventional Commits, asset sync discipline (UI strings go to `strings.xml`). Enable local validation before committing: `git config core.hooksPath .githooks`.
 
 ## Acknowledgements
 

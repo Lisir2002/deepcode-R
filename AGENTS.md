@@ -33,7 +33,7 @@
 
 MiniMe-core 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）上的 AI 编程工具：内置 PRoot + Alpine Linux 容器与终端，AI Agent 可直接读写文件、执行 Shell、运行构建；支持远程 SSH 执行后端、MCP 协议、Git 集成、备份恢复。采用 Feature-based Architecture + DDD，重度使用 Jetpack Compose / Hilt / Coroutines。
 
-> 面向用户的完整介绍见 [README.md](./README.md)；每个功能模块的开发文档见 `docs/modules/`（见[架构概览](#架构概览)）。
+> 面向用户的完整介绍见 [README.md](./README.md)。
 
 ## 技术栈
 
@@ -98,14 +98,13 @@ MiniMe-core 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 
 ## 资产同步纪律
 
-项目中的 `app/src/main/assets/prompts/`、`app/src/main/assets/docs/`、`docs/modules/` 是 AI Agent 的核心知识来源，必须与代码保持同步：
+项目中的 `app/src/main/assets/prompts/`、`app/src/main/assets/docs/` 是 AI Agent 的核心知识来源，必须与代码保持同步：
 
 - **AI 工作流相关改动 → 检查 prompts**：任何与 AI 工作流相关的改动（工具新增/删除/重命名/参数签名变化、agent 行为变化、提示词逻辑调整等），都必须检查 `app/src/main/assets/prompts/` 下的提示词是否需要同步更新，确保模型看到的工具定义与行为说明与实际一致。AI 应自行在 `prompts/` 目录中查找对应的提示词文件；若不存在则新建。
 - **功能、工具变化 → 检查 docs**：任何功能新增/删除/行为变化或工具变更，还要检查 `app/src/main/assets/docs/` 下是否有对应使用文档需要更新（如新功能的使用说明、工具行为变化的提示）。
 - **UI 变化 → 必须更新对应使用文档**：任何 UI 变化（新增页面、改交互、调布局、改文案）**必须**同步更新 `app/src/main/assets/docs/` 下对应的使用文档，确保用户可见的说明与实际界面一致。AI 应自行在 `docs/` 目录中查找对应的文档；若不存在则新建。
 - **UI 文案 → 必须同步 strings.xml**：任何新增或修改用户可见的中文文案（按钮、标题、提示、Toast 等），**必须**将其提取为 string resource 写入 `app/src/main/res/values/strings.xml`（中文）和 `app/src/main/res/values-en/strings.xml`（英文翻译），并在 `.kt` 代码中用 `stringResource(R.string.xxx)` 或 `context.getString(R.string.xxx)` 引用。**禁止在 .kt 文件中硬编码中文 UI 文案。** 命名规范：语义化英文全小写下划线分隔，通用文案用 `common_` 前缀跨页面复用。
-- **代码结构变化 → 必须同步模块文档**：`docs/modules/` 是功能模块级开发文档（一个模块一份，对应 `feature/<module>/`），与 `assets/docs/`（用户使用说明）用途不同，面向开发与维护。任何功能新增/删除/行为变化/目录结构调整，**必须**同步更新对应模块文档 `docs/modules/<module>.md`；在 `feature/` 下**新增模块时，必须实时新建** `docs/modules/<module>.md` 并在 `docs/modules/README.md` 索引登记。文档固定六段式结构 + 可选第七节「版本演进记录」（模块定位 / 目录结构与职责 / 核心架构与主流程 / 对外接口与集成点 / 关键设计点与约束 / 维护与扩展指引 / 版本演进记录），命名规范与同步规则详见 `docs/modules/README.md`。改动只涉及单个模块内部逻辑时可只更新该模块文档；涉及跨模块结构变更还需同步 `core.md` 与索引。**该规则由 `.githooks/pre-commit` 自动校验**：提交时检查「每个 feature 模块都有对应文档、无孤儿文档」，违反即阻断（启用 hooks：仓库根执行 `git config core.hooksPath .githooks`）。
-- **设计文档 → `docs/plan-docs/`**：任何架构/功能**设计文档**（方案、评审、决策记录）统一放置 `docs/plan-docs/`，命名 `<名称>-design.md`（全小写 snake_case），并在文档头部标注评审状态（`📝 草案` / `✅ 已评审` / `已实施`）。设计文档只放该目录，**禁止散放根目录或其他位置**。设计定稿并实施后，由对应的 `docs/modules/` 模块文档反映落地实现。
+- **模块文档 / 设计文档（已停用）**：曾经的 `docs/modules/`（模块开发文档）与 `docs/plan-docs/`（设计文档）目录已按维护者决定**整体删除**，对应纪律（模块文档同步、设计文档前置）随之停用，`.githooks/pre-commit` 校验已停用（`spec-check.sh` 已删除）。新增/删除 feature 模块不再要求配套模块文档。
 
 ## Git 提交规范
 
@@ -140,9 +139,9 @@ MiniMe-core 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 ## 版本号规范
 
 - **唯一事实源**：由 Git Tag / Commit 动态推导解析，**彻底无需手写 `app/build.gradle.kts` 中的 `versionName`**。
-  - **版本规则已升级为四段式 `x.x.x.x(-rcN)`**（从 `0.0.0.1` 重启迭代，A/B/C/D 语义与三份版本日志规范见 **`docs/versioning.md`**）。下文的三段式示例为历史基线，仅供回溯理解；新打 Tag 一律按四段式执行。**默认（维护者无特别通知时）每次发版版本按 `0.0.0.1` 的 D 段 +1 单调递增**（`0.0.0.1 → 0.0.0.2 → 0.0.0.3 …`）；框架重构正式版 C 段 +1 且 D 段归零，仅在维护者明确通知后执行。
+  - **版本规则为四段式 `x.x.x.x(-rcN)`**（从 `0.0.0.1` 重启迭代：A 段=颠覆性/预留、B 段=框架级结构性/预留、C 段=框架级重构、D 段=默认发版递增）。**默认（维护者无特别通知时）每次发版版本按 `0.0.0.1` 的 D 段 +1 单调递增**（`0.0.0.1 → 0.0.0.2 → 0.0.0.3 …`）；框架重构正式版 C 段 +1 且 D 段归零，仅在维护者明确通知后执行。
   - **`versionName`**：由 `gitVersionName()` 在构建时动态解析（如 tag 为 `v0.0.0.1` 则为 `0.0.0.1`；tag 为 `v0.0.0.1-rc1` 则为 `0.0.0.1-rc1`；非 Tag 的平时提交为 `0.0.0.1-rcN-dev.N+<hash>`）。
-  - **`versionCode`**：由 `gitVersionCode()` 在构建时按 Git Tag 四段版本号映射生成（`BASE + A*1e9 + B*1e7 + C*1e4 + D*10`，见 `docs/versioning.md`），随版本语义单调递增，**与提交数/历史长度解耦**（历史教训：曾用提交数推导，rebase/squash 改写历史后 versionCode 回退、升级判定失效），无需手动维护。
+  - **`versionCode`**：由 `gitVersionCode()` 在构建时按 Git Tag 四段版本号映射生成（`BASE + A*1e9 + B*1e7 + C*1e4 + D*10`），随版本语义单调递增，**与提交数/历史长度解耦**（历史教训：曾用提交数推导，rebase/squash 改写历史后 versionCode 回退、升级判定失效），无需手动维护。
 - **与 Tag 绑定**：发版时只需直接在 `main` 节点上打 git tag，例如 `v1.7.0-rc1` 或 `v1.7.0`，CI 捕获后会自动将生成的 APK 与该版本进行匹配并发布 Release。**严禁在功能分支（`feat/*` / `refactor/*`）上打 Tag 发版**，必须先合入 `main` 再打 Tag，确保发版的代码在 `main` 主线上可追溯。**唯一例外：预览版热修复**——RC 已发出后发现问题时，允许在基于该 RC Tag 的 `hotfix/*` 分支上打 rc 序号 +1 的 Tag 发修复版，修复必须随后合回 `main`（见「发版流程」）。
 
 ## 发版流程（RC 判定）
@@ -162,10 +161,7 @@ MiniMe-core 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
 
 ### 版本日志（发版必做）
 
-每次发版（RC 或正式）前，必须维护版本日志，两部分缺一不可：
-
-1. **仓库根 `CHANGELOG.md`（发布视角）**：按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格记录本次版本的用户可见变更，分类固定六类——`Added` 新增 / `Improved` 改进 / `Fixed` 修复 / `Changed` 变更 / `Removed` 删除 / `Adjusted` 调整（语义判定见 `CHANGELOG.md` 头部「分类约定」）。初稿从 `git log <prev-tag>..<tag>`（Conventional Commits）汇总，过滤内部实现细节后人工润色写入；仅当本次版本无任何用户可见变更时方可跳过。
-2. **各模块文档「版本演进记录」章节（开发视角）**：`docs/modules/<module>.md` 末尾「## 7. 版本演进记录」追加本次版本中该模块的开发维度演进（功能落地 / 结构调整 / 关键修复），与 CHANGELOG 发布视角互补；模块有改动即应追加。
+每次发版（RC 或正式）前，必须维护版本日志。`docs/modules/` 各模块「版本演进记录」章节与仓库根 `CHANGELOG.md` 已随项目文档清理整体删除，不再作为仓库文档维护；用户可见变更由 CI 从 `git log <prev-tag>..<tag>`（Conventional Commits）汇总，过滤内部实现细节后生成 GitHub Release 发布说明。
 
 > 🔧 **云端构建的完整运维手册**（CI 全流程 6 阶段 / 实时监控 GitHub API 命令 / 产物校验清单 / 签名 secrets 配置与回退说明）：见 **[docs/ci-release.md](./docs/ci-release.md)**。AI 或维护者推 Tag 发版后，必须按该手册实时监控并校验产物。
 
@@ -185,8 +181,6 @@ MiniMe-core 是运行在 Android 真机与虚拟环境（模拟器/虚拟机）�
     - `workspace`：工作区与文档管理。远程 SSH 文件访问经 `RemoteSftpFileAccess`。
     - `credentials`：Git 凭据统一管理（三端共用：UI Git / AI Bash / 终端 git）。
     - `backup`：AES 加密备份与恢复。
-    - 其余模块（`proxy`、`browser`、`capability`、`t2i`）职责见模块文档。
-> 各功能模块的**详细开发文档**（目录职责、核心架构、对外接口、维护指引，一个模块一份，命名与 `feature/<module>` 一一对应，由 pre-commit 校验）见 **`docs/modules/`**（索引：`docs/modules/README.md`）。架构细节不再在此重复，改模块请直接查阅对应文档。
 - **远程 SSH 链路**：`RemoteSshConnection`（共享 sshj `SSHClient`）+ `RemoteSshEngine`（exec channel 执行命令）+ `RemoteSftpFileAccess`（文件操作）+ `RemoteTerminalSessionManager`（终端会话），构成远程模式下的执行链路。
 
 ### AI Agent 与工具
@@ -228,7 +222,6 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 | 数据库迁移启动即失败 | 迁移 SQL 字面量含 `;` 被切分器误切 | 用 `char(59)` 代替字面量分号 |
 | 构建命令报错/找不到任务 | 误用旧 flavor 命令 | 只用 `assembleDebug/assembleRelease/bundleRelease`（项目无 flavor） |
 | PRoot 容器无法执行 | `targetSdk` 被改高破坏 W^X 绕过 | 保持 `targetSdk = 28`，勿"顺手修复" |
-| 提交被 pre-commit 阻断 | 新增/删除 feature 模块未同步 `docs/modules/` | 按提示新建/删除对应文档，或先说明（`--no-verify` 仅紧急） |
 | APK 装不上/装后崩溃 | ABI 不符 | 通用包含 arm64-v8a + x86_64；若宿主为其它 ABI（少见），走无容器降级（AI 核心仍可用） |
 | 版本号对不上 | 手改 `versionName` | 靠 Git Tag 动态推导，代码中勿手写版本号 |
 | 提交被 commit-msg 阻断 | 提交信息不合 Conventional Commits | 按 `type(scope): subject` 重写提交信息 |
@@ -239,8 +232,6 @@ Hilt 被广泛使用。各 Feature 模块定义自己的 DI 模块（如 `AgentM
 |---|---|
 | `AGENTS.md` | 本规范（AI 纪律源，运行时被加载） |
 | `docs/ci-release.md` | 云端构建发版运维手册 |
-| `docs/plan-docs/` | 设计文档目录（架构/功能设计方案，命名 `<名称>-design.md`） |
-| `docs/modules/README.md` | 模块文档索引（每模块一份文档） |
 | `app/build.gradle.kts` | 构建配置 + 版本号动态推导（勿手写 versionName） |
 | `app/src/main/java/com/mini/me_core/datalayer/repository/AgentRepository.kt` | V2 数据门面（`AgentRepository` 业务聚合 + `data/local/entity/*.kt` 纯 DTO，DOMAIN/UI/Firebase 复用） |
 | `app/src/main/java/com/mini/me_core/core/db/V1toV2FullMigrator.kt` | 旧 Room 域库 → V2 一次性移植器（纯 SQLite，幂等，只跑一次） |

@@ -21,10 +21,6 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/media/screenshots/home.png" alt="MiniMe-core 主页 - AI 对话界面，支持代码生成与 Markdown 渲染" width="270"/></td>
-      <td align="center"><img src="docs/media/screenshots/terminal.png" alt="MiniMe-core 终端 - 内置 Alpine Linux 容器，完整命令行环境" width="270"/></td>
-    </tr>
-    <tr>
       <td align="center">主页 · AI 对话</td>
       <td align="center">终端 · Alpine Linux</td>
     </tr>
@@ -77,7 +73,7 @@ MiniMe-core 是一款在 Android 手机上运行的 AI 编程工具，将大语�
 **环境要求**
 
 - **真机（正式支持）**：Android 8.0+（API 26）**arm64-v8a** 设备（当前 Android 真机主流 ABI）
-- **虚拟环境（模拟器 / 虚拟机）**：x86_64 或 arm64 系统镜像均支持——同一通用包安装即用，容器按宿主架构自动选用（x86_64 走 x86_64 原生 proot，arm64 走原生执行）；详见 [docs/plan-docs/emulator-support-design.md](docs/plan-docs/emulator-support-design.md)
+- **虚拟环境（模拟器 / 虚拟机）**：x86_64 或 arm64 系统镜像均支持——同一通用包安装即用，容器按宿主架构自动选用（x86_64 走 x86_64 原生 proot，arm64 走原生执行）
 
 ## 快速上手
 
@@ -183,15 +179,14 @@ app/src/main/java/com/mini/me_core/
 └── MainActivity.kt      # 主 Activity（NavHost + Drawer + 全局凭据弹窗）
 ```
 
-> 每个功能模块的详细开发文档见 [docs/modules/](./docs/modules/README.md)（一个模块一份，含目录职责/架构/接口/维护指引）。
+> 端到端架构说明围绕核心模块：`agent`（AI Agent 与 MCP 集成）、`terminal`（终端与容器）、`settings`、`git`、`workspace`、`credentials`、`backup`（详见 [AGENTS.md](./AGENTS.md#架构概览)）。
 
 ## 相关文档
 
 | 文档 | 说明 |
 |---|---|
-| [docs/modules/README.md](./docs/modules/README.md) | **模块文档索引**：每个功能模块一份文档（架构、接口、维护指引） |
-| [docs/plan-docs/](./docs/plan-docs/) | **设计文档目录**：架构/功能设计方案（含评审状态），如[虚拟环境支持](./docs/plan-docs/emulator-support-design.md) |
 | [AGENTS.md](./AGENTS.md) | **AI 协同开发规范**：资产同步纪律、Conventional Commits、分支工作流、发版流程 |
+| [docs/ci-release.md](./docs/ci-release.md) | **云端构建发版运维手册**：CI 全流程、产物校验、签名策略 |
 | `app/src/main/assets/docs/` | App 内置帮助文档（运行时可在「设置 → 帮助」查看） |
 
 ## 已知限制
@@ -203,7 +198,7 @@ app/src/main/java/com/mini/me_core/
 
 ## 贡献
 
-欢迎提交 Issue 与 PR。请遵守 [AGENTS.md](./AGENTS.md) 中的规范：Conventional Commits、资产同步纪律（UI 文案进 `strings.xml`、代码变更同步模块文档等）。提交前请启用本地校验：`git config core.hooksPath .githooks`。
+欢迎提交 Issue 与 PR。请遵守 [AGENTS.md](./AGENTS.md) 中的规范：Conventional Commits、资产同步纪律（UI 文案进 `strings.xml`）。提交前请启用本地校验：`git config core.hooksPath .githooks`。
 
 ## 致谢
 
