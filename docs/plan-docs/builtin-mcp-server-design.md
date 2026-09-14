@@ -2,7 +2,7 @@
 
 > 状态：✅ 已评审（2026-08-19，决策已回填，进入实施期；M0 为首个里程碑）
 > 定位：让 MiniMe-core 从「MCP 客户端」同时成为「MCP 服务器」，把设备能力（容器/终端/文件/git/搜索/AI Agent 工具）开放给外部 MCP 客户端（Claude Desktop / Trae / Cursor / 任意脚本）
-> 对应代码库：[deepcode-R](/workspace/deepcode-R)
+> 对应代码库：[MiniMe-core](/workspace)
 > 相关入口：`AGENTS.md` / `docs/modules/`（模块文档）
 
 ---
@@ -28,13 +28,13 @@
 
 | # | 地基 | 代码位置 | 说明 |
 |---|---|---|---|
-| D1 | **MCP 协议模型** | [McpClient.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/agent/domain/mcp/McpClient.kt) / `JsonRpcRequest` / `JsonRpcResponse` | 客户端已实现握手、tools/list、tools/call、JSON-RPC ID 匹配；server 侧复用同一套模型与协议版本（`2025-06-18`） |
-| D2 | **统一工具层** | [AgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/AgentTool.kt#L152-L223) / [ToolRegistry.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/ToolRegistry.kt) | `AgentTool` 已有 `toToolDefinition()`（name/description/parameters JSON Schema）；`ToolRegistry.getAvailableTools()/getTool(name)` 可枚举与按名调用；`execute(args)` / `executeWithContext(args, context)` 即为 tools/call 执行入口 |
-| D3 | **同步挂起式权限审批** | [ToolPermissionManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/ToolPermissionManager.kt#L29-L46) | `awaitApproval(sessionId, PendingToolPermission)` 挂起等 UI 弹窗 → `resolve(id, choice)`；MCP `tools/call` 是异步请求，天然兼容「挂起等审批」 |
-| D4 | **Android 端内置服务端范式** | [FtpServerManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/workspace/domain/remote/ftp/FtpServerManager.kt) | 内置 FTP 服务端已跑通：Singleton + DataStore 配置 + 开关/端口/用户名密码/匿名 + 自启 + `getLocalIpAddress()` + URL 展示。MCP server 的「服务管理」直接对标此范式 |
+| D1 | **MCP 协议模型** | [McpClient.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/mcp/McpClient.kt) / `JsonRpcRequest` / `JsonRpcResponse` | 客户端已实现握手、tools/list、tools/call、JSON-RPC ID 匹配；server 侧复用同一套模型与协议版本（`2025-06-18`） |
+| D2 | **统一工具层** | [AgentTool.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/AgentTool.kt#L152-L223) / [ToolRegistry.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/ToolRegistry.kt) | `AgentTool` 已有 `toToolDefinition()`（name/description/parameters JSON Schema）；`ToolRegistry.getAvailableTools()/getTool(name)` 可枚举与按名调用；`execute(args)` / `executeWithContext(args, context)` 即为 tools/call 执行入口 |
+| D3 | **同步挂起式权限审批** | [ToolPermissionManager.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/ToolPermissionManager.kt#L29-L46) | `awaitApproval(sessionId, PendingToolPermission)` 挂起等 UI 弹窗 → `resolve(id, choice)`；MCP `tools/call` 是异步请求，天然兼容「挂起等审批」 |
+| D4 | **Android 端内置服务端范式** | [FtpServerManager.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/workspace/domain/remote/ftp/FtpServerManager.kt) | 内置 FTP 服务端已跑通：Singleton + DataStore 配置 + 开关/端口/用户名密码/匿名 + 自启 + `getLocalIpAddress()` + URL 展示。MCP server 的「服务管理」直接对标此范式 |
 
 **关键利好**：
-- 客户端已有的 [StreamableHttpTransport.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/agent/domain/mcp/StreamableHttpTransport.kt) 证明「Streamable HTTP 单端点 POST JSON-RPC + SSE」协议形态在项目内已吃透，server 侧照此规范实现即可被主流客户端连接。
+- 客户端已有的 [StreamableHttpTransport.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/mcp/StreamableHttpTransport.kt) 证明「Streamable HTTP 单端点 POST JSON-RPC + SSE」协议形态在项目内已吃透，server 侧照此规范实现即可被主流客户端连接。
 - 工具权限体系（`permissionPolicy`：AUTO_APPROVE / ASK / NEVER + `capabilities`：12 个 ToolCapability）可直接映射为「远程调用时的审批策略」。
 
 ---
@@ -105,11 +105,11 @@
 
 ### 5.2 协议会话层（McpServerSession）
 
-对齐客户端已实现的握手语义（[McpClient.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/agent/domain/mcp/McpClient.kt#L33-L42)），server 侧实现：
+对齐客户端已实现的握手语义（[McpClient.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/mcp/McpClient.kt#L33-L42)），server 侧实现：
 
 | 方法 | 行为 |
 |---|---|
-| `initialize` | 校验 `protocolVersion`；回 `serverInfo`（name=deepcode-mcp, version）+ `capabilities`（声明 `tools` 能力） |
+| `initialize` | 校验 `protocolVersion`；回 `serverInfo`（name=minime-mcp, version）+ `capabilities`（声明 `tools` 能力） |
 | `notifications/initialized` | 无操作（客户端通知已就绪） |
 | `tools/list` | 经 AgentToolMcpAdapter 拉取 `ToolRegistry.getAvailableTools()` → 转 MCP tool 描述 |
 | `tools/call` | 经 AgentToolMcpAdapter 执行 + 权限审批，回 `content` 块（text 拼接，对齐客户端 `flattenContent` 语义） |
@@ -120,7 +120,7 @@
 
 ### 5.3 工具映射（AgentToolMcpAdapter）
 
-**tools/list 映射**：`AgentTool` → MCP tool 描述，直接复用 `toToolDefinition()`（[AgentTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/AgentTool.kt#L208-L222)）：
+**tools/list 映射**：`AgentTool` → MCP tool 描述，直接复用 `toToolDefinition()`（[AgentTool.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/AgentTool.kt#L208-L222)）：
 ```
 name: <tool.name>
 description: <tool.description>
@@ -135,7 +135,7 @@ inputSchema: { type: "object", properties: <从 parameters 生成的 JSON Schema
    - 审批结果 `PermissionChoice.REJECT` → 回 `isError: true`；`ONCE/ALWAYS` → 继续执行。
 3. **执行**：
    - 无上下文工具：`execute(args)`。
-   - `AbstractContextualTool`（[AbstractContextualTool.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/AbstractContextualTool.kt)）需 `AgentContext`：首期**不暴露**这类工具（tools/list 过滤），M3 再评估合成最小 context。
+   - `AbstractContextualTool`（[AbstractContextualTool.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/agent/domain/tool/AbstractContextualTool.kt)）需 `AgentContext`：首期**不暴露**这类工具（tools/list 过滤），M3 再评估合成最小 context。
    - `StreamingAgentTool`：进度事件在 SSE 通道回传（M2 增强，首期退化为执行完一次性返回）。
 4. **结果封装**：`ToolResult.Success/Error/Partial` → MCP `content` 块；Error 置 `isError: true`。
 
@@ -151,14 +151,14 @@ inputSchema: { type: "object", properties: <从 parameters 生成的 JSON Schema
 | 维度 | 设计 | 依据 |
 |---|---|---|
 | **默认关闭** | 服务默认关闭，用户显式开启才监听 | 对标 D4 FTP 默认关闭 |
-| **token 鉴权** | 开启时生成随机 token（可重生成）；每个请求校验 `Authorization: Bearer <token>`，失败回 401 | MCP 客户端 `headers` 已支持自定义头（[mcp-and-skills.md](file:///workspace/deepcode-R/app/src/main/assets/docs/mcp-and-skills.md)），Claude Desktop/Trae 均支持 customHeaders |
+| **token 鉴权** | 开启时生成随机 token（可重生成）；每个请求校验 `Authorization: Bearer <token>`，失败回 401 | MCP 客户端 `headers` 已支持自定义头（[mcp-and-skills.md](file:///workspace/app/src/main/assets/docs/mcp-and-skills.md)），Claude Desktop/Trae 均支持 customHeaders |
 | **远程审批总开关** | 默认开：远程调用一律弹审批（即使工具 AUTO_APPROVE） | 暴露终端=远程执行，必须人工兜底 |
 | **局域网提示** | UI 明示「请连接可信 WiFi」；不做公网穿透（首期不暴露公网） | 缩小攻击面 |
 | **日志** | 每次远程调用写审计日志（工具名、参数、来源 IP、审批结果） | 复用 `RemoteAuditLogRepository` 思路 |
 
 ### 5.5 服务管理（McpServerManager，对标 FtpServerManager）
 
-与 [FtpServerManager.kt](file:///workspace/deepcode-R/app/src/main/java/com/mini/me_core/feature/workspace/domain/remote/ftp/FtpServerManager.kt) 同构：
+与 [FtpServerManager.kt](file:///workspace/app/src/main/java/com/mini/me_core/feature/workspace/domain/remote/ftp/FtpServerManager.kt) 同构：
 - `@Singleton`，DataStore 持久化配置：`enabled / port / token / requireApproval / autoStart`。
 - 状态流：`isRunning / serverUrl / errorMessage`；UI 展示「运行中: http://<ip>:<port>/mcp」+ token 查看/复制/重生成。
 - `startServer()/stopServer()`：绑定 Ktor server + 启动 FGS；`autoStart` 时 App 启动自动拉起。

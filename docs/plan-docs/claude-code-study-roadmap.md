@@ -77,7 +77,7 @@
 
 #### R08 RuleEngine + MD 规则层（#5 核心）
 
-- **内容**：`Rule(name, enabled, event, tool_matcher, conditions[], action(allow|deny|warn), message)` + `Condition(field, operator, pattern)`（regex_match/contains/equals/not_contains/starts_with/ends_with）；MD 规则层（项目 `.deepcode/rules/*.md` + 全局，frontmatter + 正文，可 git 追踪）+ mtime 热加载；frontmatter 解析公共工具（复用 R03）。
+- **内容**：`Rule(name, enabled, event, tool_matcher, conditions[], action(allow|deny|warn), message)` + `Condition(field, operator, pattern)`（regex_match/contains/equals/not_contains/starts_with/ends_with）；MD 规则层（项目 `.minime/rules/*.md` + 全局，frontmatter + 正文，可 git 追踪）+ mtime 热加载；frontmatter 解析公共工具（复用 R03）。
 - **依赖**：R03（frontmatter 工具复用）。
 - **完成标准**：assembleDebug 通过；RuleEngine 单测（六运算符 / deny 优先 warn / matcher 过滤）；示例规则加载生效。
 - **关联**：design 第 12 节（12.3/12.5）。
@@ -91,7 +91,7 @@
 
 #### R10 deny.json + 禁绕过开关（#7 落地）
 
-- **内容**：`.deepcode/deny.json`（项目 + 全局）管理级强制 deny 最高优先；settings 安全设置页「禁绕过」开关（禁切 AUTO + 禁新「始终允许」记忆，DataStore 持久化）；AUTO 入口禁用 + 存量会话降级提示。
+- **内容**：`.minime/deny.json`（项目 + 全局）管理级强制 deny 最高优先；settings 安全设置页「禁绕过」开关（禁切 AUTO + 禁新「始终允许」记忆，DataStore 持久化）；AUTO 入口禁用 + 存量会话降级提示。
 - **依赖**：R09（优先级链）。
 - **完成标准**：assembleDebug 通过；单测（deny 文件拦已记忆 ALLOW）；UI 冒烟（开关生效、AUTO 禁用、弹窗无「始终允许」）。
 - **关联**：design 第 13 节（13.2/13.4）。
@@ -130,7 +130,7 @@
 
 #### R15 allowedDomains 网络限制（#8 落地）
 
-- **内容**：allowedDomains 两级配置（全局 DataStore + 项目 `.deepcode/network.json`）；mihomo 规则注入（白名单放行 + MATCH→REJECT，mode=rule）；settings 网络代理页编辑入口；默认关。
+- **内容**：allowedDomains 两级配置（全局 DataStore + 项目 `.minime/network.json`）；mihomo 规则注入（白名单放行 + MATCH→REJECT，mode=rule）；settings 网络代理页编辑入口；默认关。
 - **依赖**：无（mihomo 内核已有）。
 - **完成标准**：assembleDebug 通过；容器冒烟（白名单域放行、域外 REJECT）；`assets/docs/`（网络限制说明，诚实标注 HTTP(S) 范围）与 `docs/modules/` 同步。
 - **关联**：design 第 14 节（14.2/14.4）。

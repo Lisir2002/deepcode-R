@@ -52,7 +52,7 @@ refresh(): notReadyHint()? 容器未就绪→引导文案
 `GitViewModel.runAction`：`busy` 守卫并发互斥 → 跑命令 → 无论成败都 `loadSnapshot` 刷新（失败也刷新保持 UI 与仓库一致）→ toast。提交/拉取/推送/建删分支/标签等全部复用；`pull`/`push` 先检查 `hasRemote` 门控。
 
 - `push`：无上游时自动 `git push --set-upstream <remote> <branch>` 首推建关联，避免撞 `no upstream branch` 原始报错。
-- `setUserIdentity`：**优先项目级**（工作区 `.git/config` 已有则 `--local`），否则写 `--global`（`GIT_CONFIG_GLOBAL=/root/.deepcode/.gitconfig`，持久挂载）。
+- `setUserIdentity`：**优先项目级**（工作区 `.git/config` 已有则 `--local`），否则写 `--global`（`GIT_CONFIG_GLOBAL=/root/.minime/.gitconfig`，持久挂载）。
 - `setRepoUrl`：**只写 `--local`**（`remote.origin.url` 是单仓库远端，绝不写 global，否则后续 clone 会被全局旧值污染），并顺带清全局残留。
 
 ### 3.4 拓扑图与分页

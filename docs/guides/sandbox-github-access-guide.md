@@ -282,7 +282,7 @@ PATCH /repos/{o}/{r}/releases/<release_id>        # 改说明/置顶警示
 set -euo pipefail
 TOKEN="${GITHUB_TOKEN:?请设置环境变量 GITHUB_TOKEN}"
 OWNER="${GH_OWNER:-Lisir2002}"
-REPO="${GH_REPO:-deepcode-R}"
+REPO="${GH_REPO:-minime-core}"
 # 通过 DoH 解析真实 IP（绕过被劫持的 DNS）
 resolve() {
   local host="$1" ip

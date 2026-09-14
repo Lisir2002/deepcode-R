@@ -49,7 +49,7 @@ CredentialEditorSheet / CredentialListSection / GitScreen 凭据页
 
 ### 3.2 凭据落盘同步（GitCredentialsFileSync）
 
-- 宿主目录 `filesDir/deepcode` = 容器内 `/root/.deepcode`（`LinuxContainerEngine` 的 `-b` 绑定，跨 rootfs 升级不丢）。
+- 宿主目录 `filesDir/minime` = 容器内 `/root/.minime`（`LinuxContainerEngine` 的 `-b` 绑定，跨 rootfs 升级不丢）。
 - 每 host 取默认条（无默认回退首条）按 `git-credential-store` 格式写 `git-credentials` 文件：`https://<urlencoded user>:<urlencoded token>@<host>` 每行一条；凭据为空时写空文件（不删文件，让 git 知无凭据）。
 - 原子写：先 `.tmp` 再 rename，避免容器侧/git 读到半截文件。
 - **只写凭据文件，不写 `.gitconfig`**：`.gitconfig` 的 `[credential] helper` 由容器 provision 时 `git config --global` 写、`[user]` 署名由 git 命令维护——真源就是 `.gitconfig` 本身。
@@ -57,7 +57,7 @@ CredentialEditorSheet / CredentialListSection / GitScreen 凭据页
 ### 3.3 缺凭据弹窗链路（CredentialRequestBridge）
 
 ```
-容器内 git 缺凭据 → credential helper（/root/.deepcode/git-credential-deepcode）
+容器内 git 缺凭据 → credential helper（/root/.minime/git-credential-minime）
   写 cred-req-<id>（含 host=）→ 宿主目录（PRoot -b 同 inode）
 → FileObserver（主线程 startWatching）+ fallbackPollLoop（1s 兜底，seen 去重）
 → handleRequest：解析 host → containerEngine.incPromptInFlight() → request StateFlow

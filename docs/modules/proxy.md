@@ -44,7 +44,7 @@
 - 用 **SnakeYAML 真实解析**源配置为 Map，剥掉 `OVERRIDDEN_KEYS`（mixed-port/port/socks-port/redir-port/tproxy-port/external-controller/external-ui/secret/allow-lan/bind-address/mode）顶层键，再 dump 回 YAML——避免旧「正则删行」误删块式节点嵌套键导致 mihomo FATAL 秒退。
 - 叠加**固定覆盖块**：`mixed-port: 7890`、`allow-lan: false`、`mode: rule`、`log-level: info`（保证内核错误落到 mihomo.log）、`external-controller: 127.0.0.1:9090`、随机 secret。
 - 源不是 YAML 映射（订阅回 HTML/裸文本）时退化为仅 `MATCH,DIRECT` 兜底。
-- 产物落盘 `filesDir/deepcode/proxy/config.yaml`。
+- 产物落盘 `filesDir/minime/proxy/config.yaml`。
 
 ### 3.3 内核生命周期
 

@@ -164,7 +164,7 @@ plugin/
 
 ### 5.7 方向 #5 设计决策（2026-08-23 已确认）
 
-- **规则载体**：**MD + JSON 共存**——新增 MD 规则文件层（项目 `.deepcode/rules/*.md` + 全局，frontmatter + 正文）；现有 JSON（`permissions.json`）保留为「记忆授权」产物，职责分离。
+- **规则载体**：**MD + JSON 共存**——新增 MD 规则文件层（项目 `.minime/rules/*.md` + 全局，frontmatter + 正文）；现有 JSON（`permissions.json`）保留为「记忆授权」产物，职责分离。
 - **动作扩展**：**引入 warn**（allow/deny/warn 三态）——warn 不拦截只提示（正文喂模型/弹窗附注），对齐 hookify + #6 Warn。
 - **作用域**：**权限 + Hook 全上**——统一规则引擎双消费点（ToolPermissionPolicyEngine + #4 HookDispatcher），实施可分层（先权限后 Hook）。
 - **优先级**：内置安全底线（灾难 rm / #6 Block）> 用户 deny/block > 已记忆 ALLOW > 内置白名单 > warn 提示 > ASK；用户规则只增不减（沿用 #6 原则）。
@@ -522,7 +522,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
   - `Condition(field, operator, pattern)`，field ∈ command / file_path / content 等，operator 六种（对齐 hookify）。
   - `Rule(name, enabled, event, tool_matcher, conditions[], action(allow|deny|warn), message)`。
 - **存储**：
-  - MD 规则层：项目 `.deepcode/rules/*.md` + 全局 `filesDir/deepcode/rules/*.md`（frontmatter + 正文，可 git 追踪/回滚）。
+  - MD 规则层：项目 `.minime/rules/*.md` + 全局 `filesDir/minime/rules/*.md`（frontmatter + 正文，可 git 追踪/回滚）。
   - JSON 保留：记忆授权产物，职责分离。
 - **统一规则引擎 RuleEngine**：解析 MD → 评估（tool_matcher + conditions → action），**双消费点**：
   1. **权限评估**：接入 `ToolPermissionPolicyEngine.evaluateShell/evaluateGeneric`；deny 优先级最高，warn 附加提示（弹窗附注/注入对话）。
@@ -540,7 +540,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 ### 12.5 待办
 
 - [ ] RuleEngine（Condition/六运算符/评估，对齐 hookify rule_engine）
-- [ ] MD 规则层（`.deepcode/rules/` + 全局）+ mtime 热加载
+- [ ] MD 规则层（`.minime/rules/` + 全局）+ mtime 热加载
 - [ ] 接入 ToolPermissionPolicyEngine（deny 优先、warn 附加）
 - [ ] 接入 #4 HookDispatcher（事件规则消费）
 - [ ] frontmatter 解析公共工具（SnakeYAML / SkillParser 抽取）
@@ -560,7 +560,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 13.2 设计（已确认：禁 AUTO + 禁记忆、独立 deny 文件）
 
-- **deny 白名单策略文件（独立）**：`.deepcode/deny.json`（项目级）+ 全局 `filesDir/deepcode/deny.json`，**管理级强制 deny**，最高优先（连已记忆 ALLOW 也拦）；区别于 #5 用户可配规则（#5 = 用户配置，deny 文件 = 管理/团队策略）。
+- **deny 白名单策略文件（独立）**：`.minime/deny.json`（项目级）+ 全局 `filesDir/minime/deny.json`，**管理级强制 deny**，最高优先（连已记忆 ALLOW 也拦）；区别于 #5 用户可配规则（#5 = 用户配置，deny 文件 = 管理/团队策略）。
 - **「禁绕过」开关**（settings 安全设置页，对齐 Claude Code `disableBypassPermissionsMode`）：
   - **禁切 AUTO**：入口禁用 + 已有 AUTO 会话降级提示；
   - **禁新增「始终允许」记忆**：权限弹窗不再提供「始终允许」。
@@ -573,7 +573,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 13.4 待办
 
-- [ ] `.deepcode/deny.json`（项目 + 全局）加载与评估（最高优先）
+- [ ] `.minime/deny.json`（项目 + 全局）加载与评估（最高优先）
 - [ ] settings 安全设置页「禁绕过」开关 + DataStore
 - [ ] AUTO 入口禁用 + 存量会话降级
 - [ ] 权限弹窗「始终允许」按开关隐藏
@@ -593,7 +593,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 14.2 设计（已确认：L1 仅 HTTP 白名单、两级配置 + 默认关）
 
-- **allowedDomains 两级配置**：全局（DataStore）+ 项目级（`.deepcode/network.json`）。
+- **allowedDomains 两级配置**：全局（DataStore）+ 项目级（`.minime/network.json`）。
 - **mihomo 规则注入**：启用时生成/追加白名单规则——allowedDomains → DIRECT（或走代理），**其余 → REJECT**（MATCH → REJECT），mode=rule 白名单策略。
 - **默认关闭**：默认不启用（软限制），启用即严格白名单。
 - **覆盖范围（诚实标注）**：HTTP(S) 代理流量受控；DNS / git ssh / 非标准端口 TCP 不受控（mihomo 只代理 HTTP(S)，非透明代理）。
@@ -605,7 +605,7 @@ Confidence Scoring 本质是 **prompt 纪律，非代码机制**：
 
 ### 14.4 待办
 
-- [ ] allowedDomains 两级配置（DataStore + `.deepcode/network.json`）
+- [ ] allowedDomains 两级配置（DataStore + `.minime/network.json`）
 - [ ] mihomo 规则生成/注入 + reload（白名单放行 + REJECT）
 - [ ] settings 网络代理页加 allowedDomains 编辑入口
 - [ ] 按资产同步纪律更新 `assets/docs/`（网络限制说明）与 `docs/modules/`（proxy/agent）
