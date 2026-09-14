@@ -106,21 +106,10 @@ android {
     buildToolsVersion = "36.0.0"
 
     signingConfigs {
-        // 统一签名策略：release / debug 都"必然有一个 signingConfig"，
-        // 避免 CI 门禁跑 `:app:assembleRelease` 时因"release 没绑定 signingConfig"而被
-        // AGP 在 packageRelease 阶段直接判失败（用户策略 = "所有测试/验证都用发行版"，
-        // release 必须总能生成 APK，哪怕回退到默认 debug keystore 签名）。
-        //
-        // 规则：
-        //   1. 优先：仓库根 keystore.properties（release 正式签名，本地/发版 CI secrets 生成）；
-        //   2. 其次：自定义本地 debug keystore（/root/Android/Sdk/debug.keystore）；
-        //   3. 最后：用户 home 默认 debug keystore（$HOME/.android/debug.keystore，
-        //      AGP 会自动创建，CI/本地无配置时 99% 场景都会命中）。
-        //
-        // 同时强制 enableV1Signing=true + enableV2Signing=true：
-        //   - v2/v3 是 Android 7+ 默认（快、抗篡改）；
-        //   - v1 (JAR 签名) 给 jarsigner/某些老工具与 ROM 保留可识别的 META-INF/*.RSA，
-        //     让"发出来是一个已签 APK"这件事对任何检查方式都成立。
+        // 签名策略（唯一官方密钥，见 branding.gradle.kts「签名策略」）：
+        //   release = 唯一官方 keystore（app/minime.jks + keystore.properties，已入库）。
+        //   每次构建都使用这一把密钥，缺失即报错，**禁止静默回退 debug keystore 当正式签名**。
+        //   debug = 固定 debug keystore（仅用于开发期调试安装，data 与 release 隔离）。
         val customDebugKeystore = file("/root/Android/Sdk/debug.keystore")
         val defaultDebugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
         val fallbackDebugKeystore = when {
@@ -139,20 +128,16 @@ android {
         }
 
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-            } else {
-                // 没有正式 release 签名时，回退到 debug keystore 签名 release buildType：
-                //   - 保证 assembleRelease 在 CI/本地零配置下也能输出 APK；
-                //   - 这不是"上架签名"，只是让 R8+资源收缩后的最终发行版形态能被构建/安装/测试。
-                storeFile = fallbackDebugKeystore
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
+            // 唯一官方密钥：必须存在 app/keystore.properties（已入库），指向 minime.jks。
+            // 缺少即失败——正式版不再可能被 debug keystore 签名发出。
+            require(keystorePropertiesFile.exists()) {
+                "release 正式签名密钥缺失：缺少 app/keystore.properties（唯一官方密钥，已入库）。" +
+                    "正式 release 必须用同一把官方密钥（见 branding.gradle.kts 签名策略）。"
             }
+            storeFile = file(keystoreProperties["storeFile"] as String)
+            storePassword = keystoreProperties["storePassword"] as String
+            keyAlias = keystoreProperties["keyAlias"] as String
+            keyPassword = keystoreProperties["keyPassword"] as String
             enableV1Signing = true
             enableV2Signing = true
         }

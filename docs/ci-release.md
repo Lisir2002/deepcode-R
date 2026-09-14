@@ -46,24 +46,19 @@ curl -s -u "<owner>:<token>" \
 4. **SHA256** → `sha256sum <apk>` 记录指纹
 5. **Release 页面** → https://github.com/Lisir2002/deepcode-R/releases/tag/<tag>
 
-## 签名 Secrets 前置条件（构建正式签名 APK 必须配置）
+## 签名策略（唯一官方密钥，已入库）
 
-仓库 `Settings → Secrets and variables → Actions` 必须配置以下 4 个 secrets：
+> **2026-09 变更**：正式签名密钥已按维护者决定**入库**，**不再依赖 CI Secrets**。
+> 旧策略（从 `AICODE_KEYSTORE_*` 4 个 secrets 恢复 keystore / 生成 keystore.properties）已废弃并移除。
 
-| Secret 名称 | 取值 |
-|---|---|
-| `AICODE_KEYSTORE_BASE64` | `app/minime.jks` 文件的 base64 编码 |
-| `AICODE_KEYSTORE_PASSWORD` | keystore 的 storePassword |
-| `AICODE_KEY_ALIAS` | 签名 key 的 keyAlias |
-| `AICODE_KEY_PASSWORD` | key 的 keyPassword |
+正式 release 一律使用**唯一官方 keystore**，本地与 CI 每一次构建加载同一把密钥，签名指纹恒定：
 
-**验证 secrets 是否存在**：
-```bash
-curl -s -u "<owner>:<token>" \
-  "https://api.github.com/repos/<owner>/<repo>/actions/secrets?per_page=30" \
-  | python3 -c "import sys,json;d=json.load(sys.stdin);print('secrets 总数:',d.get('total_count',0));[print(' -',s['name']) for s in d.get('secrets',[])]"
-```
+| 文件 | 路径 | 说明 |
+|---|---|---|
+| `minime.jks` | `app/minime.jks` | 唯一官方 keystore（已入库，随 checkout 自带） |
+| `keystore.properties` | `app/keystore.properties` | storeFile / storePassword / keyAlias（minime）/ keyPassword（已入库） |
 
-> **⚠️ 若 secrets 总数 = 0 或缺少任一**：CI 构建的 APK 会**回退到项目级固定 debug keystore 签名**（`CN=Android Debug, O=Android, C=US`，alias=`androiddebugkey`，密码均为 `android`，APK 签名证书 SHA256 固定 = `7A:D5:EA:0E:3F:A9:6F:10:26:29:21:0C:9C:DB:AA:81:E3:CE:D4:9B:32:20:A5:21:7B:64:EC:1A:95:D2:FA:C8`）。
-> 该方案**保证所有未配置正式签名的 Tag 构建输出同一份证书指纹的 APK**：RC24 / RC25 / … / RC∞ 之间覆盖安装不会再报「软件包与现有软件包冲突」。
-> 但它**仍不可上架**（证书 Owner 必须为开发者主体，而非 Android Debug），若需上架请配置上面 4 个 secrets。
+- **强制约束**：`app/build.gradle.kts` 的 `signingConfigs.release` 用 `require(keystorePropertiesFile.exists())` 强制——缺少 `app/keystore.properties` 即构建失败，**不存在「回退到 debug keystore 当正式签名」**。
+- CI 工作流 `android-release.yml` 直接读取随仓库自带的 `app/minime.jks` + `app/keystore.properties` 签名，无需额外步骤。
+- **⚠️ 安全提示（维护者已知情并授权入库）**：私钥随仓库公开，能读仓库者即可冒充该签名；若未来对公开分发敏感，应撤销本入库决定并改回 CI Secrets 持有密钥。
+- **产物签名校验**：`keytool -printcert -jarfile <apk>` → Owner 应为 `CN=MiniMe-core, OU=Mobile, O=MiniMe, L=Beijing, ST=Beijing, C=CN`（密钥 SHA256 = `05:93:2E:DB:4D:94:BB:45:FB:81:9B:BA:D9:9F:70:01:0C:23:D8:82:CA:86:BF:D5:73:F0:0D:D7:03:80:24:03`），非 `CN=Android Debug`。

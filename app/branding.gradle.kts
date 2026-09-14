@@ -29,17 +29,16 @@ val ICON_FAMILY = "ic_launcher"
 
 // ── 签名策略（SIGNING POLICY，唯一官方密钥）───────────────────────────────
 // 正式发布（release）一律使用**唯一官方 keystore**：app/<KEYSTORE_FILE>（= minime.jks）。
-// 构建/发版强制约束（见 app/build.gradle.kts 的 packageRelease 校验）：
-//   - 打 release 包前必须存在 app/keystore.properties（storeFile/storePassword/keyAlias/keyPassword），
-//     其 storeFile 指向本文件 KEYSTORE_FILE；缺失即构建失败，**不再静默回退 debug keystore 当正式签名**。
-//   - CI 发版由 AICODE_KEYSTORE_BASE64 + AICODE_KEYSTORE_PASSWORD + AICODE_KEY_ALIAS +
-//     AICODE_KEY_PASSWORD 四个 secrets 还原同一把 keystore，保证每一次 release 签名指纹恒定。
-// 敏感信息边界：keystore 二进制与全部密码本就经 .gitignore 排除（*.jks / keystore.properties），
-// **不入库**；本仓库代码/文档禁止写入任何签名 secrets（见 AGENTS.md）。本文件只登记非敏感元数据。
+// 按维护者决定，该 keystore 与 app/keystore.properties **已入库**（见 .gitignore），
+// 保证本地与 CI 每一次 release 都加载同一把密钥、签名指纹恒定。
+// 构建/发版强制约束：app/build.gradle.kts 的 release signingConfig require——
+//   打 release 包前必须存在 app/keystore.properties（storeFile/storePassword/keyAlias/keyPassword），
+//   缺失即构建失败，**不再静默回退 debug keystore 当正式签名**。
+// ⚠️ 安全提示（维护者已知情并授权）：私钥随仓库公开，等同于任何能读仓库者都可冒充该签名；
+//   如未来上架/对公开分发敏感，建议改用 CI secrets 持有密钥并撤销本入库决定。
 
-/** release 唯一官方 keystore 别名。别名由 app/keystore.properties 的 keyAlias / CI 的
- *  AICODE_KEY_ALIAS 指定（不在此硬编码，避免敏感值与仓库绑定）；此处仅为策略登记。 */
-val SIGNATURE_ALIAS = "<keystore.properties.keyAlias / secrets.AICODE_KEY_ALIAS>"
+/** release 唯一官方 keystore 别名（与 app/keystore.properties 的 keyAlias / 证书一致）。 */
+val SIGNATURE_ALIAS = "minime"
 
 // 暴露给 app/build.gradle.kts 实际使用。
 // 注意：apply(from=…) 场景下 cross-script 顶层 const 不能直接 import，必须经 extra 传递。
